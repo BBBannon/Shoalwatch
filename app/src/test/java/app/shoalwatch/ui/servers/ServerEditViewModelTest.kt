@@ -206,7 +206,7 @@ class ServerEditViewModelTest {
     // --- unencrypted http toggle --------------------------------------------------------------------------------
 
     @Test fun turningHttpOnShowsTheWarningAndOnlyConfirmingSavesIt() {
-        val (catalog, vm) = setup()
+        val (catalog, vm) = setup(testServer(cleartext = false)) // home is http
         vm.setCleartext(true)
         assertEquals(EditPane.HttpWarning, vm.state.value.pane)
         assertTrue(catalog.upserts.isEmpty())
@@ -263,6 +263,34 @@ class ServerEditViewModelTest {
         assertEquals(PIN, saved.pinnedSpkiSha256)
         assertFalse(saved.pinInvalid)
         assertNull(vm.state.value.pane)
+    }
+
+    @Test fun reTrustingChecksItIsStillTheSameServerWithTheNewPinBeforeSaving() {
+        val (catalog, vm) = setup(testServer(home = "https://192.168.1.10:8920", pin = PIN))
+        auth.onFind = { text, _ -> serverInfo(text, id = "someone-else") }
+        vm.reviewCertificate()
+        vm.trustReviewedCertificate()
+        val (input, draft) = auth.findCalls.single()
+        assertEquals("the reviewed address", "https://192.168.1.10:8920", input)
+        assertEquals("checked with the new pin", certificate().spkiSha256, draft.pinnedSpkiSha256)
+        assertTrue("a different server is never pinned", catalog.upserts.isEmpty())
+        assertEquals(AppError.of(AppError.Kind.SERVER_MISMATCH).userMessage, (vm.state.value.pane as EditPane.CertificateReview).error)
+    }
+
+    @Test fun reTrustingSavesOnlyOnceTheServerAnswersAsItselfWithTheNewPin() {
+        val (catalog, vm) = setup(testServer(home = "https://192.168.1.10:8920", pin = PIN))
+        auth.onFind = { text, _ -> serverInfo(text) }
+        vm.reviewCertificate()
+        vm.trustReviewedCertificate()
+        assertEquals(1, auth.findCalls.size)
+        assertEquals(PIN, catalog.upserts.single().pinnedSpkiSha256)
+    }
+
+    @Test fun confirmingHttpWithNoHttpAddressLeavesItOff() {
+        val (catalog, vm) = setup(testServer(home = "https://192.168.1.10:8920", away = "https://away.example", cleartext = false))
+        vm.setCleartext(true)
+        vm.confirmCleartext()
+        assertFalse(catalog.upserts.single().allowCleartext)
     }
 
     @Test fun dismissingTheReviewTrustsNothing() {

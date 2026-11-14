@@ -108,7 +108,7 @@ data class ServerEditUiState(
 class ServerEditViewModel(
     private val serverId: String,
     private val catalog: ServerCatalog,
-    auth: Authenticator,
+    private val auth: Authenticator,
     private val prober: CertificateProber,
     private val connections: ServerConnections,
 ) : ViewModel() {
@@ -242,7 +242,7 @@ class ServerEditViewModel(
 
     fun confirmCleartext() {
         if (local.value.pane != EditPane.HttpWarning) return
-        viewModelScope.launch { save { it.copy(allowCleartext = true) } }
+        viewModelScope.launch { save { it.copy(allowCleartext = true).tidied() } }
     }
 
     // --- certificates -------------------------------------------------------------------------------------------
@@ -274,6 +274,7 @@ class ServerEditViewModel(
             val failure = AppError.of(AppError.Kind.TLS_UNTRUSTED).userMessage
             val pane = try {
                 val address = catalog.server(serverId)?.addresses?.firstOrNull { it.isSecure }
+                reviewedAddress = address
                 val info = address?.let { prober.probe(it) }
                 if (info == null) EditPane.CertificateReview(false, null, failure) else EditPane.CertificateReview(false, info.toSummary(), null)
             } catch (e: CancellationException) {
@@ -285,9 +286,37 @@ class ServerEditViewModel(
         }
     }
 
+    /** The address [reviewCertificate] read the certificate from. */
+    private var reviewedAddress: app.shoalwatch.net.ServerAddress? = null
+
+    /**
+     * Pins the certificate on screen, but only after the address answers, with that new pin, as this same server
+     * (a changed certificate could belong to a different machine now holding the address).
+     */
     fun trustReviewedCertificate() {
-        val shown = (local.value.pane as? EditPane.CertificateReview)?.certificate ?: return
-        viewModelScope.launch { save { it.copy(pinnedSpkiSha256 = shown.spkiSha256, pinInvalid = false) } }
+        val review = local.value.pane as? EditPane.CertificateReview ?: return
+        val shown = review.certificate ?: return
+        val address = reviewedAddress ?: return
+        if (local.value.busy) return
+        viewModelScope.launch {
+            local.update { it.copy(busy = true) }
+            val failure = try {
+                val server = catalog.server(serverId) ?: return@launch
+                val draft = ServerNetDraft(server.allowCleartext, shown.spkiSha256, server.clientCertAlias, server.customHeaders)
+                if (auth.findServer(address.value, draft).id == server.id) null else AppError.of(AppError.Kind.SERVER_MISMATCH).userMessage
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                AppError.from(e).userMessage
+            } finally {
+                local.update { it.copy(busy = false) }
+            }
+            if (failure != null) {
+                local.update { l -> (l.pane as? EditPane.CertificateReview)?.let { l.copy(pane = it.copy(error = failure)) } ?: l }
+            } else {
+                save { it.copy(pinnedSpkiSha256 = shown.spkiSha256, pinInvalid = false) }
+            }
+        }
     }
 
     suspend fun chooseClientCertificate(chooser: ClientCertChooser) {

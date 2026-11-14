@@ -1,3 +1,4 @@
+v1.30 — 14/11/2026 — Trusting a server's new certificate now first checks it is still the same server, and switching on unencrypted connections does nothing when the server has no unencrypted address.
 v1.29 — 14/11/2026 — The "Use anyway" and "Trust this certificate" buttons and the confirmation boxes now ignore taps while another app is drawing over the screen, so a hidden overlay can't trick you into pressing them.
 v1.28 — 14/11/2026 — Smoother screens: lists of servers and accounts no longer unlock your saved sign-ins just to show names, and all unlocking now happens in the background.
 v1.27 — 14/11/2026 — Behind the scenes: the finished app now exposes nothing to other apps except its launcher screen, no longer includes a component that could ask Google for emoji fonts, and the build tools themselves are checked against their official fingerprint before use.
