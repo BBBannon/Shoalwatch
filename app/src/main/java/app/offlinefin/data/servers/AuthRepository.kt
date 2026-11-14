@@ -12,7 +12,6 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.CancellationException
-import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Finding a server and signing in. Successful sign-ins are saved to [ServerStore] and made active.
@@ -42,7 +41,7 @@ class AuthRepository(
         var first: AppError? = null
         for (address in candidates) {
             try {
-                return gateway.publicInfo(address, ServerNet.config(listOf(address), draft) { device.authHeader(null) })
+                return gateway.publicInfo(address, ServerNet.anonymous(listOf(address), draft, device))
             } catch (e: AppError) {
                 if (first == null) first = e
             }
@@ -136,21 +135,19 @@ class AuthRepository(
      * from then on.
      */
     suspend fun signOut(serverId: String, userId: String) {
-        val token = AtomicReference<String?>(null)
         try {
             val server = store.server(serverId)
+            // Reading the account loads its token into the store's live lookup, which the client reads per request.
             val account = store.accounts(serverId).first().firstOrNull { it.userId == userId }
             if (server != null && account != null) {
-                token.set(account.accessToken)
                 bestEffort {
-                    val net = ServerNet.config(server.addresses, server, authKey = "$serverId:$userId") { device.authHeader(token.get()) }
+                    val net = ServerNet.authenticated(server.addresses, server, userId, device, store::cachedToken)
                     for (address in server.addresses) {
                         if (bestEffort { gateway.logout(address, net) }) break
                     }
                 }
             }
         } finally {
-            token.set(null)
             withContext(NonCancellable) { store.removeAccount(serverId, userId) }
         }
     }
@@ -166,7 +163,7 @@ class AuthRepository(
     }
 
     private fun anonymousNet(server: Server): ServerNetConfig =
-        ServerNet.config(server.addresses, server) { device.authHeader(null) }
+        ServerNet.anonymous(server.addresses, server, device)
 
     private fun requireOwn(server: Server, via: ServerAddress) =
         require(via in server.addresses) { "That address does not belong to this server." }

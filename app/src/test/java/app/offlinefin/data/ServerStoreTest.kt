@@ -6,6 +6,7 @@ import app.offlinefin.core.AppError
 import app.offlinefin.data.db.AppDatabase
 import app.offlinefin.data.servers.Account
 import app.offlinefin.data.servers.Server
+import app.offlinefin.data.servers.DeviceIdentity
 import app.offlinefin.data.servers.ServerNet
 import app.offlinefin.data.servers.ServerStore
 import app.offlinefin.net.ServerAddress
@@ -175,7 +176,7 @@ class ServerStoreTest {
         assertTrue(loaded.pinInvalid)
         assertTrue(store.servers.first().single().pinInvalid)
         try {
-            ServerNet.config(listOf(loaded.homeAddress), loaded) { null }
+            ServerNet.anonymous(listOf(loaded.homeAddress), loaded, DeviceIdentity("d", "Pixel", "OfflineFin", "0.1"))
             fail("expected AppError")
         } catch (e: AppError) {
             assertEquals(AppError.Kind.TLS_UNTRUSTED, e.kind)
@@ -215,13 +216,13 @@ class ServerStoreTest {
 
     @Test fun netConfigUsesBothAddressesAndServerSecuritySettings() {
         val s = server(pin = validPin).copy(allowCleartext = true)
-        val c = ServerNet.config(listOf(s.homeAddress, s.awayAddress, null), s) { "hdr" }
+        val c = ServerNet.anonymous(listOf(s.homeAddress, s.awayAddress, null), s, DeviceIdentity("d", "Pixel", "OfflineFin", "0.1"))
         assertEquals(setOf("home.example:8920", "away.example:443"), c.authorities)
         assertTrue(c.allowCleartext)
         assertEquals(validPin, c.pinnedSpkiSha256)
         assertEquals("my-cert", c.clientCertAlias)
         assertEquals(mapOf("X-Proxy-Key" to "headervalue-12345"), c.customHeaders)
-        assertEquals("hdr", c.authHeader())
+        assertFalse("Token=" in c.authHeader()!!)
     }
 
     @Test fun changesThatAffectClientsReportTheServerAndItsAddresses() = runBlocking {
@@ -231,7 +232,9 @@ class ServerStoreTest {
         assertTrue(stale.last().second.containsAll(listOf(s.homeAddress, s.awayAddress)))
 
         stale.clear(); store.upsertAccount(account(), makeActive = true)
-        assertTrue(stale.isEmpty())
+        assertEquals("s1", stale.single().first)
+        assertTrue(stale.single().second.contains(s.homeAddress))
+        stale.clear()
 
         store.removeAccount("s1", "u1")
         assertEquals("s1", stale.single().first)

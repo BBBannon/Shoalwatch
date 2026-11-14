@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Servers and accounts. Access tokens and custom headers reach the database only as [SecretBox]
@@ -31,6 +32,16 @@ class ServerStore(
     private val accountDao = db.accountDao()
 
     val servers: Flow<List<Server>> = serverDao.observeAll().map { rows -> rows.map(::toServer) }
+
+    /** `serverId:userId` to token, for [cachedToken]. Filled on every account write and read, emptied on removal. */
+    private val tokens = ConcurrentHashMap<String, String>()
+
+    /**
+     * The live token lookup handed to `ServerNet.authenticated`: no database or decryption per request. Null
+     * when the account is signed out or has not been loaded yet (reading it through [accounts] / [active]
+     * loads it; anything that has an account to authenticate as has read it).
+     */
+    fun cachedToken(serverId: String, userId: String): String? = tokens[tokenKey(serverId, userId)]
 
     val activeAccount: Flow<Account?> = accountDao.observeActive().map { it?.let(::toAccount) }
 
@@ -59,22 +70,35 @@ class ServerStore(
     /** Also removes the server's accounts. */
     suspend fun removeServer(id: String) {
         val addresses = server(id)?.addresses.orEmpty()
-        serverDao.delete(id)
-        onClientsStale(id, addresses)
+        try {
+            serverDao.delete(id)
+        } finally {
+            tokens.keys.removeAll { it.startsWith("$id:") }
+            onClientsStale(id, addresses)
+        }
     }
 
     /** The server must already be saved. */
     suspend fun upsertAccount(a: Account, makeActive: Boolean) {
+        val addresses = server(a.serverId)?.addresses.orEmpty()
         db.withTransaction {
             accountDao.upsert(AccountEntity(a.serverId, a.userId, a.userName, box.seal(a.accessToken)))
             if (makeActive) accountDao.setActive(ActiveAccountEntity(0, a.serverId, a.userId))
         }
+        tokens[tokenKey(a.serverId, a.userId)] = a.accessToken
+        onClientsStale(a.serverId, addresses)
     }
 
     /** If it was the active account, nobody is active afterwards. */
     suspend fun removeAccount(serverId: String, userId: String) {
-        accountDao.delete(serverId, userId)
-        onClientsStale(serverId, server(serverId)?.addresses.orEmpty())
+        val addresses = server(serverId)?.addresses.orEmpty()
+        try {
+            accountDao.delete(serverId, userId)
+        } finally {
+            // Whether or not the delete worked, the account stops sending its token and its clients go.
+            tokens.remove(tokenKey(serverId, userId))
+            onClientsStale(serverId, addresses)
+        }
     }
 
     /** @throws IllegalArgumentException if there is no such account. */
@@ -94,10 +118,15 @@ class ServerStore(
     }
 
     private fun toAccount(e: AccountEntity): Account? = try {
-        Account(e.serverId, e.userId, e.userName, box.open(e.accessToken))
+        Account(e.serverId, e.userId, e.userName, box.open(e.accessToken)).also {
+            // putIfAbsent: a read never overwrites a newer token written by a sign-in.
+            tokens.putIfAbsent(tokenKey(e.serverId, e.userId), it.accessToken)
+        }
     } catch (_: AppError) {
         null
     }
+
+    private fun tokenKey(serverId: String, userId: String) = "$serverId:$userId"
 
     private fun toServer(e: ServerEntity): Server {
         val pinOk = e.pinnedSpkiSha256 == null || isValidPin(e.pinnedSpkiSha256)

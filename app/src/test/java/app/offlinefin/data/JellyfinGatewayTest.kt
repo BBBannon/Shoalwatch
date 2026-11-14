@@ -3,6 +3,7 @@ package app.offlinefin.data
 import app.offlinefin.core.AppError
 import app.offlinefin.data.servers.DeviceIdentity
 import app.offlinefin.data.servers.JellyfinGatewayImpl
+import app.offlinefin.data.servers.Server
 import app.offlinefin.data.servers.ServerClients
 import app.offlinefin.data.servers.ServerInfo
 import app.offlinefin.data.servers.ServerNet
@@ -32,8 +33,12 @@ class JellyfinGatewayTest {
 
     private fun address(path: String = ""): ServerAddress = ServerAddress.parse("http://127.0.0.1:${server.port}$path")
 
-    private fun net(a: ServerAddress = address(), cleartext: Boolean = true, token: String? = null): ServerNetConfig =
-        ServerNet.config(listOf(a), ServerNetDraft(allowCleartext = cleartext)) { device.authHeader(token) }
+    private fun net(a: ServerAddress = address(), cleartext: Boolean = true): ServerNetConfig =
+        ServerNet.anonymous(listOf(a), ServerNetDraft(allowCleartext = cleartext), device)
+
+    private fun signedInNet(a: ServerAddress, token: () -> String?): ServerNetConfig = ServerNet.authenticated(
+        listOf(a), Server("s1", "Den", "10.10.3", a, null, true, null, null, emptyMap()), "u1", device,
+    ) { _, _ -> token() }
 
     private fun json(body: String, code: Int = 200) = MockResponse().setResponseCode(code)
         .setHeader("Content-Type", "application/json").setBody(body)
@@ -161,7 +166,7 @@ class JellyfinGatewayTest {
 
     @Test fun logoutPostsWithTokenHeader() {
         server.start(); server.enqueue(MockResponse().setResponseCode(204))
-        runBlocking { gateway.logout(address(), net(token = "tok-XYZ")) }
+        runBlocking { gateway.logout(address(), signedInNet(address()) { "tok-XYZ" }) }
         val r = server.takeRequest()
         assertEquals("POST", r.method)
         assertEquals("/Sessions/Logout", r.path)
@@ -238,10 +243,9 @@ class JellyfinGatewayTest {
         server.start(); server.enqueue(MockResponse().setResponseCode(204)); server.enqueue(MockResponse().setResponseCode(204))
         val token = AtomicReference<String?>("tok-XYZ")
         val a = address()
-        val config = ServerNet.config(listOf(a), ServerNetDraft(allowCleartext = true), authKey = "s1:u1") { device.authHeader(token.get()) }
-        runBlocking { gateway.logout(a, config) }
+        runBlocking { gateway.logout(a, signedInNet(a) { token.get() }) }
         token.set(null)
-        runBlocking { gateway.logout(a, ServerNet.config(listOf(a), ServerNetDraft(allowCleartext = true), authKey = "s1:u1") { "ignored" }) }
+        runBlocking { gateway.logout(a, signedInNet(a) { "ignored" }) }
         assertTrue("Token=\"tok-XYZ\"" in server.takeRequest().getHeader("Authorization")!!)
         // Same configuration value: the cached client (and its live provider) is reused, and now yields no token.
         assertFalse("Token=" in server.takeRequest().getHeader("Authorization")!!)

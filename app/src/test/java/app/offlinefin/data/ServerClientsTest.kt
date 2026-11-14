@@ -1,10 +1,13 @@
 package app.offlinefin.data
 
+import app.offlinefin.data.servers.DeviceIdentity
+import app.offlinefin.data.servers.Server
 import app.offlinefin.data.servers.ServerClients
 import app.offlinefin.data.servers.ServerNet
 import app.offlinefin.data.servers.ServerNetDraft
 import app.offlinefin.net.HttpClientFactory
 import app.offlinefin.net.ServerAddress
+import app.offlinefin.net.ServerNetConfig
 import okhttp3.tls.HandshakeCertificates
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -35,8 +38,15 @@ class ServerClientsTest {
     private val c = ServerAddress.parse("https://c.example")
     private val pin = Base64.getEncoder().encodeToString(ByteArray(32) { it.toByte() })
 
-    private fun config(draft: ServerNetDraft = ServerNetDraft(), authKey: String? = null, address: ServerAddress = a) =
-        ServerNet.config(listOf(address), draft, authKey) { "header-${System.nanoTime()}" }
+    private val device = DeviceIdentity("dev-1", "Pixel", "OfflineFin", "0.1")
+
+    /** [authKey] "s1:u1" style = a signed-in config for that account; null = anonymous. */
+    private fun config(draft: ServerNetDraft = ServerNetDraft(), authKey: String? = null, address: ServerAddress = a): ServerNetConfig {
+        if (authKey == null) return ServerNet.anonymous(listOf(address), draft, device)
+        val (serverId, userId) = authKey.split(":")
+        val server = Server(serverId, "Den", "10.10.3", address, null, draft.allowCleartext, draft.pinnedSpkiSha256, draft.clientCertAlias, draft.customHeaders)
+        return ServerNet.authenticated(listOf(address), server, userId, device) { _, _ -> "tok-${System.nanoTime()}" }
+    }
 
     @Test fun configEqualityIsByValueAndIgnoresTheProviderLambda() {
         assertEquals(config(), config())
