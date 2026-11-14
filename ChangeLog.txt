@@ -1,3 +1,4 @@
+v1.3 — 14/11/2026 — App skeleton created: it builds and opens to a placeholder screen, with backups switched off and only the two network permissions requested.
 v1.2 — 14/11/2026 — Design agreed and written up; building started on the first milestone (secure sign-in and home/away server switching).
 v1.1 — 14/11/2026 — Research finished: the ten most complained-about problems with Jellyfin Android apps, with evidence, saved in the research folder.
 v1.0 — 14/11/2026 — Project started: research begun into the most complained-about problems with existing Jellyfin Android apps.
