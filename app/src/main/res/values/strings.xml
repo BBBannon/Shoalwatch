@@ -190,4 +190,5 @@
     <string name="home_signed_out_body">Choose an account, or add one, under Servers and accounts.</string>
     <string name="home_manage">Servers and accounts</string>
     <string name="home_settings_cd">Servers and accounts</string>
+    <string name="obscured_hint">Another app is drawing over the screen, so this button is switched off. Close screen filters or bubbles and try again.</string>
 </resources>

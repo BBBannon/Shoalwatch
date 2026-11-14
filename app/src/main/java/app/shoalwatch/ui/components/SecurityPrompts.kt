@@ -30,7 +30,7 @@ import app.shoalwatch.ui.CertificateSummary
 /** Plain `http`: the user must say "use anyway" before it is allowed. [role] names which address it is about. */
 @Composable
 fun HttpWarningScreen(onCancel: () -> Unit, onUseAnyway: () -> Unit, role: AddressRole? = null) {
-    FilterObscuredTouches()
+    val obscured = FilterObscuredTouches()
     AppScreen(
         title = stringResource(R.string.security_check_title),
         onBack = onCancel,
@@ -39,6 +39,7 @@ fun HttpWarningScreen(onCancel: () -> Unit, onUseAnyway: () -> Unit, role: Addre
             CautionButton(stringResource(R.string.http_use), onUseAnyway)
         },
     ) {
+        ObscuredTouchHint(obscured)
         NoticeCard(title = stringResource(R.string.http_title), body = stringResource(R.string.http_body), tone = Tone.Danger)
         Text(stringResource(R.string.http_scope), style = MaterialTheme.typography.bodyMedium)
         when (role) {
@@ -62,7 +63,7 @@ fun CertificateScreen(
     onTrust: () -> Unit,
     onCancel: () -> Unit,
 ) {
-    FilterObscuredTouches()
+    val obscured = FilterObscuredTouches()
     AppScreen(
         title = stringResource(R.string.security_check_title),
         onBack = onCancel,
@@ -73,6 +74,7 @@ fun CertificateScreen(
             }
         },
     ) {
+        ObscuredTouchHint(obscured)
         NoticeCard(
             title = stringResource(if (changed) R.string.cert_changed_title else R.string.cert_title),
             body = stringResource(if (changed) R.string.cert_changed_body else R.string.cert_body),

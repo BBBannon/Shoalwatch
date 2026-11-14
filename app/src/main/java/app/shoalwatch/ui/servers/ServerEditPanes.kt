@@ -35,6 +35,7 @@ import app.shoalwatch.ui.components.PrimaryButton
 import app.shoalwatch.ui.components.RevealToggle
 import app.shoalwatch.ui.components.SecondaryButton
 import app.shoalwatch.ui.components.FilterObscuredTouches
+import app.shoalwatch.ui.components.ObscuredTouchHint
 import app.shoalwatch.ui.components.SecureDialog
 import app.shoalwatch.ui.components.rememberSubmit
 import app.shoalwatch.ui.onboarding.AddressField
@@ -103,8 +104,9 @@ internal fun HeaderDialog(pane: EditPane.Header, actions: PaneActions) {
             )
         },
         text = {
-            FilterObscuredTouches()
+            val obscured = FilterObscuredTouches()
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                ObscuredTouchHint(obscured)
                 OutlinedTextField(
                     value = pane.name,
                     onValueChange = actions.onHeaderName,
