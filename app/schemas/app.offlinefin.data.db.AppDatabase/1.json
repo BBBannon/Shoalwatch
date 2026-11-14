@@ -1,0 +1,193 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "bb6c2593c35bc333bd938d5cde2f720f",
+    "entities": [
+      {
+        "tableName": "servers",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `version` TEXT NOT NULL, `homeAddress` TEXT, `awayAddress` TEXT, `allowCleartext` INTEGER NOT NULL, `pinnedSpkiSha256` TEXT, `clientCertAlias` TEXT, `customHeaders` BLOB NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "version",
+            "columnName": "version",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "homeAddress",
+            "columnName": "homeAddress",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "awayAddress",
+            "columnName": "awayAddress",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "allowCleartext",
+            "columnName": "allowCleartext",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pinnedSpkiSha256",
+            "columnName": "pinnedSpkiSha256",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "clientCertAlias",
+            "columnName": "clientCertAlias",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "customHeaders",
+            "columnName": "customHeaders",
+            "affinity": "BLOB",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "accounts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`serverId` TEXT NOT NULL, `userId` TEXT NOT NULL, `userName` TEXT NOT NULL, `accessToken` BLOB NOT NULL, PRIMARY KEY(`serverId`, `userId`), FOREIGN KEY(`serverId`) REFERENCES `servers`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "serverId",
+            "columnName": "serverId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "userId",
+            "columnName": "userId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "userName",
+            "columnName": "userName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "accessToken",
+            "columnName": "accessToken",
+            "affinity": "BLOB",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "serverId",
+            "userId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_accounts_serverId",
+            "unique": false,
+            "columnNames": [
+              "serverId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_accounts_serverId` ON `${TABLE_NAME}` (`serverId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "servers",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "serverId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "active_account",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`slot` INTEGER NOT NULL, `serverId` TEXT NOT NULL, `userId` TEXT NOT NULL, PRIMARY KEY(`slot`), FOREIGN KEY(`serverId`, `userId`) REFERENCES `accounts`(`serverId`, `userId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "slot",
+            "columnName": "slot",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "serverId",
+            "columnName": "serverId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "userId",
+            "columnName": "userId",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "slot"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_active_account_serverId_userId",
+            "unique": false,
+            "columnNames": [
+              "serverId",
+              "userId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_active_account_serverId_userId` ON `${TABLE_NAME}` (`serverId`, `userId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "accounts",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "serverId",
+              "userId"
+            ],
+            "referencedColumns": [
+              "serverId",
+              "userId"
+            ]
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'bb6c2593c35bc333bd938d5cde2f720f')"
+    ]
+  }
+}
