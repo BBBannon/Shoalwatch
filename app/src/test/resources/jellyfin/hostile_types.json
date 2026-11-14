@@ -1,0 +1,28 @@
+{
+  "Items": [
+    {"Id": "bb000000000000000000000000000001", "Name": "Good 1", "Type": "Movie", "ServerId": "5a3e1c0d9b7f4e2a8c6d0b1f3e5a7c9d"},
+    {"Id": "bb0000000000000000000000000000a1", "Name": "Bad index", "Type": "Episode", "IndexNumber": 1.5},
+    {"Id": "bb000000000000000000000000000002", "Name": "Good 2", "Type": "Movie"},
+    {"Id": "bb0000000000000000000000000000a2", "Name": "Bad year", "Type": "Movie", "ProductionYear": "2020"},
+    {"Id": "bb000000000000000000000000000003", "Name": "Good 3", "Type": "Movie"},
+    {"Id": "bb0000000000000000000000000000a3", "Name": "Rating off the scale", "Type": "Movie", "CommunityRating": 1e400},
+    {"Id": "bb000000000000000000000000000004", "Name": "Good 4", "Type": "Movie"},
+    {"Id": "bb0000000000000000000000000000a4", "Name": 12345, "Type": "Movie"},
+    {"Id": "bb000000000000000000000000000005", "Name": "Good 5", "Type": "Movie"},
+    {"Id": 123456789, "Name": "Id is a number", "Type": "Movie"},
+    {"Id": "bb000000000000000000000000000006", "Name": "Good 6", "Type": "Movie"},
+    {"Id": "bb0000000000000000000000000000a5", "Name": "Huge integer", "Type": "Movie", "RunTimeTicks": 99999999999999999999999999},
+    {"Id": "bb000000000000000000000000000007", "Name": "Good 7", "Type": "Movie"},
+    "not even an object",
+    {"Id": "bb000000000000000000000000000008", "Name": "Good 8", "Type": "Movie"},
+    42,
+    {"Id": "bb000000000000000000000000000009", "Name": "Good 9", "Type": "Movie"},
+    null,
+    {"Id": "bb00000000000000000000000000000a", "Name": "Good 10 (user data is a string)", "Type": "Movie", "UserData": "nope"},
+    {"Id": "bb00000000000000000000000000000b", "Name": "Good 11 (user data has a wrong type inside)", "Type": "Movie", "UserData": {"Played": "yes", "PlayCount": 1}},
+    {"Id": "bb0000000000000000000000000000a6", "Name": "Bad image tags type", "Type": "Movie", "ImageTags": "none", "BackdropImageTags": 7},
+    {"Id": "bb00000000000000000000000000000d", "Name": "Good 12", "Type": "Movie"}
+  ],
+  "TotalRecordCount": "many",
+  "StartIndex": 0
+}

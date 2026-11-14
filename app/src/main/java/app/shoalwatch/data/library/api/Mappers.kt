@@ -1,7 +1,9 @@
 package app.shoalwatch.data.library.api
 
 import app.shoalwatch.core.Ticks
+import app.shoalwatch.core.displayParagraphs
 import app.shoalwatch.core.displayText
+import app.shoalwatch.data.api.JsonBodies
 import app.shoalwatch.data.library.Item
 import app.shoalwatch.data.library.ItemFilter
 import app.shoalwatch.data.library.ItemImages
@@ -14,6 +16,9 @@ import app.shoalwatch.data.library.Sort
 import app.shoalwatch.data.library.SortBy
 import app.shoalwatch.data.library.UserData
 import app.shoalwatch.data.servers.JellyfinId
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import java.time.Instant
 import java.time.OffsetDateTime
 import java.time.format.DateTimeParseException
@@ -28,9 +33,7 @@ internal object Limits {
     const val COUNT_MAX = 1_000_000
     const val TOTAL_MAX = 1_000_000
     const val MAX_VIEWS = 100
-    const val MAX_UNPAGED = 1000
-    const val DEFAULT_NAME = "Untitled"
-    const val DEFAULT_VIEW_NAME = "Library"
+    const val MAX_SEASONS = 1000
 }
 
 private val IMAGE_TAG = Regex("[A-Za-z0-9]{1,64}")
@@ -55,17 +58,6 @@ private fun instant(raw: String?): Instant? {
     }
 }
 
-/** Plain text that keeps line breaks (at most one blank line in a row): everything else unusual goes, as in [displayText]. */
-internal fun overviewText(raw: String?): String? {
-    if (raw.isNullOrBlank()) return null
-    val lines = raw.replace("\r\n", "\n").replace('\r', '\n').split('\n').map { displayText(it, Limits.OVERVIEW) }
-    val kept = ArrayList<String>()
-    for (line in lines) if (line.isNotEmpty() || (kept.isNotEmpty() && kept.last().isNotEmpty())) kept.add(line)
-    val text = kept.joinToString("\n").trim()
-    if (text.isEmpty()) return null
-    return if (text.codePointCount(0, text.length) <= Limits.OVERVIEW) text else text.substring(0, text.offsetByCodePoints(0, Limits.OVERVIEW)).trimEnd()
-}
-
 internal fun kindOf(type: String?): ItemKind = when (type) {
     "Movie" -> ItemKind.MOVIE
     "Series" -> ItemKind.SERIES
@@ -76,21 +68,35 @@ internal fun kindOf(type: String?): ItemKind = when (type) {
     else -> ItemKind.OTHER
 }
 
+// ---- one element at a time: a wrong-typed element is skipped, never fatal to the list
+
+private inline fun <T : Any> tolerant(decode: () -> T): T? = try {
+    decode()
+} catch (_: IllegalArgumentException) { // SerializationException is one; the element is untrusted and never echoed
+    null
+}
+
+internal fun JsonElement.toItemDto(): BaseItemDto? = tolerant { JsonBodies.JSON.decodeFromJsonElement(BaseItemDto.serializer(), this) }
+
+private fun JsonElement.toUserDataDto(): UserItemDataDto? = tolerant { JsonBodies.JSON.decodeFromJsonElement(UserItemDataDto.serializer(), this) }
+
 /** Null (the item is dropped) when its own id is not a GUID. */
 internal fun BaseItemDto.toItem(): Item? {
     val itemId = id(id) ?: return null
+    // An item that is its own parent, series or season is nonsense from the server: that link is dropped.
+    fun related(raw: String?) = id(raw)?.takeIf { it != itemId }
     return Item(
         id = itemId,
         kind = kindOf(type),
-        name = displayText(name, Limits.NAME, fallback = Limits.DEFAULT_NAME),
+        name = displayText(name, Limits.NAME),
         sortName = displayText(sortName, Limits.NAME).ifEmpty { null },
-        parentId = id(parentId),
-        seriesId = id(seriesId),
+        parentId = related(parentId),
+        seriesId = related(seriesId),
         seriesName = displayText(seriesName, Limits.NAME).ifEmpty { null },
-        seasonId = id(seasonId),
+        seasonId = related(seasonId),
         indexNumber = intIn(indexNumber, 0..Limits.INDEX_MAX),
         parentIndexNumber = intIn(parentIndexNumber, 0..Limits.INDEX_MAX),
-        overview = overviewText(overview),
+        overview = displayParagraphs(overview, Limits.OVERVIEW).ifEmpty { null },
         runtimeMs = runTimeTicks?.takeIf { it >= 0 }?.let(Ticks::toMs),
         year = intIn(productionYear, 1800..2200),
         premiereDate = instant(premiereDate),
@@ -106,32 +112,41 @@ internal fun BaseItemDto.toItem(): Item? {
     )
 }
 
-internal fun UserItemDataDto.toUserData() = UserData(
-    played = played == true,
-    positionMs = playbackPositionTicks?.takeIf { it >= 0 }?.let(Ticks::toMs) ?: 0L,
-    playedPercentage = playedPercentage?.takeIf { it in 0.0..100.0 }?.toFloat(),
-    playCount = intIn(playCount, 0..Int.MAX_VALUE) ?: 0,
-    favourite = isFavorite == true,
-    lastPlayed = instant(lastPlayedDate),
-    unplayedItemCount = intIn(unplayedItemCount, 0..Limits.COUNT_MAX),
-)
+internal fun UserItemDataDto.toUserData(): UserData {
+    val watched = played == true
+    return UserData(
+        played = watched,
+        // A watched item has no place to resume from, whatever stale position the server still holds.
+        positionMs = if (watched) 0L else playbackPositionTicks?.takeIf { it >= 0 }?.let(Ticks::toMs) ?: 0L,
+        playedPercentage = if (watched) null else playedPercentage?.takeIf { it in 0.0..100.0 }?.toFloat(),
+        playCount = intIn(playCount, 0..Int.MAX_VALUE) ?: 0,
+        favourite = isFavorite == true,
+        lastPlayed = instant(lastPlayedDate),
+        unplayedItemCount = intIn(unplayedItemCount, 0..Limits.COUNT_MAX),
+    )
+}
 
-internal fun BaseItemDto.toItemWithUserData(): ItemWithUserData? = toItem()?.let { ItemWithUserData(it, userData?.toUserData()) }
+/** The item survives a UserData that cannot be read: it just has none. */
+internal fun BaseItemDto.toItemWithUserData(): ItemWithUserData? =
+    toItem()?.let { ItemWithUserData(it, userData?.toUserDataDto()?.toUserData()) }
 
-/** Items that are valid, at most [limit] of them. */
-internal fun List<BaseItemDto?>?.toModels(limit: Int): List<ItemWithUserData> =
-    orEmpty().asSequence().filterNotNull().mapNotNull { it.toItemWithUserData() }.take(limit).toList()
+/** Valid items only, the first of any repeated id, at most [limit]. A bad or repeated element never uses up the limit. */
+internal fun List<JsonElement>?.toModels(limit: Int): List<ItemWithUserData> =
+    orEmpty().asSequence().mapNotNull { it.toItemDto()?.toItemWithUserData() }.distinctBy { it.item.id }.take(limit).toList()
 
 internal fun BaseItemDtoQueryResult.toModels(limit: Int): List<ItemWithUserData> = items.toModels(limit)
 
+/** The server's own count of how many items there are, when it gave a usable one. */
+internal fun BaseItemDtoQueryResult.reportedTotal(): Long? = (totalRecordCount as? JsonPrimitive)?.takeIf { !it.isString }?.longOrNull
+
 internal fun BaseItemDtoQueryResult.toPage(start: Int, limit: Int): Page<ItemWithUserData> {
-    val list = items.toModels(limit)
-    return Page(list, start, (totalRecordCount ?: list.size.toLong()).coerceIn(list.size.toLong(), Limits.TOTAL_MAX.toLong()).toInt())
+    val list = toModels(limit)
+    return Page(list, start, (reportedTotal() ?: list.size.toLong()).coerceIn(list.size.toLong(), Limits.TOTAL_MAX.toLong()).toInt())
 }
 
 /** Only films, TV, collections and mixed libraries; other kinds (music, books, ...) and invalid ids are skipped. */
 internal fun BaseItemDtoQueryResult.toViews(): List<LibraryView> =
-    items.orEmpty().asSequence().filterNotNull().mapNotNull { dto ->
+    items.orEmpty().asSequence().mapNotNull { it.toItemDto() }.mapNotNull { dto ->
         val viewId = id(dto.id) ?: return@mapNotNull null
         val kind = when (dto.collectionType) {
             "movies" -> LibraryKind.MOVIES
@@ -140,8 +155,8 @@ internal fun BaseItemDtoQueryResult.toViews(): List<LibraryView> =
             null, "mixed" -> LibraryKind.MIXED
             else -> return@mapNotNull null
         }
-        LibraryView(viewId, displayText(dto.name, Limits.NAME, fallback = Limits.DEFAULT_VIEW_NAME), kind)
-    }.take(Limits.MAX_VIEWS).toList()
+        LibraryView(viewId, displayText(dto.name, Limits.NAME), kind)
+    }.distinctBy { it.id }.take(Limits.MAX_VIEWS).toList()
 
 // ---- model -> request values (the reference's enum spellings)
 
@@ -153,7 +168,16 @@ internal val SortBy.wire: String
         SortBy.RATING -> "CommunityRating"
     }
 
-internal val Sort.order: String get() = if (descending) "Descending" else "Ascending"
+/**
+ * `sortBy` and `sortOrder` are array parameters, sent comma-delimited as the reference describes, one order per key.
+ * `SortName` (ascending) is always the last key so that equal values (many films share a year or rating) keep a fixed order.
+ */
+internal fun Sort.sortByWire(): String = if (by == SortBy.NAME) by.wire else "${by.wire},SortName"
+
+internal fun Sort.sortOrderWire(): String {
+    val order = if (descending) "Descending" else "Ascending"
+    return if (by == SortBy.NAME) order else "$order,Ascending"
+}
 
 /** The reference's `ItemFilter` values, comma-delimited; empty when no filter applies. */
 internal fun ItemFilter.wire(): String = listOfNotNull("IsUnplayed".takeIf { unwatchedOnly }, "IsFavorite".takeIf { favouritesOnly }).joinToString(",")

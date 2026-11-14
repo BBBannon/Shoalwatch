@@ -8,13 +8,16 @@ enum class ItemKind { MOVIE, SERIES, SEASON, EPISODE, BOX_SET, FOLDER, OTHER }
 /** The kinds of library v1 shows. Libraries of any other kind (music, books, photos, live TV...) are not offered. */
 enum class LibraryKind { MOVIES, TV, BOX_SETS, MIXED }
 
-/** One of the user's libraries. [id] is a normalised `JellyfinId`; [name] is safe to display. */
+/**
+ * One of the user's libraries. [id] is a normalised `JellyfinId`; [name] is safe to display, or empty when the server
+ * gave no usable name (the UI supplies the placeholder, so no English text lives here).
+ */
 data class LibraryView(val id: String, val name: String, val kind: LibraryKind)
 
 /**
  * An item as the app sees it: every id validated and normalised, every string safe to display (no control, bidi or
  * zero-width characters, length-capped), every number range-checked, every image tag a plain alphanumeric token.
- * [runtimeMs] is milliseconds. [overview] is plain text with line breaks; it may contain HTML, which the UI shows as text.
+ * An empty [name] means the server gave no usable name; the UI supplies the placeholder. [runtimeMs] is milliseconds. [overview] is plain text with line breaks; it may contain HTML, which the UI shows as text.
  */
 data class Item(
     val id: String,

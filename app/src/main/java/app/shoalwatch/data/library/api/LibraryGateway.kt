@@ -13,6 +13,13 @@ import app.shoalwatch.data.library.Sort
  * Nothing returned here is a DTO or a JSON string; ids are normalised and display strings sanitised.
  * Failures are [app.shoalwatch.core.AppError]s from the authenticated call path (offline, unauthorised, not found...).
  * Ids passed in must be ids this gateway returned; anything else fails as `SERVER_NOT_FOUND` before a request is made.
+ *
+ * The [Session] comes only from `ServerCatalog.activeSession()` (the store). A session whose (server, user) has no saved
+ * token, such as a made-up user id, sends nothing and fails as `NOT_SIGNED_IN`: `ServerApi` looks the token up by
+ * server and user (`ServerApiTest`, signed-out case; `LibraryGatewayTest.aSessionForAnotherUserHasNoTokenAndNothingIsSent`).
+ *
+ * Every list tolerates a malformed element (skipped), repeated ids (the first wins) and a server that sends more than was
+ * asked for (capped); `episodes` and `seasons` come back in a fixed order. A single `item()` that cannot be read is `SERVER_ERROR`.
  */
 interface LibraryGateway {
     /** The user's libraries of a kind v1 shows (films, TV, collections, mixed). `GET /UserViews` */
@@ -54,7 +61,11 @@ interface LibraryGateway {
     /** Films, series and episodes matching [term]; a blank term returns nothing and sends nothing. `GET /Items?searchTerm=` */
     suspend fun search(s: Session, term: String, limit: Int): List<ItemWithUserData>
 
-    /** `POST` (watched) or `DELETE` (unwatched) `/UserPlayedItems/{itemId}`. Safe to repeat, so retried once on a network failure. */
+    /**
+     * `POST` (watched) or `DELETE` (unwatched) `/UserPlayedItems/{itemId}`. Retried once on a network failure. No
+     * `datePlayed` is sent, so a retried mark-as-watched should not count a second play on Jellyfin; to be confirmed
+     * against a real server (see "Library endpoints" in docs/ARCHITECTURE.md).
+     */
     suspend fun setPlayed(s: Session, itemId: String, played: Boolean)
 
     /** `POST` or `DELETE` `/UserFavoriteItems/{itemId}`. Safe to repeat. */

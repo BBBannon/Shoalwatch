@@ -116,6 +116,6 @@ class LibraryGatewayHostileTest : LibraryGatewayTestBase() {
         web.enqueue(json("""{"Items":[{"Id":"${id("f001")}","Name":"Fi‮lms​","CollectionType":"movies"},{"Id":"${id("f002")}","Name":"​","CollectionType":"tvshows"}]}"""))
         val views = runBlocking { gateway.views(session) }
         assertEquals("Films", views[0].name)
-        assertTrue(views[1].name.isNotBlank()) // nothing visible left: a neutral name
+        assertEquals("", views[1].name) // nothing visible left: the UI supplies a placeholder
     }
 }

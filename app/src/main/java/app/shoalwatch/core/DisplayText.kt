@@ -38,3 +38,20 @@ fun displayText(raw: String?, maxLength: Int, fallback: String = ""): String {
 
 /** Not white space to Unicode, but drawn as nothing (Hangul fillers, braille blank): treated as a space so an empty-looking name falls back. */
 private val BLANK_RENDERING = setOf(0x3164, 0x2800, 0xFFA0, 0x115F, 0x1160)
+
+/**
+ * Like [displayText] but for paragraphs (an overview): line breaks are kept. CRLF and a lone CR become a line break,
+ * each line is made safe exactly as [displayText] does (control, bidi and zero-width characters removed, white space
+ * collapsed), runs of blank lines collapse to one blank line, leading and trailing blank lines go, and the whole is
+ * capped at [maxCodePoints] code points (a surrogate pair is never split). Nothing else is changed: HTML stays as text
+ * for the UI to show as text. Empty when nothing visible is left.
+ */
+fun displayParagraphs(raw: String?, maxCodePoints: Int): String {
+    if (raw.isNullOrBlank()) return ""
+    val kept = ArrayList<String>()
+    for (line in raw.replace("\r\n", "\n").replace('\r', '\n').split('\n').map { displayText(it, maxCodePoints) }) {
+        if (line.isNotEmpty() || (kept.isNotEmpty() && kept.last().isNotEmpty())) kept.add(line)
+    }
+    val text = kept.joinToString("\n").trim()
+    return if (text.codePointCount(0, text.length) <= maxCodePoints) text else text.substring(0, text.offsetByCodePoints(0, maxCodePoints)).trimEnd()
+}

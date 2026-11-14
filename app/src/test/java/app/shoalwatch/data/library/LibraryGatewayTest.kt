@@ -92,7 +92,7 @@ class LibraryGatewayTest : LibraryGatewayTestBase() {
         }
         assertRequest(
             "GET", "/Items",
-            mapOf("userId" to U1, "parentId" to TV, "startIndex" to "100", "limit" to "20", "sortBy" to "PremiereDate", "sortOrder" to "Descending",
+            mapOf("userId" to U1, "parentId" to TV, "startIndex" to "100", "limit" to "20", "sortBy" to "PremiereDate,SortName", "sortOrder" to "Descending,Ascending",
                 "filters" to "IsUnplayed,IsFavorite", "includeItemTypes" to "Series", "recursive" to "true", "fields" to "ChildCount") + IMAGE_QUERY,
         )
     }
@@ -103,7 +103,7 @@ class LibraryGatewayTest : LibraryGatewayTestBase() {
             web.enqueue(json("""{"Items":[],"TotalRecordCount":0,"StartIndex":0}"""))
             runBlocking { gateway.children(session, FILMS, 0, 10, Sort(by, false), ItemFilter(unwatchedOnly = true)) }
             val url = nextRequest().requestUrl!!
-            assertEquals(wire, url.queryParameter("sortBy"))
+            assertEquals(if (by == SortBy.NAME) "SortName" else "$wire,SortName", url.queryParameter("sortBy"))
             assertEquals("IsUnplayed", url.queryParameter("filters"))
         }
         web.enqueue(json("""{"Items":[]}"""))
@@ -163,7 +163,7 @@ class LibraryGatewayTest : LibraryGatewayTestBase() {
     @Test fun episodesOfAWholeSeriesSendNoSeasonAndAskForOverviews() {
         enqueueFixture("episodes.json")
         val episodes = runBlocking { gateway.episodes(session, SERIES, null) }
-        assertRequest("GET", "/Shows/$SERIES/Episodes", mapOf("userId" to U1, "fields" to "Overview") + IMAGE_QUERY)
+        assertRequest("GET", "/Shows/$SERIES/Episodes", mapOf("userId" to U1, "startIndex" to "0", "limit" to "500", "fields" to "Overview") + IMAGE_QUERY)
         assertEquals(listOf(EPISODE_11, EPISODE_12, EPISODE_21), episodes.map { it.item.id })
         val e = episodes[0].item
         assertEquals(ItemKind.EPISODE, e.kind)
@@ -179,7 +179,7 @@ class LibraryGatewayTest : LibraryGatewayTestBase() {
     @Test fun episodesOfOneSeasonSendThatSeason() {
         enqueueFixture("episodes.json")
         runBlocking { gateway.episodes(session, SERIES, SEASON_2.uppercase()) }
-        assertRequest("GET", "/Shows/$SERIES/Episodes", mapOf("userId" to U1, "seasonId" to SEASON_2, "fields" to "Overview") + IMAGE_QUERY)
+        assertRequest("GET", "/Shows/$SERIES/Episodes", mapOf("userId" to U1, "seasonId" to SEASON_2, "startIndex" to "0", "limit" to "500", "fields" to "Overview") + IMAGE_QUERY)
     }
 
     // ---- home rows
@@ -287,6 +287,38 @@ class LibraryGatewayTest : LibraryGatewayTestBase() {
         web.enqueue(json("{}"))
         runBlocking { gateway.setPlayed(session, MOVIE_A, true) }
         assertEquals(2, web.requestCount)
+    }
+
+    @Test fun favouriteAndClearResumeAreRetriedToo() {
+        web.enqueue(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST))
+        web.enqueue(json("{}"))
+        runBlocking { gateway.setFavourite(session, MOVIE_A, false) }
+        assertEquals(2, web.requestCount)
+        web.enqueue(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST))
+        web.enqueue(json("{}"))
+        runBlocking { gateway.clearResume(session, MOVIE_A) }
+        assertEquals(4, web.requestCount)
+    }
+
+    // ---- kinds
+
+    @Test fun otherHasNoWireValueAndIsLeftOutOfIncludeItemTypes() {
+        web.enqueue(json("""{"Items":[]}"""))
+        web.enqueue(json("""{"Items":[]}"""))
+        runBlocking {
+            gateway.children(session, FILMS, 0, 10, nameAsc, ItemFilter(), kinds = setOf(ItemKind.OTHER))
+            gateway.children(session, FILMS, 0, 10, nameAsc, ItemFilter(), kinds = setOf(ItemKind.OTHER, ItemKind.MOVIE))
+        }
+        assertEquals(null, nextRequest().requestUrl!!.queryParameter("includeItemTypes"))
+        assertEquals("Movie", nextRequest().requestUrl!!.queryParameter("includeItemTypes"))
+    }
+
+    // ---- a session for someone who is not signed in
+
+    @Test fun aSessionForAnotherUserHasNoTokenAndNothingIsSent() {
+        val stranger = app.shoalwatch.data.servers.Session(app.shoalwatch.S1, app.shoalwatch.U2)
+        assertEquals(AppError.Kind.NOT_SIGNED_IN, failure { gateway.resume(stranger, 5) }.kind)
+        assertEquals(0, web.requestCount)
     }
 
     // ---- errors

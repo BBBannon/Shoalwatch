@@ -193,14 +193,14 @@ def csv(q, name):
 
 def in_order(items, q):
     keys = csv(q, "sortby") or ["SortName"]
-    descending = (csv(q, "sortorder") or ["Ascending"])[0].lower() == "descending"
+    orders = [o.lower() for o in csv(q, "sortorder")] or ["ascending"]  # one order per sortBy key; the last repeats
     key = {k.lower(): f for k, f in {"Name": lambda i: i["Name"].lower(), "SortName": lambda i: i["Name"].lower(), "DateCreated": lambda i: i["Created"],
            "PremiereDate": lambda i: i.get("Year", 0), "ProductionYear": lambda i: i.get("Year", 0), "CommunityRating": lambda i: i.get("Rating", 0),
            "Runtime": lambda i: i.get("Runtime", 0), "DatePlayed": lambda i: when(i["Id"]),
            "IndexNumber": lambda i: i.get("Index", 0), "ParentIndexNumber": lambda i: i.get("ParentIndex", 0)}.items()}
     ordered = list(items)
-    for k in reversed(keys):  # stable sorts, last key first
-        ordered.sort(key=key.get(k.lower(), key["sortname"]), reverse=descending)
+    for n in reversed(range(len(keys))):  # stable sorts, last key first
+        ordered.sort(key=key.get(keys[n].lower(), key["sortname"]), reverse=orders[min(n, len(orders) - 1)] == "descending")
     return ordered
 
 

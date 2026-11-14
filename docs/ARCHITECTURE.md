@@ -109,10 +109,10 @@ Every signed-in request in the app goes through `data/api/ServerApi`: `get` (dec
 | Gateway call | Method and path | Parameters used (besides `userId` and the image set) | Response |
 |---|---|---|---|
 | `views` | GET `/UserViews` | none | `BaseItemDtoQueryResult` |
-| `children` | GET `/Items` | `parentId`, `startIndex`, `limit` (1..200), `sortBy` (SortName, DateCreated, PremiereDate, CommunityRating), `sortOrder`, `filters` (IsUnplayed, IsFavorite), `includeItemTypes`, `recursive`, `fields=ChildCount` | `BaseItemDtoQueryResult` |
+| `children` | GET `/Items` | `parentId`, `startIndex`, `limit` (1..200), `sortBy` and `sortOrder` (comma-delimited arrays, one order per key; `SortName` ascending is always the last key as a tiebreak; first key SortName, DateCreated, PremiereDate or CommunityRating), `filters` (IsUnplayed, IsFavorite), `includeItemTypes`, `recursive`, `fields=ChildCount` | `BaseItemDtoQueryResult` |
 | `item` | GET `/Items/{itemId}` | none (detail includes the overview; no image or field options exist) | `BaseItemDto` |
 | `seasons` | GET `/Shows/{seriesId}/Seasons` | `fields=ChildCount` | `BaseItemDtoQueryResult` |
-| `episodes` | GET `/Shows/{seriesId}/Episodes` | `seasonId` (optional), `fields=Overview` | `BaseItemDtoQueryResult` |
+| `episodes` | GET `/Shows/{seriesId}/Episodes` | `seasonId` (optional), `startIndex`, `limit=500` (paged), `fields=Overview` | `BaseItemDtoQueryResult` |
 | `resume` | GET `/UserItems/Resume` | `limit` (1..200), `includeItemTypes=Movie,Episode` | `BaseItemDtoQueryResult` |
 | `nextUp` | GET `/Shows/NextUp` | `limit` (1..200), `enableResumable=false`, `enableRewatching=false` | `BaseItemDtoQueryResult` |
 | `latest` | GET `/Items/Latest` | `parentId`, `limit` (1..200) | bare array of `BaseItemDto` |
@@ -125,11 +125,17 @@ List views do not request `Overview` (large); detail and episodes do. The three 
 
 **Untrusted-input rules at this boundary (SPEC S11):**
 - **Ids** go through `JellyfinId` (normalised: lower case, no dashes). An item whose own id is not a GUID is dropped from a list; a single `item()` fails as `SERVER_ERROR`. Invalid optional ids (`parentId`, `seriesId`, `seasonId`) become null. Ids the caller passes in that are not GUIDs fail as `SERVER_NOT_FOUND` before any request.
-- **Display strings** go through `displayText` (control and format characters, including bidi and zero-width, removed): name, series name and sort name 200 characters, official rating 20. The overview (4,000) keeps line breaks (at most one blank line in a row) but loses everything else unusual; HTML is not stripped here, the UI shows it as plain text.
+- **Display strings** go through `displayText` (`displayParagraphs` for the overview) (control and format characters, including bidi and zero-width, removed): name, series name and sort name 200 characters, official rating 20. The overview (4,000) keeps line breaks (`displayParagraphs` in `core/`: at most one blank line in a row) but loses everything else unusual; HTML is not stripped here, the UI shows it as plain text. A name with nothing visible left is the empty string (the model holds no English text; the UI supplies the placeholder).
 - **Numbers** are range-checked: index numbers 0..100,000 else null; year 1800..2200 else null; rating 0..10 else null; runtime, position, counts and percentages must be in range else null (position and play count 0). Ticks become milliseconds with `Ticks`.
 - **Dates** (`premiereDate`, `lastPlayed`) parse leniently; an unparseable date is null.
 - **Image tags** must match `[A-Za-z0-9]{1,64}` else null (they become cache keys and query values).
-- **Sizes:** lists are capped at the requested limit (seasons and episodes, which have no limit parameter, at 1,000, views at 100) even if the server sends more; `Page.total` is clamped to at least the items returned and at most 1,000,000.
+- **Element-level tolerance:** list containers keep each element (and an item's `UserData`, and the total) as a raw `JsonElement` and decode them one at a time, so one element of the wrong JSON type (a number for a name, a fractional index, an id that is not a string, an integer beyond Long, a bare string or null in the array) is skipped and never costs the page; an unreadable `UserData` leaves the item with `userData = null`. A numeric string such as `"2020"` is accepted by the decoder and still range-checked. A single `item()` that cannot be read is `SERVER_ERROR`.
+- **De-duplication:** in every list (items and views) the first occurrence of an id wins (ids compared after normalisation), because ids become Room keys and `LazyColumn` keys; a duplicate does not use up the limit.
+- **Self-links and watched state:** an item that is its own `parentId`, `seriesId` or `seasonId` has that link nulled; a watched item has `positionMs = 0` and no `playedPercentage`.
+- **Ordering:** `children` sort keys are sent as above. `episodes` (season, episode number with missing last, sort name, id) and `seasons` (season number, unnumbered, then season 0 Specials last) are sorted in the gateway, so the app never depends on the server's order. The reference's `sortBy` on the episodes endpoint accepts a single value only, so none is sent.
+- **Long series:** `episodes` pages with `startIndex`/`limit=500` until the server's own count is reached (an empty page ends it; with no count, a short page does), at most 10,000 items and 50 requests. `/Shows/{id}/Seasons` has no paging parameters, so seasons are one request (capped at 1,000).
+- **Sizes:** lists are capped at the requested limit (views at 100) even if the server sends more; `Page.total` is clamped to at least the items returned and at most 1,000,000.
+- **Unproven until a real server:** the mutations send no `datePlayed`, so a retried mark-as-watched should not count a second play; and comma-delimited `sortBy`/`sortOrder` pairing per key. Both to be confirmed against a real Jellyfin 12.x server.
 - Libraries whose collection type is not films, TV, collections or mixed (music, books, photos, live TV, playlists, home videos...) are skipped.
 
 ## Data model (servers and accounts)
