@@ -1,5 +1,6 @@
 package app.shoalwatch.ui
 
+import app.shoalwatch.data.api.Session
 import app.shoalwatch.data.servers.AccountSummary
 import app.shoalwatch.data.servers.Authenticator
 import app.shoalwatch.data.servers.CertificateProber
@@ -146,6 +147,7 @@ class FakeCatalog(servers: List<Server> = emptyList(), accounts: List<AccountSum
     override val servers: Flow<List<ServerSummary>> = serverList.map { list -> list.map { it.summary() } }
     override fun observeServer(id: String): Flow<Server?> = serverList.map { list -> list.firstOrNull { it.id == id } }
     override val activeAccount: Flow<AccountSummary?> = activeFlow
+    override fun activeSession(): Flow<Session?> = activeFlow.map { a -> a?.let { Session(it.serverId, it.userId) } }
     override fun accounts(serverId: String): Flow<List<AccountSummary>> = accountList.map { l -> l.filter { it.serverId == serverId } }
     override suspend fun server(id: String): Server? = serverList.value.firstOrNull { it.id == id }
 

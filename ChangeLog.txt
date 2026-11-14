@@ -1,3 +1,4 @@
+v1.46 — 14/11/2026 — Behind the scenes for browsing: one careful route now carries every request to your server. It only sends your sign-in to a connection that has just been checked, and says plainly when you are offline.
 v1.45 — 14/11/2026 — First milestone finished: adding a server, signing in and switching between home and away addresses are built, reviewed and tested on an emulator. Work has started on browsing your library.
 v1.44 — 14/11/2026 — Servers that only offer an unencrypted address now go straight to Quick Connect or the password form, with the notice shown, instead of stopping on an extra "try again" screen; the extra pause now only happens if a secure connection really stops working part-way. Also tidier handling of blank-looking names.
 v1.43 — 14/11/2026 — Updated the milestone security check and technical notes to say exactly what the app does after the final round of safety fixes, including the one risk that remains on unencrypted connections.

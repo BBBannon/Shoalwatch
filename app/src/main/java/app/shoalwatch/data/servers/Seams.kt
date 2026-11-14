@@ -1,6 +1,7 @@
 package app.shoalwatch.data.servers
 
 import app.shoalwatch.core.AppError
+import app.shoalwatch.data.api.Session
 import app.shoalwatch.net.CertificateInfo
 import app.shoalwatch.net.ServerAddress
 import kotlinx.coroutines.flow.Flow
@@ -27,6 +28,9 @@ data class AccountSummary(val serverId: String, val userId: String, val userName
 interface ServerCatalog {
     val servers: Flow<List<ServerSummary>>
     val activeAccount: Flow<AccountSummary?>
+
+    /** Who requests are made as: the active account, token-free. Waits for the token warm like [activeAccount]. */
+    fun activeSession(): Flow<Session?>
     fun accounts(serverId: String): Flow<List<AccountSummary>>
     suspend fun server(id: String): Server?
     fun observeServer(id: String): Flow<Server?>
@@ -99,6 +103,7 @@ private fun Account.summary() = AccountSummary(serverId, userId, userName)
 class StoreCatalog(private val store: ServerStore) : ServerCatalog {
     override val servers = store.summaries
     override val activeAccount = store.activeAccount
+    override fun activeSession(): Flow<Session?> = store.activeAccount.map { a -> a?.let { Session(it.serverId, it.userId) } }
     override fun accounts(serverId: String) = store.accounts(serverId)
     override suspend fun server(id: String) = store.server(id)
     override fun observeServer(id: String) = store.observeServer(id)

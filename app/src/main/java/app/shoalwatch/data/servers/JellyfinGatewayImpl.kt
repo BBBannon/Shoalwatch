@@ -2,18 +2,16 @@ package app.shoalwatch.data.servers
 
 import app.shoalwatch.core.AppError
 import app.shoalwatch.core.displayText
+import app.shoalwatch.data.api.JsonBodies
+import app.shoalwatch.data.api.await
 import app.shoalwatch.net.ServerAddress
 import app.shoalwatch.net.ServerNetConfig
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import okhttp3.Call
-import okhttp3.Callback
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -22,8 +20,6 @@ import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import java.io.IOException
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 
 /**
  * [JellyfinGateway] on plain OkHttp + kotlinx.serialization (see "Jellyfin client decision" in
@@ -129,30 +125,14 @@ class JellyfinGatewayImpl(private val clients: ServerClients) : JellyfinGateway 
     }
 
     private fun readBounded(response: Response, badBody: AppError.Kind): String = try {
-        val source = response.body.source()
-        source.request(MAX_BODY_BYTES + 1)
-        if (source.buffer.size > MAX_BODY_BYTES) throw AppError.of(badBody)
-        source.readUtf8()
+        JsonBodies.readBounded(response, MAX_BODY_BYTES, badBody)
     } catch (e: IOException) {
         throw AppError.from(e)
     }
 
-    private inline fun <reified T> decode(body: String, badBody: AppError.Kind): T = try {
-        LENIENT.decodeFromString<T>(body)
-    } catch (e: IllegalArgumentException) {
-        // SerializationException is an IllegalArgumentException. The body is untrusted: never copied into the error.
-        throw AppError.of(badBody)
-    }
+    private inline fun <reified T> decode(body: String, badBody: AppError.Kind): T = JsonBodies.decode<T>(body, badBody)
 
     private fun emptyBody(): RequestBody = ByteArray(0).toRequestBody(null)
-
-    private suspend fun Call.await(): Response = suspendCancellableCoroutine { cont ->
-        cont.invokeOnCancellation { cancel() }
-        enqueue(object : Callback {
-            override fun onFailure(call: Call, e: IOException) = cont.resumeWithException(e)
-            override fun onResponse(call: Call, response: Response) = cont.resume(response) { _, _, _ -> response.close() }
-        })
-    }
 
     @Serializable private class PublicInfoDto(
         @SerialName("Id") val id: String? = null,
@@ -187,6 +167,5 @@ class JellyfinGatewayImpl(private val clients: ServerClients) : JellyfinGateway 
         const val MAX_VERSION_LENGTH = 40
         val CODE = Regex("[A-Za-z0-9]{4,12}")
         val JSON = "application/json".toMediaType()
-        val LENIENT = Json { ignoreUnknownKeys = true }
     }
 }

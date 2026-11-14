@@ -19,6 +19,8 @@ class AppError(val kind: Kind, val userMessage: String, cause: Throwable? = null
         SECURE_CONNECTION_LOST, SECURE_CONNECTION_LOST_QUICK_CONNECT,
         /** The network changed while Quick Connect was waiting: it stopped before sending anything more. */
         CONNECTION_CHANGED,
+        /** No address of the server is verified right now: nothing was sent. */
+        OFFLINE,
         UNKNOWN,
     }
 
@@ -99,6 +101,7 @@ class AppError(val kind: Kind, val userMessage: String, cause: Throwable? = null
             Kind.SECURE_CONNECTION_LOST_QUICK_CONNECT ->
                 "The secure connection isn't available right now. Check the notice above, then press Try again to continue."
             Kind.CONNECTION_CHANGED -> "Your connection changed. Start Quick Connect again."
+            Kind.OFFLINE -> "You're offline. Showing what's saved on this phone where possible."
             Kind.UNKNOWN -> "Something went wrong. Please try again."
         }
     }
