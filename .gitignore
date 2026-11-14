@@ -19,3 +19,6 @@ keystore.properties
 # Private working notes (kept out of a repo that may go public)
 TODO.md
 tasks/
+
+# Agent scratch
+.superpowers/
