@@ -241,13 +241,20 @@ class ServerStore(
     /** The server with its full settings (headers opened on [io]). */
     override suspend fun server(id: String): Server? = withContext(io) { serverDao.get(id)?.let(::toServer) }
 
-    /** One account's saved token (opened on [io]), for revoking it; null if there is no such account or it cannot be read. */
-    suspend fun token(serverId: String, userId: String): String? =
-        withContext(io) { accountDao.get(serverId, userId)?.let(::toAccount)?.accessToken }
+    /**
+     * One account's saved token (opened on [io]), for revoking it. [StoredToken.Unreadable] (lost key, damaged
+     * ciphertext) is deliberately not the same as [StoredToken.Missing]: "nothing to revoke" and "cannot revoke" differ.
+     */
+    suspend fun token(serverId: String, userId: String): StoredToken = withContext(io) {
+        val row = accountDao.get(serverId, userId) ?: return@withContext StoredToken.Missing
+        toAccount(row)?.let { StoredToken.Found(it.accessToken) } ?: StoredToken.Unreadable
+    }
 
-    /** Every readable `(userId, token)` saved for [serverId] (opened on [io]), for revoking them before the server is removed. */
-    suspend fun tokens(serverId: String): List<Pair<String, String>> =
-        withContext(io) { accountDao.getForServer(serverId).mapNotNull(::toAccount).map { it.userId to it.accessToken } }
+    /** Every account saved for [serverId] (opened on [io]): the readable `(userId, token)` pairs and how many could not be read. */
+    suspend fun tokens(serverId: String): StoredTokens = withContext(io) {
+        val opened = accountDao.getForServer(serverId).map { it to toAccount(it) }
+        StoredTokens(opened.mapNotNull { (_, a) -> a?.let { it.userId to it.accessToken } }, unreadable = opened.count { it.second == null })
+    }
 
     /** Who is signed in, without the token (accounts cascade with their server, so its server exists). */
     suspend fun active(): AccountSummary? =
@@ -298,4 +305,22 @@ class ServerStore(
         const val TAG = "ServerStore"
         val HEADERS = MapSerializer(String.serializer(), String.serializer())
     }
+}
+
+/** What [ServerStore.token] found for one account. Never prints the token. */
+sealed interface StoredToken {
+    /** No such account: nothing to revoke. */
+    data object Missing : StoredToken
+
+    /** The account is there but its token cannot be opened (lost Keystore key): it cannot be revoked. */
+    data object Unreadable : StoredToken
+
+    class Found(val token: String) : StoredToken {
+        override fun toString() = "StoredToken.Found(<redacted>)"
+    }
+}
+
+/** What [ServerStore.tokens] found for one server: tokens that can be revoked, and a count of those that cannot be read. */
+class StoredTokens(val readable: List<Pair<String, String>>, val unreadable: Int) {
+    override fun toString() = "StoredTokens(readable=${readable.size}, unreadable=$unreadable)"
 }

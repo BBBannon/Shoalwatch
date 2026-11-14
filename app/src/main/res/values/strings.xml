@@ -128,7 +128,7 @@
     <string name="confirm_remove_revoke">Shoalwatch will also try to sign out each of these on the server.</string>
     <string name="notice_signed_out_title">Signed out on this phone</string>
     <string name="notice_removed_title">Removed from this phone</string>
-    <string name="notice_not_revoked_body">Shoalwatch couldn’t reach the server to sign you out there too.</string>
+    <string name="notice_not_revoked_body">Shoalwatch couldn’t sign you out on the server, so that sign-in may still be active there — you can remove it from the server’s dashboard.</string>
 
     <!-- Connection settings -->
     <string name="edit_title">Connection settings</string>

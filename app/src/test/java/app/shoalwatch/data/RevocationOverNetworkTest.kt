@@ -9,6 +9,7 @@ import app.shoalwatch.data.servers.JellyfinGatewayImpl
 import app.shoalwatch.data.servers.Server
 import app.shoalwatch.data.servers.ServerClients
 import app.shoalwatch.data.servers.ServerStore
+import app.shoalwatch.data.servers.StoredToken
 import app.shoalwatch.net.HttpClientFactory
 import app.shoalwatch.net.NetworkMonitor
 import app.shoalwatch.net.ServerAddress
@@ -130,7 +131,7 @@ class RevocationOverNetworkTest {
         val (repo, store) = repo(home, away = null)
         assertFalse(runBlocking { repo.signOut(serverId, userId) })
         assertEquals(0, home.tokenBearing().size)
-        assertTrue(runBlocking { store.token(serverId, userId) } == null)
+        assertEquals(StoredToken.Missing, runBlocking { store.token(serverId, userId) })
     }
 
     @Test fun removingTheServerRevokesThroughTheRealServerOnlyThenDeletes() {

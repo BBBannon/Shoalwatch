@@ -195,11 +195,15 @@ class AuthRepository(
      * KDoc), within [signOutTimeoutMs], and the account is removed here regardless (even if cancelled). If no
      * address is verified the token is not sent anywhere.
      *
-     * @return false if a sign-in may still be live on the server (it could not be reached to revoke it).
+     * @return false if a sign-in may still be live on the server: it could not be reached, or the saved token could not be read.
      */
     suspend fun signOut(serverId: String, userId: String): Boolean {
         try {
-            val token = store.token(serverId, userId) ?: return true // nothing saved, so nothing to revoke
+            val token = when (val saved = store.token(serverId, userId)) {
+                StoredToken.Missing -> return true // nothing saved, so nothing to revoke
+                StoredToken.Unreadable -> return false // there is a sign-in, but it cannot be revoked
+                is StoredToken.Found -> saved.token
+            }
             val server = store.server(serverId) ?: return false
             return withTimeoutOrNull(signOutTimeoutMs) { revoke(server, userId, token) } ?: false
         } finally {
@@ -211,7 +215,7 @@ class AuthRepository(
      * Removes a server and its sign-ins. Each account's token is first revoked (in parallel, by the same rules
      * as [signOut], all within [removeTimeoutMs]); the server is then deleted here regardless (even if cancelled).
      *
-     * @return false if any sign-in may still be live on the server.
+     * @return false if any sign-in may still be live on the server (not reached, or a saved token could not be read).
      */
     suspend fun removeServer(serverId: String): Boolean {
         try {
@@ -222,13 +226,14 @@ class AuthRepository(
             } catch (_: Exception) {
                 return false
             }
-            if (tokens.isEmpty()) return true
+            if (tokens.readable.isEmpty()) return tokens.unreadable == 0
             val server = store.server(serverId) ?: return false
-            return withTimeoutOrNull(removeTimeoutMs) {
+            val revoked = withTimeoutOrNull(removeTimeoutMs) {
                 coroutineScope {
-                    tokens.map { (userId, token) -> async { revoke(server, userId, token) } }.awaitAll().all { it }
+                    tokens.readable.map { (userId, token) -> async { revoke(server, userId, token) } }.awaitAll().all { it }
                 }
             } ?: false
+            return revoked && tokens.unreadable == 0
         } finally {
             withContext(NonCancellable) { store.removeServer(serverId) }
         }

@@ -3,6 +3,7 @@ package app.shoalwatch.data
 import app.shoalwatch.S1
 import app.shoalwatch.U1
 import app.shoalwatch.U2
+import app.shoalwatch.U3
 import app.shoalwatch.core.AppError
 import app.shoalwatch.data.db.AppDatabase
 import app.shoalwatch.data.servers.Account
@@ -189,5 +190,43 @@ class RevocationTest {
         assertTrue(repo.removeServer(S1))
         assertTrue(gateway.calls.isEmpty())
         assertNull(store.server(S1))
+    }
+
+    // ---- a token that cannot be read is not a clean sign-out (review F4)
+
+    /** The same database, opened with a different key: every saved token is now unreadable. */
+    private fun reopenWithLostKey() {
+        val lost = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
+        store = ServerStore(db, SecretBox { lost })
+        repo = AuthRepository(gateway, store, device, connections)
+    }
+
+    @Test fun signOutWithAnUnreadableTokenReportsThatTheServerWasNotToldAndStillRemovesTheAccount() = runTest {
+        reopenWithLostKey()
+        assertFalse("the sign-in may still be live on the server", repo.signOut(S1, U1))
+        assertTrue("nothing was sent", gateway.calls.isEmpty())
+        assertTrue(store.accounts(S1).first().isEmpty())
+        assertNull(store.activeAccount.first())
+    }
+
+    @Test fun removeServerWithOnlyUnreadableTokensReportsItAndStillDeletes() = runTest {
+        reopenWithLostKey()
+        assertFalse(repo.removeServer(S1))
+        assertTrue(gateway.calls.isEmpty())
+        assertNull(store.server(S1))
+    }
+
+    @Test fun removeServerRevokesTheReadableSignInsAndStillReportsTheUnreadableOne() = runTest {
+        store.upsertAccount(Account(S1, U2, "amy", "tok-2"), makeActive = false)
+        db.openHelper.writableDatabase.execSQL("UPDATE accounts SET accessToken = ? WHERE userId = ?", arrayOf(ByteArray(40) { 7 }, U1))
+        assertFalse("one sign-in may still be live", repo.removeServer(S1))
+        val logouts = gateway.calls.indices.filter { gateway.calls[it] == "logout" }
+        assertEquals("the readable one was revoked", listOf("revoke:$S1:$U2"), logouts.map { gateway.nets[it].authKey })
+        assertNull(store.server(S1))
+    }
+
+    @Test fun anAccountThatSimplyIsNotThereStillCountsAsNothingToRevoke() = runTest {
+        assertTrue(repo.signOut(S1, U3))
+        assertTrue(gateway.calls.isEmpty())
     }
 }
