@@ -16,6 +16,7 @@ import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -75,7 +76,8 @@ class JellyfinGatewayImpl(private val clients: ServerClients) : JellyfinGateway 
         )
 
     override suspend fun logout(address: ServerAddress, net: ServerNetConfig) {
-        send(address, net, "Sessions/Logout", post = emptyBody())
+        // Always a one-off client: `net` may hold the token being revoked, which must never be cached.
+        send(address, net, "Sessions/Logout", post = emptyBody(), oneOff = true)
     }
 
     private suspend fun authenticate(address: ServerAddress, net: ServerNetConfig, path: String, json: String): AuthResult {
@@ -99,24 +101,29 @@ class JellyfinGatewayImpl(private val clients: ServerClients) : JellyfinGateway 
         post: RequestBody? = null,
         query: Pair<String, String>? = null,
         badBody: AppError.Kind = AppError.Kind.SERVER_ERROR,
+        oneOff: Boolean = false,
     ): String {
         val url = "${address.value}/$path".toHttpUrl().newBuilder()
             .apply { if (query != null) addQueryParameter(query.first, query.second) }
             .build()
         val request = Request.Builder().url(url).apply { if (post != null) post(post) else get() }.build()
-        // One block, so the response is closed on every path, including cancellation.
         return withContext(Dispatchers.IO) {
-            val response = try {
-                clients.clientFor(net).newCall(request).await()
-            } catch (e: IOException) {
-                throw AppError.from(e)
-            }
-            response.use {
-                // Redirects are never followed (credentials travel in bodies and queries): any 3xx is an error.
-                if (it.code in 300..399) throw AppError.of(AppError.Kind.SERVER_NOT_FOUND)
-                if (!it.isSuccessful) throw AppError.fromHttpStatus(it.code)
-                readBounded(it, badBody)
-            }
+            if (oneOff) clients.oneOff(net) { exchange(it, request, badBody) } else exchange(clients.clientFor(net), request, badBody)
+        }
+    }
+
+    /** One block, so the response is closed on every path, including cancellation. */
+    private suspend fun exchange(client: OkHttpClient, request: Request, badBody: AppError.Kind): String {
+        val response = try {
+            client.newCall(request).await()
+        } catch (e: IOException) {
+            throw AppError.from(e)
+        }
+        return response.use {
+            // Redirects are never followed (credentials travel in bodies and queries): any 3xx is an error.
+            if (it.code in 300..399) throw AppError.of(AppError.Kind.SERVER_NOT_FOUND)
+            if (!it.isSuccessful) throw AppError.fromHttpStatus(it.code)
+            readBounded(it, badBody)
         }
     }
 

@@ -218,8 +218,9 @@ class AuthRepository(
     private suspend fun revoke(server: Server, userId: String, token: String): Boolean = bestEffort {
         val via = credentialAddress(server) ?: throw AppError.of(AppError.Kind.NETWORK)
         verifyServer(server, via, anonymousNet(server))
-        // Bound to the token being revoked, for this call only: nothing is put back in the store's token map.
-        gateway.logout(via, ServerNet.authenticated(server.addresses, server, userId, device) { _, _ -> token })
+        // Bound to the token being revoked and sent through a one-off client: nothing is put in the store's token map
+        // or the shared client cache.
+        gateway.logout(via, ServerNet.revocation(server.addresses, server, userId, device, token))
     }
 
     /**

@@ -240,13 +240,13 @@ class JellyfinGatewayTest {
     }
 
     @Test fun theTokenProviderIsReadLiveOnEveryRequest() {
-        server.start(); server.enqueue(MockResponse().setResponseCode(204)); server.enqueue(MockResponse().setResponseCode(204))
+        server.start(); server.enqueue(MockResponse().setBody("true")); server.enqueue(MockResponse().setBody("true"))
         val token = AtomicReference<String?>("tok-XYZ")
         val a = address()
-        runBlocking { gateway.logout(a, signedInNet(a) { token.get() }) }
+        runBlocking { gateway.quickConnectEnabled(a, signedInNet(a) { token.get() }) }
         token.set(null)
         // Same configuration value: the cached client (and its live provider) is reused; with no token it refuses to send.
-        assertEquals(AppError.Kind.NOT_SIGNED_IN, kindOf { gateway.logout(a, signedInNet(a) { "ignored" }) }.kind)
+        assertEquals(AppError.Kind.NOT_SIGNED_IN, kindOf { gateway.quickConnectEnabled(a, signedInNet(a) { "ignored" }) }.kind)
         assertTrue("Token=\"tok-XYZ\"" in server.takeRequest().getHeader("Authorization")!!)
         assertEquals(1, server.requestCount)
     }

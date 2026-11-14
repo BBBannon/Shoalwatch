@@ -59,7 +59,8 @@
 
 - **Was:** `signOut` tried the saved addresses in order, home (http) first, with no identity check, and stopped at the first 2xx.
 - **Now:** the token goes only to an address the selector has verified on the current network (`awaitOnline`), upgraded to the server's https address when that also answers as the server, with the identity checked again immediately before. If nothing is verified, the token is sent nowhere. The account is removed here regardless, and the Servers screen says: "Signed out on this phone. Shoalwatch couldn't reach the server to sign you out there too."
-- **Tests:** `RevocationTest` (impostor at home or away never gets the token; https preferred; offline sends nothing; bounded at 12 s), `RevocationOverNetworkTest` (real OkHttp, two MockWebServers).
+- **Limit:** An address that reports a different server id never receives the token. On plain http, a device that repeats the server's public id can still pass the check and receive the token being revoked (see Residual risks); https is preferred whenever it answers.
+- **Tests:** `RevocationTest` (an address reporting a different server id never receives the token; https preferred; offline sends nothing; bounded at 12 s), `RevocationOverNetworkTest` (real OkHttp, two MockWebServers).
 
 ### T2 — On http, the server-id check is not authentication — **Reduced; residual accepted**
 
@@ -226,7 +227,7 @@ Recommend adding rows (SPEC is not edited by this fix round):
 
 | Risk | Why accepted |
 |---|---|
-| **On a plain-http address, nothing can authenticate the server** | Without TLS there is no way to prove who answers. The id from `/System/Info/Public` is public, so on another network a device holding the same LAN address can pass the identity check and capture a password, Quick Connect secret or (from M2) token. Mitigations in place: credentials use the server's https address whenever it answers; http is used only for http-only servers or when https is unreachable; the Sign in screen shows "This connection isn't encrypted"; the consent warning says another device could pose as the server. **The real mitigation is HTTPS, which the app recommends.** |
+| **On a plain-http address, nothing can authenticate the server** | Without TLS there is no way to prove who answers. The id from `/System/Info/Public` is public, so on another network a device holding the same LAN address can pass the identity check and capture a password, a Quick Connect secret, or the access token sent to revoke a sign-in (sign-out and remove server, now); from Milestone 2, every token-bearing request. Mitigations in place: credentials use the server's https address whenever it answers; http is used only for http-only servers or when https is unreachable; the Sign in screen shows "This connection isn't encrypted"; the consent warning says another device could pose as the server. **The real mitigation is HTTPS, which the app recommends.** |
 | Plain http is possible after a warning | LAN servers without TLS are common. Per-server consent, warned per address, paired with the row above |
 | A pin is checked only when system trust fails | A pin is for self-signed servers. Public-CA mis-issuance for a home server name is unlikely. Documented |
 | The Quick Connect secret is in a query string | The Jellyfin API requires it. Short-lived, never logged, no URL logging |

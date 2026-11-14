@@ -77,7 +77,7 @@ class RevocationTest {
         assertEquals(listOf("logout" to away), gateway.log.filter { it.first == "logout" })
         val logout = gateway.calls.indexOf("logout")
         assertTrue(gateway.headers[logout]!!.endsWith(", Token=\"tok-1\""))
-        assertEquals("s1:u1", gateway.nets[logout].authKey)
+        assertEquals("revoke:s1:u1", gateway.nets[logout].authKey)
         assertFalse("nothing token-bearing went over http", tokenSentTo(home))
         assertNull(store.cachedToken("s1", "u1"))
         assertTrue(store.accounts("s1").first().isEmpty())
@@ -158,8 +158,8 @@ class RevocationTest {
         val logouts = gateway.calls.indices.filter { gateway.calls[it] == "logout" }
         assertEquals(2, logouts.size)
         assertTrue(logouts.all { gateway.addresses[it] == away })
-        assertEquals(setOf("s1:u1", "s1:u2"), logouts.map { gateway.nets[it].authKey }.toSet())
-        assertEquals(setOf(true), logouts.map { i -> gateway.headers[i]!!.contains(if (gateway.nets[i].authKey == "s1:u1") "tok-1" else "tok-2") }.toSet())
+        assertEquals(setOf("revoke:s1:u1", "revoke:s1:u2"), logouts.map { gateway.nets[it].authKey }.toSet())
+        assertEquals(setOf(true), logouts.map { i -> gateway.headers[i]!!.contains(if (gateway.nets[i].authKey == "revoke:s1:u1") "tok-1" else "tok-2") }.toSet())
         assertNull(store.server("s1"))
         assertNull(store.cachedToken("s1", "u1"))
     }

@@ -39,7 +39,7 @@ object ServerNet {
      * Sends [userId]'s token (the login token goes only to [addresses]). [tokens] is read on every request
      * (`(serverId, userId) -> token`), so a re-sign-in is picked up and a signed-out account sends none, even
      * through a cached client, which keeps the first configuration's provider for this `serverId:userId`.
-     * So pass one long-lived lookup (see `ServerStore.cachedToken`), never a captured string.
+     * So pass one long-lived lookup (see `ServerStore.cachedToken`), never a captured string (revocation has its own entry point, [revocation]).
      *
      * A request for which [tokens] has no token is refused before it is sent (`NOT_SIGNED_IN`, as a
      * `BlockedRequestException`, which `AppError.from` unwraps): it never goes out anonymously.
@@ -56,6 +56,21 @@ object ServerNet {
         build(addresses, draftOf(server), authKey = "${server.id}:$userId") {
             device.authHeader(tokens(server.id, userId) ?: throw BlockedRequestException(AppError.of(AppError.Kind.NOT_SIGNED_IN)))
         }
+
+    /**
+     * For revoking exactly [token] (sign-out, remove server), the one place a captured token string is allowed.
+     * Its [ServerNetConfig.authKey] starts `revoke:`, so it can never equal a live per-account key, and
+     * `JellyfinGateway.logout` always runs it through `ServerClients.oneOff`: no client holding [token] is cached.
+     *
+     * @throws AppError `TLS_UNTRUSTED` if the saved pin was damaged (see [Server.pinInvalid]).
+     */
+    fun revocation(
+        addresses: Collection<ServerAddress?>,
+        server: Server,
+        userId: String,
+        device: DeviceIdentity,
+        token: String,
+    ): ServerNetConfig = build(addresses, draftOf(server), authKey = "revoke:${server.id}:$userId") { device.authHeader(token) }
 
     private fun draftOf(server: Server): ServerNetDraft {
         if (server.pinInvalid) throw AppError.of(AppError.Kind.TLS_UNTRUSTED)
