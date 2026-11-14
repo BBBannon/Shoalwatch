@@ -116,7 +116,9 @@ class AddServerViewModel(
         val state = form.value
         val found = state.found ?: return
         if (state.secondAddress.isBlank() || state.saving) return
-        // A new address never inherits consent given for another one: plain http is warned about again.
+        // A new address never inherits consent given for another one: plain http is warned about again. The pin and
+        // the client-certificate alias ARE carried over on purpose: they belong to the server, not to one address,
+        // and keeping them can only make the check stricter (fail-closed).
         checker.start(state.secondAddress, foundDraft.copy(allowCleartext = false), expectedServerId = found.id)
     }
 
@@ -167,7 +169,7 @@ class AddServerViewModel(
                     Server(
                         id = found.id, name = found.name, version = found.version,
                         homeAddress = home, awayAddress = away,
-                        allowCleartext = foundDraft.allowCleartext || draft.allowCleartext, pinnedSpkiSha256 = draft.pinnedSpkiSha256,
+                        allowCleartext = (foundDraft.allowCleartext || draft.allowCleartext) && listOfNotNull(first, second).any { !it.isSecure }, pinnedSpkiSha256 = draft.pinnedSpkiSha256,
                         clientCertAlias = draft.clientCertAlias, customHeaders = emptyMap(),
                     ),
                 )

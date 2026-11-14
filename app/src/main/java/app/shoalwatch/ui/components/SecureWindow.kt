@@ -9,9 +9,11 @@ import app.shoalwatch.ui.findActivity
 import java.util.WeakHashMap
 
 /**
- * Marks the window `FLAG_SECURE` while this is in the composition, so passwords, header values and
- * fingerprints stay out of screenshots and the recent-apps preview. Dialogs are separate windows and are
- * secured through `DialogProperties(securePolicy = SecureOn)` instead.
+ * Marks the window `FLAG_SECURE` while this is in the composition. It is used by exactly two screens: Sign in
+ * (password, Quick Connect code) and Connection settings (pinned fingerprint, header values), so their content
+ * stays out of screenshots and the recent-apps preview. Their dialogs are separate windows and are secured through
+ * `DialogProperties(securePolicy = SecureOn)` (`SecureDialog`) instead. The Add server certificate and HTTP screens
+ * show no secret (a fingerprint on first contact is public information) and are intentionally not protected.
  *
  * Fail-safe: counted per window, the flag is added on every acquire (so it can never be missing while a
  * holder exists) and cleared only when the last holder of that window releases.

@@ -37,6 +37,8 @@ class ServerStore(
     private val onClientsStale: (serverId: String, addresses: List<ServerAddress>) -> Unit = { _, _ -> },
     /** Called after a server is removed, or saved with no address left to probe, so per-server state elsewhere (e.g. address probing) can be dropped. */
     private val onServerRemoved: (serverId: String) -> Unit = {},
+    /** Where [warmTokens] reads saved accounts from (the database by default); a test passes one that fails. */
+    accountSource: (suspend () -> List<AccountEntity>)? = null,
 ) {
     private val serverDao = db.serverDao()
     private val accountDao = db.accountDao()
@@ -81,16 +83,16 @@ class ServerStore(
     }
 
     /** Tries the warm once more if the last one failed (used by a "Retry" action); still fails closed if it fails again. */
-    suspend fun retryWarmIfFailed() {
+    suspend fun retryWarmIfFailed(): Boolean {
         if (warmFailed) warmTokens()
+        return warmFailed
     }
 
     private val warmed = CompletableDeferred<Unit>()
 
     @Volatile private var warmFailed = false
 
-    /** Where [warmTokens] reads saved accounts from; replaceable so a test can make it fail. */
-    internal var loadAccounts: suspend () -> List<AccountEntity> = { accountDao.getAll() }
+    private val loadAccounts: suspend () -> List<AccountEntity> = accountSource ?: { accountDao.getAll() }
 
     /**
      * Completes when the first [warmTokens] has finished, successfully or not (a failed warm leaves the live

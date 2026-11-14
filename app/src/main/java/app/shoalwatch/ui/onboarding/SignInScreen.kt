@@ -17,6 +17,7 @@ import app.shoalwatch.ui.components.ErrorMessage
 import app.shoalwatch.ui.components.PrimaryButton
 import app.shoalwatch.ui.components.SecondaryButton
 import app.shoalwatch.ui.components.SecureWindow
+import app.shoalwatch.ui.components.rememberSubmit
 
 class SignInActions(
     val onUsernameChange: (String) -> Unit,
@@ -76,9 +77,10 @@ fun SignInScreen(state: SignInUiState, password: TextFieldState, actions: SignIn
 
 @Composable
 private fun PasswordActions(state: SignInUiState, password: TextFieldState, actions: SignInActions) {
+    val submit = rememberSubmit(actions.onSignIn)
     PrimaryButton(
         text = stringResource(if (state.submitting) R.string.signin_signing else R.string.signin_action),
-        onClick = actions.onSignIn,
+        onClick = submit,
         enabled = state.username.isNotBlank() && password.text.isNotEmpty(),
         loading = state.submitting,
     )

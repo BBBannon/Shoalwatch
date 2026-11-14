@@ -62,8 +62,10 @@ private enum class Page { Settings, Address, HttpWarning, Certificate }
 fun ServerEditScreen(state: ServerEditUiState, actions: ServerEditActions) {
     SecureWindow()
     // System back does what the top-bar arrow does: close the open sub-page (or just a running check), not the screen.
+    // A shown error is not "in progress": back then closes the editor, exactly like the top-bar arrow.
+    val checkInProgress = state.addressCheck != Check.Idle && state.addressCheck !is Check.Failed
     BackHandler(enabled = state.pane.page() != Page.Settings) {
-        if (state.pane.page() == Page.Address && state.addressCheck != Check.Idle) actions.pane.onCancelAddressCheck() else actions.pane.onDismiss()
+        if (state.pane.page() == Page.Address && checkInProgress) actions.pane.onCancelAddressCheck() else actions.pane.onDismiss()
     }
     AnimatedContent(
         targetState = state,

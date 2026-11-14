@@ -32,6 +32,7 @@ import app.shoalwatch.ui.components.NoticeCard
 import app.shoalwatch.ui.components.PrimaryButton
 import app.shoalwatch.ui.components.SecondaryButton
 import app.shoalwatch.ui.components.Tone
+import app.shoalwatch.ui.components.rememberSubmit
 
 /** The server answered: show what it is. An unsupported version is a banner, and "Continue anyway" the only way on. */
 @Composable
@@ -74,11 +75,13 @@ internal fun FoundStep(state: AddServerUiState, actions: AddServerActions) {
                 tone = Tone.Caution,
             )
         }
-        Text(
-            stringResource(if (found.firstIsHome) R.string.found_home_note else R.string.found_away_note),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        if (!found.alreadySaved) {
+            Text(
+                stringResource(if (found.firstIsHome) R.string.found_home_note else R.string.found_away_note),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 
@@ -87,13 +90,14 @@ internal fun FoundStep(state: AddServerUiState, actions: AddServerActions) {
 internal fun SecondAddressStep(state: AddServerUiState, checking: Boolean, failed: Check.Failed?, actions: AddServerActions) {
     val firstIsHome = state.found?.firstIsHome == true
     val busy = checking || state.saving
+    val submit = rememberSubmit(actions.onAddSecond)
     AppScreen(
         title = stringResource(R.string.second_title),
         onBack = actions.onBackToAddress,
         bottomBar = {
             PrimaryButton(
                 text = stringResource(R.string.second_add),
-                onClick = actions.onAddSecond,
+                onClick = submit,
                 enabled = state.secondAddress.isNotBlank(),
                 loading = busy,
             )
@@ -117,7 +121,7 @@ internal fun SecondAddressStep(state: AddServerUiState, checking: Boolean, faile
             label = stringResource(R.string.second_label),
             isError = failed != null || state.error != null,
             enabled = !busy,
-            onGo = actions.onAddSecond,
+            onGo = submit,
         )
         ErrorMessage(failed?.message ?: state.error)
     }

@@ -33,6 +33,7 @@ import app.shoalwatch.ui.components.AppScreen
 import app.shoalwatch.ui.components.ErrorMessage
 import app.shoalwatch.ui.components.PrimaryButton
 import app.shoalwatch.ui.components.SecondaryButton
+import app.shoalwatch.ui.components.rememberSubmit
 import app.shoalwatch.ui.components.ShoalMark
 
 /** Everything the Add server screen can ask for, so the screen itself holds no logic. */
@@ -59,8 +60,10 @@ class AddServerActions(
  */
 @Composable
 fun AddServerScreen(state: AddServerUiState, actions: AddServerActions, onLeave: (() -> Unit)?) {
-    BackHandler(enabled = state.check != Check.Idle || state.stage != AddServerStage.Address) {
-        if (state.check != Check.Idle) actions.onCancelCheck() else actions.onBackToAddress()
+    // A shown error is not "in progress": back then does what the top-bar arrow does.
+    val inProgress = state.check != Check.Idle && state.check !is Check.Failed
+    BackHandler(enabled = inProgress || state.stage != AddServerStage.Address) {
+        if (inProgress) actions.onCancelCheck() else actions.onBackToAddress()
     }
     AnimatedContent(
         targetState = state,
@@ -89,13 +92,14 @@ fun AddServerScreen(state: AddServerUiState, actions: AddServerActions, onLeave:
 private fun AddressStep(state: AddServerUiState, checking: Boolean, failed: Check.Failed?, actions: AddServerActions, onLeave: (() -> Unit)?) {
     val firstRun = onLeave == null
     val focus = remember { FocusRequester() }
+    val submit = rememberSubmit(actions.onContinue)
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
     AppScreen(
         title = if (firstRun) "" else stringResource(R.string.add_title),
         onBack = onLeave,
         bottomBar = {
             PrimaryButton(
-                stringResource(R.string.action_continue), actions.onContinue,
+                stringResource(R.string.action_continue), submit,
                 enabled = state.address.isNotBlank(), loading = checking,
             )
             if (checking) SecondaryButton(stringResource(R.string.action_cancel), actions.onCancelCheck)
@@ -123,7 +127,7 @@ private fun AddressStep(state: AddServerUiState, checking: Boolean, failed: Chec
             label = stringResource(R.string.add_address_label),
             isError = failed != null || state.error != null,
             enabled = !checking,
-            onGo = actions.onContinue,
+            onGo = submit,
             modifier = Modifier.focusRequester(focus),
         )
         ErrorMessage(failed?.message ?: state.error)

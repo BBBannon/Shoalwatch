@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.editableText
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.password
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -34,6 +35,7 @@ import app.shoalwatch.ui.components.PrimaryButton
 import app.shoalwatch.ui.components.RevealToggle
 import app.shoalwatch.ui.components.SecondaryButton
 import app.shoalwatch.ui.components.SecureDialog
+import app.shoalwatch.ui.components.rememberSubmit
 import app.shoalwatch.ui.onboarding.AddressField
 import app.shoalwatch.ui.onboarding.Check
 import app.shoalwatch.ui.onboarding.CheckGate
@@ -57,11 +59,12 @@ internal fun AddressPane(pane: EditPane.Address, check: Check, role: AddressRole
 @Composable
 private fun AddressEditor(pane: EditPane.Address, checking: Boolean, failed: Check.Failed?, addressRequired: Boolean, actions: PaneActions) {
     val title = stringResource(if (pane.slot == AddressSlot.Home) R.string.edit_home else R.string.edit_away)
+    val submit = rememberSubmit(actions.onSaveAddress)
     AppScreen(
         title = title,
         onBack = actions.onDismiss,
         bottomBar = {
-            PrimaryButton(stringResource(R.string.edit_address_save), actions.onSaveAddress, loading = checking)
+            PrimaryButton(stringResource(R.string.edit_address_save), submit, loading = checking)
             if (checking) {
                 SecondaryButton(stringResource(R.string.action_cancel), actions.onCancelAddressCheck)
             } else {
@@ -75,7 +78,7 @@ private fun AddressEditor(pane: EditPane.Address, checking: Boolean, failed: Che
             label = title,
             isError = failed != null,
             enabled = !checking,
-            onGo = actions.onSaveAddress,
+            onGo = submit,
         )
         Text(stringResource(R.string.edit_address_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         ErrorMessage(failed?.message ?: if (addressRequired) stringResource(R.string.edit_address_required) else null)
@@ -88,7 +91,7 @@ private fun AddressEditor(pane: EditPane.Address, checking: Boolean, failed: Che
 internal fun HeaderDialog(pane: EditPane.Header, actions: PaneActions) {
     var revealed by remember { mutableStateOf(false) }
     val reveal = if (pane.name.isBlank()) stringResource(R.string.header_reveal_generic) else stringResource(R.string.header_reveal_cd, pane.name)
-    val hide = if (pane.name.isBlank()) stringResource(R.string.action_hide) else stringResource(R.string.header_hide_cd, pane.name)
+    val hide = if (pane.name.isBlank()) stringResource(R.string.header_hide_generic) else stringResource(R.string.header_hide_cd, pane.name)
     AlertDialog(
         onDismissRequest = actions.onDismiss,
         properties = SecureDialog,
@@ -114,7 +117,10 @@ internal fun HeaderDialog(pane: EditPane.Header, actions: PaneActions) {
                     onValueChange = actions.onHeaderValue,
                     modifier = Modifier.fillMaxWidth().semantics {
                         // While masked, accessibility services must not read the raw value either.
-                        if (!revealed) editableText = AnnotatedString("•".repeat(pane.value.length))
+                        if (!revealed) {
+                            password()
+                            editableText = AnnotatedString("•".repeat(pane.value.length))
+                        }
                     },
                     label = { Text(stringResource(R.string.header_value_label)) },
                     singleLine = true,

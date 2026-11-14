@@ -39,6 +39,7 @@ fun HttpWarningScreen(onCancel: () -> Unit, onUseAnyway: () -> Unit, role: Addre
         },
     ) {
         NoticeCard(title = stringResource(R.string.http_title), body = stringResource(R.string.http_body), tone = Tone.Danger)
+        Text(stringResource(R.string.http_scope), style = MaterialTheme.typography.bodyMedium)
         when (role) {
             AddressRole.Home -> Text(stringResource(R.string.http_for_home), style = MaterialTheme.typography.titleSmall)
             AddressRole.Away -> Text(stringResource(R.string.http_for_away), style = MaterialTheme.typography.titleSmall)

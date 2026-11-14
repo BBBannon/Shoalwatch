@@ -31,8 +31,11 @@ interface ServerCatalog {
     /** Completes once saved sign-ins have been loaded (see [ServerStore.awaitWarmed]). */
     suspend fun awaitWarmed()
 
-    /** Tries the token warm once more if the start-up one failed (see [ServerStore.retryWarmIfFailed]). */
-    suspend fun retryWarmIfFailed()
+    /**
+     * Tries the token warm once more if the start-up one failed (see [ServerStore.retryWarmIfFailed]).
+     * Returns true if sign-ins are still unavailable.
+     */
+    suspend fun retryWarmIfFailed(): Boolean
     suspend fun awaitActive(): Pair<Server, AccountSummary>?
 }
 

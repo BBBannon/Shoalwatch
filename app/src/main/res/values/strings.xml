@@ -26,8 +26,6 @@
     <string name="add_intro">Enter the address of your Jellyfin server. It’s the one you’d type into a browser to watch.</string>
     <string name="add_address_label">Server address</string>
     <string name="add_address_example">For example jellyfin.example.org or 192.168.1.10:8096</string>
-    <string name="add_address_hint">jellyfin.example.org or 192.168.1.10:8096</string>
-    <string name="add_checking">Checking the server…</string>
     <string name="add_try_http">Try an unencrypted connection instead…</string>
 
     <string name="http_title">This connection isn’t encrypted</string>
@@ -36,6 +34,7 @@
     <string name="http_for_away">This warning is about your away address.</string>
     <string name="found_already_saved">This server is already saved. Its settings will not be changed; you can sign in to it.</string>
     <string name="edit_address_required">A server needs at least one address, so this one cannot be removed.</string>
+    <string name="http_scope">This applies to this server only.</string>
     <string name="http_use">Use anyway for this server</string>
 
     <string name="cert_title">This server uses its own security certificate</string>
@@ -78,7 +77,6 @@
     <string name="second_for_away">You entered your home address, so this one is for when you’re away.</string>
     <string name="second_for_home">You entered your away address, so this one is for your home Wi-Fi.</string>
     <string name="second_add">Add address</string>
-    <string name="second_saving">Saving…</string>
 
     <!-- Sign in -->
     <string name="signin_title">Sign in</string>
@@ -119,7 +117,7 @@
     <string name="cert_badge">Certificate changed</string>
     <string name="no_accounts">Not signed in</string>
     <string name="confirm_signout_title">Sign out %1$s?</string>
-    <string name="confirm_signout_body">You’ll be signed out of %1$s on this phone. You’ll also be signed out on the server. You can sign in again at any time.</string>
+    <string name="confirm_signout_body">You’ll be signed out of %1$s on this phone. Shoalwatch will also try to sign you out on the server. You can sign in again at any time.</string>
     <string name="confirm_remove_title">Remove %1$s?</string>
     <string name="confirm_remove_body">This removes the server and everything saved for it on this phone:</string>
     <string name="confirm_remove_account">Sign-in for %1$s</string>
@@ -155,6 +153,7 @@
     <string name="header_edit_title">Edit header</string>
     <string name="header_name_label">Header name</string>
     <string name="header_value_label">Header value</string>
+    <string name="header_hide_generic">Hide the value</string>
     <string name="header_masked">••••••••</string>
     <string name="header_reveal_generic">Show the value</string>
     <string name="header_hidden">Hidden</string>
@@ -163,7 +162,7 @@
     <string name="header_edit_cd">Edit %1$s</string>
     <string name="header_remove_cd">Remove %1$s</string>
     <string name="confirm_forget_cert_title">Forget this certificate?</string>
-    <string name="confirm_forget_cert_body">You won’t be able to connect until you trust it again.</string>
+    <string name="confirm_forget_cert_body">If this server uses its own certificate, you won’t be able to connect until you trust it again.</string>
     <string name="confirm_forget_cert_action">Forget</string>
     <string name="confirm_header_title">Remove %1$s?</string>
     <string name="confirm_header_body">This header will no longer be sent to the server.</string>

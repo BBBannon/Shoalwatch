@@ -2,9 +2,6 @@ package app.shoalwatch.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.RowScope
@@ -39,7 +36,7 @@ import app.shoalwatch.R
 
 /** Content is never wider than this, so phones and tablets both get a comfortable reading column. */
 private val MaxContentWidth = 560.dp
-private val PinnedMinHeight = 560.dp
+private val PinnedMinHeight = 360.dp
 private const val PinnedMaxFontScale = 1.5f
 
 /**
@@ -48,7 +45,7 @@ private const val PinnedMaxFontScale = 1.5f
  * system-bar insets and the keyboard inset is added here, so a button is never hidden. Scrolling content copes
  * with a 200% font scale.
  */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppScreen(
     title: String,
@@ -83,11 +80,12 @@ fun AppScreen(
             Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding(),
             contentAlignment = Alignment.TopCenter,
         ) {
-            // A pinned action bar is only safe when there is room: with the keyboard open, on a short screen
-            // or at a large font it would squeeze the form, so the actions move to the end of the scrolling
-            // content and the primary button is always reachable by scrolling.
-            val pinned = bottomBar != null && !WindowInsets.isImeVisible && maxHeight >= PinnedMinHeight &&
-                LocalDensity.current.fontScale <= PinnedMaxFontScale
+            // The action bar stays pinned above the keyboard by default. Only when the space is genuinely too small
+            // (a large font, or under ~360dp of visible height) would it squeeze the form, so the actions then move to
+            // the end of the scrolling content and the primary button is reachable by scrolling. `maxHeight` is already
+            // net of the system bars and the keyboard (the insets are applied above), and an open keyboard alone never
+            // unpins.
+            val pinned = bottomBar != null && maxHeight >= PinnedMinHeight && LocalDensity.current.fontScale <= PinnedMaxFontScale
             Column(Modifier.widthIn(max = MaxContentWidth).fillMaxSize()) {
                 Column(
                     Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 8.dp),

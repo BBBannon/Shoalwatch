@@ -44,13 +44,18 @@ fun HomePlaceholderScreen(
                 Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.home_settings_cd))
             }
         },
-        bottomBar = if (state.signedOut) {
-            { PrimaryButton(stringResource(R.string.home_manage), onOpenServers) }
-        } else {
-            null
+        bottomBar = when {
+            state.loadFailed -> ({ PrimaryButton(stringResource(R.string.action_retry), onRetry) })
+            state.signedOut -> ({ PrimaryButton(stringResource(R.string.home_manage), onOpenServers) })
+            else -> null
         },
     ) {
         when {
+            state.loadFailed -> NoticeCard(
+                title = stringResource(R.string.startup_failed_title),
+                body = stringResource(R.string.startup_failed_body),
+                tone = Tone.Danger,
+            )
             state.loading -> Loading(stringResource(R.string.loading))
             state.signedOut -> NoticeCard(
                 title = stringResource(R.string.home_signed_out_title),

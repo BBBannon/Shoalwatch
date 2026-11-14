@@ -77,6 +77,8 @@ private val AppTypography = Typography().let { base ->
         bodyMedium = base.bodyMedium.copy(fontSize = 16.sp, lineHeight = 24.sp),
         bodySmall = base.bodySmall.copy(fontSize = 14.sp, lineHeight = 20.sp),
         labelLarge = base.labelLarge.copy(fontSize = 16.sp, lineHeight = 24.sp),
+        labelMedium = base.labelMedium.copy(fontSize = 14.sp, lineHeight = 20.sp),
+        labelSmall = base.labelSmall.copy(fontSize = 13.sp, lineHeight = 18.sp),
     )
 }
 

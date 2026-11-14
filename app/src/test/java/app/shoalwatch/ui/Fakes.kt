@@ -114,6 +114,7 @@ class FakeCatalog(servers: List<Server> = emptyList(), accounts: List<AccountSum
     var upsertFailure: Throwable? = null
     var awaitActiveFailure: Throwable? = null
     var warmRetries = 0
+    var warmStillFailing = false
 
     override val servers: Flow<List<Server>> = serverList
     override val activeAccount: Flow<AccountSummary?> = activeFlow
@@ -140,7 +141,10 @@ class FakeCatalog(servers: List<Server> = emptyList(), accounts: List<AccountSum
 
     override suspend fun awaitWarmed() = warmed.await()
 
-    override suspend fun retryWarmIfFailed() { warmRetries++ }
+    override suspend fun retryWarmIfFailed(): Boolean {
+        warmRetries++
+        return warmStillFailing
+    }
 
     override suspend fun awaitActive(): Pair<Server, AccountSummary>? {
         awaitWarmed()

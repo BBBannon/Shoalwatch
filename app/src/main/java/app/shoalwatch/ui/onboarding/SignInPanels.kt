@@ -26,6 +26,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.contentType
 import androidx.compose.ui.semantics.editableText
+import androidx.compose.ui.semantics.password
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
@@ -38,6 +39,7 @@ import app.shoalwatch.data.servers.AuthRepository
 import app.shoalwatch.ui.components.ErrorMessage
 import app.shoalwatch.ui.components.Loading
 import app.shoalwatch.ui.components.RevealToggle
+import app.shoalwatch.ui.components.rememberSubmit
 import app.shoalwatch.ui.theme.CodeStyles
 
 private val TotalSeconds = (AuthRepository.TIMEOUT_MS / 1_000).toInt()
@@ -90,6 +92,7 @@ private fun CodeCard(ui: QuickConnectUi.Code) {
 @Composable
 internal fun PasswordPanel(state: SignInUiState, password: TextFieldState, actions: SignInActions) {
     var revealed by remember { mutableStateOf(false) }
+    val submit = rememberSubmit(actions.onSignIn)
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         OutlinedTextField(
             value = state.username,
@@ -111,15 +114,20 @@ internal fun PasswordPanel(state: SignInUiState, password: TextFieldState, actio
             modifier = Modifier.fillMaxWidth().semantics {
                 contentType = ContentType.Password
                 // The field exposes its raw text to accessibility services as EditableText even though it is drawn
-                // masked; this outer modifier replaces it with bullets of the same length (the Password flag stays).
-                editableText = AnnotatedString("•".repeat(password.text.length))
+                // masked. While hidden, this outer modifier replaces it with bullets of the same length and sets the
+                // Password flag in the same block, so the flagged node is the node carrying the masked text. Once the
+                // user presses Show, the real text is exposed (they asked to see it).
+                if (!revealed) {
+                    password()
+                    editableText = AnnotatedString("•".repeat(password.text.length))
+                }
             },
             label = { Text(stringResource(R.string.password_label)) },
             enabled = !state.submitting,
             isError = state.error != null,
             textObfuscationMode = if (revealed) TextObfuscationMode.Visible else TextObfuscationMode.RevealLastTyped,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false, imeAction = ImeAction.Go),
-            onKeyboardAction = KeyboardActionHandler { actions.onSignIn() },
+            onKeyboardAction = KeyboardActionHandler { submit() },
             trailingIcon = {
                 RevealToggle(revealed, { revealed = !revealed }, stringResource(if (revealed) R.string.password_hide_cd else R.string.password_show_cd))
             },

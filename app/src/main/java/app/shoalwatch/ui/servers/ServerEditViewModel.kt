@@ -184,10 +184,12 @@ class ServerEditViewModel(
                 if (other == null) {
                     local.update { it.copy(addressRequired = true) }
                 } else {
-                    save { it.withAddress(pane.slot, null) }
+                    save { it.withAddress(pane.slot, null).tidied() }
                 }
             } else {
                 // A new or edited address never inherits the server's consent to plain http: it is warned about again.
+                // The certificate pin and the client-certificate alias ARE carried over on purpose: they belong to the
+                // server, not to one address, and keeping them can only make the check stricter (fail-closed).
                 checkStart = ServerNetDraft(false, server.pinnedSpkiSha256, server.clientCertAlias, server.customHeaders)
                 checker.start(text, checkStart, server.id)
             }
@@ -218,9 +220,12 @@ class ServerEditViewModel(
                 pinnedSpkiSha256 = pin,
                 clientCertAlias = alias,
                 pinInvalid = current.pinInvalid && pin == null,
-            )
+            ).tidied()
         }
     }
+
+    /** Consent to plain http lapses by itself once no address uses http any more. */
+    private fun Server.tidied() = copy(allowCleartext = allowCleartext && addresses.any { !it.isSecure })
 
     private fun Server.withAddress(slot: AddressSlot, address: app.shoalwatch.net.ServerAddress?) =
         if (slot == AddressSlot.Home) copy(homeAddress = address) else copy(awayAddress = address)

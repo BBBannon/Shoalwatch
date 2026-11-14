@@ -2,10 +2,18 @@ package app.shoalwatch.ui
 
 import android.content.Context
 import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import app.shoalwatch.ui.components.AppScreen
+import app.shoalwatch.ui.components.PrimaryButton
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -34,6 +42,7 @@ import app.shoalwatch.ui.onboarding.SignInScreen
 import app.shoalwatch.ui.onboarding.SignInUiState
 import app.shoalwatch.ui.theme.ShoalwatchTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -139,7 +148,35 @@ class ScreenRenderTest {
         show { AddServerScreen(AddServerUiState(stage = AddServerStage.Found, found = found), noAddActions, onLeave = null) }
         assertTrue(shown(text(R.string.version_warning_title)))
         assertTrue(shown(text(R.string.found_already_saved)))
+        assertFalse("the notes would contradict the settings staying as they are", shown(text(R.string.found_home_note)))
+    }
+
+    @Test fun aNewServerStillShowsWhereItWillBeSaved() {
+        val found = FoundServer("srv-1", "Den", "10.10.3", ServerInfo.Compatibility.SUPPORTED, firstIsHome = true)
+        show { AddServerScreen(AddServerUiState(stage = AddServerStage.Found, found = found), noAddActions, onLeave = null) }
         assertTrue(shown(text(R.string.found_home_note)))
+    }
+
+    @Composable
+    private fun TallScreen() = AppScreen(title = "t", onBack = null, bottomBar = { PrimaryButton("Act", {}) }) { Spacer(Modifier.height(2000.dp)) }
+
+    @Test @Config(qualifiers = "w411dp-h891dp")
+    fun withTheKeyboardOpenOnAnOrdinaryPhoneTheActionStaysPinnedAndVisible() {
+        // 891dp window minus a 300dp keyboard leaves 591dp of visible height.
+        show { Box(Modifier.height(591.dp)) { TallScreen() } }
+        rule.onNode(hasText("Act") and hasClickAction()).assertIsDisplayed()
+    }
+
+    @Test @Config(qualifiers = "w320dp-h480dp")
+    fun onASmallScreenAtTwiceTheFontSizeTheActionIsInTheScrollContentAndReachable() {
+        show(fontScale = 2f) { TallScreen() }
+        rule.onNode(hasText("Act") and hasClickAction()).assertIsNotDisplayed()
+        rule.onNode(hasText("Act") and hasClickAction()).performScrollTo().assertIsDisplayed()
+    }
+
+    @Test fun theHttpWarningSaysItAppliesToThisServerOnly() {
+        show { AddServerScreen(AddServerUiState(check = Check.NeedsHttpConsent), noAddActions, onLeave = null) }
+        assertTrue(shown(text(R.string.http_scope)))
     }
 
     @Test fun theHttpWarningNamesTheAddressRoleAndTheSecurityCheckTitleIsShortened() {

@@ -121,6 +121,23 @@ class ServerEditViewModelTest {
         assertTrue(catalog.upserts.single().allowCleartext)
     }
 
+    @Test fun replacingTheOnlyHttpAddressWithHttpsClearsTheCleartextFlag() {
+        val (catalog, vm) = setup(testServer(home = "http://192.168.1.10:8096", away = null, cleartext = true))
+        vm.editAddress(AddressSlot.Home)
+        vm.onAddressText("jf.example.org")
+        vm.saveAddress()
+        assertEquals(address("https://jf.example.org"), catalog.upserts.single().homeAddress)
+        assertFalse("no address uses http any more", catalog.upserts.single().allowCleartext)
+    }
+
+    @Test fun removingTheOnlyHttpAddressClearsTheCleartextFlag() {
+        val (catalog, vm) = setup(testServer(home = "http://192.168.1.10:8096", away = "https://away.example", cleartext = true))
+        vm.editAddress(AddressSlot.Home)
+        vm.onAddressText("")
+        vm.saveAddress()
+        assertFalse(catalog.upserts.single().allowCleartext)
+    }
+
     @Test fun anEditThatNeedsNoConsentKeepsTheServerExistingFlag() {
         val (catalog, vm) = setup(testServer(home = "http://192.168.1.10:8096", away = null, cleartext = true))
         vm.editAddress(AddressSlot.Away)
