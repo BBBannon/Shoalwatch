@@ -49,7 +49,7 @@ class QuickConnectConnectionChangeTest {
         store = ServerStore(db, SecretBox { key })
         repo = AuthRepository(gateway, store, device, connections)
         gateway.info = { ServerInfo(serverId, "Den", "10.10.3", it, ServerInfo.Compatibility.SUPPORTED) }
-        runBlocking { store.upsertServer(Server(serverId, "Den", "10.10.3", home, away, false, null, null, emptyMap())) }
+        runBlocking { store.warmTokens(); store.upsertServer(Server(serverId, "Den", "10.10.3", home, away, false, null, null, emptyMap())) }
     }
 
     @After fun close() = db.close()

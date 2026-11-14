@@ -137,13 +137,11 @@ class AccountTokenTest {
         assertEquals("tok-A", store.cachedToken(S, UA))
     }
 
-    @Test fun readingAccountsNeverFillsTheTokenMap() {
+    @Test fun readingAccountsBeforeTheWarmShowsNothingAndNeverFillsTheTokenMap() {
         signIn(UA, "tok-A")
         restart()
         runBlocking {
-            assertEquals(1, store.accounts(S).first().size)
-            store.active()
-            store.activeAccount.first()
+            assertNull("lists wait for the warm", kotlinx.coroutines.withTimeoutOrNull(300) { store.accounts(S).first() })
         }
         assertNull(store.cachedToken(S, UA))
     }
@@ -151,6 +149,7 @@ class AccountTokenTest {
     @Test fun aRemovedAccountStaysGoneEvenWhenRowsAreReadAfterwards() {
         signIn(UA, "tok-A")
         runBlocking {
+            store.warmTokens()
             store.removeAccount(S, UA)
             store.accounts(S).first()
             store.active()
@@ -221,7 +220,7 @@ class AccountTokenTest {
         web.takeRequest() // identity check
         assertTrue("Token=\"tok-A\"" in web.takeRequest().getHeader("Authorization")!!)
         assertNull(store.cachedToken(S, UA))
-        runBlocking { assertTrue(store.accounts(S).first().isEmpty()) }
+        runBlocking { store.warmTokens(); assertTrue(store.accounts(S).first().isEmpty()) }
         // The client used for the logout was dropped with the account: a later call is refused, not sent with the old token.
         assertEquals(AppError.Kind.NOT_SIGNED_IN, signedOutError(UA).kind)
         assertEquals(2, web.requestCount)

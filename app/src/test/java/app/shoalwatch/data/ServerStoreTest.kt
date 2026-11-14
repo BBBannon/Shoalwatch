@@ -64,6 +64,7 @@ class ServerStoreTest {
         db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java)
             .allowMainThreadQueries().build()
         store = ServerStore(db, box, onClientsStale = { id, addresses -> stale += id to addresses })
+        runBlocking { store.warmTokens() } // account lists wait for the first warm
     }
 
     @After fun close() = db.close()

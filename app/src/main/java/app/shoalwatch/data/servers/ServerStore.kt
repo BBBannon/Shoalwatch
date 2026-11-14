@@ -20,6 +20,8 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
@@ -36,6 +38,9 @@ import java.util.concurrent.ConcurrentHashMap
  * ciphertext. Anything unreadable (lost key, damaged row) degrades instead of crashing: an account whose
  * token cannot be opened is hidden (the user signs in again), headers that cannot be opened load as none,
  * and a damaged certificate pin is surfaced as [Server.pinInvalid].
+ *
+ * Account lists and the active account wait for the first [warmTokens] and show only accounts whose token is loaded
+ * (see [usable]), so what is listed always agrees with what can send a request (review F10).
  *
  * Keystore use (review I7): what screens read ([summaries], [accounts], [activeAccount], [active]) selects only
  * non-secret columns and never touches [box]. Every seal and open runs on [io], never on the caller's thread:
@@ -72,8 +77,12 @@ class ServerStore(
     private val tokens = ConcurrentHashMap<Pair<String, String>, String>()
     private val tokenLock = Mutex()
 
-    /** Accounts whose token could not be opened at the last warm (lost key): hidden from every list. */
-    private val unreadable = MutableStateFlow<Set<Pair<String, String>>>(emptySet())
+    /**
+     * The accounts whose token is in [tokens] (the same keys, observable): the only ones any list or [active] shows.
+     * So an account whose token cannot be opened (lost key), or that a failed warm never loaded, is hidden
+     * consistently, exactly as a request for it would be refused (`NOT_SIGNED_IN`). Changed under [tokenLock].
+     */
+    private val usable = MutableStateFlow<Set<Pair<String, String>>>(emptySet())
 
     /**
      * The live token lookup handed to `ServerNet.authenticated`: no database or decryption per request. Null
@@ -86,8 +95,7 @@ class ServerStore(
     /**
      * Loads every saved account's token. Call once at app start, before any authenticated request; safe to
      * repeat. Serialised with sign-in and removal and re-reads the rows inside the lock, so a removal that
-     * finished first is simply absent. Accounts whose token cannot be opened are remembered as unreadable and
-     * hidden from the lists.
+     * finished first is simply absent. Only accounts whose token could be opened become visible in the lists.
      *
      * Never throws (except for cancellation): a database or Keystore failure is logged by kind only and
      * leaves the map as it was, so authenticated requests are refused as signed out. [awaitWarmed] completes
@@ -102,7 +110,7 @@ class ServerStore(
                     val loaded = opened.mapNotNull { (key, token) -> token?.let { key to it } }.toMap()
                     tokens.keys.retainAll(loaded.keys)
                     tokens.putAll(loaded)
-                    unreadable.value = opened.filter { it.second == null }.map { it.first }.toSet()
+                    usable.value = loaded.keys.toSet()
                 }
             }
             warmFailed = false
@@ -140,12 +148,16 @@ class ServerStore(
     }
 
     /** Who is signed in, without the token. */
-    val activeAccount: Flow<AccountSummary?> =
-        combine(accountDao.observeActiveRow(), unreadable) { row, hidden -> row?.takeIf { it.key() !in hidden }?.summary() }
+    val activeAccount: Flow<AccountSummary?> = flow {
+        awaitWarmed()
+        emitAll(combine(accountDao.observeActiveRow(), usable) { row, ok -> row?.takeIf { it.key() in ok }?.summary() })
+    }
 
     /** A server's accounts, without tokens. */
-    fun accounts(serverId: String): Flow<List<AccountSummary>> =
-        combine(accountDao.observeRowsForServer(serverId), unreadable) { rows, hidden -> rows.filter { it.key() !in hidden }.map { it.summary() } }
+    fun accounts(serverId: String): Flow<List<AccountSummary>> = flow {
+        awaitWarmed()
+        emitAll(combine(accountDao.observeRowsForServer(serverId), usable) { rows, ok -> rows.filter { it.key() in ok }.map { it.summary() } })
+    }
 
     /** @throws IllegalArgumentException if the id is not a normalised [JellyfinId], or the pin is not a valid base64 SHA-256 value. */
     suspend fun upsertServer(s: Server) {
@@ -182,7 +194,7 @@ class ServerStore(
                     serverDao.delete(id)
                 } finally {
                     tokens.keys.removeAll { it.first == id }
-                    unreadable.update { set -> set.filterNot { it.first == id }.toSet() }
+                    usable.update { set -> set.filterNot { it.first == id }.toSet() }
                 }
             }
         } finally {
@@ -207,7 +219,7 @@ class ServerStore(
                 if (makeActive) accountDao.setActive(ActiveAccountEntity(0, a.serverId, a.userId))
             }
             tokens[a.serverId to a.userId] = a.accessToken
-            unreadable.update { it - (a.serverId to a.userId) }
+            usable.update { it + (a.serverId to a.userId) }
         }
         onClientsStale(a.serverId, addresses)
     }
@@ -222,7 +234,7 @@ class ServerStore(
                 } finally {
                     // Whether or not the delete worked, the account stops sending its token.
                     tokens.remove(serverId to userId)
-                    unreadable.update { it - (serverId to userId) }
+                    usable.update { it - (serverId to userId) }
                 }
             }
         } finally {
@@ -257,8 +269,10 @@ class ServerStore(
     }
 
     /** Who is signed in, without the token (accounts cascade with their server, so its server exists). */
-    suspend fun active(): AccountSummary? =
-        accountDao.getActiveRow()?.takeIf { it.key() !in unreadable.value }?.summary()
+    suspend fun active(): AccountSummary? {
+        awaitWarmed()
+        return accountDao.getActiveRow()?.takeIf { it.key() in usable.value }?.summary()
+    }
 
     /** Addresses only (no secrets opened), for client eviction. */
     private suspend fun addressesOf(id: String): List<ServerAddress> =

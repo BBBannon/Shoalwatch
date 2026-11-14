@@ -60,6 +60,7 @@ class RevocationTest {
         store = ServerStore(db, SecretBox { key })
         repo = AuthRepository(gateway, store, device, connections)
         kotlinx.coroutines.runBlocking {
+            store.warmTokens() // the account lists wait for the first warm
             store.upsertServer(server)
             store.upsertAccount(Account(S1, U1, "ben", "tok-1"), makeActive = true)
         }
@@ -199,6 +200,7 @@ class RevocationTest {
         val lost = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
         store = ServerStore(db, SecretBox { lost })
         repo = AuthRepository(gateway, store, device, connections)
+        kotlinx.coroutines.runBlocking { store.warmTokens() }
     }
 
     @Test fun signOutWithAnUnreadableTokenReportsThatTheServerWasNotToldAndStillRemovesTheAccount() = runTest {

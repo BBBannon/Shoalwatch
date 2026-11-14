@@ -2,6 +2,7 @@ package app.shoalwatch.data
 
 import app.shoalwatch.S1
 import app.shoalwatch.U1
+import app.shoalwatch.U2
 
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -16,6 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runCurrent
@@ -131,5 +133,56 @@ class WarmGateTest {
         removal.join()
         assertNull(store.cachedToken(S1, U1))
         assertNull(store.server(S1))
+    }
+
+    // ---- account lists follow the warm gate (review F10)
+
+    private suspend fun ServerStore.visibleAccounts(waitMs: Long = 400) =
+        kotlinx.coroutines.withTimeoutOrNull(waitMs) { accounts(S1).first().map { it.userId } }
+
+    private suspend fun ServerStore.visibleActive(waitMs: Long = 400) =
+        kotlinx.coroutines.withTimeoutOrNull(waitMs) { activeAccount.first()?.userId ?: "nobody" }
+
+    @Test fun accountListsAndTheActiveAccountEmitNothingUntilTheWarmHasFinished() = runBlocking(Dispatchers.Default) {
+        store.upsertAccount(Account(S1, U1, "ben", "tok"), makeActive = true)
+        val cold = ServerStore(db, box) // a fresh start: nothing warmed yet
+        assertNull("account list waits", cold.visibleAccounts())
+        assertNull("active account waits", cold.visibleActive())
+        cold.warmTokens()
+        assertEquals(listOf(U1), cold.visibleAccounts(5_000))
+        assertEquals(U1, cold.visibleActive(5_000))
+    }
+
+    @Test fun anAccountWhoseTokenCannotBeReadIsNeverListedNorActive() = runBlocking(Dispatchers.Default) {
+        store.upsertAccount(Account(S1, U1, "ben", "tok"), makeActive = true)
+        val lost = ServerStore(db, SecretBox { KeyGenerator.getInstance("AES").apply { init(256) }.generateKey() })
+        lost.warmTokens()
+        assertEquals(emptyList<String>(), lost.visibleAccounts(5_000))
+        assertEquals("nobody", lost.visibleActive(5_000))
+        assertNull(lost.active())
+    }
+
+    @Test fun afterAFailedWarmAccountsAreHiddenEverywhereUntilARetrySucceeds() = runBlocking(Dispatchers.Default) {
+        store.upsertAccount(Account(S1, U1, "ben", "tok"), makeActive = true)
+        var failing = true
+        val cold = ServerStore(db, box, accountSource = { if (failing) throw IllegalStateException("db") else db.accountDao().getAll() })
+        cold.warmTokens()
+        assertEquals("lists agree with the empty token map", emptyList<String>(), cold.visibleAccounts(5_000))
+        assertEquals("and so does the active account", "nobody", cold.visibleActive(5_000))
+        assertNull(cold.active())
+        assertNull(cold.cachedToken(S1, U1))
+
+        failing = false
+        assertFalse(cold.retryWarmIfFailed())
+        assertEquals(listOf(U1), cold.visibleAccounts(5_000))
+        assertEquals(U1, cold.visibleActive(5_000))
+    }
+
+    @Test fun anAccountSignedInAfterAFailedWarmIsShown() = runBlocking(Dispatchers.Default) {
+        val cold = ServerStore(db, box, accountSource = { throw IllegalStateException("db") })
+        cold.warmTokens()
+        cold.upsertAccount(Account(S1, U2, "amy", "tok-2"), makeActive = true)
+        assertEquals(listOf(U2), cold.visibleAccounts(5_000))
+        assertEquals(U2, cold.visibleActive(5_000))
     }
 }

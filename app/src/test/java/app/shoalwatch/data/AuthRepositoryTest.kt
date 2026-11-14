@@ -60,7 +60,7 @@ class AuthRepositoryTest {
         db = inMemoryDb()
         store = ServerStore(db, box)
         repo = AuthRepository(gateway, store, device, connections)
-        kotlinx.coroutines.runBlocking { store.upsertServer(server) }
+        kotlinx.coroutines.runBlocking { store.warmTokens(); store.upsertServer(server) } // lists wait for the first warm
     }
 
     @After fun close() = db.close()
