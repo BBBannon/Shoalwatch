@@ -1,12 +1,16 @@
 package app.shoalwatch.data.api
 
 import app.shoalwatch.core.AppError
+import app.shoalwatch.data.servers.Connection
 import app.shoalwatch.data.servers.DeviceIdentity
 import app.shoalwatch.data.servers.ServerClients
 import app.shoalwatch.data.servers.ServerConnections
 import app.shoalwatch.data.servers.ServerNet
 import app.shoalwatch.data.servers.ServerStore
+import app.shoalwatch.data.servers.Session
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.awaitCancellation
@@ -29,20 +33,27 @@ import java.io.IOException
 /**
  * The one path every signed-in request takes (see "Authenticated requests" in docs/ARCHITECTURE.md).
  *
- * Each call: wait for the saved sign-ins to load, read the server from the store, ask the address selector for
- * a verified address ([ServerConnections.awaitOnline]; none means [AppError.Kind.OFFLINE] and nothing is sent),
- * take the account's authenticated client (the token is looked up live, never held here) and send. This is the
- * only code that sends an access token on ordinary requests, and it gets its address from nowhere else. Unlike
- * sign-in it does not prefer https over a verified plain-http home address.
+ * Each call: wait for the saved sign-ins to load, ask the address selector for a verified address
+ * ([ServerConnections.awaitOnline]; none means [AppError.Kind.OFFLINE] and nothing is sent), then read the server from the
+ * store (after the wait, so its addresses and security settings are current), take the account's authenticated client (the
+ * token is looked up live, never held here) and send. This is the only code that sends an access token on ordinary
+ * requests, and it gets its address from nowhere else. Unlike sign-in it does not prefer https over a verified plain-http
+ * home address. Like sign-in it cannot know the phone has not just changed network.
  *
  * Failure rules:
- * - A response is an answer and is never retried: 401 `UNAUTHORISED`, 403 `FORBIDDEN`, 404 and any 3xx (nothing
- *   follows redirects) `SERVER_NOT_FOUND`, any other error status `SERVER_ERROR`.
- * - A network failure before a response arrives asks the selector to re-check ([ServerConnections.refresh]);
- *   with `retry` set (the default for GET, off for POST and DELETE) the call is then repeated exactly once through
- *   a freshly verified address (none: `OFFLINE`). A guard refusal (cleartext, signed out, certificate) is never retried.
- * - A failure while reading the body maps to an error and asks for a re-check, without a retry.
- * - Bodies are bounded and decoded without echoing anything from them.
+ * - A response is an answer and is never retried. Statuses map through [AppError.fromHttpStatus] (the one shared mapping,
+ *   with the reasons for 3xx, 304 and other 4xx), except 401, which also signs the account out locally (below).
+ * - 401: the server rejected this sign-in, so `ServerStore.invalidateToken` stops the app looping on a dead token (later calls
+ *   fail fast as `NOT_SIGNED_IN` with nothing sent) and this call fails with "Your sign-in has expired. Sign in again." Skipped
+ *   if the sign-in was replaced after the request began. Only ever for a 401 from the verified address of this signed-in call.
+ * - A network failure before a response arrives asks the selector to re-probe THIS server, and only if the connection the
+ *   attempt used is still the current one ([ServerConnections.refreshIfCurrent]): a burst of failures after a network
+ *   change causes one probe, and a failure from before a newer verification cannot discard it. With `retry` set (default
+ *   for GET and [getBytes], off for POST and DELETE) the call is then repeated exactly once through a freshly verified
+ *   address (none: `OFFLINE`). A guard refusal (cleartext, signed out, certificate) is never retried. Callers must not wrap
+ *   these calls in retry loops of their own: retries would multiply.
+ * - A failure of the connection while reading the body maps to an error and asks for a re-check, without a retry.
+ * - Bodies are bounded (on the decoded bytes) and decoded without echoing anything from them.
  *
  * Callers pass a `path` that starts with `/` and ids already normalised by `JellyfinId`; a bad path shape is a
  * programmer error ([IllegalArgumentException]). Everything runs on [io]; calls are main-safe and cancelling the
@@ -92,7 +103,9 @@ class ServerApi(
     /**
      * GET for artwork and other binary data. [read] gets the body as a source that fails with `SERVER_ERROR` if it
      * is read beyond [maxBytes] (a larger declared length fails before [read] runs), and the response Content-Type.
-     * It runs on [io], and the response is closed when it returns or throws. Its result is returned.
+     * It runs on [io], and the response is closed when it returns or throws; the source must not be kept after that. Its result
+     * is returned, and anything it throws, including an IOException of its own (a failed file write is not a network failure:
+     * no re-check, no retry), propagates unchanged.
      */
     suspend fun <T> getBytes(
         session: Session,
@@ -103,11 +116,20 @@ class ServerApi(
         read: (BufferedSource, contentType: String?) -> T,
     ): T = execute(session, "GET", path, query, null, retry) { response ->
         if (response.body.contentLength() > maxBytes) throw AppError.of(AppError.Kind.SERVER_ERROR)
-        read(LimitedSource(response.body.source(), maxBytes).buffer(), response.header("Content-Type"))
+        val limited = LimitedSource(response.body.source(), maxBytes)
+        try {
+            read(limited.buffer(), response.header("Content-Type"))
+        } catch (e: IOException) {
+            if (limited.networkFailure != null) throw e else throw PassThrough(e)
+        }
     }
 
-    private class Open(val call: Call, val response: Response)
+    private class Open(val call: Call, val response: Response, val generation: Long)
 
+    /** The caller's own IOException (from the [getBytes] reader) travelling out of the handler: not a network failure, rethrown as it was. */
+    private class PassThrough(val original: IOException) : RuntimeException()
+
+    @OptIn(DelicateCoroutinesApi::class) // CoroutineStart.ATOMIC, see the watchdog
     private suspend fun <T> execute(
         session: Session,
         method: String,
@@ -120,27 +142,42 @@ class ServerApi(
         ApiRequest.checkPath(path)
         return withContext(io) {
             store.awaitWarmed()
+            var used: Connection.Online? = null
+
+            /** Asks the selector to re-check this server, but only if the connection the failed attempt used is still its current one. */
+            fun reportFailure(e: IOException) {
+                if (!isRefusal(e)) used?.let { selector.refreshIfCurrent(session.serverId, it) }
+            }
+
             val open = try {
-                connect(session, method, path, query, body)
+                connect(session, method, path, query, body) { used = it }
             } catch (e: IOException) {
-                if (!retry || isRefusal(e)) throw failed(e)
-                selector.refresh()
+                reportFailure(e)
+                if (!retry || isRefusal(e)) throw AppError.from(e)
+                used = null
                 try {
-                    connect(session, method, path, query, body)
+                    connect(session, method, path, query, body) { used = it }
                 } catch (second: IOException) {
+                    reportFailure(second)
                     throw AppError.from(second)
                 }
             }
-            // Reading can block, which cancelling the coroutine alone would not interrupt: cancel the call too.
-            val watchdog = launch(Dispatchers.Unconfined) { try { awaitCancellation() } finally { open.call.cancel() } }
+            // Reading can block, which cancelling the coroutine alone would not interrupt: cancel the call too. ATOMIC, so
+            // it also runs when the coroutine was cancelled just after the response arrived.
+            val watchdog = launch(Dispatchers.Unconfined, start = CoroutineStart.ATOMIC) {
+                try { awaitCancellation() } finally { open.call.cancel() }
+            }
             try {
                 open.response.use { response ->
-                    checkStatus(response.code)
+                    checkStatus(session, open, response.code)
                     try {
                         handle(response)
                     } catch (e: IOException) {
                         ensureActive() // a call cancelled with the caller is not a network failure
-                        throw failed(e)
+                        reportFailure(e)
+                        throw AppError.from(e)
+                    } catch (passThrough: PassThrough) {
+                        throw passThrough.original
                     }
                 }
             } finally {
@@ -149,43 +186,63 @@ class ServerApi(
         }
     }
 
-    /** Verified address, authenticated client, request: the response head, or an IOException before one arrived. */
-    private suspend fun connect(session: Session, method: String, path: String, query: List<Pair<String, String>>, body: RequestBody?): Open {
-        val server = store.server(session.serverId) ?: throw AppError.of(AppError.Kind.SERVER_NOT_FOUND)
+    /**
+     * Awaits a verified address, then reads the server (so its addresses and security settings are current), builds the
+     * client and sends. [verified] is told which connection the attempt uses before anything can fail. Throws an
+     * IOException before a response arrived.
+     */
+    private suspend fun connect(
+        session: Session,
+        method: String,
+        path: String,
+        query: List<Pair<String, String>>,
+        body: RequestBody?,
+        verified: (Connection.Online) -> Unit,
+    ): Open {
         val online = selector.awaitOnline(session.serverId) ?: throw AppError.of(AppError.Kind.OFFLINE)
+        verified(online)
+        val server = store.server(session.serverId) ?: throw AppError.of(AppError.Kind.SERVER_NOT_FOUND)
         // The server was edited since that address was verified: the token goes nowhere until it is checked again.
         if (online.address !in server.addresses) throw IOException()
         val net = ServerNet.authenticated(server.addresses, server, session.userId, device, store::cachedToken)
         val request = Request.Builder().url(ApiRequest.url(online.address, path, query)).method(method, body).build()
+        val generation = store.tokenGeneration(session.serverId, session.userId)
         val call = clients.clientFor(net).newCall(request)
-        return Open(call, call.await())
-    }
-
-    /** Asks for a re-check unless a guard refused the request (which says nothing about the network), then maps [e]. */
-    private fun failed(e: IOException): AppError {
-        if (!isRefusal(e)) selector.refresh()
-        return AppError.from(e)
+        return Open(call, call.await(), generation)
     }
 
     /** A guard (cleartext, signed out, client certificate, pin) refused: it carries an [AppError] and is final. */
     private fun isRefusal(e: Throwable): Boolean = generateSequence(e) { it.cause }.take(MAX_CAUSE_DEPTH).any { it is AppError }
 
-    private fun checkStatus(code: Int) {
+    /**
+     * Non-success statuses map through [AppError.fromHttpStatus], except 401 from the verified address: the server
+     * rejected this sign-in, so it is invalidated in the store (later calls fail fast as `NOT_SIGNED_IN`, nothing is
+     * sent) unless it has been replaced since this request began.
+     */
+    private suspend fun checkStatus(session: Session, open: Open, code: Int) {
         if (code in 200..299) return
-        throw when (code) {
-            in 300..399 -> AppError.of(AppError.Kind.SERVER_NOT_FOUND)
-            401, 403, 404 -> AppError.fromHttpStatus(code)
-            in 400..499 -> AppError.of(AppError.Kind.SERVER_ERROR)
-            else -> AppError.fromHttpStatus(code)
+        if (code == 401) {
+            store.invalidateToken(session.serverId, session.userId, ifGeneration = open.generation)
+            throw AppError(AppError.Kind.UNAUTHORISED, EXPIRED_MESSAGE)
         }
+        throw AppError.fromHttpStatus(code)
     }
 
     /** Fails with `SERVER_ERROR` on the first byte past [max], asking the server for no more than one byte beyond it. */
     private class LimitedSource(delegate: Source, private val max: Long) : ForwardingSource(delegate) {
         private var total = 0L
 
+        /** Set when the connection itself failed while reading, which tells that apart from an IOException of the reader's own. */
+        var networkFailure: IOException? = null
+            private set
+
         override fun read(sink: Buffer, byteCount: Long): Long {
-            val n = super.read(sink, minOf(byteCount, max - total + 1))
+            val n = try {
+                super.read(sink, minOf(byteCount, max - total + 1))
+            } catch (e: IOException) {
+                networkFailure = e
+                throw e
+            }
             if (n > 0) {
                 total += n
                 if (total > max) throw AppError.of(AppError.Kind.SERVER_ERROR)
@@ -197,6 +254,7 @@ class ServerApi(
     private companion object {
         const val DEFAULT_MAX_BYTES = 4L * 1024 * 1024
         const val MAX_CAUSE_DEPTH = 10
+        const val EXPIRED_MESSAGE = "Your sign-in has expired. Sign in again."
         val JSON = "application/json".toMediaType()
     }
 }

@@ -77,6 +77,10 @@ class ServerStore(
     private val tokens = ConcurrentHashMap<Pair<String, String>, String>()
     private val tokenLock = Mutex()
 
+    /** Accounts whose token the server rejected: [warmTokens] skips them until a new sign-in. Changed under [tokenLock]. */
+    private val rejected = ConcurrentHashMap.newKeySet<Pair<String, String>>()
+    private val generations = ConcurrentHashMap<Pair<String, String>, Long>()
+
     /**
      * The accounts whose token is in [tokens] (the same keys, observable): the only ones any list or [active] shows.
      * So an account whose token cannot be opened (lost key), or that a failed warm never loaded, is hidden
@@ -107,7 +111,7 @@ class ServerStore(
                 tokenLock.withLock {
                     val rows = loadAccounts()
                     val opened = rows.map { (it.serverId to it.userId) to toAccount(it)?.accessToken }
-                    val loaded = opened.mapNotNull { (key, token) -> token?.let { key to it } }.toMap()
+                    val loaded = opened.mapNotNull { (key, token) -> token?.takeIf { key !in rejected }?.let { key to it } }.toMap()
                     tokens.keys.retainAll(loaded.keys)
                     tokens.putAll(loaded)
                     usable.value = loaded.keys.toSet()
@@ -194,6 +198,7 @@ class ServerStore(
                     serverDao.delete(id)
                 } finally {
                     tokens.keys.removeAll { it.first == id }
+                    rejected.removeAll { it.first == id }
                     usable.update { set -> set.filterNot { it.first == id }.toSet() }
                 }
             }
@@ -219,6 +224,8 @@ class ServerStore(
                 if (makeActive) accountDao.setActive(ActiveAccountEntity(0, a.serverId, a.userId))
             }
             tokens[a.serverId to a.userId] = a.accessToken
+            rejected -= (a.serverId to a.userId)
+            bump(a.serverId to a.userId)
             usable.update { it + (a.serverId to a.userId) }
         }
         onClientsStale(a.serverId, addresses)
@@ -234,6 +241,8 @@ class ServerStore(
                 } finally {
                     // Whether or not the delete worked, the account stops sending its token.
                     tokens.remove(serverId to userId)
+                    rejected -= (serverId to userId)
+                    bump(serverId to userId)
                     usable.update { it - (serverId to userId) }
                 }
             }
@@ -241,6 +250,35 @@ class ServerStore(
             onClientsStale(serverId, addresses)
         }
     }
+
+    /**
+     * Changes every time the account's sign-in is replaced, rejected or removed. A request notes it before sending so a
+     * late 401 for an older sign-in can be told apart from one for the current token (see [invalidateToken]). Not secret.
+     */
+    fun tokenGeneration(serverId: String, userId: String): Long = generations[serverId to userId] ?: 0
+
+    /**
+     * The server rejected this account's token (401): stop using it. The in-memory token goes, the account becomes unusable
+     * (hidden from [accounts], [activeAccount] and [active], like any account without a loaded token), cached clients for
+     * the server are dropped, and [warmTokens] will not load it back. The database row stays: signing in again overwrites it.
+     * With [ifGeneration], nothing happens unless that is still the current [tokenGeneration], so a rejection of a sign-in
+     * that has since been replaced does not sign the new one out. Runs to completion even if the caller is cancelled.
+     */
+    suspend fun invalidateToken(serverId: String, userId: String, ifGeneration: Long? = null) = withContext(NonCancellable) {
+        val addresses = addressesOf(serverId)
+        val key = serverId to userId
+        val done = tokenLock.withLock {
+            if (ifGeneration != null && tokenGeneration(serverId, userId) != ifGeneration) return@withLock false
+            rejected += key
+            tokens.remove(key)
+            usable.update { it - key }
+            bump(key)
+            true
+        }
+        if (done) onClientsStale(serverId, addresses)
+    }
+
+    private fun bump(key: Pair<String, String>) { generations.merge(key, 1L, Long::plus) }
 
     /** @throws IllegalArgumentException if there is no such account. */
     suspend fun setActive(serverId: String, userId: String) {

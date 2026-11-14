@@ -1,11 +1,12 @@
 package app.shoalwatch.data.servers
 
 import app.shoalwatch.core.AppError
-import app.shoalwatch.data.api.Session
+import app.shoalwatch.data.servers.Session
 import app.shoalwatch.net.CertificateInfo
 import app.shoalwatch.net.ServerAddress
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 
 /*
@@ -91,6 +92,13 @@ interface ServerConnections {
     fun connection(serverId: String): StateFlow<Connection>
     suspend fun awaitOnline(serverId: String, timeoutMs: Long = AddressSelector.AWAIT_TIMEOUT_MS): Connection.Online?
     fun refresh()
+
+    /**
+     * Re-probes [serverId] alone, but only if [failed] (the very `Online` instance a request used, as returned by
+     * [awaitOnline]) is still its current state. A failure that arrives after the state has already moved on (a newer
+     * probe, or `Checking`) says nothing about the new state and must not discard it.
+     */
+    fun refreshIfCurrent(serverId: String, failed: Connection.Online)
 }
 
 /** Reads the certificate a server presents (see `HttpClientFactory.probeCertificate`); null for plain http. */
@@ -103,7 +111,7 @@ private fun Account.summary() = AccountSummary(serverId, userId, userName)
 class StoreCatalog(private val store: ServerStore) : ServerCatalog {
     override val servers = store.summaries
     override val activeAccount = store.activeAccount
-    override fun activeSession(): Flow<Session?> = store.activeAccount.map { a -> a?.let { Session(it.serverId, it.userId) } }
+    override fun activeSession(): Flow<Session?> = store.activeAccount.map { a -> a?.let { Session(it.serverId, it.userId) } }.distinctUntilChanged()
     override fun accounts(serverId: String) = store.accounts(serverId)
     override suspend fun server(id: String) = store.server(id)
     override fun observeServer(id: String) = store.observeServer(id)

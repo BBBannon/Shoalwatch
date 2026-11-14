@@ -11,8 +11,12 @@ import java.io.IOException
  * Nothing from a body ever reaches an error message.
  */
 internal object JsonBodies {
-    /** Unknown keys are ignored and a null for a field that has a default takes the default. */
-    val JSON = Json { ignoreUnknownKeys = true; coerceInputValues = true }
+    /**
+     * The one decoding configuration: unknown keys are ignored and nothing else is relaxed. In particular an explicit
+     * JSON null for a field that is not nullable is a decode failure (no `coerceInputValues`), never a silent default;
+     * DTOs for untrusted responses declare every field nullable with a default instead.
+     */
+    val JSON = Json { ignoreUnknownKeys = true }
 
     /**
      * The body as UTF-8 text, refusing anything over [max] bytes by reading at most one byte more than that.

@@ -1,6 +1,6 @@
 package app.shoalwatch.data.library.api
 
-import app.shoalwatch.data.api.Session
+import app.shoalwatch.data.servers.Session
 import app.shoalwatch.data.library.ItemFilter
 import app.shoalwatch.data.library.ItemKind
 import app.shoalwatch.data.library.ItemWithUserData

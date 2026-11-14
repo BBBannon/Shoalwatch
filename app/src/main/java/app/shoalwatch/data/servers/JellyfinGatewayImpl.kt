@@ -117,8 +117,7 @@ class JellyfinGatewayImpl(private val clients: ServerClients) : JellyfinGateway 
             throw AppError.from(e)
         }
         return response.use {
-            // Redirects are never followed (credentials travel in bodies and queries): any 3xx is an error.
-            if (it.code in 300..399) throw AppError.of(AppError.Kind.SERVER_NOT_FOUND)
+            // Redirects are never followed (credentials travel in bodies and queries): any 3xx is an error (see fromHttpStatus).
             if (!it.isSuccessful) throw AppError.fromHttpStatus(it.code)
             readBounded(it, badBody)
         }

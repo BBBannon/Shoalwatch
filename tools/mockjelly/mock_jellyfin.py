@@ -33,6 +33,25 @@ def guid(seed):
     return hashlib.md5(seed.encode()).hexdigest()
 
 
+def norm(raw):
+    """An id as Jellyfin accepts it: dashes optional, any case."""
+    return raw.replace("-", "").lower()
+
+
+class BadRequest(Exception):
+    pass
+
+
+def intq(q, name, default=None, maximum=None):
+    """A non-negative integer query value; anything else is a 400, as in Jellyfin."""
+    raw = q.get(name, [""])[0]
+    if raw == "":
+        return default
+    if not raw.isdigit():
+        raise BadRequest(name)
+    return min(int(raw), maximum) if maximum else int(raw)
+
+
 def iso(dt):
     return dt.strftime("%Y-%m-%dT%H:%M:%S.0000000Z")
 
@@ -62,10 +81,10 @@ def build_catalogue():
         add({"Id": guid(f"film-{n}"), "Type": "Movie", "Name": name, "ParentId": FILMS_ID, "Year": 1975 + (n * 7) % 50,
              "Runtime": (80 + (n * 13) % 90) * 60 * TICKS, "Rating": round(5 + (n * 37 % 40) / 10, 1), "Official": ratings[n % 4],
              "Genre": genres[n % 5], "Overview": f"{name} is a made-up film for testing. Its plot is entry {n + 1} of 40 in the stand-in catalogue.",
-             "Aspect": 0.667})
+             "Aspect": 0.667, "NoImage": n in (1, 14, 27), "Backdrop": n == 4})
     for s, title in enumerate(["Harbour Lights", "The Long Orbit", "Night Shift"]):
         series = add({"Id": guid(f"series-{s}"), "Type": "Series", "Name": title, "ParentId": TV_ID, "IsFolder": True, "Year": 2015 + s * 3,
-                      "Official": "PG", "Rating": 7.5 + s / 4, "Overview": f"{title} is a made-up series for testing.", "Aspect": 0.667})
+                      "Official": "PG", "Rating": 7.5 + s / 4, "Overview": f"{title} is a made-up series for testing.", "Aspect": 0.667, "NoImage": s == 2})
         for sn in (1, 2):
             season = add({"Id": guid(f"season-{s}-{sn}"), "Type": "Season", "Name": f"Season {sn}", "ParentId": series["Id"], "IsFolder": True,
                           "Index": sn, "SeriesId": series["Id"], "SeriesName": title, "Aspect": 0.667})
@@ -75,7 +94,7 @@ def build_catalogue():
                      "Runtime": 45 * 60 * TICKS, "Overview": f"Episode {ep} of season {sn} of {title}.", "Aspect": 1.778, "Year": 2015 + s * 3 + sn})
 
 
-STATE, LOCK = {}, threading.Lock()
+STATE, LOCK = {}, threading.RLock()
 
 
 def user_state(item_id):
@@ -123,7 +142,10 @@ def user_data(item):
         out = {"Played": st["played"], "PlayCount": st["count"], "PlaybackPositionTicks": st["pos"]}
         if st["pos"] and item.get("Runtime"):
             out["PlayedPercentage"] = round(100 * st["pos"] / item["Runtime"], 2)
-    out.update({"IsFavorite": st["fav"], "Key": iid, "ItemId": iid, "Rating": st["rating"], "Likes": st["likes"]})
+    out.update({"IsFavorite": st["fav"], "Key": iid, "ItemId": iid})
+    for field, key in (("Rating", "rating"), ("Likes", "likes")):
+        if st[key] is not None:  # Jellyfin omits nulls
+            out[field] = st[key]
     if st["last"]:
         out["LastPlayedDate"] = iso(st["last"])
     return out
@@ -137,7 +159,8 @@ def dto(item):
     out = {"Name": item["Name"], "ServerId": SERVER_ID, "Id": item["Id"], "Etag": guid("etag-" + item["Id"])[:16], "DateCreated": iso(item["Created"]),
            "SortName": item["Name"].lower(), "Type": item["Type"], "IsFolder": item["IsFolder"], "UserData": user_data(item),
            "MediaType": "Video" if item["Type"] in ("Movie", "Episode") else "Unknown", "LocationType": "FileSystem",
-           "ImageTags": {"Primary": image_tag(item)}, "BackdropImageTags": [], "PrimaryImageAspectRatio": item["Aspect"]}
+           "ImageTags": {} if item.get("NoImage") else {"Primary": image_tag(item)},
+           "BackdropImageTags": [image_tag(item)] if item.get("Backdrop") else [], "PrimaryImageAspectRatio": item["Aspect"]}
     for key, field in (("Runtime", "RunTimeTicks"), ("Year", "ProductionYear"), ("Rating", "CommunityRating"), ("Official", "OfficialRating"),
                        ("Overview", "Overview"), ("Index", "IndexNumber"), ("ParentIndex", "ParentIndexNumber"), ("ParentId", "ParentId"),
                        ("SeriesId", "SeriesId"), ("SeriesName", "SeriesName"), ("SeasonId", "SeasonId"), ("SeasonName", "SeasonName"), ("Collection", "CollectionType")):
@@ -158,9 +181,9 @@ def result(items, start=0, total=None):
 
 
 def page(items, q):
-    start = int(q.get("startindex", ["0"])[0] or 0)
-    limit = q.get("limit", [""])[0]
-    end = start + int(limit) if limit else None
+    start = intq(q, "startindex", 0)
+    limit = intq(q, "limit")
+    end = start + limit if limit is not None else None
     return result(items[start:end], start, len(items))
 
 
@@ -170,48 +193,48 @@ def csv(q, name):
 
 def in_order(items, q):
     keys = csv(q, "sortby") or ["SortName"]
-    descending = (csv(q, "sortorder") or ["Ascending"])[0] == "Descending"
-    key = {"Name": lambda i: i["Name"].lower(), "SortName": lambda i: i["Name"].lower(), "DateCreated": lambda i: i["Created"],
+    descending = (csv(q, "sortorder") or ["Ascending"])[0].lower() == "descending"
+    key = {k.lower(): f for k, f in {"Name": lambda i: i["Name"].lower(), "SortName": lambda i: i["Name"].lower(), "DateCreated": lambda i: i["Created"],
            "PremiereDate": lambda i: i.get("Year", 0), "ProductionYear": lambda i: i.get("Year", 0), "CommunityRating": lambda i: i.get("Rating", 0),
            "Runtime": lambda i: i.get("Runtime", 0), "DatePlayed": lambda i: when(i["Id"]),
-           "IndexNumber": lambda i: i.get("Index", 0), "ParentIndexNumber": lambda i: i.get("ParentIndex", 0)}
+           "IndexNumber": lambda i: i.get("Index", 0), "ParentIndexNumber": lambda i: i.get("ParentIndex", 0)}.items()}
     ordered = list(items)
     for k in reversed(keys):  # stable sorts, last key first
-        ordered.sort(key=key.get(k, key["SortName"]), reverse=descending)
+        ordered.sort(key=key.get(k.lower(), key["sortname"]), reverse=descending)
     return ordered
 
 
 def list_items(q):
-    parent = q.get("parentid", [""])[0].replace("-", "").lower()
+    parent = norm(q.get("parentid", [""])[0])
     recursive = q.get("recursive", ["false"])[0].lower() == "true"
     if parent:
         pool = descendants(parent) if recursive else CHILDREN.get(parent, [])
     else:
         pool = [i for i in ORDER if recursive or ITEMS[i]["Type"] == "CollectionFolder"]
-    ids = {i.replace("-", "").lower() for i in csv(q, "ids")}
-    types, filters = set(csv(q, "includeitemtypes")), set(csv(q, "filters"))
+    ids = {norm(i) for i in csv(q, "ids")}
+    types, filters = {t.lower() for t in csv(q, "includeitemtypes")}, {f.lower() for f in csv(q, "filters")}
     term = q.get("searchterm", [""])[0].lower()
     out = []
     for iid in pool:
         item, st = ITEMS[iid], user_state(iid)
-        if ids and iid not in ids or types and item["Type"] not in types or term and term not in item["Name"].lower():
+        if ids and iid not in ids or types and item["Type"].lower() not in types or term and term not in item["Name"].lower():
             continue
         played = user_data(item)["Played"]
-        if "IsUnplayed" in filters and played or "IsPlayed" in filters and not played or "IsFavorite" in filters and not st["fav"]:
+        if "isunplayed" in filters and played or "isplayed" in filters and not played or "isfavorite" in filters and not st["fav"]:
             continue
         out.append(item)
     return page(in_order(out, q), q)
 
 
 def resume_items(q):
-    parent = q.get("parentid", [""])[0].lower()
+    parent = norm(q.get("parentid", [""])[0])
     scope = set(descendants(parent)) if parent else None
     rows = [ITEMS[i] for i, st in list(STATE.items()) if st["pos"] > 0 and not st["played"] and (scope is None or i in scope) and ITEMS[i]["Type"] in ("Movie", "Episode")]
     return page(sorted(rows, key=lambda i: when(i["Id"]), reverse=True), q)
 
 
 def next_up(q):
-    series_id, parent = q.get("seriesid", [""])[0].lower(), q.get("parentid", [""])[0].lower()
+    series_id, parent = norm(q.get("seriesid", [""])[0]), norm(q.get("parentid", [""])[0])
     rows = []
     for sid in CHILDREN.get(TV_ID, []):
         if (series_id and sid != series_id) or (parent and parent not in (sid, TV_ID)):
@@ -224,10 +247,10 @@ def next_up(q):
 
 
 def latest(q):
-    parent = q.get("parentid", [""])[0].lower()
+    parent = norm(q.get("parentid", [""])[0])
     kinds = ("Movie", "Series")
     pool = [ITEMS[c] for c in (CHILDREN.get(parent, []) if parent else ORDER) if ITEMS[c]["Type"] in kinds]
-    limit = int(q.get("limit", ["20"])[0] or 20)
+    limit = intq(q, "limit", 20)
     return [dto(i) for i in sorted(pool, key=lambda i: i["Created"], reverse=True)[:limit]]
 
 
@@ -294,17 +317,25 @@ class Handler(BaseHTTPRequestHandler):
         token = match.group(1) if match else ""
         time.sleep(CONFIG["latency"])
         try:
-            self.dispatch(path, q, body, token)
+            with LOCK:  # one lock for every read and write of the shared state
+                self.dispatch(path, q, body, token)
+        except BadRequest:
+            self.reply(400)
         finally:
             print(f"{self.command} {path} auth={'yes' if auth else 'no'} token={'yes' if token else 'no'} status={self.status}", flush=True)
 
     def dispatch(self, path, q, raw, token):
         method = self.command
-        if method == "GET" and path == "/System/Info/Public":
+        low = path.lower()
+        segs = path.strip("/").split("/")
+        if method == "GET" and len(segs) >= 4 and segs[0].lower() == "items" and segs[2].lower() == "images":
+            # like Jellyfin, artwork needs no token
+            return self.image(ITEMS[norm(segs[1])], segs[3], q) if norm(segs[1]) in ITEMS else self.reply(404)
+        if method == "GET" and low == "/system/info/public":
             return self.reply(200, {"Id": SERVER_ID, "ServerName": "Test Jellyfin", "Version": "12.4.0", "ProductName": "Mock Jellyfin (test stand-in)"})
-        if method == "GET" and path == "/QuickConnect/Enabled":
+        if method == "GET" and low == "/quickconnect/enabled":
             return self.reply(200, False)
-        if method == "POST" and path == "/Users/AuthenticateByName":
+        if method == "POST" and low == "/users/authenticatebyname":
             try:
                 creds = json.loads(raw or b"{}")
             except ValueError:
@@ -319,51 +350,50 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(401)
         if random.random() < CONFIG["fail_rate"]:
             return self.reply(500)
-        if method == "POST" and path == "/Sessions/Logout":
+        if method == "POST" and low == "/sessions/logout":
             TOKENS.discard(token)
             return self.reply(204)
         if not self.authenticated(method, path, q, raw):
             return self.reply(404)
 
     def authenticated(self, method, path, q, raw):
-        segs = path.strip("/").split("/")
-        item = lambda i: ITEMS.get(i.replace("-", "").lower())
+        segs = [x.lower() if n in (0, 2) else x for n, x in enumerate(path.strip("/").split("/"))]
+        low = path.lower()
+        item = lambda i: ITEMS.get(norm(i))
         if method == "GET":
-            if path == "/Users/Me":
+            if low == "/users/me":
                 return self.reply(200, {"Name": USER_NAME, "ServerId": SERVER_ID, "Id": USER_ID, "HasPassword": True})
-            if path == "/UserViews":
+            if low == "/userviews":
                 return self.reply(200, result([ITEMS[FILMS_ID], ITEMS[TV_ID]]))
-            if path == "/Items":
+            if low == "/items":
                 return self.reply(200, list_items(q))
-            if path == "/Items/Latest":
+            if low == "/items/latest":
                 return self.reply(200, latest(q))
-            if path == "/UserItems/Resume":
+            if low == "/useritems/resume":
                 return self.reply(200, resume_items(q))
-            if path == "/Shows/NextUp":
+            if low == "/shows/nextup":
                 return self.reply(200, next_up(q))
-            if len(segs) == 2 and segs[0] == "Items" and item(segs[1]):
+            if len(segs) == 2 and segs[0] == "items" and item(segs[1]):
                 return self.reply(200, dto(item(segs[1])))
-            if len(segs) == 3 and segs[0] == "Shows" and item(segs[1]) and item(segs[1])["Type"] == "Series":
+            if len(segs) == 3 and segs[0] == "shows" and item(segs[1]) and item(segs[1])["Type"] == "Series":
                 series = item(segs[1])
-                if segs[2] == "Seasons":
+                if segs[2] == "seasons":
                     return self.reply(200, page([ITEMS[c] for c in CHILDREN[series["Id"]]], q))
-                if segs[2] == "Episodes":
-                    season = q.get("seasonid", [""])[0].replace("-", "").lower()
+                if segs[2] == "episodes":
+                    season = norm(q.get("seasonid", [""])[0])
                     ids = episodes_of(season if season in ITEMS else series["Id"])
                     return self.reply(200, page(sorted((ITEMS[e] for e in ids), key=lambda e: (e["ParentIndex"], e["Index"])), q))
-            if len(segs) == 3 and segs[0] == "UserItems" and segs[2] == "UserData" and item(segs[1]):
+            if len(segs) == 3 and segs[0] == "useritems" and segs[2] == "userdata" and item(segs[1]):
                 return self.reply(200, user_data(item(segs[1])))
-            if len(segs) == 4 and segs[0] == "Items" and segs[2] == "Images" and item(segs[1]):
-                return self.image(item(segs[1]), segs[3], q)
-        elif len(segs) == 2 and segs[0] in ("UserPlayedItems", "UserFavoriteItems") and item(segs[1]):
+        elif len(segs) == 2 and segs[0] in ("userplayeditems", "userfavoriteitems") and item(segs[1]):
             on = method == "POST"
-            if segs[0] == "UserPlayedItems":
+            if segs[0] == "userplayeditems":
                 changes = {"played": on, "pos": 0, "stamp": on}
                 if on:
                     changes["count"] = 1
                 return self.reply(200, mark(item(segs[1])["Id"], **changes))
             return self.reply(200, mark(item(segs[1])["Id"], fav=on))
-        elif method == "POST" and len(segs) == 3 and segs[0] == "UserItems" and segs[2] == "UserData" and item(segs[1]):
+        elif method == "POST" and len(segs) == 3 and segs[0] == "useritems" and segs[2] == "userdata" and item(segs[1]):
             try:
                 body = json.loads(raw or b"{}")
             except ValueError:
@@ -372,11 +402,13 @@ class Handler(BaseHTTPRequestHandler):
         return False
 
     def image(self, item, kind, q):
-        if kind != "Primary":
+        kind = kind.lower()
+        if not (kind == "primary" and not item.get("NoImage") or kind == "backdrop" and item.get("Backdrop")):
             return self.reply(404)
-        width = min(int(next((q[k][0] for k in ("maxwidth", "width", "fillwidth") if k in q), 300)), 1000)
-        height = min(int(next((q[k][0] for k in ("maxheight", "height", "fillheight") if k in q), 0)) or round(width / item["Aspect"]), 1500)
-        etag = f'"{image_tag(item)}-{width}x{height}"'
+        aspect = 1.778 if kind == "backdrop" else item["Aspect"]
+        width = min(intq(q, "maxwidth") or intq(q, "width") or intq(q, "fillwidth") or 300, 1000)
+        height = min(intq(q, "maxheight") or intq(q, "height") or intq(q, "fillheight") or round(width / aspect), 1500)
+        etag = f'"{image_tag(item)}-{kind}-{width}x{height}"'
         headers = {"ETag": etag, "Cache-Control": "public, max-age=3600"}
         if self.headers.get("If-None-Match") == etag:
             return self.reply(304, headers=headers)

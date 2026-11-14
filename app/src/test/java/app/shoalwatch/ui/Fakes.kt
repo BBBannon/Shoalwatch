@@ -1,6 +1,6 @@
 package app.shoalwatch.ui
 
-import app.shoalwatch.data.api.Session
+import app.shoalwatch.data.servers.Session
 import app.shoalwatch.data.servers.AccountSummary
 import app.shoalwatch.data.servers.Authenticator
 import app.shoalwatch.data.servers.CertificateProber
@@ -194,6 +194,7 @@ class FakeConnections : ServerConnections {
     override fun connection(serverId: String): StateFlow<Connection> = stateFor(serverId)
     override suspend fun awaitOnline(serverId: String, timeoutMs: Long): Connection.Online? = onlineAnswer
     override fun refresh() { refreshes++ }
+    override fun refreshIfCurrent(serverId: String, failed: Connection.Online) = Unit
 }
 
 class FakeChooser(private val alias: String?) : ClientCertChooser {

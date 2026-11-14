@@ -292,16 +292,15 @@ class LibraryGatewayTest : LibraryGatewayTestBase() {
     // ---- errors
 
     @Test fun serverAnswersMapToTheRightErrorKinds() {
-        web.enqueue(MockResponse().setResponseCode(401))
-        assertEquals(AppError.Kind.UNAUTHORISED, failure { gateway.resume(session, 5) }.kind)
         web.enqueue(MockResponse().setResponseCode(404))
         assertEquals(AppError.Kind.SERVER_NOT_FOUND, failure { gateway.item(session, MOVIE_A) }.kind)
         web.enqueue(MockResponse().setResponseCode(500))
         assertEquals(AppError.Kind.SERVER_ERROR, failure { gateway.views(session) }.kind)
-        web.enqueue(MockResponse().setResponseCode(401))
-        assertEquals(AppError.Kind.UNAUTHORISED, failure { gateway.setFavourite(session, MOVIE_A, true) }.kind)
         web.enqueue(json("this is not json"))
         assertEquals(AppError.Kind.SERVER_ERROR, failure { gateway.nextUp(session, 5) }.kind)
+        // last: a 401 signs the account out locally (see ServerApiTest), so nothing after it would be sent
+        web.enqueue(MockResponse().setResponseCode(401))
+        assertEquals(AppError.Kind.UNAUTHORISED, failure { gateway.setFavourite(session, MOVIE_A, true) }.kind)
     }
 
     @Test fun offlineIsOfflineAndNothingIsSent() {

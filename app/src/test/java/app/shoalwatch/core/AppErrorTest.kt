@@ -72,7 +72,11 @@ class AppErrorTest {
         assertEquals(AppError.Kind.SERVER_NOT_FOUND, AppError.fromHttpStatus(404).kind)
         assertEquals(AppError.Kind.SERVER_ERROR, AppError.fromHttpStatus(500).kind)
         assertEquals(AppError.Kind.SERVER_ERROR, AppError.fromHttpStatus(503).kind)
-        assertEquals(AppError.Kind.UNKNOWN, AppError.fromHttpStatus(418).kind)
+        assertEquals(AppError.Kind.SERVER_ERROR, AppError.fromHttpStatus(418).kind)
+        assertEquals(AppError.Kind.SERVER_ERROR, AppError.fromHttpStatus(400).kind)
+        assertEquals(AppError.Kind.SERVER_NOT_FOUND, AppError.fromHttpStatus(301).kind)
+        assertEquals(AppError.Kind.SERVER_NOT_FOUND, AppError.fromHttpStatus(307).kind)
+        assertEquals("a conditional-request answer to a request that was never conditional", AppError.Kind.SERVER_ERROR, AppError.fromHttpStatus(304).kind)
     }
 
     @Test fun messagesNeverLeakInputOrUrls() {

@@ -109,6 +109,13 @@ class AddressSelector(
             state.value = Connection.Checking(previous)
         }
 
+        /** [invalidate], but only if the published state is still exactly [expected] (the same instance, not merely an equal one). */
+        @Synchronized fun invalidateIf(expected: Connection.Online): Boolean {
+            if (state.value !== expected) return false
+            invalidate()
+            return true
+        }
+
         /**
          * A probe starts with the settings just read from the store. If they differ from what the last probe used,
          * earlier results (and the old address) no longer apply: back to `Checking`, and older in-flight results are dropped.
@@ -231,6 +238,16 @@ class AddressSelector(
                 it.requests.trySend(Unit)
             }
         }
+    }
+
+    /**
+     * Compared by identity: [awaitOnline] hands out the instance that was published, and every verification publishes a
+     * new one, so a failure from before the latest verification (even of the same address) never discards it. Only
+     * [serverId] is re-probed; [refresh] stays for the user's "retry".
+     */
+    override fun refreshIfCurrent(serverId: String, failed: Connection.Online) {
+        val entry = synchronized(entries) { entries[serverId] } ?: return
+        if (entry.invalidateIf(failed)) entry.requests.trySend(Unit)
     }
 
     /** Stops probing [serverId] (cancelling any probe in flight). Called when the server is removed. */

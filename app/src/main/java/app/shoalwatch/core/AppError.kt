@@ -39,12 +39,20 @@ class AppError(val kind: Kind, val userMessage: String, cause: Throwable? = null
             return of(kind, t)
         }
 
+        /**
+         * The one mapping of a non-success HTTP status, used by the sign-in gateway and `ServerApi` alike.
+         * No client follows redirects, so a 3xx means this address is not serving the API (`SERVER_NOT_FOUND`); the
+         * exception is 304, which only answers a conditional request and we never send one, so it is a server fault.
+         * Every other 4xx and every 5xx is `SERVER_ERROR`.
+         */
         fun fromHttpStatus(code: Int): AppError = of(
             when (code) {
                 401 -> Kind.UNAUTHORISED
                 403 -> Kind.FORBIDDEN
                 404 -> Kind.SERVER_NOT_FOUND
-                in 500..599 -> Kind.SERVER_ERROR
+                304 -> Kind.SERVER_ERROR
+                in 300..399 -> Kind.SERVER_NOT_FOUND
+                in 400..599 -> Kind.SERVER_ERROR
                 else -> Kind.UNKNOWN
             },
         )

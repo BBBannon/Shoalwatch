@@ -4,7 +4,7 @@ import app.shoalwatch.S1
 import app.shoalwatch.U1
 import app.shoalwatch.core.AppError
 import app.shoalwatch.data.api.ServerApi
-import app.shoalwatch.data.api.Session
+import app.shoalwatch.data.servers.Session
 import app.shoalwatch.data.db.AppDatabase
 import app.shoalwatch.data.inMemoryDb
 import app.shoalwatch.data.library.api.LibraryGateway
@@ -42,6 +42,7 @@ abstract class LibraryGatewayTestBase {
         override fun connection(serverId: String): StateFlow<Connection> = MutableStateFlow(Connection.Offline())
         override suspend fun awaitOnline(serverId: String, timeoutMs: Long): Connection.Online? = online
         override fun refresh() {}
+        override fun refreshIfCurrent(serverId: String, failed: Connection.Online) {}
     }
 
     protected val web = MockWebServer()

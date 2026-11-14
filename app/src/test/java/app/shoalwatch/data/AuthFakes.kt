@@ -65,6 +65,7 @@ internal class StubConnections(var online: (String) -> Connection.Online?) : Ser
     fun set(serverId: String, state: Connection) { (connection(serverId) as MutableStateFlow<Connection>).value = state }
     override suspend fun awaitOnline(serverId: String, timeoutMs: Long): Connection.Online? { asked += serverId; return online(serverId) }
     override fun refresh() = Unit
+    override fun refreshIfCurrent(serverId: String, failed: Connection.Online) = Unit
 }
 
 internal fun inMemoryDb(): AppDatabase =
