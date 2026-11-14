@@ -35,6 +35,23 @@ A native Android client for Jellyfin (films and TV) whose offline library behave
 | 9 | Casting and PiP | Picture-in-picture that works on Android 14+; Chromecast as a separable build flavour |
 | 10 | Storage and housekeeping | Internal or SD card; storage view; auto-delete watched; auto-download next; watched progress sent back after offline use |
 
+### 3.1 Watch and delete (requested by Ben, 14/11/2026)
+
+- When a **downloaded** episode or film finishes, before the next one starts, a prompt offers **"Watched — delete download"** as a single press. One press marks it watched **and** frees the storage.
+- The prompt never blocks playback: it sits alongside the "next episode" countdown, and ignoring it leaves the download in place.
+- Setting with three values: **Ask each time** (default), **Always delete when finished**, **Never**.
+- Only the media file and its per-item extras (subtitles, previews) are removed. The series, season and episode details and artwork stay, so the show still browses normally offline and the episode shows as watched.
+- "Finished" means played to the credits marker or past 90% of the runtime; skipping to the end by hand does not trigger the prompt until that point is reached by playback or an explicit "mark watched".
+- A deletion made by mistake is recoverable by downloading again when online.
+
+### 3.2 Sync back to the server
+
+- Everything watched offline is queued on the phone: **watched state, resume position and the date and time it was watched**.
+- When the server is next reachable the queue is sent automatically, so the server's watch history and statistics match what was actually watched, with the original dates rather than the reconnection time.
+- The queue survives app restarts and updates, retries on failure, and is only cleared item by item once the server confirms.
+- If the server holds a newer change for the same item (watched on another device meanwhile), the later of the two wins for resume position; **watched is never undone by a sync**.
+- The app shows how many items are waiting to sync, and when the last sync succeeded.
+
 ## 4. Architecture principles
 
 1. **The database is the single source of truth.** Screens read only from Room (as flows). The network layer writes into Room. There is no separate "offline mode" code path in the UI.
@@ -94,7 +111,7 @@ Each milestone has its own plan in `docs/plans/`, ends with automated tests pass
 | 2 | Room library cache, native browsing (home, libraries, series/season/episode, film detail, search), Continue Watching tidy-up, artwork cache |
 | 3 | Player: device profile, direct play/transcode, quality choice, resume and progress reporting, track memory, subtitle styling, gestures, speed, skip segments, sleep timer |
 | 4 | Downloads and offline library: queue, batch season/series/unwatched, original or transcoded, artwork/subtitles/previews pinned, verification, internal/SD storage. Begins with a short spike against the real server to settle how transcoded downloads are fetched resumably and whether Jellyfin 12 needs anything special for downloads |
-| 5 | Housekeeping (auto-delete watched, auto-download next, storage view) and playstate outbox sync |
+| 5 | Housekeeping (watch-and-delete prompt §3.1, auto-download next, storage view) and playstate outbox sync (§3.2) |
 | 6 | Picture-in-picture, Chromecast flavour, tablet layout, app lock (S8), polish |
 | 7 | Security-team review, fixes, signed first release, README |
 
