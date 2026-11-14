@@ -12,10 +12,12 @@ import javax.net.ssl.X509KeyManager
 /**
  * Presents the client certificate stored in Android's `KeyChain` under [alias], and no other.
  *
- * `KeyChain.getPrivateKey` and `getCertificateChain` block and must never run on the main thread.
- * OkHttp calls key managers from its own connection threads during the TLS handshake, so this is
- * safe as long as it is only used through the OkHttp client. Failures return null, which makes the
- * handshake proceed without a client certificate.
+ * `KeyChain.getPrivateKey` and `getCertificateChain` block, and `KeyChain` itself throws
+ * `IllegalStateException` if called on the main thread. A synchronous OkHttp `execute()` runs the
+ * TLS handshake, and so these calls, on the caller's thread; what keeps them off the main thread is
+ * that every network call in this app runs on a background dispatcher. Any failure (KeyChain error,
+ * main-thread refusal, interruption) returns null, so the handshake carries on without presenting a
+ * client certificate. The alias is never logged.
  */
 class KeyChainKeyManager(context: Context, private val alias: String) : X509KeyManager {
     private val appContext = context.applicationContext
@@ -34,6 +36,8 @@ class KeyChainKeyManager(context: Context, private val alias: String) : X509KeyM
             KeyChain.getCertificateChain(appContext, alias)
         } catch (_: KeyChainException) {
             null
+        } catch (_: IllegalStateException) {
+            null
         } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()
             null
@@ -45,6 +49,8 @@ class KeyChainKeyManager(context: Context, private val alias: String) : X509KeyM
         return try {
             KeyChain.getPrivateKey(appContext, alias)
         } catch (_: KeyChainException) {
+            null
+        } catch (_: IllegalStateException) {
             null
         } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()

@@ -54,8 +54,33 @@ class PinnedTrustManagerTest {
         try {
             PinnedTrustManager(trustsNothing, pinOf(selfSigned)).checkServerTrusted(emptyArray(), "RSA")
             fail()
-        } catch (_: Exception) {
+        } catch (_: CertificateException) {
+        } catch (_: IllegalArgumentException) {
         }
+    }
+
+    @Test fun `a malformed pin is refused without echoing it`() {
+        for (bad in listOf("not base64!!", "AAAA", "", spkiSha256Base64(selfSigned.certificate).trimEnd('='))) {
+            try {
+                PinnedTrustManager(trustsNothing, bad)
+                fail()
+            } catch (e: IllegalArgumentException) {
+                assertTrue(!e.message.orEmpty().contains(bad) || bad.isEmpty())
+            }
+        }
+    }
+
+    @Test fun `isValidPin accepts only padded base64 of 32 bytes`() {
+        assertTrue(isValidPin(pinOf(selfSigned)))
+        assertTrue(!isValidPin("AAAA"))
+        assertTrue(!isValidPin(pinOf(selfSigned).trimEnd('=')))
+        assertTrue(!isValidPin("%%%"))
+        assertTrue(!isValidPin(""))
+    }
+
+    @Test fun `CertificateInfo toString is redacted`() {
+        val text = CertificateInfo("CN=secret.host", "CN=issuer.host", java.time.Instant.EPOCH, "abc").toString()
+        assertEquals("CertificateInfo(<redacted>)", text)
     }
 
     @Test fun `client certificates are never trusted`() {

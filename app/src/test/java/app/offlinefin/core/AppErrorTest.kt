@@ -14,6 +14,16 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AppErrorTest {
+    @Test fun pinMismatchInSuppressedIsPinChanged() {
+        val e = javax.net.ssl.SSLHandshakeException("x").apply { addSuppressed(RuntimeException("w", PinMismatchException())) }
+        assertEquals(AppError.Kind.TLS_PIN_CHANGED, AppError.from(e).kind)
+    }
+
+    @Test fun clientCertRequiredMessageIsCurrent() = assertEquals(
+        "This server needs a security certificate from your phone. Choose one in the server's settings.",
+        AppError.of(AppError.Kind.CLIENT_CERT_REQUIRED).userMessage,
+    )
+
     @Test fun pinMismatchAnywhereInChainIsPinChanged() {
         val e = AppError.from(javax.net.ssl.SSLHandshakeException("x").apply { initCause(PinMismatchException()) })
         assertEquals(AppError.Kind.TLS_PIN_CHANGED, e.kind)

@@ -54,15 +54,11 @@ class AppError(val kind: Kind, val userMessage: String, cause: Throwable? = null
             return null
         }
 
-        private fun hasPinMismatch(t: Throwable): Boolean {
-            var current: Throwable? = t
-            var depth = 0
-            while (current != null && depth < 10) {
-                if (current is PinMismatchException) return true
-                current = current.cause
-                depth++
-            }
-            return false
+        /** Looks through causes and suppressed exceptions, in case a TLS provider re-wraps the failure. */
+        private fun hasPinMismatch(t: Throwable, depth: Int = 0): Boolean {
+            if (t is PinMismatchException) return true
+            if (depth >= 10) return false
+            return listOfNotNull(t.cause).plus(t.suppressed).any { hasPinMismatch(it, depth + 1) }
         }
 
         private fun isTlsProblem(t: Throwable): Boolean {
@@ -84,7 +80,7 @@ class AppError(val kind: Kind, val userMessage: String, cause: Throwable? = null
             Kind.TLS_UNTRUSTED -> "This server's security certificate isn't trusted."
             Kind.TLS_PIN_CHANGED -> "This server's security certificate has changed. Don't continue unless you expected this."
             Kind.CLEARTEXT_BLOCKED -> "Unencrypted connections to this server are blocked."
-            Kind.CLIENT_CERT_REQUIRED -> "This server requires a client certificate, which isn't supported."
+            Kind.CLIENT_CERT_REQUIRED -> "This server needs a security certificate from your phone. Choose one in the server's settings."
             Kind.SERVER_NOT_FOUND -> "No Jellyfin server was found at that address."
             Kind.SERVER_UNSUPPORTED -> "This server's version isn't supported."
             Kind.UNAUTHORISED -> "Your sign-in was not accepted. Please sign in again."

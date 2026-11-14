@@ -44,9 +44,9 @@ Only `net/HttpClientFactory` may construct an `OkHttpClient`.
 - **Hostnames:** normal hostname verification always runs first, so a system-trusted certificate for a different host is refused even on a pinned client. Only if that fails does a pinned client accept, and only when the peer's leaf key is exactly the pinned key (LAN certificates often lack a matching name).
 - **TLS versions:** 1.2 and 1.3 only. Plain `http` is allowed by the connection spec but policed per server by `CleartextGuard`.
 - **Redirects:** `CleartextGuard`, `CustomHeaderInterceptor` and `AuthInterceptor` run as both application and network interceptors; `followSslRedirects` is off. The token and custom headers only reach the server's own `host:port` authorities.
-- **First contact:** `probeCertificate` handshakes with a capture-only trust manager that always fails after recording the leaf, so no request, token or header is sent on the unverified connection. It uses no `clientFor` client and ends within about 10 seconds.
-- **Client certificates:** `KeyChainKeyManager` offers only the stored alias; `KeyChain` calls block, and OkHttp invokes them on its own connection threads, never the main thread.
-- **Clients:** all share one connection pool and dispatcher; no cache, no cookies; connect 10 s, read/write 30 s, no call timeout (it would cut long downloads). No new dependencies.
+- **First contact:** `probeCertificate` handshakes with a capture-only trust manager that always fails after recording the leaf, so no request, token or header is sent on the unverified connection. It uses no `clientFor` client. The whole probe has a hard 10 s deadline: on expiry or cancellation its socket is closed (an uninterruptible DNS lookup may leave one daemon thread behind until it returns, but the caller is released).
+- **Client certificates:** `KeyChainKeyManager` offers only the stored alias; `KeyChain` calls block and refuse the main thread; a synchronous `execute()` runs the handshake on the caller's thread, so safety rests on every network call in this app running off the main thread. Any KeyChain failure presents no certificate.
+- **Clients:** all share one connection pool and dispatcher; no cache, no cookies; connect 10 s, read/write 30 s, no call timeout (it would cut long downloads). Callers hold one client per server configuration (each `clientFor` builds a new SSLContext; no cache).
 
 ## Version checks
 

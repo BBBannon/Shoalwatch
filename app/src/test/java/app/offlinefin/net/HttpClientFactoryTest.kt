@@ -26,8 +26,8 @@ class HttpClientFactoryTest {
     private val noTrust = HandshakeCertificates.Builder().addTrustedCertificate(HeldCertificate.Builder().certificateAuthority(0).build().certificate).build().trustManager
     private val trustsRoot = HandshakeCertificates.Builder().addTrustedCertificate(root.certificate).build().trustManager
 
-    private fun factory(system: X509TrustManager = noTrust) =
-        HttpClientFactory(system) { error("no client certificates in these tests") }
+    private fun factory(system: X509TrustManager = noTrust, probeDeadlineMs: Long = 10_000) =
+        HttpClientFactory(system, { error("no client certificates in these tests") }, probeDeadlineMs)
 
     private fun httpsServer(cert: HeldCertificate, chain: List<HeldCertificate> = emptyList()): MockWebServer {
         val hs = HandshakeCertificates.Builder().heldCertificate(cert, *chain.map { it.certificate }.toTypedArray()).build()
@@ -164,6 +164,36 @@ class HttpClientFactoryTest {
             fail()
         } catch (e: AppError) {
             assertEquals(AppError.Kind.NETWORK, e.kind)
+        }
+    }
+
+    @Test fun `probe gives up on a server that never replies, within the deadline, and closes the socket`() {
+        java.net.ServerSocket(0, 1, java.net.InetAddress.getByName("127.0.0.1")).use { silent ->
+            val accepted = java.util.concurrent.CompletableFuture<java.net.Socket>()
+            Thread { accepted.complete(silent.accept()) }.start()
+            val started = System.nanoTime()
+            try {
+                runBlocking { factory(probeDeadlineMs = 800).probeCertificate(ServerAddress.parse("https://127.0.0.1:${silent.localPort}")) }
+                fail()
+            } catch (e: AppError) {
+                assertEquals(AppError.Kind.TIMEOUT, e.kind)
+            }
+            val elapsedMs = (System.nanoTime() - started) / 1_000_000
+            org.junit.Assert.assertTrue("took $elapsedMs ms", elapsedMs < 1_800)
+            val server = accepted.get(2, java.util.concurrent.TimeUnit.SECONDS)
+            server.soTimeout = 2_000
+            // The client end was closed, so the server side sees end-of-stream (or a reset) rather than a timeout.
+            val closed = try {
+                var n = 0
+                while (n != -1) n = server.getInputStream().read()
+                true
+            } catch (_: java.net.SocketTimeoutException) {
+                false
+            } catch (_: java.io.IOException) {
+                true
+            }
+            assertEquals(true, closed)
+            server.close()
         }
     }
 }

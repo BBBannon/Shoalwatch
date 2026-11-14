@@ -1,7 +1,6 @@
 package app.offlinefin.net
 
 import app.offlinefin.core.PinMismatchException
-import okhttp3.internal.tls.OkHostnameVerifier
 import java.security.MessageDigest
 import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
@@ -20,6 +19,9 @@ class PinnedTrustManager(
     private val system: X509TrustManager,
     private val pinnedSpkiSha256: String?,
 ) : X509TrustManager {
+    init {
+        require(pinnedSpkiSha256 == null || isValidPin(pinnedSpkiSha256)) { "The pinned certificate key is not in a valid format." }
+    }
 
     override fun checkServerTrusted(chain: Array<out X509Certificate>, authType: String) {
         try {
@@ -44,15 +46,18 @@ class PinnedTrustManager(
 }
 
 /**
- * Hostname check for a pinned server. Normal verification always runs first, so a certificate the
+ * Hostname check for a pinned server. Normal verification ([normal], the HTTP client's own verifier) always runs first, so a certificate the
  * system trusts for a different host is still refused. Only when that fails does it accept the
  * connection, and only if the peer's leaf key is exactly the pinned one (self-signed certificates
  * for LAN addresses often carry no matching name). With no pin it is just normal verification.
  * The trust manager has already decided whether the chain itself is acceptable.
  */
-class PinAwareHostnameVerifier(private val pinnedSpkiSha256: String?) : HostnameVerifier {
+class PinAwareHostnameVerifier(
+    private val pinnedSpkiSha256: String?,
+    private val normal: HostnameVerifier,
+) : HostnameVerifier {
     override fun verify(hostname: String, session: SSLSession): Boolean {
-        if (OkHostnameVerifier.verify(hostname, session)) return true
+        if (normal.verify(hostname, session)) return true
         val pin = pinnedSpkiSha256 ?: return false
         val leaf = try {
             session.peerCertificates.firstOrNull() as? X509Certificate

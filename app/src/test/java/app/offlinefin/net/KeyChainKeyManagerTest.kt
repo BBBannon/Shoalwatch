@@ -23,4 +23,9 @@ class KeyChainKeyManagerTest {
         assertNull(km.getPrivateKey("someone-else"))
         assertNull(km.getCertificateChain("someone-else"))
     }
+
+    @Test fun `KeyChain refusing the main thread yields no key rather than a crash`() {
+        assertNull(km.getPrivateKey("my-alias"))
+        assertNull(km.getCertificateChain("my-alias"))
+    }
 }
