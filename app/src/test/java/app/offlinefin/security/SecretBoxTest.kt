@@ -4,7 +4,6 @@ import app.offlinefin.core.AppError
 import javax.crypto.KeyGenerator
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
@@ -63,6 +62,18 @@ class SecretBoxTest {
         assertRejected(box.seal("x").copyOf(10))
     }
 
+    @Test fun sealFailureIsAppErrorWithoutLeakingCause() {
+        val failing = SecretBox { throw IllegalStateException("https://secret.host/LEAKME") }
+        try {
+            failing.seal("x")
+            fail("expected AppError")
+        } catch (e: AppError) {
+            assertEquals(AppError.Kind.UNKNOWN, e.kind)
+            assertEquals("Sign-in could not be saved securely. Please try again.", e.message)
+            assertTrue(e.cause is IllegalStateException)
+        }
+    }
+
     @Test fun wrongKeyThrows() {
         val other = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
         val sealed = box.seal("x")
@@ -72,6 +83,5 @@ class SecretBoxTest {
         } catch (e: AppError) {
             assertTrue(e.kind == AppError.Kind.UNKNOWN)
         }
-        assertNotEquals(key, other)
     }
 }

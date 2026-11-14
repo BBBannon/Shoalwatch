@@ -10,10 +10,12 @@ object AppLog {
         Log.d(tag, Redact.text(msg))
     }
 
-    /** [t] is logged as class name plus redacted message only, never as a stack trace. */
+    /** [t] is logged as its full class name only; its message can hold hosts or URLs. */
     fun w(tag: String, msg: String, t: Throwable? = null) {
         if (!BuildConfig.DEBUG) return
-        val detail = t?.let { " (${it.javaClass.simpleName}: ${Redact.text(it.message.orEmpty())})" }.orEmpty()
-        Log.w(tag, Redact.text(msg) + detail)
+        Log.w(tag, format(msg, t))
     }
+
+    internal fun format(msg: String, t: Throwable?): String =
+        Redact.text(msg) + (t?.let { " (${it.javaClass.name})" } ?: "")
 }

@@ -38,4 +38,33 @@ class RedactTest {
         assertEquals("<url>", Redact.url("https://host.example/path?x=1"))
         assertEquals("<url>", Redact.url("http://10.0.0.5:8096/"))
     }
+
+    @Test fun unquotedTokenIsRemoved() {
+        val out = Redact.text("Token=abc123 next")
+        assertFalse(out.contains("abc123"))
+        assertTrue(out.contains("next"))
+    }
+
+    @Test fun singleQuotedValuesAreRemoved() {
+        assertFalse(Redact.text("Token='sq-secret' x").contains("sq-secret"))
+        assertFalse(Redact.text("api_key='sq-key' x").contains("sq-key"))
+    }
+
+    @Test fun tokenHeadersAreRemoved() {
+        assertFalse(Redact.text("X-Emby-Token: embySecret").contains("embySecret"))
+        assertFalse(Redact.text("X-MediaBrowser-Token: mbSecret").contains("mbSecret"))
+    }
+
+    @Test fun bearerValueIsRemoved() {
+        val out = Redact.text("sent Bearer abc.def-ghi done")
+        assertFalse(out.contains("abc.def-ghi"))
+        assertTrue(out.contains("done"))
+    }
+
+    @Test fun quotedHostnameIsRemoved() {
+        val plain = Redact.text("Unable to resolve host \"jellyfin.example.com\": No address")
+        assertFalse(plain, plain.contains("jellyfin.example.com"))
+        val escaped = Redact.text("Unable to resolve host \\\"jellyfin.example.com\\\"")
+        assertFalse(escaped, escaped.contains("jellyfin.example.com"))
+    }
 }

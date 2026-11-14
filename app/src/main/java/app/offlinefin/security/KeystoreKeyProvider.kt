@@ -4,6 +4,7 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.security.keystore.StrongBoxUnavailableException
 import java.security.KeyStore
+import java.security.ProviderException
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 
@@ -13,13 +14,15 @@ import javax.crypto.SecretKey
  * can decrypt in the background.
  */
 class KeystoreKeyProvider(private val alias: String = "offlinefin.secrets.v1") : KeyProvider {
-    @Synchronized
-    override fun key(): SecretKey {
+    override fun key(): SecretKey = synchronized(LOCK) {
         val store = KeyStore.getInstance(PROVIDER).apply { load(null) }
         (store.getKey(alias, null) as? SecretKey)?.let { return it }
         return try {
             generate(strongBox = true)
         } catch (_: StrongBoxUnavailableException) {
+            generate(strongBox = false)
+        } catch (_: ProviderException) {
+            // Some devices throw this instead of StrongBoxUnavailableException.
             generate(strongBox = false)
         }
     }
@@ -43,5 +46,6 @@ class KeystoreKeyProvider(private val alias: String = "offlinefin.secrets.v1") :
 
     private companion object {
         const val PROVIDER = "AndroidKeyStore"
+        val LOCK = Any()
     }
 }

@@ -1,3 +1,4 @@
+v1.6 — 14/11/2026 — Behind the scenes: saving sign-in details now works with the phone's secure key store, and more kinds of server address and sign-in detail are hidden from logs.
 v1.5 — 14/11/2026 — Behind the scenes: saved sign-in details are now encrypted with a key kept in the phone's secure hardware store.
 v1.4 — 14/11/2026 — Behind the scenes: error messages and logging now hide server addresses and sign-in details, so nothing sensitive can leak.
 v1.3 — 14/11/2026 — App skeleton created: it builds and opens to a placeholder screen, with backups switched off and only the two network permissions requested.
