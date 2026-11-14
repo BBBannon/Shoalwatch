@@ -5,6 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import app.shoalwatch.core.AppError
 import app.shoalwatch.data.db.AppDatabase
 import app.shoalwatch.data.servers.Account
+import app.shoalwatch.data.servers.AccountSummary
 import app.shoalwatch.data.servers.Server
 import app.shoalwatch.data.servers.DeviceIdentity
 import app.shoalwatch.data.servers.ServerNet
@@ -89,7 +90,7 @@ class ServerStoreTest {
         assertEquals("plain-token-ABCDEF", box.open(token))
         assertFalse(String(headers, Charsets.ISO_8859_1).contains("headervalue-12345"))
         assertFalse(String(headers, Charsets.ISO_8859_1).contains("X-Proxy-Key"))
-        assertEquals(account(), store.active()!!.second)
+        assertEquals(account().let { AccountSummary(it.serverId, it.userId, it.userName) }, store.active())
     }
 
     @Test fun removingServerRemovesItsAccountsAndActiveMarker() = runBlocking {
@@ -111,7 +112,7 @@ class ServerStoreTest {
         store.upsertAccount(account(), makeActive = true)
         store.upsertServer(server().copy(name = "Renamed"))
         assertEquals("Renamed", store.server("s1")!!.name)
-        assertEquals(listOf(account()), store.accounts("s1").first())
+        assertEquals(listOf(account().let { AccountSummary(it.serverId, it.userId, it.userName) }), store.accounts("s1").first())
         assertNotNull(store.activeAccount.first())
     }
 
@@ -126,8 +127,8 @@ class ServerStoreTest {
         assertEquals("u2", store.activeAccount.first()!!.userId)
 
         store.setActive("s1", "u3")
-        assertEquals("u3", store.active()!!.second.userId)
-        assertEquals("s1", store.active()!!.first.id)
+        assertEquals("u3", store.active()!!.userId)
+        assertEquals("s1", store.active()!!.serverId)
         assertEquals(1, rawCount("active_account"))
     }
 
@@ -144,7 +145,8 @@ class ServerStoreTest {
         store.upsertServer(server())
         store.upsertAccount(account(token = "old"), makeActive = true)
         store.upsertAccount(account(token = "new"), makeActive = false)
-        assertEquals("new", store.activeAccount.first()!!.accessToken)
+        assertEquals("u1", store.activeAccount.first()!!.userId)
+        assertEquals("the new token is the live one", "new", store.cachedToken("s1", "u1"))
     }
 
     @Test fun settingUnknownAccountActiveIsRejected() = runBlocking {
@@ -197,6 +199,7 @@ class ServerStoreTest {
         store.upsertServer(server())
         store.upsertAccount(account(), makeActive = true)
         setColumn("accounts", "accessToken", ByteArray(40))
+        store.warmTokens() // unreadable tokens are found when the store warms (lists never decrypt)
         assertTrue(store.accounts("s1").first().isEmpty())
         assertNull(store.activeAccount.first())
         assertNull(store.active())

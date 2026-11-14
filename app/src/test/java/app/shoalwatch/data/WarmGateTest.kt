@@ -98,7 +98,7 @@ class WarmGateTest {
         delay(300) // real time: Room answers on its own threads
         assertFalse("must wait for the warm", read.isCompleted)
         store.warmTokens()
-        assertEquals("u1", withTimeout(5_000) { read.await() }?.second?.userId)
+        assertEquals("u1", withTimeout(5_000) { read.await() }?.userId)
     }
 
     @Test fun cancellingARemovalWhileItWaitsForTheLockStillClearsTheToken() = runBlocking(Dispatchers.Default) {

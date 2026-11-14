@@ -5,7 +5,7 @@ import androidx.lifecycle.viewModelScope
 import app.shoalwatch.core.AppError
 import app.shoalwatch.data.servers.AccountSummary
 import app.shoalwatch.data.servers.Authenticator
-import app.shoalwatch.data.servers.Server
+import app.shoalwatch.data.servers.ServerSummary
 import app.shoalwatch.data.servers.ServerCatalog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -65,7 +65,7 @@ class ServersViewModel(
 
     private val local = MutableStateFlow(Local())
 
-    private val rows: Flow<List<Pair<Server, List<AccountSummary>>>> = catalog.servers.flatMapLatest { servers ->
+    private val rows: Flow<List<Pair<ServerSummary, List<AccountSummary>>>> = catalog.servers.flatMapLatest { servers ->
         if (servers.isEmpty()) {
             flowOf(emptyList())
         } else {

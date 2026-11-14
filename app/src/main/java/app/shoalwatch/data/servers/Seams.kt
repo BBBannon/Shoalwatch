@@ -19,12 +19,17 @@ data class AccountSummary(val serverId: String, val userId: String, val userName
     override fun toString() = "AccountSummary(<redacted>)"
 }
 
-/** The part of [ServerStore] the UI uses, without tokens. Implemented by [StoreCatalog]. Removing a server is [Authenticator.removeServer]. */
+/**
+ * The part of [ServerStore] the UI uses, without tokens. Implemented by [StoreCatalog]. Removing a server is
+ * [Authenticator.removeServer]. [servers], [activeAccount], [accounts] and [awaitActive] read no secret column, so
+ * they never touch the Keystore; [server] and [observeServer] open the custom headers (off the main thread).
+ */
 interface ServerCatalog {
-    val servers: Flow<List<Server>>
+    val servers: Flow<List<ServerSummary>>
     val activeAccount: Flow<AccountSummary?>
     fun accounts(serverId: String): Flow<List<AccountSummary>>
     suspend fun server(id: String): Server?
+    fun observeServer(id: String): Flow<Server?>
     suspend fun upsertServer(s: Server)
     suspend fun setActive(serverId: String, userId: String)
 
@@ -36,7 +41,7 @@ interface ServerCatalog {
      * Returns true if sign-ins are still unavailable.
      */
     suspend fun retryWarmIfFailed(): Boolean
-    suspend fun awaitActive(): Pair<Server, AccountSummary>?
+    suspend fun awaitActive(): AccountSummary?
 }
 
 /** Quick Connect progress for the UI; [Success] carries no token. */
@@ -92,15 +97,16 @@ fun interface CertificateProber {
 private fun Account.summary() = AccountSummary(serverId, userId, userName)
 
 class StoreCatalog(private val store: ServerStore) : ServerCatalog {
-    override val servers = store.servers
-    override val activeAccount = store.activeAccount.map { it?.summary() }
-    override fun accounts(serverId: String) = store.accounts(serverId).map { list -> list.map { it.summary() } }
+    override val servers = store.summaries
+    override val activeAccount = store.activeAccount
+    override fun accounts(serverId: String) = store.accounts(serverId)
     override suspend fun server(id: String) = store.server(id)
+    override fun observeServer(id: String) = store.observeServer(id)
     override suspend fun upsertServer(s: Server) = store.upsertServer(s)
     override suspend fun setActive(serverId: String, userId: String) = store.setActive(serverId, userId)
     override suspend fun awaitWarmed() = store.awaitWarmed()
     override suspend fun retryWarmIfFailed() = store.retryWarmIfFailed()
-    override suspend fun awaitActive() = store.awaitActive()?.let { (server, account) -> server to account.summary() }
+    override suspend fun awaitActive() = store.awaitActive()
 }
 
 class AuthenticatorImpl(private val repository: AuthRepository) : Authenticator {

@@ -5,6 +5,7 @@ import app.shoalwatch.core.AppError
 import app.shoalwatch.data.db.AppDatabase
 import app.shoalwatch.data.db.ServerEntity
 import app.shoalwatch.data.servers.Account
+import app.shoalwatch.data.servers.AccountSummary
 import app.shoalwatch.data.servers.AuthRepository
 import app.shoalwatch.data.servers.AuthResult
 import app.shoalwatch.data.servers.Connection
@@ -133,7 +134,7 @@ class AuthRepositoryTest {
         )
         assertEquals(8_000, currentTime) // polls at 0, 4 s and 8 s
         assertEquals(listOf("info", "enabled", "initiate", "state", "state", "state", "authQc"), gateway.calls)
-        assertEquals(account, store.activeAccount.first())
+        assertEquals(AccountSummary("s1", "u1", "ben"), store.activeAccount.first())
         assertEquals(setOf("home.example:443", "away.example:443"), gateway.nets.first().authorities)
         assertTrue(gateway.addresses.all { it == home })
     }
@@ -232,7 +233,7 @@ class AuthRepositoryTest {
         val account = repo.signInWithPassword(route(), "  ben ", password)
 
         assertEquals(Account("s1", "u1", "ben", "tok-1"), account)
-        assertEquals(account, store.activeAccount.first())
+        assertEquals(AccountSummary("s1", "u1", "ben"), store.activeAccount.first())
         assertEquals("ben", gateway.lastUsername)
         assertEquals("hunter2", gateway.lastPassword)
         assertTrue(password.all { it == '\u0000' })

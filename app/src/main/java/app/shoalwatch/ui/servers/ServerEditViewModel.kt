@@ -121,7 +121,7 @@ class ServerEditViewModel(
     private val checker = AddressChecker(auth, prober, viewModelScope, ::addressVerified)
 
     private val serverWithConnection = combine(
-        catalog.servers.map { servers -> servers.firstOrNull { it.id == serverId } },
+        catalog.observeServer(serverId),
         connections.connection(serverId),
     ) { server, connection -> server to server?.let { connection.toView() } }
 

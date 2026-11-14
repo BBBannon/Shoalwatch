@@ -27,3 +27,8 @@ data class Server(
     /** Never includes addresses or headers. */
     override fun toString() = "Server($id)"
 }
+
+/** What a list of servers shows: no addresses and no secrets, so reading it needs no decryption. */
+data class ServerSummary(val id: String, val name: String, val version: String, val pinInvalid: Boolean)
+
+fun Server.summary() = ServerSummary(id, name, version, pinInvalid)

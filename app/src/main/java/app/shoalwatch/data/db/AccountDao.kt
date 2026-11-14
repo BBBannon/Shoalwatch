@@ -5,20 +5,24 @@ import androidx.room.Query
 import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
 
+/** An account without its token: what screens read. Selecting only these columns keeps the Keystore out of it. */
+class AccountRow(val serverId: String, val userId: String, val userName: String)
+
 @Dao
 interface AccountDao {
-    @Query("SELECT * FROM accounts WHERE serverId = :serverId ORDER BY userName COLLATE NOCASE, userId")
-    fun observeForServer(serverId: String): Flow<List<AccountEntity>>
+    @Query("SELECT serverId, userId, userName FROM accounts WHERE serverId = :serverId ORDER BY userName COLLATE NOCASE, userId")
+    fun observeRowsForServer(serverId: String): Flow<List<AccountRow>>
 
     @Query(
-        "SELECT a.* FROM accounts a JOIN active_account x ON a.serverId = x.serverId AND a.userId = x.userId",
+        "SELECT a.serverId, a.userId, a.userName FROM accounts a JOIN active_account x ON a.serverId = x.serverId AND a.userId = x.userId",
     )
-    fun observeActive(): Flow<AccountEntity?>
+    fun observeActiveRow(): Flow<AccountRow?>
 
     @Query(
-        "SELECT a.* FROM accounts a JOIN active_account x ON a.serverId = x.serverId AND a.userId = x.userId",
+        "SELECT a.serverId, a.userId, a.userName FROM accounts a JOIN active_account x ON a.serverId = x.serverId AND a.userId = x.userId",
     )
-    suspend fun getActive(): AccountEntity?
+    suspend fun getActiveRow(): AccountRow?
+
 
     @Query("SELECT * FROM accounts WHERE serverId = :serverId AND userId = :userId")
     suspend fun get(serverId: String, userId: String): AccountEntity?

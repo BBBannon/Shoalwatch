@@ -4,6 +4,7 @@ import androidx.room.withTransaction
 import app.shoalwatch.core.AppError
 import app.shoalwatch.core.AppLog
 import app.shoalwatch.data.db.AccountEntity
+import app.shoalwatch.data.db.AccountRow
 import app.shoalwatch.data.db.ActiveAccountEntity
 import app.shoalwatch.data.db.AppDatabase
 import app.shoalwatch.data.db.ServerEntity
@@ -11,11 +12,17 @@ import app.shoalwatch.net.ServerAddress
 import app.shoalwatch.net.isValidPin
 import app.shoalwatch.security.SecretBox
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -29,6 +36,11 @@ import java.util.concurrent.ConcurrentHashMap
  * ciphertext. Anything unreadable (lost key, damaged row) degrades instead of crashing: an account whose
  * token cannot be opened is hidden (the user signs in again), headers that cannot be opened load as none,
  * and a damaged certificate pin is surfaced as [Server.pinInvalid].
+ *
+ * Keystore use (review I7): what screens read ([summaries], [accounts], [activeAccount], [active]) selects only
+ * non-secret columns and never touches [box]. Every seal and open runs on [io], never on the caller's thread:
+ * [warmTokens], [upsertAccount], [upsertServer], the revocation reads [token]/[tokens], and full server reads
+ * ([server], [servers], [observeServer]) which open the custom headers.
  */
 class ServerStore(
     private val db: AppDatabase,
@@ -39,15 +51,29 @@ class ServerStore(
     private val onServerRemoved: (serverId: String) -> Unit = {},
     /** Where [warmTokens] reads saved accounts from (the database by default); a test passes one that fails. */
     accountSource: (suspend () -> List<AccountEntity>)? = null,
+    /** Where Keystore work runs. */
+    private val io: CoroutineDispatcher = Dispatchers.IO,
 ) : ServerSettingsSource {
     private val serverDao = db.serverDao()
     private val accountDao = db.accountDao()
 
-    override val servers: Flow<List<Server>> = serverDao.observeAll().map { rows -> rows.map(::toServer) }
+    /** Every server with its full settings (headers opened on [io]). For the address selector, not for lists. */
+    override val servers: Flow<List<Server>> = serverDao.observeAll().map { rows -> rows.map(::toServer) }.flowOn(io)
+
+    /** What a list of servers shows. No secret column is read. */
+    val summaries: Flow<List<ServerSummary>> = serverDao.observeRows().map { rows ->
+        rows.map { ServerSummary(it.id, it.name, it.version, pinInvalid = it.pinnedSpkiSha256 != null && !isValidPin(it.pinnedSpkiSha256)) }
+    }
+
+    /** One server with its full settings, live (for its settings screen); null once removed. */
+    fun observeServer(id: String): Flow<Server?> = servers.map { list -> list.firstOrNull { it.id == id } }
 
     /** `(serverId, userId)` to token, for [cachedToken]. Changed only by [upsertAccount], [warmTokens] and removals, all under [tokenLock]. */
     private val tokens = ConcurrentHashMap<Pair<String, String>, String>()
     private val tokenLock = Mutex()
+
+    /** Accounts whose token could not be opened at the last warm (lost key): hidden from every list. */
+    private val unreadable = MutableStateFlow<Set<Pair<String, String>>>(emptySet())
 
     /**
      * The live token lookup handed to `ServerNet.authenticated`: no database or decryption per request. Null
@@ -60,7 +86,8 @@ class ServerStore(
     /**
      * Loads every saved account's token. Call once at app start, before any authenticated request; safe to
      * repeat. Serialised with sign-in and removal and re-reads the rows inside the lock, so a removal that
-     * finished first is simply absent.
+     * finished first is simply absent. Accounts whose token cannot be opened are remembered as unreadable and
+     * hidden from the lists.
      *
      * Never throws (except for cancellation): a database or Keystore failure is logged by kind only and
      * leaves the map as it was, so authenticated requests are refused as signed out. [awaitWarmed] completes
@@ -68,10 +95,15 @@ class ServerStore(
      */
     suspend fun warmTokens() {
         try {
-            tokenLock.withLock {
-                val loaded = loadAccounts().mapNotNull(::toAccount).associate { (it.serverId to it.userId) to it.accessToken }
-                tokens.keys.retainAll(loaded.keys)
-                tokens.putAll(loaded)
+            withContext(io) {
+                tokenLock.withLock {
+                    val rows = loadAccounts()
+                    val opened = rows.map { (it.serverId to it.userId) to toAccount(it)?.accessToken }
+                    val loaded = opened.mapNotNull { (key, token) -> token?.let { key to it } }.toMap()
+                    tokens.keys.retainAll(loaded.keys)
+                    tokens.putAll(loaded)
+                    unreadable.value = opened.filter { it.second == null }.map { it.first }.toSet()
+                }
             }
             warmFailed = false
         } catch (e: Exception) {
@@ -102,20 +134,24 @@ class ServerStore(
     suspend fun awaitWarmed() = warmed.await()
 
     /** [active] after [awaitWarmed]: the one call to use before an authenticated request, so a cold start never sees "signed out". */
-    suspend fun awaitActive(): Pair<Server, Account>? {
+    suspend fun awaitActive(): AccountSummary? {
         awaitWarmed()
         return active()
     }
 
-    val activeAccount: Flow<Account?> = accountDao.observeActive().map { it?.let(::toAccount) }
+    /** Who is signed in, without the token. */
+    val activeAccount: Flow<AccountSummary?> =
+        combine(accountDao.observeActiveRow(), unreadable) { row, hidden -> row?.takeIf { it.key() !in hidden }?.summary() }
 
-    fun accounts(serverId: String): Flow<List<Account>> =
-        accountDao.observeForServer(serverId).map { rows -> rows.mapNotNull(::toAccount) }
+    /** A server's accounts, without tokens. */
+    fun accounts(serverId: String): Flow<List<AccountSummary>> =
+        combine(accountDao.observeRowsForServer(serverId), unreadable) { rows, hidden -> rows.filter { it.key() !in hidden }.map { it.summary() } }
 
     /** @throws IllegalArgumentException if the pin is not a valid base64 SHA-256 value. */
     suspend fun upsertServer(s: Server) {
         require(s.pinnedSpkiSha256 == null || isValidPin(s.pinnedSpkiSha256)) { "The certificate pin is not valid." }
-        val before = serverDao.get(s.id)?.let(::toServer)
+        val before = server(s.id)
+        val sealedHeaders = withContext(io) { box.seal(Json.encodeToString(HEADERS, s.customHeaders)) }
         db.withTransaction {
             // A server loaded with a damaged pin keeps that column as it is until the user re-trusts it.
             val pin = if (s.pinInvalid && s.pinnedSpkiSha256 == null) serverDao.get(s.id)?.pinnedSpkiSha256 else s.pinnedSpkiSha256
@@ -124,7 +160,7 @@ class ServerStore(
                     id = s.id, name = s.name, version = s.version,
                     homeAddress = s.homeAddress?.value, awayAddress = s.awayAddress?.value,
                     allowCleartext = s.allowCleartext, pinnedSpkiSha256 = pin, clientCertAlias = s.clientCertAlias,
-                    customHeaders = box.seal(Json.encodeToString(HEADERS, s.customHeaders)),
+                    customHeaders = sealedHeaders,
                 ),
             )
         }
@@ -135,15 +171,17 @@ class ServerStore(
     /**
      * Also removes the server's accounts. The removal runs to completion even if the caller is cancelled
      * (while waiting for the lock or during the delete): a sign-out must never leave a token live.
+     * Revoking the sign-ins on the server first is `AuthRepository.removeServer`'s job.
      */
     suspend fun removeServer(id: String) = withContext(NonCancellable) {
-        val addresses = server(id)?.addresses.orEmpty()
+        val addresses = addressesOf(id)
         try {
             tokenLock.withLock {
                 try {
                     serverDao.delete(id)
                 } finally {
                     tokens.keys.removeAll { it.first == id }
+                    unreadable.update { set -> set.filterNot { it.first == id }.toSet() }
                 }
             }
         } finally {
@@ -154,20 +192,22 @@ class ServerStore(
 
     /** The server must already be saved. */
     suspend fun upsertAccount(a: Account, makeActive: Boolean) {
-        val addresses = server(a.serverId)?.addresses.orEmpty()
+        val addresses = addressesOf(a.serverId)
+        val sealed = withContext(io) { box.seal(a.accessToken) }
         tokenLock.withLock {
             db.withTransaction {
-                accountDao.upsert(AccountEntity(a.serverId, a.userId, a.userName, box.seal(a.accessToken)))
+                accountDao.upsert(AccountEntity(a.serverId, a.userId, a.userName, sealed))
                 if (makeActive) accountDao.setActive(ActiveAccountEntity(0, a.serverId, a.userId))
             }
             tokens[a.serverId to a.userId] = a.accessToken
+            unreadable.update { it - (a.serverId to a.userId) }
         }
         onClientsStale(a.serverId, addresses)
     }
 
     /** If it was the active account, nobody is active afterwards. Runs to completion even if the caller is cancelled (see [removeServer]). */
     suspend fun removeAccount(serverId: String, userId: String) = withContext(NonCancellable) {
-        val addresses = server(serverId)?.addresses.orEmpty()
+        val addresses = addressesOf(serverId)
         try {
             tokenLock.withLock {
                 try {
@@ -175,6 +215,7 @@ class ServerStore(
                 } finally {
                     // Whether or not the delete worked, the account stops sending its token.
                     tokens.remove(serverId to userId)
+                    unreadable.update { it - (serverId to userId) }
                 }
             }
         } finally {
@@ -190,27 +231,33 @@ class ServerStore(
         }
     }
 
-    override suspend fun server(id: String): Server? = serverDao.get(id)?.let(::toServer)
+    /** The server with its full settings (headers opened on [io]). */
+    override suspend fun server(id: String): Server? = withContext(io) { serverDao.get(id)?.let(::toServer) }
 
-    /** One account's saved token (decrypted), for revoking it; null if there is no such account or it cannot be read. */
-    suspend fun token(serverId: String, userId: String): String? = accountDao.get(serverId, userId)?.let(::toAccount)?.accessToken
+    /** One account's saved token (opened on [io]), for revoking it; null if there is no such account or it cannot be read. */
+    suspend fun token(serverId: String, userId: String): String? =
+        withContext(io) { accountDao.get(serverId, userId)?.let(::toAccount)?.accessToken }
 
-    /** Every readable `(userId, token)` saved for [serverId], for revoking them before the server is removed. */
+    /** Every readable `(userId, token)` saved for [serverId] (opened on [io]), for revoking them before the server is removed. */
     suspend fun tokens(serverId: String): List<Pair<String, String>> =
-        accountDao.getForServer(serverId).mapNotNull(::toAccount).map { it.userId to it.accessToken }
+        withContext(io) { accountDao.getForServer(serverId).mapNotNull(::toAccount).map { it.userId to it.accessToken } }
 
-    suspend fun active(): Pair<Server, Account>? {
-        val account = accountDao.getActive()?.let(::toAccount) ?: return null
-        val server = server(account.serverId) ?: return null
-        return server to account
-    }
+    /** Who is signed in, without the token (accounts cascade with their server, so its server exists). */
+    suspend fun active(): AccountSummary? =
+        accountDao.getActiveRow()?.takeIf { it.key() !in unreadable.value }?.summary()
+
+    /** Addresses only (no secrets opened), for client eviction. */
+    private suspend fun addressesOf(id: String): List<ServerAddress> =
+        serverDao.get(id)?.let { e -> listOfNotNull(e.homeAddress?.let(::parseOrNull), e.awayAddress?.let(::parseOrNull)) }.orEmpty()
+
+    private fun AccountRow.key() = serverId to userId
+    private fun AccountRow.summary() = AccountSummary(serverId, userId, userName)
 
     private fun toAccount(e: AccountEntity): Account? = try {
         Account(e.serverId, e.userId, e.userName, box.open(e.accessToken))
     } catch (_: AppError) {
         null
     }
-
 
     private fun toServer(e: ServerEntity): Server {
         val pinOk = e.pinnedSpkiSha256 == null || isValidPin(e.pinnedSpkiSha256)

@@ -10,7 +10,9 @@ import app.shoalwatch.data.servers.ServerCatalog
 import app.shoalwatch.data.servers.ServerConnections
 import app.shoalwatch.data.servers.ServerInfo
 import app.shoalwatch.data.servers.ServerNetDraft
+import app.shoalwatch.data.servers.ServerSummary
 import app.shoalwatch.data.servers.SignInRoute
+import app.shoalwatch.data.servers.summary
 import app.shoalwatch.net.CertificateInfo
 import app.shoalwatch.net.ServerAddress
 import kotlinx.coroutines.CompletableDeferred
@@ -141,7 +143,8 @@ class FakeCatalog(servers: List<Server> = emptyList(), accounts: List<AccountSum
     var warmRetries = 0
     var warmStillFailing = false
 
-    override val servers: Flow<List<Server>> = serverList
+    override val servers: Flow<List<ServerSummary>> = serverList.map { list -> list.map { it.summary() } }
+    override fun observeServer(id: String): Flow<Server?> = serverList.map { list -> list.firstOrNull { it.id == id } }
     override val activeAccount: Flow<AccountSummary?> = activeFlow
     override fun accounts(serverId: String): Flow<List<AccountSummary>> = accountList.map { l -> l.filter { it.serverId == serverId } }
     override suspend fun server(id: String): Server? = serverList.value.firstOrNull { it.id == id }
@@ -171,11 +174,11 @@ class FakeCatalog(servers: List<Server> = emptyList(), accounts: List<AccountSum
         return warmStillFailing
     }
 
-    override suspend fun awaitActive(): Pair<Server, AccountSummary>? {
+    override suspend fun awaitActive(): AccountSummary? {
         awaitWarmed()
         awaitActiveFailure?.let { throw it }
         val account = activeFlow.value ?: return null
-        return serverList.value.firstOrNull { it.id == account.serverId }?.let { it to account }
+        return account.takeIf { a -> serverList.value.any { it.id == a.serverId } }
     }
 }
 
