@@ -29,13 +29,24 @@ class LibraryStore(private val db: AppDatabase) {
      * Stores one page of a list as ONE transaction: upserts the items (see [ItemDao.upsertItems] for what is kept);
      * upserts the user data of items that came with some (an item with none leaves its stored user data untouched);
      * replaces the list's entries from [start] on (`start == 0` replaces the whole list, a refresh); and records the list's
-     * state. [total] is what the server said the list holds.
+     * state. [total] is what the server said the list holds (null: no usable count). [nextStartIndex], [pagesLoaded] and
+     * [endReached] are the paging state to resume from (see [ListStateEntity]); the defaults describe a list read in one go.
      *
      * Positions stay contiguous from 0, so a page must begin at or before the end of what is stored.
      *
      * @throws IllegalArgumentException for a negative [start], a start beyond the stored entries, or a [listKey] that is empty or longer than 200 characters.
      */
-    suspend fun writePage(s: Session, listKey: String, start: Int, page: List<ItemWithUserData>, total: Int, now: Instant) {
+    suspend fun writePage(
+        s: Session,
+        listKey: String,
+        start: Int,
+        page: List<ItemWithUserData>,
+        total: Int?,
+        now: Instant,
+        nextStartIndex: Int = start + page.size,
+        pagesLoaded: Int = 1,
+        endReached: Boolean = true,
+    ) {
         require(start >= 0) { "A page cannot start before the first item." }
         require(listKey.isNotEmpty() && listKey.length <= ListEntryEntity.MAX_LIST_KEY) { "A list key is 1 to 200 characters." }
         db.withTransaction {
@@ -44,7 +55,7 @@ class LibraryStore(private val db: AppDatabase) {
             lists.deleteEntriesFrom(s.serverId, s.userId, listKey, start)
             lists.insertEntries(page.mapIndexed { i, row -> ListEntryEntity(s.serverId, s.userId, listKey, start + i, row.item.id) })
             val loaded = start + page.size
-            lists.upsertState(ListStateEntity(s.serverId, s.userId, listKey, total.coerceAtLeast(loaded), loaded, now.toEpochMilli()))
+            lists.upsertState(ListStateEntity(s.serverId, s.userId, listKey, total?.coerceAtLeast(loaded), loaded, nextStartIndex, pagesLoaded, endReached, now.toEpochMilli()))
         }
     }
 

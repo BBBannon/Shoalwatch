@@ -178,4 +178,21 @@ class LibraryListTest : LibraryTestBase() {
             cancelAndIgnoreRemainingEvents()
         }
     }
+
+    // ---- paging state (Milestone 2 task 4)
+
+    @Test fun aListReadInOneGoIsMarkedEndReachedWithItsPagingStateFilledIn() = runBlocking {
+        library.writePage(s1u1, "resume", 0, films("a", "b"), 2, t0)
+        val state = lists.getState(S1, U1, "resume")!!
+        assertEquals(listOf(2, 2, 1, true), listOf(state.loadedCount, state.nextStartIndex, state.pagesLoaded, state.endReached))
+    }
+
+    @Test fun pagingStateIsStoredAsGivenAndTheTotalMayBeUnknown() = runBlocking {
+        library.writePage(s1u1, "kids", 0, films("a", "b"), null, t0, nextStartIndex = 5, pagesLoaded = 1, endReached = false)
+        library.writePage(s1u1, "kids", 2, films("c"), null, t0.plusSeconds(1), nextStartIndex = 9, pagesLoaded = 2, endReached = false)
+        val state = lists.getState(S1, U1, "kids")!!
+        assertNull(state.total)
+        assertEquals(listOf(3, 9, 2, false), listOf(state.loadedCount, state.nextStartIndex, state.pagesLoaded, state.endReached))
+        assertEquals(listOf("a", "b", "c").map(::id), lists.entryIds(S1, U1, "kids"))
+    }
 }

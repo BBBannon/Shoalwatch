@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 2,
-    "identityHash": "42c6c6094c167f0a145b3dd6876d8fe4",
+    "identityHash": "de6689f8a9ca279da4fb246b5b6c240f",
     "entities": [
       {
         "tableName": "servers",
@@ -611,7 +611,7 @@
       },
       {
         "tableName": "list_state",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`serverId` TEXT NOT NULL, `userId` TEXT NOT NULL, `listKey` TEXT NOT NULL, `total` INTEGER NOT NULL, `loadedCount` INTEGER NOT NULL, `refreshedAt` INTEGER NOT NULL, PRIMARY KEY(`serverId`, `userId`, `listKey`), FOREIGN KEY(`serverId`, `userId`) REFERENCES `accounts`(`serverId`, `userId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`serverId` TEXT NOT NULL, `userId` TEXT NOT NULL, `listKey` TEXT NOT NULL, `total` INTEGER, `loadedCount` INTEGER NOT NULL, `nextStartIndex` INTEGER NOT NULL, `pagesLoaded` INTEGER NOT NULL, `endReached` INTEGER NOT NULL, `refreshedAt` INTEGER NOT NULL, PRIMARY KEY(`serverId`, `userId`, `listKey`), FOREIGN KEY(`serverId`, `userId`) REFERENCES `accounts`(`serverId`, `userId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "serverId",
@@ -634,12 +634,29 @@
           {
             "fieldPath": "total",
             "columnName": "total",
-            "affinity": "INTEGER",
-            "notNull": true
+            "affinity": "INTEGER"
           },
           {
             "fieldPath": "loadedCount",
             "columnName": "loadedCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nextStartIndex",
+            "columnName": "nextStartIndex",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pagesLoaded",
+            "columnName": "pagesLoaded",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endReached",
+            "columnName": "endReached",
             "affinity": "INTEGER",
             "notNull": true
           },
@@ -677,7 +694,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '42c6c6094c167f0a145b3dd6876d8fe4')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'de6689f8a9ca279da4fb246b5b6c240f')"
     ]
   }
 }

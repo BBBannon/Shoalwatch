@@ -25,6 +25,10 @@ interface ListDao {
     @Query("SELECT * FROM list_state WHERE serverId = :serverId AND userId = :userId AND listKey = :listKey")
     suspend fun getState(serverId: String, userId: String, listKey: String): ListStateEntity?
 
+    /** The ids in a list in position order (no join, so cheap for a long list); for de-duplicating the next page. */
+    @Query("SELECT itemId FROM list_entries WHERE serverId = :serverId AND userId = :userId AND listKey = :listKey ORDER BY position")
+    suspend fun entryIds(serverId: String, userId: String, listKey: String): List<String>
+
     @Query("SELECT COUNT(*) FROM list_entries WHERE serverId = :serverId AND userId = :userId AND listKey = :listKey")
     suspend fun countEntries(serverId: String, userId: String, listKey: String): Int
 
