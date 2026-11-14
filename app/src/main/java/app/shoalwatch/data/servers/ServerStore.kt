@@ -147,8 +147,9 @@ class ServerStore(
     fun accounts(serverId: String): Flow<List<AccountSummary>> =
         combine(accountDao.observeRowsForServer(serverId), unreadable) { rows, hidden -> rows.filter { it.key() !in hidden }.map { it.summary() } }
 
-    /** @throws IllegalArgumentException if the pin is not a valid base64 SHA-256 value. */
+    /** @throws IllegalArgumentException if the id is not a normalised [JellyfinId], or the pin is not a valid base64 SHA-256 value. */
     suspend fun upsertServer(s: Server) {
+        requireNormalised(s.id)
         require(s.pinnedSpkiSha256 == null || isValidPin(s.pinnedSpkiSha256)) { "The certificate pin is not valid." }
         val before = server(s.id)
         val sealedHeaders = withContext(io) { box.seal(Json.encodeToString(HEADERS, s.customHeaders)) }
@@ -190,8 +191,14 @@ class ServerStore(
         }
     }
 
-    /** The server must already be saved. */
+    /**
+     * The server must already be saved.
+     *
+     * @throws IllegalArgumentException if the server or user id is not a normalised [JellyfinId].
+     */
     suspend fun upsertAccount(a: Account, makeActive: Boolean) {
+        requireNormalised(a.serverId)
+        requireNormalised(a.userId)
         val addresses = addressesOf(a.serverId)
         val sealed = withContext(io) { box.seal(a.accessToken) }
         tokenLock.withLock {
@@ -249,6 +256,10 @@ class ServerStore(
     /** Addresses only (no secrets opened), for client eviction. */
     private suspend fun addressesOf(id: String): List<ServerAddress> =
         serverDao.get(id)?.let { e -> listOfNotNull(e.homeAddress?.let(::parseOrNull), e.awayAddress?.let(::parseOrNull)) }.orEmpty()
+
+    /** Ids become keys, route segments and (Milestone 4) file names: only the gateway's normalised form is stored. The id is never echoed. */
+    private fun requireNormalised(id: String) =
+        require(JellyfinId.parseOrNull(id)?.value == id) { "An id must be a normalised Jellyfin id." }
 
     private fun AccountRow.key() = serverId to userId
     private fun AccountRow.summary() = AccountSummary(serverId, userId, userName)

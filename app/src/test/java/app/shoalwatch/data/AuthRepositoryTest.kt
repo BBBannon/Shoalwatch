@@ -1,5 +1,8 @@
 package app.shoalwatch.data
 
+import app.shoalwatch.S1
+import app.shoalwatch.U1
+
 import app.cash.turbine.test
 import app.shoalwatch.core.AppError
 import app.shoalwatch.data.db.AppDatabase
@@ -50,7 +53,7 @@ class AuthRepositoryTest {
 
     private val home = ServerAddress.parse("https://home.example")
     private val away = ServerAddress.parse("https://away.example")
-    private val server = Server("s1", "Den", "10.10.3", home, away, false, null, null, emptyMap())
+    private val server = Server(S1, "Den", "10.10.3", home, away, false, null, null, emptyMap())
     private val connections = StubConnections { Connection.Online(home, isHome = true) }
 
     @Before fun open() {
@@ -62,11 +65,11 @@ class AuthRepositoryTest {
 
     @After fun close() = db.close()
 
-    private fun info(a: ServerAddress) = ServerInfo("s1", "Den", "10.10.3", a, ServerInfo.Compatibility.SUPPORTED)
+    private fun info(a: ServerAddress) = ServerInfo(S1, "Den", "10.10.3", a, ServerInfo.Compatibility.SUPPORTED)
 
     private fun failure(kind: AppError.Kind) = AppError.of(kind)
 
-    private suspend fun route(): SignInRoute = repo.signInRoute("s1")!!.also { gateway.calls.clear(); gateway.addresses.clear(); gateway.nets.clear() }
+    private suspend fun route(): SignInRoute = repo.signInRoute(S1)!!.also { gateway.calls.clear(); gateway.addresses.clear(); gateway.nets.clear() }
 
     private fun appError(block: suspend () -> Unit): AppError {
         try {
@@ -127,14 +130,14 @@ class AuthRepositoryTest {
         gateway.polls = { it >= 2 } // approved on the third poll
         val states = repo.quickConnect(route()).toList()
 
-        val account = Account("s1", "u1", "ben", "tok-1")
+        val account = Account(S1, U1, "ben", "tok-1")
         assertEquals(
             listOf(QuickConnectState.Starting, QuickConnectState.AwaitingApproval("123456"), QuickConnectState.Authenticating, QuickConnectState.Success(account)),
             states,
         )
         assertEquals(8_000, currentTime) // polls at 0, 4 s and 8 s
         assertEquals(listOf("info", "enabled", "initiate", "state", "state", "state", "authQc"), gateway.calls)
-        assertEquals(AccountSummary("s1", "u1", "ben"), store.activeAccount.first())
+        assertEquals(AccountSummary(S1, U1, "ben"), store.activeAccount.first())
         assertEquals(setOf("home.example:443", "away.example:443"), gateway.nets.first().authorities)
         assertTrue(gateway.addresses.all { it == home })
     }
@@ -201,7 +204,7 @@ class AuthRepositoryTest {
 
     @Test fun aRouteThatAuthRepositoryDidNotIssueIsRefused() = runTest {
         val forged = object : SignInRoute {
-            override val serverId = "s1"
+            override val serverId = S1
             override val encrypted = true
         }
         try {
@@ -220,7 +223,7 @@ class AuthRepositoryTest {
     @Test fun quickConnectOnAServerWithADamagedPinFailsUntrusted() = runTest {
         val r = route()
         // A pin damaged in the database itself (the store refuses to write a malformed one).
-        db.serverDao().upsert(ServerEntity("s1", "Den", "10.10.3", home.value, away.value, false, "not-a-pin", null, box.seal("{}")))
+        db.serverDao().upsert(ServerEntity(S1, "Den", "10.10.3", home.value, away.value, false, "not-a-pin", null, box.seal("{}")))
         val states = repo.quickConnect(r).toList()
         assertEquals(AppError.Kind.TLS_UNTRUSTED, (states.last() as QuickConnectState.Failed).error.kind)
         assertTrue(gateway.calls.isEmpty())
@@ -232,8 +235,8 @@ class AuthRepositoryTest {
         val password = "hunter2".toCharArray()
         val account = repo.signInWithPassword(route(), "  ben ", password)
 
-        assertEquals(Account("s1", "u1", "ben", "tok-1"), account)
-        assertEquals(AccountSummary("s1", "u1", "ben"), store.activeAccount.first())
+        assertEquals(Account(S1, U1, "ben", "tok-1"), account)
+        assertEquals(AccountSummary(S1, U1, "ben"), store.activeAccount.first())
         assertEquals("ben", gateway.lastUsername)
         assertEquals("hunter2", gateway.lastPassword)
         assertTrue(password.all { it == '\u0000' })
@@ -266,18 +269,18 @@ class AuthRepositoryTest {
     }
 
     @Test fun passwordSignInRejectsAResultFromADifferentServer() = runTest {
-        gateway.auth = { AuthResult("u1", "ben", "tok-1", "other-server") }
+        gateway.auth = { AuthResult(U1, "ben", "tok-1", "other-server") }
         val e = try { repo.signInWithPassword(route(), "ben", "pw".toCharArray()); null } catch (e: AppError) { e }
         assertEquals(AppError.Kind.SERVER_MISMATCH, e!!.kind)
-        assertTrue(store.accounts("s1").first().isEmpty())
+        assertTrue(store.accounts(S1).first().isEmpty())
         assertNull(store.active())
     }
 
     @Test fun anEmptyServerIdIsRejected() = runTest {
-        gateway.auth = { AuthResult("u1", "ben", "tok-1", "") }
+        gateway.auth = { AuthResult(U1, "ben", "tok-1", "") }
         val e = try { repo.signInWithPassword(route(), "ben", "pw".toCharArray()); null } catch (e: AppError) { e }
         assertEquals(AppError.Kind.SERVER_MISMATCH, e!!.kind)
-        gateway.auth = { AuthResult("u1", "ben", "tok-1", "s1") }
+        gateway.auth = { AuthResult(U1, "ben", "tok-1", S1) }
         val r = route()
         gateway.info = { ServerInfo("", "x", "1", it, ServerInfo.Compatibility.UNKNOWN) }
         val e2 = try { repo.signInWithPassword(r, "ben", "pw".toCharArray()); null } catch (e: AppError) { e }
@@ -292,7 +295,7 @@ class AuthRepositoryTest {
         assertEquals(listOf("info"), gateway.calls)
 
         gateway.info = ::info
-        gateway.auth = { AuthResult("u1", "ben", "tok-1", "other-server") }
+        gateway.auth = { AuthResult(U1, "ben", "tok-1", "other-server") }
         val second = repo.quickConnect(route()).toList()
         assertEquals(AppError.Kind.SERVER_MISMATCH, (second.last() as QuickConnectState.Failed).error.kind)
         assertNull(store.active())
@@ -314,8 +317,8 @@ class AuthRepositoryTest {
 
     @Test fun serverRemovedMidSignInIsServerNotFound() = runTest {
         gateway.auth = {
-            kotlinx.coroutines.runBlocking { store.removeServer("s1") }
-            AuthResult("u1", "ben", "tok-1", "s1")
+            kotlinx.coroutines.runBlocking { store.removeServer(S1) }
+            AuthResult(U1, "ben", "tok-1", S1)
         }
         val e = try { repo.signInWithPassword(route(), "ben", "pw".toCharArray()); null } catch (e: AppError) { e }
         assertEquals(AppError.Kind.SERVER_NOT_FOUND, e!!.kind)
@@ -337,11 +340,11 @@ class AuthRepositoryTest {
 
     @Test fun aServerRemovedBeforeSignInIsServerNotFoundAndNothingIsSent() = runTest {
         val r = route()
-        store.removeServer("s1")
+        store.removeServer(S1)
         assertEquals(AppError.Kind.SERVER_NOT_FOUND, appError { repo.signInWithPassword(r, "ben", "pw".toCharArray()) }.kind)
         val states = repo.quickConnect(r).toList()
         assertEquals(AppError.Kind.SERVER_NOT_FOUND, (states.last() as QuickConnectState.Failed).error.kind)
-        assertEquals(AppError.Kind.SERVER_NOT_FOUND, appError { repo.signInRoute("s1") }.kind)
+        assertEquals(AppError.Kind.SERVER_NOT_FOUND, appError { repo.signInRoute(S1) }.kind)
         assertTrue(gateway.calls.isEmpty())
     }
 

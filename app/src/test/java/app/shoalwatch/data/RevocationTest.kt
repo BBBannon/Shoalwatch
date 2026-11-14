@@ -1,5 +1,8 @@
 package app.shoalwatch.data
 
+import app.shoalwatch.S1
+import app.shoalwatch.U1
+import app.shoalwatch.U2
 import app.shoalwatch.core.AppError
 import app.shoalwatch.data.db.AppDatabase
 import app.shoalwatch.data.servers.Account
@@ -46,7 +49,7 @@ class RevocationTest {
 
     private val home = ServerAddress.parse("http://192.168.1.5:8096")
     private val away = ServerAddress.parse("https://away.example")
-    private val server = Server("s1", "Den", "10.10.3", home, away, true, null, null, emptyMap())
+    private val server = Server(S1, "Den", "10.10.3", home, away, true, null, null, emptyMap())
 
     /** By default the selector has verified the home (http) address, as it would on the home Wi-Fi. */
     private val connections = StubConnections { Connection.Online(home, isHome = true) }
@@ -57,14 +60,14 @@ class RevocationTest {
         repo = AuthRepository(gateway, store, device, connections)
         kotlinx.coroutines.runBlocking {
             store.upsertServer(server)
-            store.upsertAccount(Account("s1", "u1", "ben", "tok-1"), makeActive = true)
+            store.upsertAccount(Account(S1, U1, "ben", "tok-1"), makeActive = true)
         }
     }
 
     @After fun close() = db.close()
 
     private fun impostorAt(address: ServerAddress) {
-        gateway.info = { if (it == address) ServerInfo("impostor", "Den", "10.10.3", it, ServerInfo.Compatibility.SUPPORTED) else ServerInfo("s1", "Den", "10.10.3", it, ServerInfo.Compatibility.SUPPORTED) }
+        gateway.info = { if (it == address) ServerInfo("impostor", "Den", "10.10.3", it, ServerInfo.Compatibility.SUPPORTED) else ServerInfo(S1, "Den", "10.10.3", it, ServerInfo.Compatibility.SUPPORTED) }
     }
 
     private fun tokenSentTo(address: ServerAddress) =
@@ -73,19 +76,19 @@ class RevocationTest {
     // ---- sign out
 
     @Test fun signOutRevokesThroughTheVerifiedHttpsAddressThenDeletesLocally() = runTest {
-        assertTrue(repo.signOut("s1", "u1"))
+        assertTrue(repo.signOut(S1, U1))
         assertEquals(listOf("logout" to away), gateway.log.filter { it.first == "logout" })
         val logout = gateway.calls.indexOf("logout")
         assertTrue(gateway.headers[logout]!!.endsWith(", Token=\"tok-1\""))
-        assertEquals("revoke:s1:u1", gateway.nets[logout].authKey)
+        assertEquals("revoke:$S1:$U1", gateway.nets[logout].authKey)
         assertFalse("nothing token-bearing went over http", tokenSentTo(home))
-        assertNull(store.cachedToken("s1", "u1"))
-        assertTrue(store.accounts("s1").first().isEmpty())
+        assertNull(store.cachedToken(S1, U1))
+        assertTrue(store.accounts(S1).first().isEmpty())
         assertNull(store.activeAccount.first())
     }
 
     @Test fun theIdentityIsCheckedOnTheChosenAddressImmediatelyBeforeTheToken() = runTest {
-        repo.signOut("s1", "u1")
+        repo.signOut(S1, U1)
         val logout = gateway.calls.indexOf("logout")
         assertEquals("info" to away, gateway.log[logout - 1])
         assertFalse(gateway.headers[logout - 1]!!.contains("Token="))
@@ -94,58 +97,58 @@ class RevocationTest {
     @Test fun anImpostorOnTheHomeAddressNeverReceivesTheToken() = runTest {
         impostorAt(home)
         gateway.info.let { verify -> gateway.info = { a -> if (a == away) throw AppError.of(AppError.Kind.NETWORK) else verify(a) } }
-        assertFalse(repo.signOut("s1", "u1"))
+        assertFalse(repo.signOut(S1, U1))
         assertFalse(tokenSentTo(home))
         assertTrue(gateway.calls.none { it == "logout" })
-        assertTrue("removed here regardless", store.accounts("s1").first().isEmpty())
+        assertTrue("removed here regardless", store.accounts(S1).first().isEmpty())
     }
 
     @Test fun anImpostorOnTheHttpsAddressNeverReceivesTheTokenEither() = runTest {
         impostorAt(away)
-        assertTrue(repo.signOut("s1", "u1")) // falls back to the verified http address
+        assertTrue(repo.signOut(S1, U1)) // falls back to the verified http address
         assertFalse(tokenSentTo(away))
         assertEquals(listOf("logout" to home), gateway.log.filter { it.first == "logout" })
     }
 
     @Test fun httpIsUsedOnlyWhenTheHttpsAddressDoesNotAnswer() = runTest {
-        gateway.info = { if (it == away) throw AppError.of(AppError.Kind.NETWORK) else ServerInfo("s1", "Den", "10.10.3", it, ServerInfo.Compatibility.SUPPORTED) }
-        assertTrue(repo.signOut("s1", "u1"))
+        gateway.info = { if (it == away) throw AppError.of(AppError.Kind.NETWORK) else ServerInfo(S1, "Den", "10.10.3", it, ServerInfo.Compatibility.SUPPORTED) }
+        assertTrue(repo.signOut(S1, U1))
         assertEquals(listOf("logout" to home), gateway.log.filter { it.first == "logout" })
     }
 
     @Test fun withNoVerifiedAddressTheTokenIsSentNowhereAndTheAccountIsStillRemoved() = runTest {
         connections.online = { null }
-        assertFalse(repo.signOut("s1", "u1"))
+        assertFalse(repo.signOut(S1, U1))
         assertTrue(gateway.calls.isEmpty())
-        assertTrue(store.accounts("s1").first().isEmpty())
-        assertNull(store.cachedToken("s1", "u1"))
+        assertTrue(store.accounts(S1).first().isEmpty())
+        assertNull(store.cachedToken(S1, U1))
     }
 
     @Test fun aFailedRevocationIsReportedAndTheAccountIsStillRemoved() = runTest {
         gateway.logout = { throw AppError.of(AppError.Kind.SERVER_ERROR) }
-        assertFalse(repo.signOut("s1", "u1"))
-        assertTrue(store.accounts("s1").first().isEmpty())
+        assertFalse(repo.signOut(S1, U1))
+        assertTrue(store.accounts(S1).first().isEmpty())
     }
 
     @Test fun signOutIsBoundedWhenTheServerNeverAnswers() = runTest {
         gateway.logout = { awaitCancellation() }
-        assertFalse(repo.signOut("s1", "u1"))
+        assertFalse(repo.signOut(S1, U1))
         assertEquals(AuthRepository.SIGN_OUT_TIMEOUT_MS, currentTime)
-        assertTrue(store.accounts("s1").first().isEmpty())
+        assertTrue(store.accounts(S1).first().isEmpty())
     }
 
     @Test fun signOutDoesNotSwallowCancellation() = runTest {
         gateway.logout = { throw CancellationException() }
         try {
-            repo.signOut("s1", "u1")
+            repo.signOut(S1, U1)
             fail("expected cancellation")
         } catch (_: CancellationException) {
         }
-        assertTrue(store.accounts("s1").first().isEmpty())
+        assertTrue(store.accounts(S1).first().isEmpty())
     }
 
     @Test fun signOutOfAnUnknownAccountIsHarmless() = runTest {
-        assertTrue(repo.signOut("s1", "ghost"))
+        assertTrue(repo.signOut(S1, "ghost"))
         assertTrue(repo.signOut("nope", "ghost"))
         assertTrue(gateway.calls.isEmpty())
     }
@@ -153,38 +156,38 @@ class RevocationTest {
     // ---- remove server
 
     @Test fun removeServerRevokesEverySignInThroughAVerifiedAddressThenDeletes() = runTest {
-        store.upsertAccount(Account("s1", "u2", "amy", "tok-2"), makeActive = false)
-        assertTrue(repo.removeServer("s1"))
+        store.upsertAccount(Account(S1, U2, "amy", "tok-2"), makeActive = false)
+        assertTrue(repo.removeServer(S1))
         val logouts = gateway.calls.indices.filter { gateway.calls[it] == "logout" }
         assertEquals(2, logouts.size)
         assertTrue(logouts.all { gateway.addresses[it] == away })
-        assertEquals(setOf("revoke:s1:u1", "revoke:s1:u2"), logouts.map { gateway.nets[it].authKey }.toSet())
-        assertEquals(setOf(true), logouts.map { i -> gateway.headers[i]!!.contains(if (gateway.nets[i].authKey == "revoke:s1:u1") "tok-1" else "tok-2") }.toSet())
-        assertNull(store.server("s1"))
-        assertNull(store.cachedToken("s1", "u1"))
+        assertEquals(setOf("revoke:$S1:$U1", "revoke:$S1:$U2"), logouts.map { gateway.nets[it].authKey }.toSet())
+        assertEquals(setOf(true), logouts.map { i -> gateway.headers[i]!!.contains(if (gateway.nets[i].authKey == "revoke:$S1:$U1") "tok-1" else "tok-2") }.toSet())
+        assertNull(store.server(S1))
+        assertNull(store.cachedToken(S1, U1))
     }
 
     @Test fun removeServerRevokesInParallelWithinItsOverallLimit() = runTest {
-        store.upsertAccount(Account("s1", "u2", "amy", "tok-2"), makeActive = false)
+        store.upsertAccount(Account(S1, U2, "amy", "tok-2"), makeActive = false)
         gateway.logout = { awaitCancellation() }
-        assertFalse(repo.removeServer("s1"))
+        assertFalse(repo.removeServer(S1))
         assertEquals("both in parallel, one overall limit", AuthRepository.REMOVE_TIMEOUT_MS, currentTime)
         assertEquals(2, gateway.calls.count { it == "logout" })
-        assertNull("deleted regardless", store.server("s1"))
+        assertNull("deleted regardless", store.server(S1))
     }
 
     @Test fun removeServerWhileOfflineSendsNoTokenAndStillDeletes() = runTest {
         connections.online = { null }
-        assertFalse(repo.removeServer("s1"))
+        assertFalse(repo.removeServer(S1))
         assertTrue(gateway.calls.isEmpty())
-        assertNull(store.server("s1"))
-        assertTrue(store.accounts("s1").first().isEmpty())
+        assertNull(store.server(S1))
+        assertTrue(store.accounts(S1).first().isEmpty())
     }
 
     @Test fun removeServerWithNoSignInsJustDeletes() = runTest {
-        store.removeAccount("s1", "u1")
-        assertTrue(repo.removeServer("s1"))
+        store.removeAccount(S1, U1)
+        assertTrue(repo.removeServer(S1))
         assertTrue(gateway.calls.isEmpty())
-        assertNull(store.server("s1"))
+        assertNull(store.server(S1))
     }
 }

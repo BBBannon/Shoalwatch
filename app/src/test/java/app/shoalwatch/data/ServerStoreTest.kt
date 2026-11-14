@@ -1,8 +1,15 @@
 package app.shoalwatch.data
 
+import app.shoalwatch.S1
+import app.shoalwatch.S2
+import app.shoalwatch.U1
+import app.shoalwatch.U2
+import app.shoalwatch.U3
+
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import app.shoalwatch.core.AppError
+import app.shoalwatch.testId
 import app.shoalwatch.data.db.AppDatabase
 import app.shoalwatch.data.servers.Account
 import app.shoalwatch.data.servers.AccountSummary
@@ -38,7 +45,7 @@ class ServerStoreTest {
 
     private val validPin = Base64.getEncoder().encodeToString(ByteArray(32) { it.toByte() })
 
-    private fun server(id: String = "s1", pin: String? = null) = Server(
+    private fun server(id: String = S1, pin: String? = null) = Server(
         id = id,
         name = "Home server",
         version = "10.10.3",
@@ -50,7 +57,7 @@ class ServerStoreTest {
         customHeaders = mapOf("X-Proxy-Key" to "headervalue-12345"),
     )
 
-    private fun account(serverId: String = "s1", userId: String = "u1", token: String = "plain-token-ABCDEF") =
+    private fun account(serverId: String = S1, userId: String = U1, token: String = "plain-token-ABCDEF") =
         Account(serverId, userId, "ben", token)
 
     @Before fun open() {
@@ -73,7 +80,7 @@ class ServerStoreTest {
 
     @Test fun serverRoundTrips() = runBlocking {
         store.upsertServer(server(pin = validPin))
-        assertEquals(server(pin = validPin), store.server("s1"))
+        assertEquals(server(pin = validPin), store.server(S1))
         assertEquals(listOf(server(pin = validPin)), store.servers.first())
     }
 
@@ -94,14 +101,14 @@ class ServerStoreTest {
     }
 
     @Test fun removingServerRemovesItsAccountsAndActiveMarker() = runBlocking {
-        store.upsertServer(server("s1")); store.upsertServer(server("s2"))
-        store.upsertAccount(account("s1", "u1"), makeActive = true)
-        store.upsertAccount(account("s2", "u2"), makeActive = false)
+        store.upsertServer(server(S1)); store.upsertServer(server(S2))
+        store.upsertAccount(account(S1, U1), makeActive = true)
+        store.upsertAccount(account(S2, U2), makeActive = false)
 
-        store.removeServer("s1")
+        store.removeServer(S1)
 
-        assertNull(store.server("s1"))
-        assertTrue(store.accounts("s1").first().isEmpty())
+        assertNull(store.server(S1))
+        assertTrue(store.accounts(S1).first().isEmpty())
         assertEquals(1, rawCount("accounts"))
         assertNull(store.activeAccount.first())
         assertEquals(0, rawCount("active_account"))
@@ -111,31 +118,31 @@ class ServerStoreTest {
         store.upsertServer(server())
         store.upsertAccount(account(), makeActive = true)
         store.upsertServer(server().copy(name = "Renamed"))
-        assertEquals("Renamed", store.server("s1")!!.name)
-        assertEquals(listOf(account().let { AccountSummary(it.serverId, it.userId, it.userName) }), store.accounts("s1").first())
+        assertEquals("Renamed", store.server(S1)!!.name)
+        assertEquals(listOf(account().let { AccountSummary(it.serverId, it.userId, it.userName) }), store.accounts(S1).first())
         assertNotNull(store.activeAccount.first())
     }
 
     @Test fun onlyOneAccountIsActive() = runBlocking {
         store.upsertServer(server())
-        store.upsertAccount(account(userId = "u1"), makeActive = true)
-        store.upsertAccount(account(userId = "u2"), makeActive = true)
-        assertEquals("u2", store.activeAccount.first()!!.userId)
+        store.upsertAccount(account(userId = U1), makeActive = true)
+        store.upsertAccount(account(userId = U2), makeActive = true)
+        assertEquals(U2, store.activeAccount.first()!!.userId)
         assertEquals(1, rawCount("active_account"))
 
-        store.upsertAccount(account(userId = "u3"), makeActive = false)
-        assertEquals("u2", store.activeAccount.first()!!.userId)
+        store.upsertAccount(account(userId = U3), makeActive = false)
+        assertEquals(U2, store.activeAccount.first()!!.userId)
 
-        store.setActive("s1", "u3")
-        assertEquals("u3", store.active()!!.userId)
-        assertEquals("s1", store.active()!!.serverId)
+        store.setActive(S1, U3)
+        assertEquals(U3, store.active()!!.userId)
+        assertEquals(S1, store.active()!!.serverId)
         assertEquals(1, rawCount("active_account"))
     }
 
     @Test fun removingActiveAccountClearsActive() = runBlocking {
         store.upsertServer(server())
         store.upsertAccount(account(), makeActive = true)
-        store.removeAccount("s1", "u1")
+        store.removeAccount(S1, U1)
         assertNull(store.activeAccount.first())
         assertNull(store.active())
         assertEquals(0, rawCount("active_account"))
@@ -145,14 +152,14 @@ class ServerStoreTest {
         store.upsertServer(server())
         store.upsertAccount(account(token = "old"), makeActive = true)
         store.upsertAccount(account(token = "new"), makeActive = false)
-        assertEquals("u1", store.activeAccount.first()!!.userId)
-        assertEquals("the new token is the live one", "new", store.cachedToken("s1", "u1"))
+        assertEquals(U1, store.activeAccount.first()!!.userId)
+        assertEquals("the new token is the live one", "new", store.cachedToken(S1, U1))
     }
 
     @Test fun settingUnknownAccountActiveIsRejected() = runBlocking {
         store.upsertServer(server())
         try {
-            store.setActive("s1", "ghost")
+            store.setActive(S1, "ghost")
             fail("expected IllegalArgumentException")
         } catch (e: IllegalArgumentException) {
             assertFalse(e.message!!.contains("ghost"))
@@ -166,14 +173,14 @@ class ServerStoreTest {
         } catch (e: IllegalArgumentException) {
             assertEquals("The certificate pin is not valid.", e.message)
         }
-        assertNull(store.server("s1"))
+        assertNull(store.server(S1))
     }
 
     @Test fun corruptStoredPinSurfacesAsAbsentAndNextConnectionIsUntrusted() = runBlocking {
         store.upsertServer(server(pin = validPin))
         setColumn("servers", "pinnedSpkiSha256", "corrupt")
 
-        val loaded = store.server("s1")!!
+        val loaded = store.server(S1)!!
         assertNull(loaded.pinnedSpkiSha256)
         assertTrue(loaded.pinInvalid)
         assertTrue(store.servers.first().single().pinInvalid)
@@ -186,11 +193,11 @@ class ServerStoreTest {
 
         // Saving other changes must not silently drop the (damaged) pin and widen trust.
         store.upsertServer(loaded.copy(name = "Renamed"))
-        assertTrue(store.server("s1")!!.pinInvalid)
+        assertTrue(store.server(S1)!!.pinInvalid)
 
         // Re-trusting with a fresh pin recovers.
         store.upsertServer(loaded.copy(pinnedSpkiSha256 = validPin, pinInvalid = false))
-        val fixed = store.server("s1")!!
+        val fixed = store.server(S1)!!
         assertFalse(fixed.pinInvalid)
         assertEquals(validPin, fixed.pinnedSpkiSha256)
     }
@@ -200,7 +207,7 @@ class ServerStoreTest {
         store.upsertAccount(account(), makeActive = true)
         setColumn("accounts", "accessToken", ByteArray(40))
         store.warmTokens() // unreadable tokens are found when the store warms (lists never decrypt)
-        assertTrue(store.accounts("s1").first().isEmpty())
+        assertTrue(store.accounts(S1).first().isEmpty())
         assertNull(store.activeAccount.first())
         assertNull(store.active())
     }
@@ -208,11 +215,11 @@ class ServerStoreTest {
     @Test fun serverWithUnreadableHeadersLoadsWithNone() = runBlocking {
         store.upsertServer(server())
         setColumn("servers", "customHeaders", ByteArray(40))
-        assertEquals(emptyMap<String, String>(), store.server("s1")!!.customHeaders)
+        assertEquals(emptyMap<String, String>(), store.server(S1)!!.customHeaders)
     }
 
     @Test fun toStringsRevealNothingSensitive() {
-        assertEquals("Account(ben@s1)", account().toString())
+        assertEquals("Account(ben@$S1)", account().toString())
         val s = server().toString()
         assertFalse(s.contains("example")); assertFalse(s.contains("headervalue")); assertFalse(s.contains("X-Proxy-Key"))
     }
@@ -231,20 +238,20 @@ class ServerStoreTest {
     @Test fun changesThatAffectClientsReportTheServerAndItsAddresses() = runBlocking {
         val s = server()
         store.upsertServer(s)
-        assertEquals("s1", stale.last().first)
+        assertEquals(S1, stale.last().first)
         assertTrue(stale.last().second.containsAll(listOf(s.homeAddress, s.awayAddress)))
 
         stale.clear(); store.upsertAccount(account(), makeActive = true)
-        assertEquals("s1", stale.single().first)
+        assertEquals(S1, stale.single().first)
         assertTrue(stale.single().second.contains(s.homeAddress))
         stale.clear()
 
-        store.removeAccount("s1", "u1")
-        assertEquals("s1", stale.single().first)
+        store.removeAccount(S1, U1)
+        assertEquals(S1, stale.single().first)
         assertTrue(stale.single().second.contains(s.homeAddress))
 
-        stale.clear(); store.removeServer("s1")
-        assertEquals("s1", stale.single().first)
+        stale.clear(); store.removeServer(S1)
+        assertEquals(S1, stale.single().first)
         assertTrue(stale.single().second.contains(s.awayAddress))
     }
 
@@ -261,10 +268,10 @@ class ServerStoreTest {
         val hooked = ServerStore(db, box, onServerRemoved = { removed += it })
         hooked.upsertServer(server())
         hooked.upsertAccount(account(), makeActive = false)
-        hooked.removeAccount("s1", "u1")
+        hooked.removeAccount(S1, U1)
         assertTrue(removed.isEmpty())
-        hooked.removeServer("s1")
-        assertEquals(listOf("s1"), removed)
+        hooked.removeServer(S1)
+        assertEquals(listOf(S1), removed)
     }
 
     @Test fun savingAServerWithNoAddressLeftTellsTheOnRemovedHook() = runBlocking {
@@ -273,6 +280,35 @@ class ServerStoreTest {
         hooked.upsertServer(server())
         assertTrue(gone.isEmpty())
         hooked.upsertServer(server().copy(homeAddress = null, awayAddress = null))
-        assertEquals(listOf("s1"), gone)
+        assertEquals(listOf(S1), gone)
+    }
+
+    // ---- ids must already be normalised (review F9)
+
+    private fun rejected(block: suspend () -> Unit): String? = try {
+        runBlocking { block() }
+        null
+    } catch (e: IllegalArgumentException) {
+        e.message
+    }
+
+    @Test fun aServerIdThatIsNotTheNormalisedGuidIsRefusedWithoutEchoingIt() {
+        val sneaky = "SNEAKY-" + "x".repeat(10)
+        for (bad in listOf(sneaky, "0123ABCD456789EF0123456789ABCDEF", "0123abcd-4567-89ef-0123-456789abcdef", "")) {
+            val message = rejected { store.upsertServer(server(id = bad)) }
+            assertNotNull("rejected", message)
+            assertFalse("the id is not echoed", bad.isNotEmpty() && bad in message!!)
+        }
+        assertEquals(0, rawCount("servers"))
+        assertNull(rejected { store.upsertServer(server(id = testId("good"))) })
+    }
+
+    @Test fun anAccountWithAnIdThatIsNotNormalisedIsRefused() {
+        runBlocking { store.upsertServer(server(id = testId("s"))) }
+        assertNotNull(rejected { store.upsertAccount(account(serverId = testId("s"), userId = "not-a-guid"), makeActive = false) })
+        assertNotNull(rejected { store.upsertAccount(account(serverId = "not-a-guid", userId = testId("u")), makeActive = false) })
+        assertNotNull(rejected { store.upsertAccount(account(serverId = testId("s"), userId = testId("u").uppercase()), makeActive = false) })
+        assertEquals(0, rawCount("accounts"))
+        assertNull(rejected { store.upsertAccount(account(serverId = testId("s"), userId = testId("u")), makeActive = false) })
     }
 }

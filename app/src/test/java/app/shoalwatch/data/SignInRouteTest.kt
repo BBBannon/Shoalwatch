@@ -1,5 +1,6 @@
 package app.shoalwatch.data
 
+import app.shoalwatch.S1
 import app.shoalwatch.core.AppError
 import app.shoalwatch.data.db.AppDatabase
 import app.shoalwatch.data.servers.AuthRepository
@@ -42,7 +43,7 @@ class SignInRouteTest {
 
     private val home = ServerAddress.parse("http://192.168.1.5:8096")
     private val away = ServerAddress.parse("https://away.example")
-    private val server = Server("s1", "Den", "10.10.3", home, away, true, null, null, emptyMap())
+    private val server = Server(S1, "Den", "10.10.3", home, away, true, null, null, emptyMap())
 
     /** On the home Wi-Fi the selector picks the (http) home address. */
     private val connections = StubConnections { Connection.Online(home, isHome = true) }
@@ -57,25 +58,25 @@ class SignInRouteTest {
     @After fun close() = db.close()
 
     private fun awayUnreachable() {
-        gateway.info = { if (it == away) throw AppError.of(AppError.Kind.NETWORK) else ServerInfo("s1", "Den", "10.10.3", it, ServerInfo.Compatibility.SUPPORTED) }
+        gateway.info = { if (it == away) throw AppError.of(AppError.Kind.NETWORK) else ServerInfo(S1, "Den", "10.10.3", it, ServerInfo.Compatibility.SUPPORTED) }
     }
 
     @Test fun whenBothAnswerThePasswordGoesToHttpsEvenThoughTheSelectorChoseHttp() = runTest {
-        val route = repo.signInRoute("s1")!!
+        val route = repo.signInRoute(S1)!!
         assertTrue(route.encrypted)
         repo.signInWithPassword(route, "ben", "pw".toCharArray())
         assertEquals(listOf("authName" to away), gateway.log.filter { it.first == "authName" })
     }
 
     @Test fun whenBothAnswerQuickConnectGoesToHttpsToo() = runTest {
-        val states = repo.quickConnect(repo.signInRoute("s1")!!).toList()
+        val states = repo.quickConnect(repo.signInRoute(S1)!!).toList()
         assertTrue(states.last() is QuickConnectState.Success)
         assertTrue(gateway.log.filter { it.first != "info" }.all { it.second == away })
     }
 
     @Test fun whenHttpsDoesNotAnswerTheRouteIsHttpAndSaysSo() = runTest {
         awayUnreachable()
-        val route = repo.signInRoute("s1")!!
+        val route = repo.signInRoute(S1)!!
         assertFalse(route.encrypted)
         repo.signInWithPassword(route, "ben", "pw".toCharArray())
         assertEquals(listOf("authName" to home), gateway.log.filter { it.first == "authName" })
@@ -83,24 +84,24 @@ class SignInRouteTest {
 
     @Test fun aServerWithOnlyAnHttpAddressGetsAnUnencryptedRoute() = runTest {
         store.upsertServer(server.copy(awayAddress = null))
-        assertFalse(repo.signInRoute("s1")!!.encrypted)
+        assertFalse(repo.signInRoute(S1)!!.encrypted)
         assertEquals("nothing else was probed", listOf<String>(), gateway.calls)
     }
 
     @Test fun anHttpsAddressChosenByTheSelectorIsUsedAsIs() = runTest {
         connections.online = { Connection.Online(away, isHome = false) }
-        assertTrue(repo.signInRoute("s1")!!.encrypted)
+        assertTrue(repo.signInRoute(S1)!!.encrypted)
         assertTrue(gateway.calls.isEmpty())
     }
 
     @Test fun nothingVerifiedMeansNoRoute() = runTest {
         connections.online = { null }
-        assertNull(repo.signInRoute("s1"))
+        assertNull(repo.signInRoute(S1))
         assertTrue(gateway.calls.isEmpty())
     }
 
     @Test fun aSelectorAddressThatIsNoLongerSavedIsNotUsed() = runTest {
         connections.online = { Connection.Online(ServerAddress.parse("http://10.0.0.9:8096"), isHome = true) }
-        assertNull(repo.signInRoute("s1"))
+        assertNull(repo.signInRoute(S1))
     }
 }

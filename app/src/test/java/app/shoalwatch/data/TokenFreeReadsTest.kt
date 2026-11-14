@@ -1,5 +1,9 @@
 package app.shoalwatch.data
 
+import app.shoalwatch.S1
+import app.shoalwatch.U1
+import app.shoalwatch.U2
+import app.shoalwatch.U3
 import app.shoalwatch.data.db.AppDatabase
 import app.shoalwatch.data.servers.Account
 import app.shoalwatch.data.servers.AccountSummary
@@ -49,15 +53,15 @@ class TokenFreeReadsTest {
     private lateinit var db: AppDatabase
     private lateinit var store: ServerStore
 
-    private val server = Server("s1", "Den", "10.10.3", ServerAddress.parse("https://den.example"), null, false, null, null, mapOf("X-Proxy" to "secret"))
+    private val server = Server(S1, "Den", "10.10.3", ServerAddress.parse("https://den.example"), null, false, null, null, mapOf("X-Proxy" to "secret"))
 
     @Before fun open() {
         db = inMemoryDb()
         store = ServerStore(db, SecretBox(keys), io = io)
         runBlocking {
             store.upsertServer(server)
-            store.upsertAccount(Account("s1", "u1", "ben", "tok-1"), makeActive = true)
-            store.upsertAccount(Account("s1", "u2", "amy", "tok-2"), makeActive = false)
+            store.upsertAccount(Account(S1, U1, "ben", "tok-1"), makeActive = true)
+            store.upsertAccount(Account(S1, U2, "amy", "tok-2"), makeActive = false)
             store.warmTokens()
         }
     }
@@ -71,21 +75,21 @@ class TokenFreeReadsTest {
         keys.forbidden = true
         val catalog = StoreCatalog(store)
         assertEquals(listOf("Den"), catalog.servers.first().map { it.name })
-        assertEquals(listOf("amy", "ben"), catalog.accounts("s1").first().map { it.userName })
-        assertEquals(AccountSummary("s1", "u1", "ben"), catalog.activeAccount.first())
-        assertEquals(AccountSummary("s1", "u1", "ben"), catalog.awaitActive())
-        assertEquals("the live token lookup needs no decryption either", "tok-1", store.cachedToken("s1", "u1"))
+        assertEquals(listOf("amy", "ben"), catalog.accounts(S1).first().map { it.userName })
+        assertEquals(AccountSummary(S1, U1, "ben"), catalog.activeAccount.first())
+        assertEquals(AccountSummary(S1, U1, "ben"), catalog.awaitActive())
+        assertEquals("the live token lookup needs no decryption either", "tok-1", store.cachedToken(S1, U1))
     }
 
     @Test fun everyKeystoreOperationRunsOnTheIoDispatcher() = runBlocking {
         val caller = Thread.currentThread().name
         keys.threads.clear()
         store.warmTokens()
-        store.token("s1", "u1")
-        store.tokens("s1")
-        store.server("s1")
+        store.token(S1, U1)
+        store.tokens(S1)
+        store.server(S1)
         store.servers.first()
-        store.upsertAccount(Account("s1", "u3", "cat", "tok-3"), makeActive = false)
+        store.upsertAccount(Account(S1, U3, "cat", "tok-3"), makeActive = false)
         store.upsertServer(server.copy(name = "Den 2"))
         assertTrue(keys.threads.isNotEmpty())
         assertTrue("never on the caller's thread ($caller): ${keys.threads}", keys.threads.all { it.startsWith("test-io") })
@@ -94,10 +98,10 @@ class TokenFreeReadsTest {
     @Test fun anAccountWhoseTokenCannotBeReadIsStillHiddenAfterTheWarm() = runBlocking {
         // A row sealed with a different key (as after a lost Keystore key).
         val stranger = SecretBox { KeyGenerator.getInstance("AES").apply { init(256) }.generateKey() }
-        db.accountDao().upsert(app.shoalwatch.data.db.AccountEntity("s1", "u9", "ghost", stranger.seal("tok-9")))
+        db.accountDao().upsert(app.shoalwatch.data.db.AccountEntity(S1, "u9", "ghost", stranger.seal("tok-9")))
         store.warmTokens()
         keys.forbidden = true
-        assertEquals(listOf("amy", "ben"), store.accounts("s1").first().map { it.userName })
-        assertNull(store.cachedToken("s1", "u9"))
+        assertEquals(listOf("amy", "ben"), store.accounts(S1).first().map { it.userName })
+        assertNull(store.cachedToken(S1, "u9"))
     }
 }

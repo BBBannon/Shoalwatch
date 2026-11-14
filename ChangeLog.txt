@@ -1,3 +1,4 @@
+v1.35 — 14/11/2026 — Behind the scenes: servers and users saved on the phone must now have a properly formed identifier, so a malformed one can never be stored.
 v1.34 — 14/11/2026 — Quick Connect now stops straight away if your network changes while you wait, and asks you to start again instead of carrying on over a different connection.
 v1.33 — 14/11/2026 — If a server's secure connection stops working just as you press Sign in, the app now waits: it shows the unencrypted-connection notice and keeps your password in the box until you press Sign in again.
 v1.32 — 14/11/2026 — Signing out of a server now uses its own separate connection, so it can never mix up one sign-in with another.

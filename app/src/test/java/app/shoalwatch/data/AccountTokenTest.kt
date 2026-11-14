@@ -1,5 +1,6 @@
 package app.shoalwatch.data
 
+import app.shoalwatch.testId
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import app.shoalwatch.core.AppError
@@ -36,6 +37,8 @@ import org.robolectric.RobolectricTestRunner
 import javax.crypto.KeyGenerator
 
 private const val S = "0123abcd456789ef0123456789abcdef"
+private val UA = testId("a")
+private val UB = testId("b")
 
 /** Signed-in clients read the token live: assertions are on the requests real OkHttp actually sends. */
 @RunWith(RobolectricTestRunner::class)
@@ -78,33 +81,33 @@ class AccountTokenTest {
     }
 
     @Test fun eachAccountOnTheSameServerSendsItsOwnToken() {
-        signIn("a", "tok-A"); signIn("b", "tok-B")
-        assertTrue("Token=\"tok-A\"" in sentHeader("a"))
-        assertTrue("Token=\"tok-B\"" in sentHeader("b"))
-        assertTrue("Token=\"tok-A\"" in sentHeader("a"))
+        signIn(UA, "tok-A"); signIn(UB, "tok-B")
+        assertTrue("Token=\"tok-A\"" in sentHeader(UA))
+        assertTrue("Token=\"tok-B\"" in sentHeader(UB))
+        assertTrue("Token=\"tok-A\"" in sentHeader(UA))
     }
 
     @Test fun aSignedOutAccountNeverSendsItsTokenAgain() {
-        signIn("a", "tok-A")
-        assertTrue("Token=\"tok-A\"" in sentHeader("a"))
+        signIn(UA, "tok-A")
+        assertTrue("Token=\"tok-A\"" in sentHeader(UA))
         val repo = AuthRepository(gateway, store, device, verifiedHome())
 
         enqueueIdentity()
         web.enqueue(MockResponse().setResponseCode(204))
-        runBlocking { repo.signOut(S, "a") }
+        runBlocking { repo.signOut(S, UA) }
         web.takeRequest() // the anonymous identity check on the address, just before the token
         assertTrue("Token=\"tok-A\"" in web.takeRequest().getHeader("Authorization")!!)
 
         // Refused, not sent without a token: the server sees nothing more.
-        assertEquals(AppError.Kind.NOT_SIGNED_IN, signedOutError("a").kind)
+        assertEquals(AppError.Kind.NOT_SIGNED_IN, signedOutError(UA).kind)
         assertEquals(3, web.requestCount)
     }
 
     @Test fun reSigningInIsPickedUpByTheCachedClient() {
-        signIn("a", "tok-OLD")
-        assertTrue("Token=\"tok-OLD\"" in sentHeader("a"))
-        signIn("a", "tok-NEW")
-        val header = sentHeader("a")
+        signIn(UA, "tok-OLD")
+        assertTrue("Token=\"tok-OLD\"" in sentHeader(UA))
+        signIn(UA, "tok-NEW")
+        val header = sentHeader(UA)
         assertTrue(header, "Token=\"tok-NEW\"" in header)
         assertFalse(header, "tok-OLD" in header)
     }
@@ -124,67 +127,67 @@ class AccountTokenTest {
     }
 
     @Test fun afterARestartTheTokenIsOnlyAvailableOnceWarmed() {
-        signIn("a", "tok-A")
+        signIn(UA, "tok-A")
         restart()
-        assertNull(store.cachedToken(S, "a"))
+        assertNull(store.cachedToken(S, UA))
         runBlocking { store.warmTokens() }
-        assertEquals("tok-A", store.cachedToken(S, "a"))
-        assertTrue("Token=\"tok-A\"" in sentHeader("a"))
+        assertEquals("tok-A", store.cachedToken(S, UA))
+        assertTrue("Token=\"tok-A\"" in sentHeader(UA))
         runBlocking { store.warmTokens() } // safe to repeat
-        assertEquals("tok-A", store.cachedToken(S, "a"))
+        assertEquals("tok-A", store.cachedToken(S, UA))
     }
 
     @Test fun readingAccountsNeverFillsTheTokenMap() {
-        signIn("a", "tok-A")
+        signIn(UA, "tok-A")
         restart()
         runBlocking {
             assertEquals(1, store.accounts(S).first().size)
             store.active()
             store.activeAccount.first()
         }
-        assertNull(store.cachedToken(S, "a"))
+        assertNull(store.cachedToken(S, UA))
     }
 
     @Test fun aRemovedAccountStaysGoneEvenWhenRowsAreReadAfterwards() {
-        signIn("a", "tok-A")
+        signIn(UA, "tok-A")
         runBlocking {
-            store.removeAccount(S, "a")
+            store.removeAccount(S, UA)
             store.accounts(S).first()
             store.active()
             store.activeAccount.first()
         }
-        assertNull(store.cachedToken(S, "a"))
+        assertNull(store.cachedToken(S, UA))
     }
 
     @Test fun anAuthenticatedRequestWithNoTokenIsRefusedAndNothingIsSent() {
-        val error = signedOutError("a")
+        val error = signedOutError(UA)
         assertEquals(AppError.Kind.NOT_SIGNED_IN, error.kind)
         assertEquals("You're signed out. Sign in again to continue.", error.userMessage)
         assertEquals(0, web.requestCount)
     }
 
     @Test fun anAccountSignedOutIsRefusedNotSentAnonymously() {
-        signIn("a", "tok-A")
-        sentHeader("a")
-        runBlocking { store.removeAccount(S, "a") }
-        assertEquals(AppError.Kind.NOT_SIGNED_IN, signedOutError("a").kind)
+        signIn(UA, "tok-A")
+        sentHeader(UA)
+        runBlocking { store.removeAccount(S, UA) }
+        assertEquals(AppError.Kind.NOT_SIGNED_IN, signedOutError(UA).kind)
         assertEquals(1, web.requestCount)
     }
 
     @Test fun warmingNeverBringsBackAnAccountThatWasRemoved() {
         runBlocking { store.removeAccount(S, "ghost") }
-        signIn("a", "tok-A")
-        signIn("b", "tok-B")
-        runBlocking { store.removeAccount(S, "a") }
+        signIn(UA, "tok-A")
+        signIn(UB, "tok-B")
+        runBlocking { store.removeAccount(S, UA) }
         restart()
         runBlocking { store.warmTokens() }
-        assertNull(store.cachedToken(S, "a"))
-        assertEquals("tok-B", store.cachedToken(S, "b"))
+        assertNull(store.cachedToken(S, UA))
+        assertEquals("tok-B", store.cachedToken(S, UB))
     }
 
     @Test fun aWarmRacingARemovalNeverLeavesTheRemovedToken() {
         repeat(150) { i ->
-            val user = "u$i"
+            val user = testId("u$i")
             signIn(user, "tok-$i")
             restart()
             runBlocking(Dispatchers.Default) {
@@ -196,30 +199,31 @@ class AccountTokenTest {
         }
     }
 
-    @Test fun removingAServerOnlyDropsItsOwnTokensEvenWhenIdsLookLikePrefixes() {
-        val inner = server.copy(id = "$S:x")
+    @Test fun removingAServerOnlyDropsItsOwnTokensEvenWhenIdsShareAPrefix() {
+        val neighbour = S.dropLast(1) + (if (S.last() == '0') '1' else '0') // differs only in the last digit
+        val inner = server.copy(id = neighbour)
         runBlocking {
             store.upsertServer(inner)
-            store.upsertAccount(Account("$S:x", "u", "u", "tok-inner"), makeActive = false)
-            store.upsertAccount(Account(S, "x:u", "x:u", "tok-outer"), makeActive = false)
+            store.upsertAccount(Account(neighbour, UA, UA, "tok-inner"), makeActive = false)
+            store.upsertAccount(Account(S, UB, UB, "tok-outer"), makeActive = false)
             store.removeServer(S)
         }
-        assertNull(store.cachedToken(S, "x:u"))
-        assertEquals("tok-inner", store.cachedToken("$S:x", "u"))
+        assertNull(store.cachedToken(S, UB))
+        assertEquals("tok-inner", store.cachedToken(neighbour, UA))
     }
 
     @Test fun signOutSendsTheTokenItRevokesEvenFromAColdStoreAndLeavesNothingBehind() {
-        signIn("a", "tok-A")
+        signIn(UA, "tok-A")
         restart()
         enqueueIdentity()
         web.enqueue(MockResponse().setResponseCode(204))
-        runBlocking { AuthRepository(gateway, store, device, verifiedHome()).signOut(S, "a") }
+        runBlocking { AuthRepository(gateway, store, device, verifiedHome()).signOut(S, UA) }
         web.takeRequest() // identity check
         assertTrue("Token=\"tok-A\"" in web.takeRequest().getHeader("Authorization")!!)
-        assertNull(store.cachedToken(S, "a"))
+        assertNull(store.cachedToken(S, UA))
         runBlocking { assertTrue(store.accounts(S).first().isEmpty()) }
         // The client used for the logout was dropped with the account: a later call is refused, not sent with the old token.
-        assertEquals(AppError.Kind.NOT_SIGNED_IN, signedOutError("a").kind)
+        assertEquals(AppError.Kind.NOT_SIGNED_IN, signedOutError(UA).kind)
         assertEquals(2, web.requestCount)
     }
 }

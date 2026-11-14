@@ -1,5 +1,8 @@
 package app.shoalwatch.data
 
+import app.shoalwatch.S1
+import app.shoalwatch.U1
+
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import app.shoalwatch.data.db.AppDatabase
@@ -20,14 +23,14 @@ internal class FakeGateway : JellyfinGateway {
     val nets = mutableListOf<ServerNetConfig>()
     val addresses = mutableListOf<ServerAddress>()
     val headers = mutableListOf<String?>()
-    var info: suspend (ServerAddress) -> ServerInfo = { ServerInfo("s1", "Den", "10.10.3", it, ServerInfo.Compatibility.SUPPORTED) }
+    var info: suspend (ServerAddress) -> ServerInfo = { ServerInfo(S1, "Den", "10.10.3", it, ServerInfo.Compatibility.SUPPORTED) }
     var enabled: () -> Boolean = { true }
     var polls: (Int) -> Boolean = { true }
     var pollCount = 0
 
     /** Runs after each poll with its index (to change the world between a poll and the next step). */
     var afterPoll: (Int) -> Unit = {}
-    var auth: () -> AuthResult = { AuthResult("u1", "ben", "tok-1", "s1") }
+    var auth: () -> AuthResult = { AuthResult(U1, "ben", "tok-1", S1) }
     var logout: suspend (ServerAddress) -> Unit = {}
     var lastPassword: String? = null
     var lastUsername: String? = null
