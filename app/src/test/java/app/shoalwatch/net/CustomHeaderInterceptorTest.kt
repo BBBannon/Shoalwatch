@@ -88,11 +88,21 @@ class CustomHeaderInterceptorTest {
         } catch (e: IllegalArgumentException) {
             assertFalse(e.message!!.contains("cretname"))
         }
+        assertEquals(0, a.requestCount)
     }
 
-    @Test fun `no headers are read for a host that is not allowed`() {
+    @Test fun `values are not validated for a host that is not allowed`() {
         b.enqueue(MockResponse())
-        get(client(mapOf("Authorization" to "x")), b) // forbidden name, but never inspected for b
-        assertNull(b.takeRequest().getHeader("Authorization"))
+        get(client(mapOf("X-Proxy" to "bad\r\nvalue")), b) // an invalid value, but never inspected for b
+        assertNull(b.takeRequest().getHeader("X-Proxy"))
+        assertEquals(1, b.requestCount)
+    }
+
+    @Test fun `configured header names are removed for a host that is not allowed`() {
+        b.enqueue(MockResponse())
+        val c = client(mapOf("CF-Access-Client-Secret" to "proxy-secret"))
+        // As if an application-level copy had already added it before a redirect to b.
+        c.newCall(Request.Builder().url(b.url("/")).header("cf-access-client-secret", "proxy-secret").build()).execute().close()
+        assertNull(b.takeRequest().getHeader("CF-Access-Client-Secret"))
     }
 }

@@ -126,6 +126,7 @@ class HttpClientFactoryTest {
         assertEquals(30_000, a.writeTimeoutMillis)
         assertEquals(0, a.callTimeoutMillis)
         assertEquals(false, a.followSslRedirects)
+        assertEquals(false, a.followRedirects)
     }
 
     @Test fun `http is refused when cleartext is not allowed`() {
@@ -135,12 +136,13 @@ class HttpClientFactoryTest {
         assertEquals(0, s.requestCount)
     }
 
-    @Test fun `Authorization reaches the configured server but not a redirect target`() {
+    @Test fun `Authorization reaches the configured server but not a redirect target, even if a caller follows one`() {
         val a = MockWebServer().apply { start(); servers += this }
         val b = MockWebServer().apply { start(); servers += this }
         b.enqueue(MockResponse().setBody("there"))
         a.enqueue(MockResponse().setResponseCode(302).setHeader("Location", "http://127.0.0.1:${b.port}/y"))
-        val client = factory().clientFor(config(a, scheme = "http", cleartext = true))
+        // Factory clients never follow redirects (RedirectPolicyTest); this checks the network-level guard behind that.
+        val client = factory().clientFor(config(a, scheme = "http", cleartext = true)).newBuilder().followRedirects(true).build()
         assertEquals("there", get(client, a, "http"))
         assertEquals(token, a.takeRequest().getHeader("Authorization"))
         assertNull(b.takeRequest().getHeader("Authorization"))

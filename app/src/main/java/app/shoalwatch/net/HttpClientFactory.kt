@@ -48,6 +48,11 @@ class HttpClientFactory internal constructor(
         // No call timeout: it would cut off long media downloads.
         .cookieJar(CookieJar.NO_COOKIES)
         .cache(null)
+        // No client from this factory follows a redirect (S6): credentials sit in headers, bodies and queries
+        // that OkHttp would resend to the target. A 3xx reaches the caller as a response, and callers treat it
+        // as an error. A later caller that genuinely needs one followed must do it by hand and re-check the
+        // target authority; there is deliberately no switch for it here.
+        .followRedirects(false)
         .followSslRedirects(false)
         .connectionSpecs(listOf(TLS_SPEC, ConnectionSpec.CLEARTEXT))
         .build()

@@ -10,8 +10,11 @@ import okhttp3.Response
  * The map is validated every time it is read: the names `Authorization`, `Host`, `Cookie` and
  * `Content-Length` are refused (any letter case), names must be valid HTTP tokens, and values must
  * not contain control characters (so CR/LF cannot split a request). Failures throw
- * [IllegalArgumentException] naming the header, never its value. The map is not read at all for
- * authorities that are not allowed.
+ * [IllegalArgumentException] naming the header, never its value.
+ *
+ * For any authority that is not allowed it REMOVES every configured header name (values are not read or
+ * validated), so a copy already added by the application-level instance can never ride along to another host.
+ * Install it as both an application and a network interceptor, like [AuthInterceptor].
  */
 class CustomHeaderInterceptor(
     private val allowedHosts: () -> Set<String>,
@@ -21,7 +24,11 @@ class CustomHeaderInterceptor(
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
         val authority = ServerAddress.authorityOf(request.url)
-        if (allowedHosts().none { it.equals(authority, ignoreCase = true) }) return chain.proceed(request)
+        if (allowedHosts().none { it.equals(authority, ignoreCase = true) }) {
+            val stripped = request.newBuilder()
+            headers().keys.forEach { stripped.removeHeader(it) }
+            return chain.proceed(stripped.build())
+        }
 
         val builder = request.newBuilder()
         for ((name, value) in headers()) {

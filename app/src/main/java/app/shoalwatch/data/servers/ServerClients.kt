@@ -8,8 +8,7 @@ import okhttp3.OkHttpClient
 /**
  * Holds one API client per server configuration (by value: see [ServerNetConfig.equals]), so separate
  * `ServerNet.anonymous(...)` / `authenticated(...)` calls with the same settings share a client and its SSLContext. Clients are built
- * by [HttpClientFactory] (the only place that constructs them) and derived with redirects off, because API
- * calls carry credentials in bodies and queries that OkHttp would otherwise resend to a redirect target.
+ * by [HttpClientFactory] (the only place that constructs them), which never follows redirects.
  *
  * The first configuration seen for a key supplies the token provider, so providers must read their token live.
  * Call [evict] when a server's accounts or settings change; a small LRU bounds the rest.
@@ -20,7 +19,7 @@ class ServerClients(private val factory: HttpClientFactory) {
     }
 
     fun clientFor(net: ServerNetConfig): OkHttpClient = synchronized(clients) {
-        clients.getOrPut(net) { factory.clientFor(net).newBuilder().followRedirects(false).build() }
+        clients.getOrPut(net) { factory.clientFor(net) }
     }
 
     /** Drops every client for [serverId] (signed-in keys `serverId:...`) or answering on any of [addresses]. */
