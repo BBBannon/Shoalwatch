@@ -29,4 +29,10 @@ class DisplayTextTest {
         assertEquals("Den", displayText("Den", 80, fallback = "Unnamed"))
         assertEquals(5, displayText("x".repeat(50), 5, fallback = "Unnamed").length)
     }
+
+    @Test fun charactersThatRenderAsBlankCountAsWhiteSpaceSoAnEmptyLookingNameFallsBack() {
+        val blanks = cp(0x3164, 0x2800, 0xFFA0, 0x115F, 0x1160)
+        assertEquals("Unnamed user", displayText(blanks, 80, fallback = "Unnamed user"))
+        assertEquals("a b", displayText("a" + blanks + "b", 80))
+    }
 }

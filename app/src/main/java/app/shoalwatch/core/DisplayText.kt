@@ -19,7 +19,7 @@ fun displayText(raw: String?, maxLength: Int, fallback: String = ""): String {
         i += Character.charCount(cp)
         when {
             Character.getType(cp) == Character.FORMAT.toInt() -> Unit
-            Character.isWhitespace(cp) || Character.isSpaceChar(cp) || Character.getType(cp) == Character.CONTROL.toInt() ->
+            cp in BLANK_RENDERING || Character.isWhitespace(cp) || Character.isSpaceChar(cp) || Character.getType(cp) == Character.CONTROL.toInt() ->
                 pendingSpace = out.isNotEmpty()
             else -> {
                 if (pendingSpace) {
@@ -35,3 +35,6 @@ fun displayText(raw: String?, maxLength: Int, fallback: String = ""): String {
     }
     return out.toString().ifEmpty { fallback }
 }
+
+/** Not white space to Unicode, but drawn as nothing (Hangul fillers, braille blank): treated as a space so an empty-looking name falls back. */
+private val BLANK_RENDERING = setOf(0x3164, 0x2800, 0xFFA0, 0x115F, 0x1160)

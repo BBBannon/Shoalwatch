@@ -21,13 +21,15 @@ class ServerClients(private val factory: HttpClientFactory) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<ServerNetConfig, OkHttpClient>?) = size > MAX_CLIENTS
     }
 
+    /** @throws IllegalArgumentException for a revocation configuration: its captured token must never be cached (use [oneOff]). */
     fun clientFor(net: ServerNetConfig): OkHttpClient = synchronized(clients) {
+        require(net.authKey?.startsWith(ServerNet.REVOCATION_KEY_PREFIX) != true) { "A revocation configuration must use a one-off client." }
         clients.getOrPut(net) { factory.clientFor(net) }
     }
 
     /**
-     * Runs [block] with a client built just for it from [net] and never placed in the cache; its idle connections
-     * are evicted afterwards, whatever happens. [net] may carry a token captured as a string: nothing outlives this call.
+     * Runs [block] with a client built just for it from [net] and never placed in the cache; the (shared) connection
+     * pool is trimmed of idle connections afterwards, whatever happens. [net] may carry a token captured as a string: nothing outlives this call.
      */
     suspend fun <T> oneOff(net: ServerNetConfig, block: suspend (OkHttpClient) -> T): T {
         val client = factory.clientFor(net)

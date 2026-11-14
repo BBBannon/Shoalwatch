@@ -38,7 +38,7 @@ fun FilterObscuredTouches(): Boolean {
     val view = LocalView.current
     val root = view.rootView
     val window = (view.parent as? DialogWindowProvider)?.window ?: view.context.findActivity()?.window
-    val guard = remember(root) { ObscuredTouchFilter.guardFor(root) }
+    val guard = remember(root, window) { ObscuredTouchFilter.guardFor(root) }
     DisposableEffect(root, window) {
         ObscuredTouchFilter.acquire(root, window)
         onDispose { ObscuredTouchFilter.release(root) }
@@ -87,7 +87,7 @@ internal object ObscuredTouchFilter {
         val guard = guardFor(view)
         guard.holders--
         if (guard.holders <= 0) {
-            synchronized(guards) { guards.remove(view) }
+            // The guard stays in the map (weakly, by view) so a composable holding it never holds a stale copy; it is reset here.
             view.filterTouchesWhenObscured = false
             guard.hint.value = false
             val window = guard.window

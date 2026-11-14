@@ -22,6 +22,9 @@ data class ServerNetDraft(
  * missing [ServerNetConfig.authKey] (which would let one cached client serve two identities).
  */
 object ServerNet {
+    /** Every [revocation] configuration's `authKey` starts with this; `ServerClients.clientFor` refuses such a key. */
+    const val REVOCATION_KEY_PREFIX = "revoke:"
+
     /**
      * No token is ever sent. Used to find a server, probe an address and sign in.
      *
@@ -70,7 +73,7 @@ object ServerNet {
         userId: String,
         device: DeviceIdentity,
         token: String,
-    ): ServerNetConfig = build(addresses, draftOf(server), authKey = "revoke:${server.id}:$userId") { device.authHeader(token) }
+    ): ServerNetConfig = build(addresses, draftOf(server), authKey = "$REVOCATION_KEY_PREFIX${server.id}:$userId") { device.authHeader(token) }
 
     private fun draftOf(server: Server): ServerNetDraft {
         if (server.pinInvalid) throw AppError.of(AppError.Kind.TLS_UNTRUSTED)

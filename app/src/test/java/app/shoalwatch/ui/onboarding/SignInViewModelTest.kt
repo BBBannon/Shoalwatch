@@ -219,14 +219,40 @@ class SignInViewModelTest {
 
     // --- where the sign-in goes (review I2) ---------------------------------------------------------------------
 
-    @Test fun anUnencryptedRouteIsFlaggedAtOpenAndQuickConnectWaitsForTheUserToHaveSeenTheNotice() {
+    @Test fun anHttpOnlyServerIsTheBaselineAtOpenSoNothingIsBlockedAndQuickConnectStartsAtOnce() {
         auth.routeAnswer = { FakeRoute(it, encrypted = false) }
         val vm = vm()
-        assertTrue("the notice is up", vm.state.value.unencrypted)
-        assertEquals("no Quick Connect secret is sent before the notice has been seen", 0, auth.quickConnectStarts)
+        assertTrue("the notice is up from the first frame", vm.state.value.unencrypted)
+        assertEquals("Quick Connect starts without an extra tap", 1, auth.quickConnectStarts)
+        assertFalse(vm.state.value.quickConnect is QuickConnectUi.Failed)
+    }
+
+    @Test fun anHttpOnlyServerWithQuickConnectOffGoesStraightToThePasswordAndTheFirstSubmitSends() {
+        auth.routeAnswer = { FakeRoute(it, encrypted = false) }
+        val vm = vm()
+        kotlinx.coroutines.runBlocking { qc.emit(QuickConnectProgress.Failed(AppError.of(AppError.Kind.QUICK_CONNECT_DISABLED))) }
+        assertEquals(SignInMode.Password, vm.state.value.mode)
+        assertTrue(vm.state.value.quickConnectUnavailable)
+        assertTrue(vm.state.value.unencrypted)
+        vm.onUsernameChange("ben")
+        vm.password.setTextAndPlaceCursorAtEnd("hunter2")
+        vm.signInWithPassword()
+        assertEquals(1, auth.passwordCalls.size)
+        assertTrue(vm.state.value.signedIn)
+    }
+
+    @Test fun usingQuickConnectInsteadIsBlockedOnceWhenTheSecureRouteHasGoneAway() {
+        val vm = vm()
+        vm.usePassword()
+        assertFalse(vm.state.value.unencrypted)
+        auth.routeAnswer = { FakeRoute(it, encrypted = false) }
+        val before = auth.quickConnectStarts
+        vm.useQuickConnect()
+        assertEquals("blocked once", before, auth.quickConnectStarts)
+        assertTrue(vm.state.value.unencrypted)
         assertTrue(vm.state.value.quickConnect is QuickConnectUi.Failed)
-        vm.retryQuickConnect() // the user has now seen the notice and asks again
-        assertEquals(1, auth.quickConnectStarts)
+        vm.useQuickConnect()
+        assertEquals(before + 1, auth.quickConnectStarts)
     }
 
     @Test fun quickConnectIsNotStartedWhenTheRouteTurnsUnencryptedUnderAnEncryptedScreen() {

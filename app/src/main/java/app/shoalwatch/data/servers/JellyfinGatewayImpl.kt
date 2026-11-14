@@ -42,7 +42,7 @@ class JellyfinGatewayImpl(private val clients: ServerClients) : JellyfinGateway 
         val version = displayText(info.version, MAX_VERSION_LENGTH)
         return ServerInfo(
             id = id.value,
-            name = displayText(info.serverName, MAX_NAME_LENGTH, fallback = "Jellyfin"),
+            name = displayText(info.serverName, MAX_NAME_LENGTH, fallback = DEFAULT_SERVER_NAME),
             version = version,
             address = address,
             compatibility = ServerInfo.compatibilityOf(version),
@@ -88,7 +88,7 @@ class JellyfinGatewayImpl(private val clients: ServerClients) : JellyfinGateway 
         val serverId = JellyfinId.parseOrNull(dto.serverId)
         val token = dto.accessToken?.takeIf { it.isNotBlank() }
         if (userId == null || serverId == null || token == null) throw AppError.of(AppError.Kind.SERVER_ERROR)
-        return AuthResult(userId.value, displayText(user?.name, MAX_NAME_LENGTH, fallback = "Unnamed user"), token, serverId.value)
+        return AuthResult(userId.value, displayText(user?.name, MAX_NAME_LENGTH, fallback = DEFAULT_USER_NAME), token, serverId.value)
     }
 
     /**
@@ -180,6 +180,10 @@ class JellyfinGatewayImpl(private val clients: ServerClients) : JellyfinGateway 
     private companion object {
         const val MAX_BODY_BYTES = 1L shl 20
         const val MAX_NAME_LENGTH = 80
+
+        /** What a name made only of invisible characters becomes (data-layer defaults, one place). */
+        const val DEFAULT_SERVER_NAME = "Jellyfin"
+        const val DEFAULT_USER_NAME = "Unnamed user"
         const val MAX_VERSION_LENGTH = 40
         val CODE = Regex("[A-Za-z0-9]{4,12}")
         val JSON = "application/json".toMediaType()

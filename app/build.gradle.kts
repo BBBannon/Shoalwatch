@@ -175,21 +175,23 @@ abstract class VerifyManifestRuleFixtures : DefaultTask() {
     }
 }
 
+// The one definition of what the release manifest may contain, shared by the real check and the fixture task.
+val releaseLauncherActivity = "app.shoalwatch.ui.MainActivity"
+val releaseExpectedPermissions = setOf(
+    "android.permission.INTERNET",
+    "android.permission.ACCESS_NETWORK_STATE",
+    // Declared (signature level) by androidx.core for receivers registered as not exported.
+    "app.shoalwatch.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
+)
+
 androidComponents {
     onVariants(selector().withBuildType("release")) { variant ->
         val check = tasks.register<VerifyReleaseManifest>("verify${variant.name.replaceFirstChar { it.uppercase() }}Manifest") {
             group = "verification"
             description = "Checks the merged ${variant.name} manifest against the security rules (S2, S4, S7, S9, S10)."
             manifest.set(variant.artifacts.get(SingleArtifact.MERGED_MANIFEST))
-            launcherActivity.set("app.shoalwatch.ui.MainActivity")
-            expectedPermissions.set(
-                setOf(
-                    "android.permission.INTERNET",
-                    "android.permission.ACCESS_NETWORK_STATE",
-                    // Declared (signature level) by androidx.core for receivers registered as not exported.
-                    "app.shoalwatch.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
-                ),
-            )
+            launcherActivity.set(releaseLauncherActivity)
+            expectedPermissions.set(releaseExpectedPermissions)
             report.set(layout.buildDirectory.file("reports/release-manifest/${variant.name}.txt"))
         }
         val capitalised = variant.name.replaceFirstChar { c -> c.uppercase() }
@@ -204,14 +206,8 @@ tasks.register<VerifyManifestRuleFixtures>("verifyManifestRuleFixtures") {
     group = "verification"
     description = "Proves each release-manifest rule can fail, using fixture manifests."
     fixtures.set(layout.projectDirectory.dir("src/test/manifest-fixtures"))
-    launcherActivity.set("app.shoalwatch.ui.MainActivity")
-    expectedPermissions.set(
-        setOf(
-            "android.permission.INTERNET",
-            "android.permission.ACCESS_NETWORK_STATE",
-            "app.shoalwatch.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
-        ),
-    )
+    launcherActivity.set(releaseLauncherActivity)
+    expectedPermissions.set(releaseExpectedPermissions)
     expectations.set(
         mapOf(
             "bad-extra-exported-component.xml" to "may be exported",

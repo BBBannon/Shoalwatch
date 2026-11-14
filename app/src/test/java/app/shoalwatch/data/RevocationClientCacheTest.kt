@@ -124,4 +124,12 @@ class RevocationClientCacheTest {
         get(clients.clientFor(live))
         assertTrue("the live client still sends its own token", authOf("/Items").contains("Token=\"$tokenLive\""))
     }
+
+    @Test fun theSharedCacheRefusesARevocationConfigurationSoACapturedTokenClientCanNeverBeCached() {
+        val revoked = ServerNet.revocation(listOf(address), server, userId, device, tokenRevoked)
+        val e = try { clients.clientFor(revoked); null } catch (e: IllegalArgumentException) { e }
+        assertTrue("refused", e != null)
+        assertTrue("the token is not echoed", !e!!.message!!.contains(tokenRevoked))
+        assertEquals(0, clients.cachedCount())
+    }
 }

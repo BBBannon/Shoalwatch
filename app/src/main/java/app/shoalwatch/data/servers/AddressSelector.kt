@@ -150,10 +150,11 @@ class AddressSelector(
 
     /**
      * Started by the first [connection]: a server whose saved settings change (or which is removed) is re-probed.
-     * If the store's flow fails, every server shown is published `Offline` (settings changes can no longer be seen,
-     * so nothing shown can be trusted; in-flight results are dropped) and the flow is subscribed again after a
-     * backoff of 1 s doubling to 30 s, reset by a healthy emission. The first emission after a failure re-probes
-     * every live server.
+     * If the store's flow fails, every server shown is published `Offline` and in-flight results are dropped, and the
+     * flow is subscribed again after a backoff of 1 s doubling to 30 s, reset by a healthy emission. The first
+     * emission after a failure re-probes every live server. This is best effort, not a guarantee: a probe that starts
+     * during the outage reads the store directly and can still publish `Online`, and settings changes made meanwhile
+     * are picked up within the backoff. That is safe because `AuthRepository` re-reads the store before sending.
      */
     private val watcher: Job by lazy {
         scope.launch {

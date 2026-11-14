@@ -1,3 +1,4 @@
+v1.44 — 14/11/2026 — Servers that only offer an unencrypted address now go straight to Quick Connect or the password form, with the notice shown, instead of stopping on an extra "try again" screen; the extra pause now only happens if a secure connection really stops working part-way. Also tidier handling of blank-looking names.
 v1.43 — 14/11/2026 — Updated the milestone security check and technical notes to say exactly what the app does after the final round of safety fixes, including the one risk that remains on unencrypted connections.
 v1.42 — 14/11/2026 — If another app is drawing over Shoalwatch while you are on a security prompt, the buttons are switched off and a short message tells you to close screen filters or bubbles and try again.
 v1.41 — 14/11/2026 — Saved sign-ins are only shown once they have been unlocked, and a sign-in that cannot be unlocked is hidden everywhere instead of looking active.

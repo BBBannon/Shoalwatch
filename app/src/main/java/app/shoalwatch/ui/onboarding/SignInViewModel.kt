@@ -82,6 +82,9 @@ class SignInViewModel(
     val password = TextFieldState()
 
     private var loaded = false
+
+    /** The first route obtained on this screen is the baseline: it sets the notice and blocks nothing (the user consented to plain http when adding the server). */
+    private var baselineTaken = false
     private var quickConnectJob: Job? = null
     private var countdownJob: Job? = null
 
@@ -100,7 +103,12 @@ class SignInViewModel(
 
     /** A fresh route for the next attempt; the notice always reflects the route about to be used. */
     private suspend fun route(): SignInRoute? =
-        auth.signInRoute(serverId).also { r -> if (r != null) mutableState.update { it.copy(unencrypted = !r.encrypted) } }
+        auth.signInRoute(serverId).also { r ->
+            if (r != null) mutableState.update { it.copy(unencrypted = !r.encrypted) }
+        }
+
+    /** True when [route] became unencrypted after an earlier look said encrypted: it is not used until the user has seen the notice. */
+    private fun downgraded(route: SignInRoute, firstLook: Boolean, sawNotice: Boolean) = !route.encrypted && !sawNotice && !firstLook
 
     fun onUsernameChange(text: String) = mutableState.update { it.copy(username = text, error = null) }
 
@@ -110,7 +118,7 @@ class SignInViewModel(
         // So the notice is right while the password is typed; the route is asked for again on submit.
         viewModelScope.launch {
             try {
-                route()
+                if (route() != null) baselineTaken = true
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
@@ -133,12 +141,14 @@ class SignInViewModel(
         quickConnectJob = viewModelScope.launch {
             try {
                 val sawNotice = mutableState.value.unencrypted
+                val firstLook = !baselineTaken
                 val route = route()
                 if (route == null) {
                     mutableState.update { it.copy(quickConnect = QuickConnectUi.Failed(unreachableMessage())) }
                     return@launch
                 }
-                if (!route.encrypted && !sawNotice) {
+                baselineTaken = true
+                if (downgraded(route, firstLook, sawNotice)) {
                     // The user was looking at a secure screen: nothing is sent until they have seen the notice (now up) and ask again.
                     mutableState.update {
                         it.copy(quickConnect = QuickConnectUi.Failed(AppError.of(AppError.Kind.SECURE_CONNECTION_LOST_QUICK_CONNECT).userMessage))
@@ -199,13 +209,15 @@ class SignInViewModel(
         val username = state.username.trim()
         if (state.submitting || username.isEmpty() || password.text.isEmpty()) return
         val sawNotice = state.unencrypted
+        val firstLook = !baselineTaken
         mutableState.update { it.copy(submitting = true, error = null) }
         viewModelScope.launch {
             var secret: CharArray? = null
             var keepPassword = false
             try {
                 val route = route() ?: throw AppError.of(offlineKind())
-                if (!route.encrypted && !sawNotice) {
+                baselineTaken = true
+                if (downgraded(route, firstLook, sawNotice)) {
                     // The screen said "encrypted" when the user pressed the button. The notice is up now; the password stays
                     // in the field and goes only when they press Sign in again.
                     keepPassword = true
