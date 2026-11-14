@@ -263,4 +263,13 @@ class ServerStoreTest {
         hooked.removeServer("s1")
         assertEquals(listOf("s1"), removed)
     }
+
+    @Test fun savingAServerWithNoAddressLeftTellsTheOnRemovedHook() = runBlocking {
+        val gone = mutableListOf<String>()
+        val hooked = ServerStore(db, box, onServerRemoved = { gone += it })
+        hooked.upsertServer(server())
+        assertTrue(gone.isEmpty())
+        hooked.upsertServer(server().copy(homeAddress = null, awayAddress = null))
+        assertEquals(listOf("s1"), gone)
+    }
 }

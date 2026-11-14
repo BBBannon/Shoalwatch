@@ -1,3 +1,4 @@
+v1.15 — 14/11/2026 — Behind the scenes: after signing out the app now refuses to use the old sign-in instead of quietly trying without one, a change of Wi-Fi is noticed at once, and a changed security certificate is reported as that rather than as being offline.
 v1.14 — 14/11/2026 — Behind the scenes: the app can now work out whether to reach your server on its home network address or its away address, and switches automatically when your Wi-Fi or mobile connection changes.
 v1.13 — 14/11/2026 — Behind the scenes: signing out (or signing in again) now takes effect immediately everywhere, so an old sign-in is never used again and a new one is picked up straight away.
 v1.12 — 14/11/2026 — Behind the scenes: signing in now checks the address really is your server before sending your password, sign-in details are cleared properly when you sign out, and sign-in requests are never redirected elsewhere.

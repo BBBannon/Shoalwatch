@@ -2,6 +2,7 @@ package app.offlinefin.data
 
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import app.offlinefin.core.AppError
 import app.offlinefin.data.db.AppDatabase
 import app.offlinefin.data.servers.Account
 import app.offlinefin.data.servers.AuthRepository
@@ -14,7 +15,9 @@ import app.offlinefin.data.servers.ServerStore
 import app.offlinefin.net.HttpClientFactory
 import app.offlinefin.net.ServerAddress
 import app.offlinefin.security.SecretBox
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -22,9 +25,11 @@ import okhttp3.tls.HandshakeCertificates
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.junit.Assert.fail
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import javax.crypto.KeyGenerator
@@ -78,9 +83,9 @@ class AccountTokenTest {
         runBlocking { repo.signOut("s1", "a") }
         assertTrue("Token=\"tok-A\"" in web.takeRequest().getHeader("Authorization")!!)
 
-        val after = sentHeader("a")
-        assertFalse(after, "Token=" in after)
-        assertFalse(after, "tok-A" in after)
+        // Refused, not sent without a token: the server sees nothing more.
+        assertEquals(AppError.Kind.NOT_SIGNED_IN, signedOutError("a").kind)
+        assertEquals(2, web.requestCount)
     }
 
     @Test fun reSigningInIsPickedUpByTheCachedClient() {
@@ -92,12 +97,115 @@ class AccountTokenTest {
         assertFalse(header, "tok-OLD" in header)
     }
 
-    @Test fun aColdStoreLoadsTheTokenWhenTheAccountIsRead() {
-        signIn("a", "tok-A")
-        // A new store over the same database = an app restart: nothing cached yet.
+    private fun restart() {
         store = ServerStore(db, SecretBox { key }, clients::evict)
-        runBlocking { store.accounts("s1").first() }
+    }
+
+    private fun signedOutError(userId: String): AppError {
+        try {
+            runBlocking { gateway.logout(server.homeAddress!!, ServerNet.authenticated(server.addresses, server, userId, device, store::cachedToken)) }
+        } catch (e: AppError) {
+            return e
+        }
+        fail("expected AppError")
+        error("unreachable")
+    }
+
+    @Test fun afterARestartTheTokenIsOnlyAvailableOnceWarmed() {
+        signIn("a", "tok-A")
+        restart()
+        assertNull(store.cachedToken("s1", "a"))
+        runBlocking { store.warmTokens() }
         assertEquals("tok-A", store.cachedToken("s1", "a"))
         assertTrue("Token=\"tok-A\"" in sentHeader("a"))
+        runBlocking { store.warmTokens() } // safe to repeat
+        assertEquals("tok-A", store.cachedToken("s1", "a"))
+    }
+
+    @Test fun readingAccountsNeverFillsTheTokenMap() {
+        signIn("a", "tok-A")
+        restart()
+        runBlocking {
+            assertEquals(1, store.accounts("s1").first().size)
+            store.active()
+            store.activeAccount.first()
+        }
+        assertNull(store.cachedToken("s1", "a"))
+    }
+
+    @Test fun aRemovedAccountStaysGoneEvenWhenRowsAreReadAfterwards() {
+        signIn("a", "tok-A")
+        runBlocking {
+            store.removeAccount("s1", "a")
+            store.accounts("s1").first()
+            store.active()
+            store.activeAccount.first()
+        }
+        assertNull(store.cachedToken("s1", "a"))
+    }
+
+    @Test fun anAuthenticatedRequestWithNoTokenIsRefusedAndNothingIsSent() {
+        val error = signedOutError("a")
+        assertEquals(AppError.Kind.NOT_SIGNED_IN, error.kind)
+        assertEquals("You're signed out. Sign in again to continue.", error.userMessage)
+        assertEquals(0, web.requestCount)
+    }
+
+    @Test fun anAccountSignedOutIsRefusedNotSentAnonymously() {
+        signIn("a", "tok-A")
+        sentHeader("a")
+        runBlocking { store.removeAccount("s1", "a") }
+        assertEquals(AppError.Kind.NOT_SIGNED_IN, signedOutError("a").kind)
+        assertEquals(1, web.requestCount)
+    }
+
+    @Test fun warmingNeverBringsBackAnAccountThatWasRemoved() {
+        runBlocking { store.removeAccount("s1", "ghost") }
+        signIn("a", "tok-A")
+        signIn("b", "tok-B")
+        runBlocking { store.removeAccount("s1", "a") }
+        restart()
+        runBlocking { store.warmTokens() }
+        assertNull(store.cachedToken("s1", "a"))
+        assertEquals("tok-B", store.cachedToken("s1", "b"))
+    }
+
+    @Test fun aWarmRacingARemovalNeverLeavesTheRemovedToken() {
+        repeat(150) { i ->
+            val user = "u$i"
+            signIn(user, "tok-$i")
+            restart()
+            runBlocking(Dispatchers.Default) {
+                val warm = launch { store.warmTokens() }
+                val remove = launch { store.removeAccount("s1", user) }
+                warm.join(); remove.join()
+            }
+            assertNull("iteration $i", store.cachedToken("s1", user))
+        }
+    }
+
+    @Test fun removingAServerOnlyDropsItsOwnTokensEvenWhenIdsLookLikePrefixes() {
+        val inner = server.copy(id = "s1:x")
+        runBlocking {
+            store.upsertServer(inner)
+            store.upsertAccount(Account("s1:x", "u", "u", "tok-inner"), makeActive = false)
+            store.upsertAccount(Account("s1", "x:u", "x:u", "tok-outer"), makeActive = false)
+            store.removeServer("s1")
+        }
+        assertNull(store.cachedToken("s1", "x:u"))
+        assertEquals("tok-inner", store.cachedToken("s1:x", "u"))
+    }
+
+    @Test fun signOutSendsTheTokenItRevokesEvenFromAColdStoreAndLeavesNothingBehind() {
+        signIn("a", "tok-A")
+        restart()
+        web.enqueue(MockResponse().setResponseCode(204))
+        runBlocking { AuthRepository(gateway, store, device).signOut("s1", "a") }
+        assertTrue("Token=\"tok-A\"" in web.takeRequest().getHeader("Authorization")!!)
+        assertNull(store.cachedToken("s1", "a"))
+        runBlocking { assertTrue(store.accounts("s1").first().isEmpty()) }
+        // The client used for the logout was dropped with the account: a later call is refused, not sent with the old token.
+        assertEquals(AppError.Kind.NOT_SIGNED_IN, signedOutError("a").kind)
+        assertEquals(1, web.requestCount)
     }
 }

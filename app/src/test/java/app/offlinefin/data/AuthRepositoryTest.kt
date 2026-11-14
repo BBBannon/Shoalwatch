@@ -277,8 +277,8 @@ class AuthRepositoryTest {
         assertEquals(home, gateway.addresses.single())
         assertTrue(gateway.headers.single()!!.endsWith(", Token=\"tok-1\""))
         assertEquals("s1:u1", gateway.nets.single().authKey)
-        // The token provider reads live: once signed out it no longer yields the token.
-        assertFalse("Token=" in gateway.nets.last().authHeader()!!)
+        // Once signed out the store's live lookup has no token either.
+        assertNull(store.cachedToken("s1", "u1"))
         assertTrue(store.accounts("s1").first().isEmpty())
         assertNull(store.activeAccount.first())
     }

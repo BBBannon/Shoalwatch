@@ -245,9 +245,9 @@ class JellyfinGatewayTest {
         val a = address()
         runBlocking { gateway.logout(a, signedInNet(a) { token.get() }) }
         token.set(null)
-        runBlocking { gateway.logout(a, signedInNet(a) { "ignored" }) }
+        // Same configuration value: the cached client (and its live provider) is reused; with no token it refuses to send.
+        assertEquals(AppError.Kind.NOT_SIGNED_IN, kindOf { gateway.logout(a, signedInNet(a) { "ignored" }) }.kind)
         assertTrue("Token=\"tok-XYZ\"" in server.takeRequest().getHeader("Authorization")!!)
-        // Same configuration value: the cached client (and its live provider) is reused, and now yields no token.
-        assertFalse("Token=" in server.takeRequest().getHeader("Authorization")!!)
+        assertEquals(1, server.requestCount)
     }
 }

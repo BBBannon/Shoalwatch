@@ -16,7 +16,9 @@ import app.offlinefin.security.KeystoreKeyProvider
 import app.offlinefin.security.SecretBox
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 /** Holds the app's lazy singletons (no DI framework). Later tasks add the rest of the data layer here. */
 class AppGraph(private val appContext: Context) {
@@ -31,5 +33,7 @@ class AppGraph(private val appContext: Context) {
     val jellyfinGateway: JellyfinGateway by lazy { JellyfinGatewayImpl(serverClients) }
     val networkMonitor: NetworkMonitor by lazy { AndroidNetworkMonitor(appContext, appScope) }
     val addressSelector: AddressSelector by lazy { AddressSelector(jellyfinGateway, networkMonitor, appScope, deviceIdentity) }
+    /** Loads saved tokens into the store's live lookup. Started at app start; join it before the first authenticated request. */
+    val tokensWarmed: Job by lazy { appScope.launch { serverStore.warmTokens() } }
     val authRepository: AuthRepository by lazy { AuthRepository(jellyfinGateway, serverStore, deviceIdentity) }
 }

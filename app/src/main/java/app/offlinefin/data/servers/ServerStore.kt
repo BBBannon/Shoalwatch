@@ -11,6 +11,8 @@ import app.offlinefin.net.isValidPin
 import app.offlinefin.security.SecretBox
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
@@ -27,7 +29,7 @@ class ServerStore(
     private val box: SecretBox,
     /** Called after anything that makes cached API clients stale (account or server removed, settings saved). */
     private val onClientsStale: (serverId: String, addresses: List<ServerAddress>) -> Unit = { _, _ -> },
-    /** Called after a server is removed, so per-server state elsewhere (e.g. address probing) can be dropped. */
+    /** Called after a server is removed, or saved with no address left to probe, so per-server state elsewhere (e.g. address probing) can be dropped. */
     private val onServerRemoved: (serverId: String) -> Unit = {},
 ) {
     private val serverDao = db.serverDao()
@@ -35,15 +37,30 @@ class ServerStore(
 
     val servers: Flow<List<Server>> = serverDao.observeAll().map { rows -> rows.map(::toServer) }
 
-    /** `serverId:userId` to token, for [cachedToken]. Filled on every account write and read, emptied on removal. */
-    private val tokens = ConcurrentHashMap<String, String>()
+    /** `(serverId, userId)` to token, for [cachedToken]. Changed only by [upsertAccount], [warmTokens] and removals, all under [tokenLock]. */
+    private val tokens = ConcurrentHashMap<Pair<String, String>, String>()
+    private val tokenLock = Mutex()
 
     /**
      * The live token lookup handed to `ServerNet.authenticated`: no database or decryption per request. Null
-     * when the account is signed out or has not been loaded yet (reading it through [accounts] / [active]
-     * loads it; anything that has an account to authenticate as has read it).
+     * when the account is signed out or [warmTokens] has not loaded it yet; an authenticated request with no
+     * token is refused (`NOT_SIGNED_IN`), never sent anonymously. Reading rows never fills this map, so a
+     * stale read can not bring a removed account's token back.
      */
-    fun cachedToken(serverId: String, userId: String): String? = tokens[tokenKey(serverId, userId)]
+    fun cachedToken(serverId: String, userId: String): String? = tokens[serverId to userId]
+
+    /**
+     * Loads every saved account's token. Call once at app start, before any authenticated request; safe to
+     * repeat. Serialised with sign-in and removal and re-reads the rows inside the lock, so a removal that
+     * finished first is simply absent.
+     */
+    suspend fun warmTokens() {
+        tokenLock.withLock {
+            val loaded = accountDao.getAll().mapNotNull(::toAccount).associate { (it.serverId to it.userId) to it.accessToken }
+            tokens.keys.retainAll(loaded.keys)
+            tokens.putAll(loaded)
+        }
+    }
 
     val activeAccount: Flow<Account?> = accountDao.observeActive().map { it?.let(::toAccount) }
 
@@ -67,15 +84,21 @@ class ServerStore(
             )
         }
         onClientsStale(s.id, (before?.addresses.orEmpty() + s.addresses).distinct())
+        if (s.addresses.isEmpty()) onServerRemoved(s.id)
     }
 
     /** Also removes the server's accounts. */
     suspend fun removeServer(id: String) {
         val addresses = server(id)?.addresses.orEmpty()
         try {
-            serverDao.delete(id)
+            tokenLock.withLock {
+                try {
+                    serverDao.delete(id)
+                } finally {
+                    tokens.keys.removeAll { it.first == id }
+                }
+            }
         } finally {
-            tokens.keys.removeAll { it.startsWith("$id:") }
             onClientsStale(id, addresses)
             onServerRemoved(id)
         }
@@ -84,11 +107,13 @@ class ServerStore(
     /** The server must already be saved. */
     suspend fun upsertAccount(a: Account, makeActive: Boolean) {
         val addresses = server(a.serverId)?.addresses.orEmpty()
-        db.withTransaction {
-            accountDao.upsert(AccountEntity(a.serverId, a.userId, a.userName, box.seal(a.accessToken)))
-            if (makeActive) accountDao.setActive(ActiveAccountEntity(0, a.serverId, a.userId))
+        tokenLock.withLock {
+            db.withTransaction {
+                accountDao.upsert(AccountEntity(a.serverId, a.userId, a.userName, box.seal(a.accessToken)))
+                if (makeActive) accountDao.setActive(ActiveAccountEntity(0, a.serverId, a.userId))
+            }
+            tokens[a.serverId to a.userId] = a.accessToken
         }
-        tokens[tokenKey(a.serverId, a.userId)] = a.accessToken
         onClientsStale(a.serverId, addresses)
     }
 
@@ -96,10 +121,15 @@ class ServerStore(
     suspend fun removeAccount(serverId: String, userId: String) {
         val addresses = server(serverId)?.addresses.orEmpty()
         try {
-            accountDao.delete(serverId, userId)
+            tokenLock.withLock {
+                try {
+                    accountDao.delete(serverId, userId)
+                } finally {
+                    // Whether or not the delete worked, the account stops sending its token.
+                    tokens.remove(serverId to userId)
+                }
+            }
         } finally {
-            // Whether or not the delete worked, the account stops sending its token and its clients go.
-            tokens.remove(tokenKey(serverId, userId))
             onClientsStale(serverId, addresses)
         }
     }
@@ -121,15 +151,11 @@ class ServerStore(
     }
 
     private fun toAccount(e: AccountEntity): Account? = try {
-        Account(e.serverId, e.userId, e.userName, box.open(e.accessToken)).also {
-            // putIfAbsent: a read never overwrites a newer token written by a sign-in.
-            tokens.putIfAbsent(tokenKey(e.serverId, e.userId), it.accessToken)
-        }
+        Account(e.serverId, e.userId, e.userName, box.open(e.accessToken))
     } catch (_: AppError) {
         null
     }
 
-    private fun tokenKey(serverId: String, userId: String) = "$serverId:$userId"
 
     private fun toServer(e: ServerEntity): Server {
         val pinOk = e.pinnedSpkiSha256 == null || isValidPin(e.pinnedSpkiSha256)

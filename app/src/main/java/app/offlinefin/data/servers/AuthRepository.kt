@@ -137,11 +137,12 @@ class AuthRepository(
     suspend fun signOut(serverId: String, userId: String) {
         try {
             val server = store.server(serverId)
-            // Reading the account loads its token into the store's live lookup, which the client reads per request.
             val account = store.accounts(serverId).first().firstOrNull { it.userId == userId }
             if (server != null && account != null) {
                 bestEffort {
-                    val net = ServerNet.authenticated(server.addresses, server, userId, device, store::cachedToken)
+                    // Bound to the token being revoked, for this call only: nothing is put back in the store's token map.
+                    val token = account.accessToken
+                    val net = ServerNet.authenticated(server.addresses, server, userId, device) { _, _ -> token }
                     for (address in server.addresses) {
                         if (bestEffort { gateway.logout(address, net) }) break
                     }

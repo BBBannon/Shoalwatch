@@ -1,6 +1,7 @@
 package app.offlinefin.data.servers
 
 import app.offlinefin.core.AppError
+import app.offlinefin.net.BlockedRequestException
 import app.offlinefin.net.ServerAddress
 import app.offlinefin.net.ServerNetConfig
 
@@ -40,6 +41,9 @@ object ServerNet {
      * through a cached client, which keeps the first configuration's provider for this `serverId:userId`.
      * So pass one long-lived lookup (see `ServerStore.cachedToken`), never a captured string.
      *
+     * A request for which [tokens] has no token is refused before it is sent (`NOT_SIGNED_IN`, as a
+     * `BlockedRequestException`, which `AppError.from` unwraps): it never goes out anonymously.
+     *
      * @throws AppError `TLS_UNTRUSTED` if the saved pin was damaged (see [Server.pinInvalid]).
      */
     fun authenticated(
@@ -49,7 +53,9 @@ object ServerNet {
         device: DeviceIdentity,
         tokens: (serverId: String, userId: String) -> String?,
     ): ServerNetConfig =
-        build(addresses, draftOf(server), authKey = "${server.id}:$userId") { device.authHeader(tokens(server.id, userId)) }
+        build(addresses, draftOf(server), authKey = "${server.id}:$userId") {
+            device.authHeader(tokens(server.id, userId) ?: throw BlockedRequestException(AppError.of(AppError.Kind.NOT_SIGNED_IN)))
+        }
 
     private fun draftOf(server: Server): ServerNetDraft {
         if (server.pinInvalid) throw AppError.of(AppError.Kind.TLS_UNTRUSTED)

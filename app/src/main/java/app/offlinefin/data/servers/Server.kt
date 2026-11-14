@@ -6,7 +6,7 @@ import app.offlinefin.net.ServerAddress
  * A Jellyfin server and its per-server security settings.
  *
  * @property pinInvalid set only by the store when the saved certificate pin was damaged: [pinnedSpkiSha256]
- *   is then null, and [ServerNet.config] refuses to connect (`TLS_UNTRUSTED`) until the user trusts the
+ *   is then null, and `ServerNet` refuses to connect (`TLS_UNTRUSTED`) until the user trusts the
  *   server again, so trust is never silently widened.
  */
 data class Server(

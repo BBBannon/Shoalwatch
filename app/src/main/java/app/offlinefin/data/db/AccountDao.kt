@@ -23,6 +23,9 @@ interface AccountDao {
     @Query("SELECT * FROM accounts WHERE serverId = :serverId AND userId = :userId")
     suspend fun get(serverId: String, userId: String): AccountEntity?
 
+    @Query("SELECT * FROM accounts")
+    suspend fun getAll(): List<AccountEntity>
+
     /** An upsert, not REPLACE: REPLACE would delete the row and cascade away the active marker. */
     @Upsert
     suspend fun upsert(account: AccountEntity)

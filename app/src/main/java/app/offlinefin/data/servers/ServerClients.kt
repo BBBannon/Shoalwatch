@@ -7,7 +7,7 @@ import okhttp3.OkHttpClient
 
 /**
  * Holds one API client per server configuration (by value: see [ServerNetConfig.equals]), so separate
- * `ServerNet.config(...)` calls with the same settings share a client and its SSLContext. Clients are built
+ * `ServerNet.anonymous(...)` / `authenticated(...)` calls with the same settings share a client and its SSLContext. Clients are built
  * by [HttpClientFactory] (the only place that constructs them) and derived with redirects off, because API
  * calls carry credentials in bodies and queries that OkHttp would otherwise resend to a redirect target.
  *

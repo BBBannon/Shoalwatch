@@ -88,7 +88,7 @@ class AppError(val kind: Kind, val userMessage: String, cause: Throwable? = null
             Kind.FORBIDDEN -> "You don't have permission to do that."
             Kind.SERVER_ERROR -> "The server reported a problem. Please try again later."
             Kind.SERVER_MISMATCH -> "That address belongs to a different server. Check the address and try again."
-            Kind.NOT_SIGNED_IN -> "You're not signed in."
+            Kind.NOT_SIGNED_IN -> "You're signed out. Sign in again to continue."
             Kind.UNKNOWN -> "Something went wrong. Please try again."
         }
     }
