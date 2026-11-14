@@ -18,7 +18,7 @@ A native Android client for Jellyfin (films and TV) whose offline library behave
 | Reuse | Port AAFin's tested pieces (server URL handling, Quick Connect, error model, device profile, playback resolver, progress reporter) by copying and adapting. No shared library between the two apps |
 | Identity | `applicationId` and namespace `app.offlinefin` |
 | Servers | Jellyfin 10.10 to 12.x supported; warn on anything else. Ben's server is 12.4 |
-| Content in v1 | Films, TV, collections. **Out:** music, live TV, books, SyncPlay, Android Auto (AAFin covers it), Android TV |
+| Content in v1 | Films, TV, collections, plus **server admin essentials** (§3.4). **Out:** music, live TV, books, SyncPlay, Android Auto (AAFin covers it), Android TV, Play Store listing (later) |
 
 ## 3. What v1 must do (mapped to the researched top 10)
 
@@ -62,6 +62,26 @@ For a device used by more than one person (e.g. a shared tablet), signed in to t
 - Setting **"Delete shared downloads"**: **After anyone has watched** (default, as Ben described) or **After everyone has watched**.
 - **Permission rule (security):** a shared download is only shown to a profile whose own account is allowed to see that item on the server (checked when online and remembered). This stops a restricted or child profile gaining access to something through sharing. Items never cross between different servers.
 - Design consequence for milestone 4: downloads are keyed by **server + item**, not by account; "who has it in their library" and per-profile watch state are separate records.
+
+### 3.4 Server admin essentials (requested by Ben, 14/11/2026)
+
+Shown only when the signed-in account is a server administrator. **Native screens, not an embedded copy of Jellyfin's web dashboard** — a web view would run the server's own scripts inside the app with the login token, which is the weakness the official app has and the opposite of §6.
+
+- **Dashboard:** server name, version, pending restart, who is watching what right now (user, device, title, direct play or transcoding), with stop/message for a session.
+- **Libraries:** scan all or one library; see scan progress.
+- **Scheduled tasks:** list, state, last run and result; run or stop a task.
+- **Users:** list, last seen; enable or disable an account; reset a password is deliberately excluded from the first version.
+- **Activity log:** recent sign-ins, playback and errors.
+- **Devices:** list signed-in devices; revoke one.
+- **Server:** restart and shut down, each behind a typed confirmation.
+- **Anything else:** a button opens the full dashboard in the phone's browser. No token is passed; the browser signs in separately.
+- Every destructive action needs explicit confirmation, and admin calls are only ever sent with an administrator's token to that server.
+
+### 3.5 Styled subtitles on the device
+
+- Goal: ASS/SSA subtitles (styled, positioned, common in anime) and image-based PGS rendered by the phone, so they do not force the server to transcode.
+- Milestone 3 begins with a spike comparing: (a) a libass renderer plugged into Media3; (b) a second player engine (libmpv) used only for files that need it. Choose on correctness with real files, app size, maintenance and the provenance of the native binary.
+- If neither is acceptable on supply-chain grounds, keep server-side rendering and say so plainly in the app.
 
 ## 4. Architecture principles
 
@@ -120,11 +140,12 @@ Each milestone has its own plan in `docs/plans/`, ends with automated tests pass
 |---|---|
 | 1 | Project skeleton, security core (S1–S7, S12), servers and accounts, Quick Connect and password sign-in, home/away switching, custom headers, self-signed and client-certificate support, app shell |
 | 2 | Room library cache, native browsing (home, libraries, series/season/episode, film detail, search), Continue Watching tidy-up, artwork cache |
-| 3 | Player: device profile, direct play/transcode, quality choice, resume and progress reporting, track memory, subtitle styling, gestures, speed, skip segments, sleep timer |
+| 3 | Player: device profile, direct play/transcode, quality choice, resume and progress reporting, track memory, subtitle styling, gestures, speed, skip segments, sleep timer. **Styled subtitles (§3.5)** rendered on the device, settled by a spike at the start of the milestone. HDR/Dolby Vision checked on Ben's devices |
 | 4 | Downloads and offline library: queue, batch season/series/unwatched, original or transcoded, artwork/subtitles/previews pinned, verification, internal/SD storage. Begins with a short spike against the real server to settle how transcoded downloads are fetched resumably and whether Jellyfin 12 needs anything special for downloads |
 | 5 | Housekeeping (watch-and-delete prompt §3.1, auto-download next, storage view), playstate outbox sync (§3.2) and shared downloads between profiles (§3.3) |
-| 6 | Picture-in-picture, Chromecast flavour, tablet layout, app lock (S8), polish |
-| 7 | Security-team review, fixes, signed first release, README |
+| 6 | Server admin essentials (§3.4) |
+| 7 | Picture-in-picture, Chromecast flavour, tablet layout, app lock (S8), polish |
+| 8 | Security-team review, fixes, signed first release, README |
 
 ## 8. Testing
 
@@ -135,6 +156,6 @@ Each milestone has its own plan in `docs/plans/`, ends with automated tests pass
 ## 9. Known risks
 
 - **Jellyfin 12 download authentication** — a Streamyfin collaborator reports direct downloads need legacy auth enabled server-side (second-hand). Tested in milestone 1's live check and again in the milestone 4 spike.
-- **Styled subtitles (ASS/PGS)** — Media3 support is limited; v1 falls back to server-side rendering. A second player engine is only considered if that proves inadequate.
+- **Styled subtitles (ASS/PGS)** — Media3 handles image-based PGS but not styled ASS. §3.5 sets how this is closed; any native library it needs is a supply-chain risk and must be pinned, checksum-verified and reviewed.
 - **Chromecast** needs Google Play Services, so it is isolated in its own flavour.
 - **Reddit and Play Store evidence is missing** from the research; priorities rest on GitHub and the Jellyfin feature board.
