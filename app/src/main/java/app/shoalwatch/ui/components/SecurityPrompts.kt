@@ -30,6 +30,7 @@ import app.shoalwatch.ui.CertificateSummary
 /** Plain `http`: the user must say "use anyway" before it is allowed. [role] names which address it is about. */
 @Composable
 fun HttpWarningScreen(onCancel: () -> Unit, onUseAnyway: () -> Unit, role: AddressRole? = null) {
+    FilterObscuredTouches()
     AppScreen(
         title = stringResource(R.string.security_check_title),
         onBack = onCancel,
@@ -61,6 +62,7 @@ fun CertificateScreen(
     onTrust: () -> Unit,
     onCancel: () -> Unit,
 ) {
+    FilterObscuredTouches()
     AppScreen(
         title = stringResource(R.string.security_check_title),
         onBack = onCancel,

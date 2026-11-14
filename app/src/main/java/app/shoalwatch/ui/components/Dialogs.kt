@@ -14,7 +14,10 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.SecureFlagPolicy
 import app.shoalwatch.R
 
-/** Dialogs are separate windows, so they need the secure flag themselves. */
+/**
+ * Dialogs are separate windows, so they need the secure flag themselves. Every dialog using this must also call
+ * [FilterObscuredTouches] in its content (that needs the dialog's own window, which only its content can reach).
+ */
 val SecureDialog = DialogProperties(securePolicy = SecureFlagPolicy.SecureOn)
 
 /** A confirmation for something that can't be undone. [confirmLabel] is in the error colour; Cancel is the default. */
@@ -30,7 +33,10 @@ fun ConfirmDialog(
         onDismissRequest = onDismiss,
         properties = SecureDialog,
         title = { Text(title, Modifier.semantics { heading() }) },
-        text = content,
+        text = {
+            FilterObscuredTouches()
+            content()
+        },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
         confirmButton = {
             TextButton(onClick = onConfirm, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
