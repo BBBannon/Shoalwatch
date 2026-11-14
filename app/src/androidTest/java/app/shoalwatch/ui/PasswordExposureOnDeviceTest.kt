@@ -32,6 +32,11 @@ class PasswordExposureOnDeviceTest {
 
     private val secret = "hunter2-secret"
 
+    private companion object {
+        const val PLATFORM_TREE_TIMEOUT_MS = 10_000L
+        const val POLL_MS = 200L
+    }
+
     @Test fun thePasswordIsNotReadableByAccessibilityServices() {
         val password = TextFieldState()
         rule.setContent {
@@ -48,17 +53,32 @@ class PasswordExposureOnDeviceTest {
         assertFalse(secret in config.getOrNull(SemanticsProperties.EditableText)?.text.orEmpty())
         assertFalse(config.getOrNull(SemanticsProperties.Text).orEmpty().any { secret in it.text })
 
-        // Platform accessibility tree, as uiautomator sees it.
-        val root = InstrumentationRegistry.getInstrumentation().uiAutomation.rootInActiveWindow
-        val found = mutableListOf<AccessibilityNodeInfo>()
-        fun walk(node: AccessibilityNodeInfo?) {
-            node ?: return
-            assertFalse("text leaks the password", secret in node.text?.toString().orEmpty())
-            assertFalse("description leaks the password", secret in node.contentDescription?.toString().orEmpty())
-            if (node.isPassword) found += node
-            for (i in 0 until node.childCount) walk(node.getChild(i))
+        // Platform accessibility tree, as uiautomator sees it. The platform tree is published
+        // asynchronously after the Compose tree settles, so poll for it rather than reading it once.
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        fun passwordNodes(): List<AccessibilityNodeInfo> {
+            val found = mutableListOf<AccessibilityNodeInfo>()
+            fun walk(node: AccessibilityNodeInfo?) {
+                node ?: return
+                assertFalse("text leaks the password", secret in node.text?.toString().orEmpty())
+                assertFalse("description leaks the password", secret in node.contentDescription?.toString().orEmpty())
+                if (node.isPassword) found += node
+                for (i in 0 until node.childCount) walk(node.getChild(i))
+            }
+            walk(automation.rootInActiveWindow)
+            return found
         }
-        walk(root)
+        val deadline = System.currentTimeMillis() + PLATFORM_TREE_TIMEOUT_MS
+        var found = passwordNodes()
+        while (found.isEmpty() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(POLL_MS)
+            found = passwordNodes()
+        }
         assertTrue("a node is flagged as a password field", found.isNotEmpty())
+        // The flagged node holds one bullet per typed character and nothing else.
+        assertTrue(
+            "the password node shows only a mask",
+            found.all { node -> node.text?.toString().orEmpty().let { it.length == secret.length && secret !in it } },
+        )
     }
 }
