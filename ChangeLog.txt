@@ -1,0 +1,2 @@
+v1.1 — 14/11/2026 — Research finished: the ten most complained-about problems with Jellyfin Android apps, with evidence, saved in the research folder.
+v1.0 — 14/11/2026 — Project started: research begun into the most complained-about problems with existing Jellyfin Android apps.

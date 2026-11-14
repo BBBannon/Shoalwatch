@@ -1,0 +1,21 @@
+# Build output
+build/
+.gradle/
+.kotlin/
+*.apk
+*.aab
+releases/
+
+# Local machine and secrets — never commit
+local.properties
+keystore.properties
+*.jks
+*.keystore
+
+# IDE
+.idea/
+*.iml
+
+# Private working notes (kept out of a repo that may go public)
+TODO.md
+tasks/
