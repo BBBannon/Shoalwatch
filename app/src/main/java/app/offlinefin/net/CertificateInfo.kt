@@ -12,7 +12,10 @@ data class CertificateInfo(val subject: String, val issuer: String, val notAfter
 }
 
 /** The SHA-256 as upper-case hex pairs separated by colons, e.g. `AB:CD:...`. */
-fun CertificateInfo.fingerprintForDisplay(): String =
+fun CertificateInfo.fingerprintForDisplay(): String = fingerprintForDisplay(spkiSha256)
+
+/** [fingerprintForDisplay] for a saved pin (standard base64 of the SHA-256). */
+fun fingerprintForDisplay(spkiSha256: String): String =
     Base64.getDecoder().decode(spkiSha256).joinToString(":") { "%02X".format(it) }
 
 /** Base64 (standard, padded) of SHA-256 over the certificate's SubjectPublicKeyInfo. */

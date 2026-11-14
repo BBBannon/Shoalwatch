@@ -25,7 +25,7 @@ class CustomHeaderInterceptor(
 
         val builder = request.newBuilder()
         for ((name, value) in headers()) {
-            validate(name, value)
+            validateCustomHeader(name, value)
             try {
                 builder.header(name, value)
             } catch (_: IllegalArgumentException) {
@@ -35,17 +35,21 @@ class CustomHeaderInterceptor(
         }
         return chain.proceed(builder.build())
     }
+}
 
-    private fun validate(name: String, value: String) {
-        require(name.isNotEmpty() && name.all { it in TOKEN_CHARS }) {
-            "Custom header name contains an invalid character."
-        }
-        require(FORBIDDEN.none { it.equals(name, ignoreCase = true) }) { "Custom header '$name' is not allowed." }
-        require(value.all { it == '\t' || it in ' '..'~' }) { "Custom header '$name' has an invalid value." }
-    }
+private val FORBIDDEN_HEADERS = setOf("Authorization", "Host", "Cookie", "Content-Length")
+private val TOKEN_CHARS: Set<Char> = (('a'..'z') + ('A'..'Z') + ('0'..'9') + "!#$%&'*+-.^_`|~".toList()).toSet()
 
-    private companion object {
-        val FORBIDDEN = setOf("Authorization", "Host", "Cookie", "Content-Length")
-        val TOKEN_CHARS: Set<Char> = (('a'..'z') + ('A'..'Z') + ('0'..'9') + "!#$%&'*+-.^_`|~".toList()).toSet()
+/**
+ * The one definition of a valid custom header, used when a request is built and when the user edits headers.
+ * The message names the header, never its value.
+ *
+ * @throws IllegalArgumentException if [name] or [value] is not acceptable.
+ */
+fun validateCustomHeader(name: String, value: String) {
+    require(name.isNotEmpty() && name.all { it in TOKEN_CHARS }) {
+        "Custom header name contains an invalid character."
     }
+    require(FORBIDDEN_HEADERS.none { it.equals(name, ignoreCase = true) }) { "Custom header '$name' is not allowed." }
+    require(value.all { it == '\t' || it in ' '..'~' }) { "Custom header '$name' has an invalid value." }
 }

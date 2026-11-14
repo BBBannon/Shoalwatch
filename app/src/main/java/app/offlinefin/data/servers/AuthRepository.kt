@@ -25,14 +25,14 @@ class AuthRepository(
     private val device: DeviceIdentity,
     private val pollIntervalMs: Long = POLL_INTERVAL_MS,
     private val timeoutMs: Long = TIMEOUT_MS,
-) {
+) : Authenticator {
     /**
      * Parses [input] (a bare host gets `https://`) and asks it for `/System/Info/Public`. If no scheme was
      * typed and [draft] allows cleartext, `http://` is tried when `https://` fails.
      *
      * @throws AppError `SERVER_NOT_FOUND` for an unusable address; otherwise the first candidate's failure.
      */
-    suspend fun findServer(input: String, draft: ServerNetDraft): ServerInfo {
+    override suspend fun findServer(input: String, draft: ServerNetDraft): ServerInfo {
         val text = input.trim()
         val candidates = buildList {
             add(ServerAddress.parse(text))
@@ -60,7 +60,7 @@ class AuthRepository(
      *
      * @throws IllegalArgumentException if [via] is not one of [server]'s addresses.
      */
-    fun quickConnect(server: Server, via: ServerAddress): Flow<QuickConnectState> {
+    override fun quickConnect(server: Server, via: ServerAddress): Flow<QuickConnectState> {
         requireOwn(server, via)
         return flow {
             emit(QuickConnectState.Starting)
@@ -117,7 +117,7 @@ class AuthRepository(
      * password is sent once, never stored, and [password] is overwritten before this returns (the `String`
      * handed to the gateway cannot be wiped, but is not kept).
      */
-    suspend fun signInWithPassword(server: Server, via: ServerAddress, username: String, password: CharArray): Account {
+    override suspend fun signInWithPassword(server: Server, via: ServerAddress, username: String, password: CharArray): Account {
         try {
             requireOwn(server, via)
             val net = anonymousNet(server)
@@ -134,7 +134,7 @@ class AuthRepository(
      * account here regardless. Removal also drops the cached clients, and the token provider yields no token
      * from then on.
      */
-    suspend fun signOut(serverId: String, userId: String) {
+    override suspend fun signOut(serverId: String, userId: String) {
         try {
             val server = store.server(serverId)
             val account = store.accounts(serverId).first().firstOrNull { it.userId == userId }

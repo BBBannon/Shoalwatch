@@ -68,7 +68,7 @@ class AddressSelector(
     private val homeTimeoutMs: Long = HOME_TIMEOUT_MS,
     private val awayTimeoutMs: Long = AWAY_TIMEOUT_MS,
     private val probeDebounceMs: Long = PROBE_DEBOUNCE_MS,
-) {
+) : ServerConnections {
     /** Everything but [requests] and [job] is guarded by `synchronized(this)`. */
     private class Entry(var server: Server) {
         val state = MutableStateFlow<Connection>(Connection.Checking())
@@ -109,7 +109,7 @@ class AddressSelector(
      * The live connection for [server], keyed by its id. Calling again for the same id with different
      * addresses or security settings switches to the new ones: state goes back to `Checking` and it is re-probed.
      */
-    fun connection(server: Server): StateFlow<Connection> {
+    override fun connection(server: Server): StateFlow<Connection> {
         synchronized(entries) {
             val existing = entries[server.id]
             if (existing != null) {
@@ -144,13 +144,13 @@ class AddressSelector(
      * treat a failed request as "the address may be stale" and call [refresh]. This is the one call
      * token-sending code should use.
      */
-    suspend fun awaitOnline(server: Server, timeoutMs: Long = AWAIT_TIMEOUT_MS): Connection.Online? =
+    override suspend fun awaitOnline(server: Server, timeoutMs: Long): Connection.Online? =
         withTimeoutOrNull(timeoutMs) {
             connection(server).first { it is Connection.Online || it is Connection.Offline } as? Connection.Online
         }
 
     /** Re-probes every server now (or once its current probe finishes); each goes to `Checking` at once. */
-    fun refresh() {
+    override fun refresh() {
         synchronized(entries) {
             entries.values.forEach {
                 it.invalidate()

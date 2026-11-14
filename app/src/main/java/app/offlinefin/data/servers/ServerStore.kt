@@ -37,11 +37,11 @@ class ServerStore(
     private val onClientsStale: (serverId: String, addresses: List<ServerAddress>) -> Unit = { _, _ -> },
     /** Called after a server is removed, or saved with no address left to probe, so per-server state elsewhere (e.g. address probing) can be dropped. */
     private val onServerRemoved: (serverId: String) -> Unit = {},
-) {
+) : ServerCatalog {
     private val serverDao = db.serverDao()
     private val accountDao = db.accountDao()
 
-    val servers: Flow<List<Server>> = serverDao.observeAll().map { rows -> rows.map(::toServer) }
+    override val servers: Flow<List<Server>> = serverDao.observeAll().map { rows -> rows.map(::toServer) }
 
     /** `(serverId, userId)` to token, for [cachedToken]. Changed only by [upsertAccount], [warmTokens] and removals, all under [tokenLock]. */
     private val tokens = ConcurrentHashMap<Pair<String, String>, String>()
@@ -85,21 +85,21 @@ class ServerStore(
      * lookup empty, so requests fail closed as `NOT_SIGNED_IN`). Start-up routing waits on this before it
      * decides which screen to show.
      */
-    suspend fun awaitWarmed() = warmed.await()
+    override suspend fun awaitWarmed() = warmed.await()
 
     /** [active] after [awaitWarmed]: the one call to use before an authenticated request, so a cold start never sees "signed out". */
-    suspend fun awaitActive(): Pair<Server, Account>? {
+    override suspend fun awaitActive(): Pair<Server, Account>? {
         awaitWarmed()
         return active()
     }
 
-    val activeAccount: Flow<Account?> = accountDao.observeActive().map { it?.let(::toAccount) }
+    override val activeAccount: Flow<Account?> = accountDao.observeActive().map { it?.let(::toAccount) }
 
-    fun accounts(serverId: String): Flow<List<Account>> =
+    override fun accounts(serverId: String): Flow<List<Account>> =
         accountDao.observeForServer(serverId).map { rows -> rows.mapNotNull(::toAccount) }
 
     /** @throws IllegalArgumentException if the pin is not a valid base64 SHA-256 value. */
-    suspend fun upsertServer(s: Server) {
+    override suspend fun upsertServer(s: Server) {
         require(s.pinnedSpkiSha256 == null || isValidPin(s.pinnedSpkiSha256)) { "The certificate pin is not valid." }
         val before = serverDao.get(s.id)?.let(::toServer)
         db.withTransaction {
@@ -122,7 +122,7 @@ class ServerStore(
      * Also removes the server's accounts. The removal runs to completion even if the caller is cancelled
      * (while waiting for the lock or during the delete): a sign-out must never leave a token live.
      */
-    suspend fun removeServer(id: String) = withContext(NonCancellable) {
+    override suspend fun removeServer(id: String) = withContext(NonCancellable) {
         val addresses = server(id)?.addresses.orEmpty()
         try {
             tokenLock.withLock {
@@ -169,14 +169,14 @@ class ServerStore(
     }
 
     /** @throws IllegalArgumentException if there is no such account. */
-    suspend fun setActive(serverId: String, userId: String) {
+    override suspend fun setActive(serverId: String, userId: String) {
         db.withTransaction {
             requireNotNull(accountDao.get(serverId, userId)) { "No such account." }
             accountDao.setActive(ActiveAccountEntity(0, serverId, userId))
         }
     }
 
-    suspend fun server(id: String): Server? = serverDao.get(id)?.let(::toServer)
+    override suspend fun server(id: String): Server? = serverDao.get(id)?.let(::toServer)
 
     suspend fun active(): Pair<Server, Account>? {
         val account = accountDao.getActive()?.let(::toAccount) ?: return null
