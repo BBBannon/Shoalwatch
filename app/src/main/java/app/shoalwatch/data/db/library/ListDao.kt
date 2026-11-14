@@ -1,0 +1,47 @@
+package app.shoalwatch.data.db.library
+
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.Query
+import androidx.room.Upsert
+import kotlinx.coroutines.flow.Flow
+
+/**
+ * Lists as ordered membership plus state. Reading joins to the items and the user's data; writing a page together with its
+ * items is `LibraryStore.writePage` (one transaction across the DAOs).
+ */
+@Dao
+interface ListDao {
+    /** The list in position order, at most [limit] rows. An entry whose item row is missing is not returned. */
+    @Query(LIST_SQL)
+    fun observeList(serverId: String, userId: String, listKey: String, limit: Int): Flow<List<ItemRow>>
+
+    @Query(LIST_SQL)
+    suspend fun getList(serverId: String, userId: String, listKey: String, limit: Int): List<ItemRow>
+
+    @Query("SELECT * FROM list_state WHERE serverId = :serverId AND userId = :userId AND listKey = :listKey")
+    fun observeState(serverId: String, userId: String, listKey: String): Flow<ListStateEntity?>
+
+    @Query("SELECT * FROM list_state WHERE serverId = :serverId AND userId = :userId AND listKey = :listKey")
+    suspend fun getState(serverId: String, userId: String, listKey: String): ListStateEntity?
+
+    @Query("SELECT COUNT(*) FROM list_entries WHERE serverId = :serverId AND userId = :userId AND listKey = :listKey")
+    suspend fun countEntries(serverId: String, userId: String, listKey: String): Int
+
+    @Query("DELETE FROM list_entries WHERE serverId = :serverId AND userId = :userId AND listKey = :listKey AND position >= :start")
+    suspend fun deleteEntriesFrom(serverId: String, userId: String, listKey: String, start: Int)
+
+    /** Plain insert: callers delete the positions first, so a clash is a bug and must fail loudly. */
+    @Insert
+    suspend fun insertEntries(entries: List<ListEntryEntity>)
+
+    @Upsert
+    suspend fun upsertState(state: ListStateEntity)
+
+    companion object {
+        const val LIST_SQL =
+            "SELECT $ROW_COLUMNS FROM list_entries e JOIN items i ON i.serverId = e.serverId AND i.itemId = e.itemId " +
+                "LEFT JOIN user_data u ON u.serverId = e.serverId AND u.userId = e.userId AND u.itemId = e.itemId " +
+                "WHERE e.serverId = :serverId AND e.userId = :userId AND e.listKey = :listKey ORDER BY e.position LIMIT :limit"
+    }
+}

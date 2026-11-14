@@ -1,3 +1,4 @@
+v1.53 — 14/11/2026 — Behind the scenes for browsing: the app now keeps a copy of your libraries, films, series and watched progress on the phone (separately for each profile), so browsing will work without a connection. Nothing you have already set up is changed.
 v1.52 — 14/11/2026 — Behind the scenes: the app now reads each server's saved settings faster, so browsing feels quicker and uses less battery.
 v1.51 — 14/11/2026 — Behind the scenes for browsing: one odd entry from a server no longer spoils a whole list, repeated entries are shown once, long series load in full, and episodes and seasons always appear in the right order.
 v1.50 — 14/11/2026 — The pretend test server now behaves more like the real thing: pictures need no sign-in, some films and a series have no picture, one film has a backdrop, and bad requests get a proper error.

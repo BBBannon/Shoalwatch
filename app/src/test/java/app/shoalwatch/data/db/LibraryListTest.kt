@@ -1,0 +1,181 @@
+package app.shoalwatch.data.db
+
+import app.cash.turbine.test
+import app.shoalwatch.S1
+import app.shoalwatch.U1
+import app.shoalwatch.U2
+import app.shoalwatch.data.db.library.ListEntryEntity
+import app.shoalwatch.data.db.library.toModel
+import app.shoalwatch.data.library.LibraryKind
+import app.shoalwatch.data.library.LibraryView
+import app.shoalwatch.data.servers.Session
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/** Lists (ordered membership), pages written as one transaction, and views. */
+class LibraryListTest : LibraryTestBase() {
+    private val lists get() = db.listDao()
+
+    private fun films(vararg labels: String) = labels.map { row(item(it)) }
+
+    private suspend fun names(listKey: String = "resume", s: Session = s1u1, limit: Int = 100) =
+        lists.getList(s.serverId, s.userId, listKey, limit).map { it.item.name }
+
+    @Test fun aListReadsBackInPositionOrderAndHonoursTheLimit() = runBlocking {
+        library.writePage(s1u1, "resume", 0, films("c", "a", "b"), 3, t0)
+        assertEquals(listOf("Film c", "Film a", "Film b"), names())
+        assertEquals(listOf("Film c", "Film a"), names(limit = 2))
+    }
+
+    @Test fun aListIsJoinedToTheListOwnersUserData() = runBlocking {
+        library.writeItems(s1u2, listOf(row(item("a"), watched(favourite = true))), t0)
+        library.writePage(s1u1, "resume", 0, listOf(row(item("a"), watched(played = true))), 1, t0)
+        library.writePage(s1u2, "resume", 0, listOf(row(item("a"))), 1, t0)
+        assertTrue(lists.getList(S1, U1, "resume", 10).single().userData!!.played)
+        val bob = lists.getList(S1, U2, "resume", 10).single().userData!!
+        assertTrue("bob's own favourite, not ann's played", bob.favourite && !bob.played)
+    }
+
+    @Test fun twoUsersKeepTheirOwnListsUnderTheSameKey() = runBlocking {
+        library.writePage(s1u1, "resume", 0, films("a", "b"), 2, t0)
+        library.writePage(s1u2, "resume", 0, films("c"), 1, t0)
+        assertEquals(listOf("Film a", "Film b"), names(s = s1u1))
+        assertEquals(listOf("Film c"), names(s = s1u2))
+        assertEquals(2, lists.getState(S1, U1, "resume")!!.total)
+        assertEquals(1, lists.getState(S1, U2, "resume")!!.total)
+    }
+
+    @Test fun anEntryWhoseItemRowIsMissingIsNotReturned() = runBlocking {
+        library.writePage(s1u1, "resume", 0, films("a", "b"), 2, t0)
+        lists.insertEntries(listOf(ListEntryEntity(S1, U1, "resume", 2, id("ghost"))))
+        assertEquals(listOf("Film a", "Film b"), names())
+    }
+
+    @Test fun laterPagesAppendAndKeepEarlierPositions() = runBlocking {
+        library.writePage(s1u1, "kids", 0, films("a", "b"), 5, t0)
+        library.writePage(s1u1, "kids", 2, films("c", "d"), 5, t0.plusSeconds(1))
+        assertEquals(listOf("Film a", "Film b", "Film c", "Film d"), names("kids"))
+        val state = lists.getState(S1, U1, "kids")!!
+        assertEquals(5, state.total)
+        assertEquals(4, state.loadedCount)
+        assertEquals(t0.plusSeconds(1).toEpochMilli(), state.refreshedAt)
+    }
+
+    @Test fun rewritingAPageDeletesEverythingFromItsStartOn() = runBlocking {
+        library.writePage(s1u1, "kids", 0, films("a", "b", "c", "d"), 4, t0)
+        library.writePage(s1u1, "kids", 2, films("x"), 3, t0.plusSeconds(1))
+        assertEquals(listOf("Film a", "Film b", "Film x"), names("kids"))
+        assertEquals(3, lists.countEntries(S1, U1, "kids"))
+        assertEquals(3, lists.getState(S1, U1, "kids")!!.loadedCount)
+    }
+
+    @Test fun aRefreshFromZeroReplacesTheWholeList() = runBlocking {
+        library.writePage(s1u1, "kids", 0, films("a", "b", "c"), 3, t0)
+        library.writePage(s1u1, "kids", 0, films("z"), 1, t0.plusSeconds(1))
+        assertEquals(listOf("Film z"), names("kids"))
+        library.writePage(s1u1, "kids", 0, emptyList(), 0, t0.plusSeconds(2))
+        assertEquals(emptyList<String>(), names("kids"))
+        assertEquals(0, lists.getState(S1, U1, "kids")!!.loadedCount)
+    }
+
+    @Test fun anotherListIsNotAffectedByAPageWrite() = runBlocking {
+        library.writePage(s1u1, "one", 0, films("a"), 1, t0)
+        library.writePage(s1u1, "two", 0, films("b"), 1, t0)
+        library.writePage(s1u1, "one", 0, films("c"), 1, t0)
+        assertEquals(listOf("Film b"), names("two"))
+    }
+
+    @Test fun aTotalSmallerThanWhatIsLoadedIsRaisedToIt() = runBlocking {
+        library.writePage(s1u1, "kids", 0, films("a", "b"), 1, t0)
+        assertEquals(2, lists.getState(S1, U1, "kids")!!.total)
+    }
+
+    @Test fun aPageThatWouldLeaveAGapIsRefused() = runBlocking {
+        library.writePage(s1u1, "kids", 0, films("a", "b"), 9, t0)
+        val failure = runCatching { library.writePage(s1u1, "kids", 5, films("c"), 9, t0) }.exceptionOrNull()
+        assertTrue(failure is IllegalArgumentException)
+        assertEquals(listOf("Film a", "Film b"), names("kids"))
+        assertTrue(runCatching { library.writePage(s1u1, "empty", 1, films("c"), 9, t0) }.exceptionOrNull() is IllegalArgumentException)
+        assertTrue(runCatching { library.writePage(s1u1, "kids", -1, films("c"), 9, t0) }.exceptionOrNull() is IllegalArgumentException)
+    }
+
+    @Test fun listKeysMustBeOneToTwoHundredCharacters() = runBlocking {
+        assertTrue(runCatching { library.writePage(s1u1, "", 0, films("a"), 1, t0) }.exceptionOrNull() is IllegalArgumentException)
+        assertTrue(runCatching { library.writePage(s1u1, "k".repeat(201), 0, films("a"), 1, t0) }.exceptionOrNull() is IllegalArgumentException)
+        library.writePage(s1u1, "k".repeat(200), 0, films("a"), 1, t0)
+        assertEquals(1, names("k".repeat(200)).size)
+    }
+
+    @Test fun aPageIsOneTransactionSoAFailureLeavesNothingBehind() = runBlocking {
+        val stranger = Session(S1, id("nobody")) // no such account: its user data and entries break the foreign key
+        val failure = runCatching { library.writePage(stranger, "resume", 0, listOf(row(item("a"), watched(played = true))), 1, t0) }.exceptionOrNull()
+        assertNotNull(failure)
+        assertEquals("the item upsert was rolled back too", 0, count("items"))
+        assertEquals(0, count("user_data"))
+        assertEquals(0, count("list_entries"))
+        assertEquals(0, count("list_state"))
+    }
+
+    @Test fun aPageWithRepeatedItemsKeepsEveryPosition() = runBlocking {
+        library.writePage(s1u1, "kids", 0, films("a", "a", "b"), 3, t0)
+        assertEquals(listOf("Film a", "Film a", "Film b"), names("kids"))
+    }
+
+    @Test fun listFlowsReactToWritesToItsTables() = runBlocking {
+        library.writePage(s1u1, "resume", 0, films("a"), 1, t0)
+        lists.observeList(S1, U1, "resume", 10).test {
+            assertEquals(listOf("Film a"), awaitItem().map { it.item.name })
+            library.writePage(s1u1, "resume", 0, films("b", "a"), 2, t0.plusSeconds(1))
+            assertEquals(listOf("Film b", "Film a"), awaitItem().map { it.item.name })
+            db.itemDao().setFavourite(S1, U1, id("a"), true, t0.toEpochMilli())
+            assertTrue(awaitItem().last().userData!!.favourite)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test fun stateFlowReportsRefreshes() = runBlocking {
+        lists.observeState(S1, U1, "resume").test {
+            assertNull(awaitItem())
+            library.writePage(s1u1, "resume", 0, films("a"), 7, t0)
+            assertEquals(7, awaitItem()!!.total)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    // ---- views
+
+    private fun view(label: String, kind: LibraryKind = LibraryKind.MOVIES) = LibraryView(id(label), "Lib $label", kind)
+
+    private suspend fun viewNames(userId: String = U1) = db.viewDao().getViews(S1, userId).map { it.name }
+
+    @Test fun viewsKeepTheServersOrderAndAreReplacedAsAWhole() = runBlocking {
+        library.replaceViews(s1u1, listOf(view("b"), view("a", LibraryKind.TV), view("c", LibraryKind.BOX_SETS)))
+        assertEquals(listOf("Lib b", "Lib a", "Lib c"), viewNames())
+        assertEquals(LibraryKind.TV, db.viewDao().getViews(S1, U1)[1].toModel().kind)
+        library.replaceViews(s1u1, listOf(view("c", LibraryKind.BOX_SETS), view("d")))
+        assertEquals(listOf("Lib c", "Lib d"), viewNames())
+        library.replaceViews(s1u1, emptyList())
+        assertEquals(emptyList<String>(), viewNames())
+    }
+
+    @Test fun viewsArePerUser() = runBlocking {
+        library.replaceViews(s1u1, listOf(view("a"), view("b")))
+        library.replaceViews(s1u2, listOf(view("a")))
+        library.replaceViews(s1u2, listOf(view("c")))
+        assertEquals(listOf("Lib a", "Lib b"), viewNames(U1))
+        assertEquals(listOf("Lib c"), viewNames(U2))
+    }
+
+    @Test fun viewsFlowReactsToReplacement() = runBlocking {
+        db.viewDao().observeViews(S1, U1).test {
+            assertEquals(emptyList<String>(), awaitItem().map { it.name })
+            library.replaceViews(s1u1, listOf(view("a")))
+            assertEquals(listOf("Lib a"), awaitItem().map { it.name })
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+}
