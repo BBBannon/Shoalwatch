@@ -170,6 +170,9 @@ class ServerEditViewModel(
         }
     }
 
+    /** Back from a warning or error to the address field, keeping what was typed. */
+    fun cancelAddressCheck() = checker.cancel()
+
     fun offerHttp() = checker.offerHttp()
     fun allowHttpForAddress() = checker.allowHttp()
     fun trustAddressCertificate() = checker.trustCertificate()

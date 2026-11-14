@@ -113,6 +113,18 @@ class ServerEditViewModelTest {
         assertTrue(catalog.upserts.isEmpty())
     }
 
+    @Test fun cancellingJustTheCheckKeepsTheTypedAddress() {
+        val (catalog, vm) = setup()
+        auth.onFind = { _, _ -> throw AppError.of(AppError.Kind.CLEARTEXT_BLOCKED) }
+        vm.editAddress(AddressSlot.Away)
+        vm.onAddressText("http://10.9.9.9:8096")
+        vm.saveAddress()
+        vm.cancelAddressCheck()
+        assertEquals(Check.Idle, vm.state.value.addressCheck)
+        assertEquals(EditPane.Address(AddressSlot.Away, "http://10.9.9.9:8096"), vm.state.value.pane)
+        assertTrue(catalog.upserts.isEmpty())
+    }
+
     @Test fun anAddressCanBeRemovedWhileAnotherRemains() {
         val (catalog, vm) = setup(testServer(home = "https://192.168.1.10:8920", away = "https://away.example", cleartext = false))
         vm.editAddress(AddressSlot.Away)

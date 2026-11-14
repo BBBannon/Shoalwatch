@@ -2,4 +2,164 @@
 <resources>
     <string name="app_name">OfflineFin</string>
     <string name="placeholder_tagline">Your Jellyfin library, available offline.</string>
+
+    <!-- Common -->
+    <string name="action_continue">Continue</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_retry">Try again</string>
+    <string name="action_skip">Skip for now</string>
+    <string name="action_remove">Remove</string>
+    <string name="action_edit">Edit</string>
+    <string name="action_show">Show</string>
+    <string name="action_hide">Hide</string>
+    <string name="action_save">Save</string>
+    <string name="cd_back">Back</string>
+    <string name="splash_loading">Loading OfflineFin</string>
+
+    <!-- Add server -->
+    <string name="add_title_first">Welcome to OfflineFin</string>
+    <string name="add_title">Add a server</string>
+    <string name="add_intro">Enter the address of your Jellyfin server. It’s the one you’d type into a browser to watch.</string>
+    <string name="add_address_label">Server address</string>
+    <string name="add_address_hint">jellyfin.example.org or 192.168.1.10:8096</string>
+    <string name="add_checking">Checking the server…</string>
+    <string name="add_try_http">Try an unencrypted connection instead…</string>
+
+    <string name="http_title">This connection isn’t encrypted</string>
+    <string name="http_body">On a network you don’t trust, such as public Wi-Fi, other people could read what you watch and capture your sign-in. Only continue if this server is on a network you trust, like your home Wi-Fi.</string>
+    <string name="http_use">Use anyway for this server</string>
+
+    <string name="cert_title">This server uses its own security certificate</string>
+    <string name="cert_body">Only trust this if it’s your server. Compare the fingerprint below with the one shown on your server.</string>
+    <string name="cert_trust">Trust this certificate</string>
+    <string name="cert_loading">Reading the server’s certificate…</string>
+    <string name="cert_fingerprint_label">Fingerprint (SHA-256)</string>
+    <string name="cert_issued_to">Issued to</string>
+    <string name="cert_issued_by">Issued by</string>
+    <string name="cert_expires">Expires %1$s</string>
+    <string name="cert_changed_title">This server’s security certificate has changed</string>
+    <string name="cert_changed_body">The server may have been reinstalled, or someone may be intercepting your connection. Only trust the new certificate if you expected the change and its fingerprint matches the one on your server.</string>
+    <string name="cert_review">Review certificate</string>
+    <string name="cert_trust_new">Trust the new certificate</string>
+    <string name="cert_untrusted_alert_title">This server’s certificate isn’t trusted</string>
+    <string name="cert_untrusted_alert_body">Review the certificate and trust it only if it’s your server.</string>
+    <string name="cert_none_found">No certificate could be read. Check the server address and that it uses https.</string>
+
+    <string name="clientcert_title">This server needs a certificate from your phone</string>
+    <string name="clientcert_body">Choose the client certificate, installed on this phone, that your server expects.</string>
+    <string name="clientcert_choose">Choose certificate</string>
+
+    <string name="found_title">Server found</string>
+    <string name="found_version">Jellyfin %1$s</string>
+    <string name="found_home_note">Saved as your home address, used when you’re on your own Wi-Fi.</string>
+    <string name="found_away_note">Saved as your away address, used when you’re out and about.</string>
+    <string name="version_old">This server runs Jellyfin %1$s, which is older than the versions OfflineFin is tested with (10.10 to 12). It may work, but some things might not.</string>
+    <string name="version_new">This server runs Jellyfin %1$s, which is newer than the versions OfflineFin is tested with (10.10 to 12). It should work, but it hasn’t been checked.</string>
+    <string name="version_unknown">OfflineFin couldn’t tell which Jellyfin version this server runs, so it can’t promise everything will work.</string>
+    <string name="version_continue">Continue anyway</string>
+    <string name="version_warning_cd">Warning</string>
+
+    <string name="second_title">Add a second address</string>
+    <string name="second_body">Servers often have two addresses: a fast one for your own Wi-Fi and one that works when you’re out. OfflineFin picks the right one automatically. This step is optional and you can do it later in the server’s settings.</string>
+    <string name="second_home_title">Home address</string>
+    <string name="second_home_body">Fast, used on your Wi-Fi. Often starts with 192.168.</string>
+    <string name="second_away_title">Away address</string>
+    <string name="second_away_body">Used when you’re out. Usually a name like jellyfin.example.org.</string>
+    <string name="second_label">Second address (optional)</string>
+    <string name="second_for_away">You entered your home address, so this one is for when you’re away.</string>
+    <string name="second_for_home">You entered your away address, so this one is for your home Wi-Fi.</string>
+    <string name="second_add">Add address</string>
+    <string name="second_saving">Saving…</string>
+
+    <!-- Sign in -->
+    <string name="signin_title">Sign in</string>
+    <string name="signin_to">to %1$s</string>
+    <string name="qc_instruction">Enter this code in Jellyfin on a device where you’re already signed in: Settings → Quick Connect.</string>
+    <string name="qc_code_cd">Quick Connect code: %1$s</string>
+    <string name="qc_expires">Code expires in %1$s</string>
+    <string name="qc_starting">Getting a code…</string>
+    <string name="qc_authenticating">Signing you in…</string>
+    <string name="qc_timed_out">That code expired.</string>
+    <string name="qc_new_code">Get a new code</string>
+    <string name="qc_use_password">Use password instead</string>
+    <string name="qc_use_qc">Use Quick Connect instead</string>
+    <string name="qc_unavailable">Quick Connect is switched off on this server, so use your password.</string>
+    <string name="username_label">Username</string>
+    <string name="password_label">Password</string>
+    <string name="signin_action">Sign in</string>
+    <string name="signin_signing">Signing in…</string>
+    <string name="password_show_cd">Show password</string>
+    <string name="password_hide_cd">Hide password</string>
+    <string name="server_gone">This server has been removed. Add it again to sign in.</string>
+
+    <!-- Servers and accounts -->
+    <string name="servers_title">Servers and accounts</string>
+    <string name="servers_empty_title">No servers yet</string>
+    <string name="servers_empty_body">Add a Jellyfin server to get started.</string>
+    <string name="servers_add">Add server</string>
+    <string name="account_active">Active</string>
+    <string name="account_use_cd">Use the account %1$s</string>
+    <string name="server_add_account">Add another account</string>
+    <string name="server_settings">Connection settings</string>
+    <string name="server_remove">Remove server</string>
+    <string name="sign_out">Sign out</string>
+    <string name="sign_out_cd">Sign out %1$s</string>
+    <string name="cert_badge">Certificate changed</string>
+    <string name="no_accounts">Not signed in</string>
+    <string name="confirm_signout_title">Sign out %1$s?</string>
+    <string name="confirm_signout_body">You’ll be signed out of %1$s on this phone and the sign-in will be revoked on the server. You can sign in again at any time.</string>
+    <string name="confirm_remove_title">Remove %1$s?</string>
+    <string name="confirm_remove_body">This removes the server and everything saved for it on this phone:</string>
+    <string name="confirm_remove_account">Sign-in for %1$s</string>
+    <string name="confirm_remove_settings">Its addresses, certificate and custom headers</string>
+
+    <!-- Connection settings -->
+    <string name="edit_title">Connection settings</string>
+    <string name="edit_connection">Connection</string>
+    <string name="edit_addresses">Addresses</string>
+    <string name="edit_home">Home address</string>
+    <string name="edit_away">Away address</string>
+    <string name="edit_not_set">Not set</string>
+    <string name="edit_address_hint">Leave empty to remove this address.</string>
+    <string name="edit_address_save">Save address</string>
+    <string name="edit_address_edit_cd">Edit the %1$s</string>
+    <string name="edit_security">Security</string>
+    <string name="edit_http_toggle">Allow unencrypted HTTP</string>
+    <string name="edit_http_hint">Off is safest. Turn on only for a server on a network you trust.</string>
+    <string name="edit_cert">Trusted certificate</string>
+    <string name="edit_cert_none">None pinned. The server needs a publicly trusted certificate.</string>
+    <string name="edit_forget_cert">Forget certificate</string>
+    <string name="edit_client_cert">Client certificate</string>
+    <string name="edit_client_cert_set">A certificate is selected.</string>
+    <string name="edit_client_cert_none">None selected.</string>
+    <string name="edit_choose">Choose</string>
+    <string name="edit_clear">Clear</string>
+    <string name="edit_headers">Custom headers</string>
+    <string name="edit_headers_hint">Sent with every request to this server, for example to get through a reverse proxy. Values are hidden by default.</string>
+    <string name="edit_headers_none">No custom headers.</string>
+    <string name="edit_header_add">Add header</string>
+    <string name="header_add_title">Add header</string>
+    <string name="header_edit_title">Edit header</string>
+    <string name="header_name_label">Header name</string>
+    <string name="header_value_label">Header value</string>
+    <string name="header_masked">••••••••</string>
+    <string name="header_reveal_cd">Show the value of %1$s</string>
+    <string name="header_hide_cd">Hide the value of %1$s</string>
+    <string name="header_edit_cd">Edit %1$s</string>
+    <string name="header_remove_cd">Remove %1$s</string>
+    <string name="edit_missing">This server has been removed.</string>
+
+    <!-- Connection state and home -->
+    <string name="conn_home">Home network</string>
+    <string name="conn_away">Away</string>
+    <string name="conn_checking">Checking…</string>
+    <string name="conn_checking_was">Checking… (was %1$s)</string>
+    <string name="conn_offline">Offline</string>
+    <string name="conn_cd">Connection: %1$s</string>
+    <string name="home_signed_in_as">Signed in as %1$s</string>
+    <string name="home_coming">Browsing your library arrives in the next update.</string>
+    <string name="home_signed_out_title">You’re not signed in</string>
+    <string name="home_signed_out_body">Choose an account, or add one, under Servers and accounts.</string>
+    <string name="home_manage">Servers and accounts</string>
+    <string name="home_settings_cd">Servers and accounts</string>
 </resources>

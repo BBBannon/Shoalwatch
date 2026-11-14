@@ -4,6 +4,7 @@ import android.content.Context
 import app.offlinefin.data.db.AppDatabase
 import app.offlinefin.data.servers.AddressSelector
 import app.offlinefin.data.servers.AuthRepository
+import app.offlinefin.data.servers.CertificateProber
 import app.offlinefin.data.servers.DeviceIdentity
 import app.offlinefin.data.servers.JellyfinGateway
 import app.offlinefin.data.servers.JellyfinGatewayImpl
@@ -35,5 +36,7 @@ class AppGraph(private val appContext: Context) {
     val addressSelector: AddressSelector by lazy { AddressSelector(jellyfinGateway, networkMonitor, appScope, deviceIdentity) }
     /** Loads saved tokens into the store's live lookup. Started at app start; anything authenticated waits on `serverStore.awaitWarmed()` (or uses `awaitActive()`). */
     val tokensWarmed: Job by lazy { appScope.launch { serverStore.warmTokens() } }
+    /** What the trust prompt reads; the UI never touches `HttpClientFactory` itself. */
+    val certificateProber: CertificateProber by lazy { CertificateProber(httpClientFactory::probeCertificate) }
     val authRepository: AuthRepository by lazy { AuthRepository(jellyfinGateway, serverStore, deviceIdentity) }
 }
