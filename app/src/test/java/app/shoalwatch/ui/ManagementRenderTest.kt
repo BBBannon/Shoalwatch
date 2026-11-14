@@ -34,6 +34,7 @@ import app.shoalwatch.ui.servers.ServersActions
 import app.shoalwatch.ui.servers.ServersScreen
 import app.shoalwatch.ui.servers.ServersUiState
 import app.shoalwatch.ui.theme.ShoalwatchTheme
+import app.shoalwatch.ui.servers.ServersNotice
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -94,6 +95,19 @@ class ManagementRenderTest {
         assertTrue(shown(text(R.string.confirm_remove_account, "ben")))
         assertTrue(shown(text(R.string.confirm_remove_account, "amy")))
         assertTrue(shown(text(R.string.confirm_remove_settings)))
+        assertTrue("the dialog says sign-ins are revoked too", shown(text(R.string.confirm_remove_revoke)))
+    }
+
+    @Test fun aSignOutOrRemovalThatCouldNotReachTheServerIsSaidPlainly() {
+        show { ServersScreen(servers.copy(notice = ServersNotice.SignedOutHereOnly), serversActions) }
+        assertTrue(shown(text(R.string.notice_signed_out_title)))
+        assertTrue(shown(text(R.string.notice_not_revoked_body)))
+    }
+
+    @Test fun aRemovalThatCouldNotReachTheServerIsSaidPlainly() {
+        show { ServersScreen(servers.copy(notice = ServersNotice.RemovedHereOnly), serversActions) }
+        assertTrue(shown(text(R.string.notice_removed_title)))
+        assertTrue(shown(text(R.string.notice_not_revoked_body)))
     }
 
     @Test fun noServersOffersToAddOne() {

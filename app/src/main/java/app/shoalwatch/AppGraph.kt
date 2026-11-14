@@ -37,12 +37,12 @@ class AppGraph(private val appContext: Context) {
     val deviceIdentity: DeviceIdentity by lazy { DeviceIdentity.load(appContext) }
     val jellyfinGateway: JellyfinGateway by lazy { JellyfinGatewayImpl(serverClients) }
     val networkMonitor: NetworkMonitor by lazy { AndroidNetworkMonitor(appContext, appScope) }
-    val addressSelector: AddressSelector by lazy { AddressSelector(jellyfinGateway, networkMonitor, appScope, deviceIdentity) }
+    val addressSelector: AddressSelector by lazy { AddressSelector(jellyfinGateway, networkMonitor, appScope, deviceIdentity, serverStore) }
     /** Loads saved tokens into the store's live lookup. Started at app start; anything authenticated waits on `serverStore.awaitWarmed()` (or uses `awaitActive()`). */
     val tokensWarmed: Job by lazy { appScope.launch { serverStore.warmTokens() } }
     /** What the trust prompt reads; the UI never touches `HttpClientFactory` itself. */
     val certificateProber: CertificateProber by lazy { CertificateProber(httpClientFactory::probeCertificate) }
-    val authRepository: AuthRepository by lazy { AuthRepository(jellyfinGateway, serverStore, deviceIdentity) }
+    val authRepository: AuthRepository by lazy { AuthRepository(jellyfinGateway, serverStore, deviceIdentity, addressSelector) }
 
     /** What ViewModels use: the same stores without access tokens. */
     val serverCatalog: ServerCatalog by lazy { StoreCatalog(serverStore) }

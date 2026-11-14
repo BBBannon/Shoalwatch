@@ -39,21 +39,29 @@ sealed interface Confirm {
     data class RemoveServer(val serverId: String, val serverName: String, val accountNames: List<String>) : Confirm
 }
 
+/** Said after a sign-out or removal that worked on this phone but could not reach the server to revoke the sign-in. */
+enum class ServersNotice { SignedOutHereOnly, RemovedHereOnly }
+
 data class ServersUiState(
     val loading: Boolean = true,
     val servers: List<ServerItem> = emptyList(),
     val confirm: Confirm? = null,
     val busy: Boolean = false,
     val error: String? = null,
+    val notice: ServersNotice? = null,
 )
 
-/** Servers and their accounts: switch the active account, sign out, remove a server (both after confirming). */
+/**
+ * Servers and their accounts: switch the active account, sign out, remove a server (both after confirming).
+ * Signing out and removing always succeed on this phone; if the server could not be reached to revoke the
+ * sign-in there too, [ServersUiState.notice] says so.
+ */
 @OptIn(ExperimentalCoroutinesApi::class)
 class ServersViewModel(
     private val catalog: ServerCatalog,
     private val auth: Authenticator,
 ) : ViewModel() {
-    private data class Local(val confirm: Confirm? = null, val busy: Boolean = false, val error: String? = null)
+    private data class Local(val confirm: Confirm? = null, val busy: Boolean = false, val error: String? = null, val notice: ServersNotice? = null)
 
     private val local = MutableStateFlow(Local())
 
@@ -76,25 +84,26 @@ class ServersViewModel(
                         accounts = accounts.map { AccountItem(it.userId, it.userName, it.serverId == active?.serverId && it.userId == active.userId) },
                     )
                 },
-                confirm = local.confirm, busy = local.busy, error = local.error,
+                confirm = local.confirm, busy = local.busy, error = local.error, notice = local.notice,
             )
         }.stateIn(viewModelScope, SharingStarted.Eagerly, ServersUiState())
 
-    fun switchTo(serverId: String, userId: String) = run { catalog.setActive(serverId, userId) }
+    fun switchTo(serverId: String, userId: String) = run { catalog.setActive(serverId, userId); null }
 
     fun askSignOut(serverId: String, userId: String) {
         val server = state.value.servers.firstOrNull { it.id == serverId } ?: return
         val account = server.accounts.firstOrNull { it.userId == userId } ?: return
-        local.update { it.copy(confirm = Confirm.SignOut(serverId, userId, account.userName, server.name), error = null) }
+        local.update { it.copy(confirm = Confirm.SignOut(serverId, userId, account.userName, server.name), error = null, notice = null) }
     }
 
     fun askRemoveServer(serverId: String) {
         val server = state.value.servers.firstOrNull { it.id == serverId } ?: return
-        local.update { it.copy(confirm = Confirm.RemoveServer(serverId, server.name, server.accounts.map { a -> a.userName }), error = null) }
+        local.update { it.copy(confirm = Confirm.RemoveServer(serverId, server.name, server.accounts.map { a -> a.userName }), error = null, notice = null) }
     }
 
     fun dismissConfirm() = local.update { it.copy(confirm = null) }
     fun dismissError() = local.update { it.copy(error = null) }
+    fun dismissNotice() = local.update { it.copy(notice = null) }
 
     /** Carries out the action the user confirmed. */
     fun confirm() {
@@ -102,24 +111,26 @@ class ServersViewModel(
         if (local.value.busy) return // a second tap must not run it twice
         run {
             when (pending) {
-                is Confirm.SignOut -> auth.signOut(pending.serverId, pending.userId)
-                is Confirm.RemoveServer -> catalog.removeServer(pending.serverId)
+                is Confirm.SignOut -> ServersNotice.SignedOutHereOnly.takeUnless { auth.signOut(pending.serverId, pending.userId) }
+                is Confirm.RemoveServer -> ServersNotice.RemovedHereOnly.takeUnless { auth.removeServer(pending.serverId) }
             }
         }
     }
 
-    private fun run(action: suspend () -> Unit) {
-        local.update { it.copy(busy = true, error = null) }
+    /** Runs [action]; what it returns is shown as the notice. */
+    private fun run(action: suspend () -> ServersNotice?) {
+        local.update { it.copy(busy = true, error = null, notice = null) }
         viewModelScope.launch {
+            var notice: ServersNotice? = null
             val failure = try {
-                action()
+                notice = action()
                 null
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 AppError.from(e).userMessage
             }
-            local.update { it.copy(busy = false, confirm = null, error = failure) }
+            local.update { it.copy(busy = false, confirm = null, error = failure, notice = notice) }
         }
     }
 }

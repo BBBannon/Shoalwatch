@@ -10,7 +10,8 @@ import kotlinx.coroutines.flow.map
 /*
  * Small interfaces over the concrete data layer, so ViewModels can be unit-tested with fakes, and so the UI
  * layer never sees an access token: these types carry no credential. Each interface has one production
- * implementation, named in its KDoc.
+ * implementation, named in its KDoc. Anything that acts on a server's security settings takes its id, never a
+ * `Server`: the settings are always read from the store at the moment of use.
  */
 
 /** A signed-in user as the UI sees them: no access token. */
@@ -18,14 +19,13 @@ data class AccountSummary(val serverId: String, val userId: String, val userName
     override fun toString() = "AccountSummary(<redacted>)"
 }
 
-/** The part of [ServerStore] the UI uses, without tokens. Implemented by [StoreCatalog]. */
+/** The part of [ServerStore] the UI uses, without tokens. Implemented by [StoreCatalog]. Removing a server is [Authenticator.removeServer]. */
 interface ServerCatalog {
     val servers: Flow<List<Server>>
     val activeAccount: Flow<AccountSummary?>
     fun accounts(serverId: String): Flow<List<AccountSummary>>
     suspend fun server(id: String): Server?
     suspend fun upsertServer(s: Server)
-    suspend fun removeServer(id: String)
     suspend fun setActive(serverId: String, userId: String)
 
     /** Completes once saved sign-ins have been loaded (see [ServerStore.awaitWarmed]). */
@@ -51,18 +51,36 @@ sealed interface QuickConnectProgress {
     data class Failed(val error: AppError) : QuickConnectProgress
 }
 
+/**
+ * Where a sign-in will be sent, chosen by `AuthRepository` (see its KDoc): the UI cannot see or choose the
+ * address, and `AuthRepository` refuses any route it did not issue. [encrypted] is false when the credential
+ * would go over plain http, so the screen can say so before it is sent.
+ */
+interface SignInRoute {
+    val serverId: String
+    val encrypted: Boolean
+}
+
 /** The part of [AuthRepository] the UI uses, without tokens. Implemented by [AuthenticatorImpl]. */
 interface Authenticator {
     suspend fun findServer(input: String, draft: ServerNetDraft): ServerInfo
-    fun quickConnect(server: Server, via: ServerAddress): Flow<QuickConnectProgress>
-    suspend fun signInWithPassword(server: Server, via: ServerAddress, username: String, password: CharArray): AccountSummary
-    suspend fun signOut(serverId: String, userId: String)
+
+    /** Null when no address of the server is verified right now. Ask again before every attempt. */
+    suspend fun signInRoute(serverId: String): SignInRoute?
+    fun quickConnect(route: SignInRoute): Flow<QuickConnectProgress>
+    suspend fun signInWithPassword(route: SignInRoute, username: String, password: CharArray): AccountSummary
+
+    /** Revokes on the server when it can, removes here always. False if a sign-in may still be live on the server. */
+    suspend fun signOut(serverId: String, userId: String): Boolean
+
+    /** Revokes every sign-in on the server when it can, then removes the server here always. False if any may still be live. */
+    suspend fun removeServer(serverId: String): Boolean
 }
 
 /** The part of [AddressSelector] the UI uses. */
 interface ServerConnections {
-    fun connection(server: Server): StateFlow<Connection>
-    suspend fun awaitOnline(server: Server, timeoutMs: Long = AddressSelector.AWAIT_TIMEOUT_MS): Connection.Online?
+    fun connection(serverId: String): StateFlow<Connection>
+    suspend fun awaitOnline(serverId: String, timeoutMs: Long = AddressSelector.AWAIT_TIMEOUT_MS): Connection.Online?
     fun refresh()
 }
 
@@ -79,7 +97,6 @@ class StoreCatalog(private val store: ServerStore) : ServerCatalog {
     override fun accounts(serverId: String) = store.accounts(serverId).map { list -> list.map { it.summary() } }
     override suspend fun server(id: String) = store.server(id)
     override suspend fun upsertServer(s: Server) = store.upsertServer(s)
-    override suspend fun removeServer(id: String) = store.removeServer(id)
     override suspend fun setActive(serverId: String, userId: String) = store.setActive(serverId, userId)
     override suspend fun awaitWarmed() = store.awaitWarmed()
     override suspend fun retryWarmIfFailed() = store.retryWarmIfFailed()
@@ -89,8 +106,10 @@ class StoreCatalog(private val store: ServerStore) : ServerCatalog {
 class AuthenticatorImpl(private val repository: AuthRepository) : Authenticator {
     override suspend fun findServer(input: String, draft: ServerNetDraft) = repository.findServer(input, draft)
 
-    override fun quickConnect(server: Server, via: ServerAddress): Flow<QuickConnectProgress> =
-        repository.quickConnect(server, via).map {
+    override suspend fun signInRoute(serverId: String) = repository.signInRoute(serverId)
+
+    override fun quickConnect(route: SignInRoute): Flow<QuickConnectProgress> =
+        repository.quickConnect(route).map {
             when (it) {
                 QuickConnectState.Starting -> QuickConnectProgress.Starting
                 is QuickConnectState.AwaitingApproval -> QuickConnectProgress.AwaitingApproval(it.code)
@@ -101,8 +120,10 @@ class AuthenticatorImpl(private val repository: AuthRepository) : Authenticator 
             }
         }
 
-    override suspend fun signInWithPassword(server: Server, via: ServerAddress, username: String, password: CharArray) =
-        repository.signInWithPassword(server, via, username, password).summary()
+    override suspend fun signInWithPassword(route: SignInRoute, username: String, password: CharArray) =
+        repository.signInWithPassword(route, username, password).summary()
 
     override suspend fun signOut(serverId: String, userId: String) = repository.signOut(serverId, userId)
+
+    override suspend fun removeServer(serverId: String) = repository.removeServer(serverId)
 }

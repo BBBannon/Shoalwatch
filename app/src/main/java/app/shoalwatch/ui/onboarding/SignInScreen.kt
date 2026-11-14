@@ -14,6 +14,8 @@ import androidx.compose.ui.res.stringResource
 import app.shoalwatch.R
 import app.shoalwatch.ui.components.AppScreen
 import app.shoalwatch.ui.components.ErrorMessage
+import app.shoalwatch.ui.components.NoticeCard
+import app.shoalwatch.ui.components.Tone
 import app.shoalwatch.ui.components.PrimaryButton
 import app.shoalwatch.ui.components.SecondaryButton
 import app.shoalwatch.ui.components.SecureWindow
@@ -60,6 +62,13 @@ fun SignInScreen(state: SignInUiState, password: TextFieldState, actions: SignIn
             )
         }
         if (state.serverMissing) ErrorMessage(stringResource(R.string.server_gone))
+        if (state.unencrypted) {
+            NoticeCard(
+                title = stringResource(R.string.signin_unencrypted_title),
+                body = stringResource(R.string.signin_unencrypted_body),
+                tone = Tone.Caution,
+            )
+        }
         AnimatedContent(
             targetState = state.mode,
             transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(120)) },

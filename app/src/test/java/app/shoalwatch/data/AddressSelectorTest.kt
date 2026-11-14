@@ -9,6 +9,7 @@ import app.shoalwatch.data.servers.JellyfinGateway
 import app.shoalwatch.data.servers.QcSession
 import app.shoalwatch.data.servers.Server
 import app.shoalwatch.data.servers.ServerInfo
+import app.shoalwatch.data.servers.ServerSettingsSource
 import app.shoalwatch.net.NetworkMonitor
 import app.shoalwatch.net.ServerAddress
 import app.shoalwatch.net.ServerNetConfig
@@ -17,6 +18,8 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.currentTime
@@ -75,10 +78,35 @@ class AddressSelectorTest {
         override val changes = flow
     }
 
+    /** Stands in for the store: the selector reads settings from here, and watches it. */
+    private class FakeSource : ServerSettingsSource {
+        val list = MutableStateFlow<List<Server>>(emptyList())
+        var failure: Exception? = null
+        override val servers = list
+        override suspend fun server(id: String): Server? {
+            failure?.let { throw it }
+            return list.value.firstOrNull { it.id == id }
+        }
+        fun put(s: Server) { list.value = list.value.filter { it.id != s.id } + s }
+        fun remove(id: String) { list.value = list.value.filter { it.id != id } }
+    }
+
     private val gateway = FakeGateway()
     private val monitor = FakeMonitor()
+    private val source = FakeSource()
 
-    private fun TestScope.selector() = AddressSelector(gateway, monitor, backgroundScope, device)
+    private fun TestScope.selector() = AddressSelector(gateway, monitor, backgroundScope, device, source)
+
+    /** Saves [s] (as the store would) and returns its live connection, which the selector keys by id only. */
+    private fun AddressSelector.connection(s: Server): StateFlow<Connection> {
+        source.put(s)
+        return connection(s.id)
+    }
+
+    private suspend fun AddressSelector.awaitOnline(s: Server, timeoutMs: Long = AddressSelector.AWAIT_TIMEOUT_MS): Connection.Online? {
+        source.put(s)
+        return awaitOnline(s.id, timeoutMs)
+    }
 
     /** `advanceUntilIdle` ignores background-scope work, so move time on explicitly. */
     private fun TestScope.settle() {
@@ -151,7 +179,8 @@ class AddressSelectorTest {
     }
 
     @Test fun aServerWithOnlyOneAddressProbesOnlyThatOne() = runTest {
-        val onlyAway = selector().connection(server(h = null))
+        gateway.behaviour[away] = { "def456" }
+        val onlyAway = selector().connection(server(h = null, id = "def456"))
         val onlyHome = selector().connection(server(a = null, id = "abc123"))
         runCurrent()
         assertEquals(Connection.Online(away, isHome = false), onlyAway.value)
@@ -377,27 +406,77 @@ class AddressSelectorTest {
         assertEquals(1, gateway.calls.count { it == home })
     }
 
-    @Test fun changedAddressesForTheSameServerIdAreReProbed() = runTest {
+    @Test fun changedAddressesInTheStoreAreReProbed() = runTest {
         val s = selector()
         val flow = s.connection(server())
         runCurrent()
         assertEquals(Connection.Online(home, true), flow.value)
 
         val newHome = ServerAddress.parse("http://192.168.2.20:8096")
-        val again = s.connection(server(h = newHome))
-        assertTrue(flow === again)
-        assertEquals(Connection.Checking(), again.value)
+        gateway.behaviour[newHome] = { delay(100); "abc123" }
+        source.put(server(h = newHome))
         runCurrent()
-        assertEquals(Connection.Online(newHome, true), again.value)
+        assertEquals("the old address is no longer shown", Connection.Checking(), flow.value)
+        advanceTimeBy(100)
+        runCurrent()
+        assertEquals(Connection.Online(newHome, true), flow.value)
     }
 
-    @Test fun changedSecuritySettingsAreReProbedWithTheNewSettings() = runTest {
+    @Test fun changedSecuritySettingsInTheStoreAreReProbedWithTheNewSettings() = runTest {
         val s = selector()
         s.connection(server(cleartext = true))
         runCurrent()
-        s.connection(server(cleartext = false))
+        source.put(server(cleartext = false))
         runCurrent()
         assertEquals(listOf(true, false), gateway.nets.map { it.allowCleartext }.distinct())
+    }
+
+    @Test fun everyProbeUsesThePinSavedNowWhoeverAsksForTheConnection() = runTest {
+        val pin = "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc="
+        val s = selector()
+        s.connection(server())
+        runCurrent()
+        source.put(server().copy(pinnedSpkiSha256 = pin))
+        runCurrent()
+        s.connection(server().id) // another screen, by id only: it cannot bring back an older copy
+        s.refresh()
+        runCurrent()
+        assertEquals(pin, gateway.nets.last().pinnedSpkiSha256)
+    }
+
+    @Test fun aServerRemovedFromTheStoreGoesOfflineAndIsNeverProbedAgain() = runTest {
+        val s = selector()
+        val flow = s.connection(server())
+        runCurrent()
+        val before = gateway.calls.size
+        source.remove(server().id)
+        runCurrent()
+        assertEquals(Connection.Offline(), flow.value)
+        s.refresh()
+        monitor.flow.emit(Unit)
+        settle()
+        assertEquals(Connection.Offline(), flow.value)
+        assertEquals("no probe to the old addresses", before, gateway.calls.size)
+    }
+
+    @Test fun anIdThatIsNotSavedIsOfflineAndNothingIsSent() = runTest {
+        val flow = selector().connection("not-saved")
+        runCurrent()
+        assertEquals(Connection.Offline(), flow.value)
+        assertTrue(gateway.calls.isEmpty())
+    }
+
+    @Test fun aStoreFailureIsOfflineAndTheLoopKeepsRunning() = runTest {
+        val s = selector()
+        source.put(server())
+        source.failure = IllegalStateException("database closed")
+        val flow = s.connection(server().id)
+        runCurrent()
+        assertEquals(Connection.Offline(), flow.value)
+        source.failure = null
+        s.refresh()
+        runCurrent()
+        assertEquals(Connection.Online(home, true), flow.value)
     }
 
     @Test fun forgetCancelsTheProbeAndStopsListening() = runTest {

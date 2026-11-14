@@ -39,11 +39,11 @@ class ServerStore(
     private val onServerRemoved: (serverId: String) -> Unit = {},
     /** Where [warmTokens] reads saved accounts from (the database by default); a test passes one that fails. */
     accountSource: (suspend () -> List<AccountEntity>)? = null,
-) {
+) : ServerSettingsSource {
     private val serverDao = db.serverDao()
     private val accountDao = db.accountDao()
 
-    val servers: Flow<List<Server>> = serverDao.observeAll().map { rows -> rows.map(::toServer) }
+    override val servers: Flow<List<Server>> = serverDao.observeAll().map { rows -> rows.map(::toServer) }
 
     /** `(serverId, userId)` to token, for [cachedToken]. Changed only by [upsertAccount], [warmTokens] and removals, all under [tokenLock]. */
     private val tokens = ConcurrentHashMap<Pair<String, String>, String>()
@@ -190,7 +190,14 @@ class ServerStore(
         }
     }
 
-    suspend fun server(id: String): Server? = serverDao.get(id)?.let(::toServer)
+    override suspend fun server(id: String): Server? = serverDao.get(id)?.let(::toServer)
+
+    /** One account's saved token (decrypted), for revoking it; null if there is no such account or it cannot be read. */
+    suspend fun token(serverId: String, userId: String): String? = accountDao.get(serverId, userId)?.let(::toAccount)?.accessToken
+
+    /** Every readable `(userId, token)` saved for [serverId], for revoking them before the server is removed. */
+    suspend fun tokens(serverId: String): List<Pair<String, String>> =
+        accountDao.getForServer(serverId).mapNotNull(::toAccount).map { it.userId to it.accessToken }
 
     suspend fun active(): Pair<Server, Account>? {
         val account = accountDao.getActive()?.let(::toAccount) ?: return null

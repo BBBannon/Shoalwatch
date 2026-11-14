@@ -13,6 +13,7 @@
     <string name="action_show">Show</string>
     <string name="action_hide">Hide</string>
     <string name="action_save">Save</string>
+    <string name="action_ok">OK</string>
     <string name="cd_back">Back</string>
     <string name="security_check_title">Security check</string>
     <string name="startup_failed_title">Something went wrong opening your saved servers</string>
@@ -29,7 +30,7 @@
     <string name="add_try_http">Try an unencrypted connection instead…</string>
 
     <string name="http_title">This connection isn’t encrypted</string>
-    <string name="http_body">On a network you don’t trust, such as public Wi-Fi, other people could read what you watch and capture your sign-in. Only continue if this server is on a network you trust, like your home Wi-Fi.</string>
+    <string name="http_body">On a network you don’t trust, such as public Wi-Fi, other people could read what you watch and capture your sign-in. On another network that happens to use the same address, a different device could pose as your server and capture your sign-in. Only continue if this server is on a network you trust, like your home Wi-Fi.</string>
     <string name="http_for_home">This warning is about your home address.</string>
     <string name="http_for_away">This warning is about your away address.</string>
     <string name="found_already_saved">This server is already saved. Its settings will not be changed; you can sign in to it.</string>
@@ -81,6 +82,8 @@
     <!-- Sign in -->
     <string name="signin_title">Sign in</string>
     <string name="signin_to">Signing in to %1$s</string>
+    <string name="signin_unencrypted_title">This connection isn’t encrypted</string>
+    <string name="signin_unencrypted_body">Your sign-in will be sent without encryption, so other people on this network could read it.</string>
     <string name="qc_step_1">Open Jellyfin on a device where you’re already signed in.</string>
     <string name="qc_step_2">Go to Settings → Quick Connect.</string>
     <string name="qc_step_3">Enter this code.</string>
@@ -122,6 +125,10 @@
     <string name="confirm_remove_body">This removes the server and everything saved for it on this phone:</string>
     <string name="confirm_remove_account">Sign-in for %1$s</string>
     <string name="confirm_remove_settings">Its addresses, certificate and custom headers</string>
+    <string name="confirm_remove_revoke">Shoalwatch will also try to sign out each of these on the server.</string>
+    <string name="notice_signed_out_title">Signed out on this phone</string>
+    <string name="notice_removed_title">Removed from this phone</string>
+    <string name="notice_not_revoked_body">Shoalwatch couldn’t reach the server to sign you out there too.</string>
 
     <!-- Connection settings -->
     <string name="edit_title">Connection settings</string>

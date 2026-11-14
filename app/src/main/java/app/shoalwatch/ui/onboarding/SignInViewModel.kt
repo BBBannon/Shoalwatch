@@ -9,9 +9,9 @@ import app.shoalwatch.data.servers.AuthRepository
 import app.shoalwatch.data.servers.Authenticator
 import app.shoalwatch.data.servers.Connection
 import app.shoalwatch.data.servers.QuickConnectProgress
-import app.shoalwatch.data.servers.Server
 import app.shoalwatch.data.servers.ServerCatalog
 import app.shoalwatch.data.servers.ServerConnections
+import app.shoalwatch.data.servers.SignInRoute
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -52,16 +52,22 @@ data class SignInUiState(
     val signedIn: Boolean = false,
     /** The server no longer exists (removed while signing in). */
     val serverMissing: Boolean = false,
+    /**
+     * The sign-in (password or Quick Connect) would go over plain http: the server has no https address, or it
+     * could not be reached. Shown as a persistent notice; it never blocks.
+     */
+    val unencrypted: Boolean = false,
 ) {
     /** The username and Quick Connect code never appear. */
-    override fun toString() = "SignInUiState(mode=$mode, submitting=$submitting, signedIn=$signedIn)"
+    override fun toString() = "SignInUiState(mode=$mode, submitting=$submitting, signedIn=$signedIn, unencrypted=$unencrypted)"
 }
 
 /**
  * Quick Connect first, password as the alternative. Polling lives in one cancellable job: switching to the
  * password, starting again, or leaving the screen (the ViewModel is cleared) cancels the collection, which
- * stops the polling. Every address a credential is sent to comes from `awaitOnline`, and `AuthRepository`
- * re-checks it is the right server before sending anything.
+ * stops the polling. This screen never chooses an address: before every attempt it asks `AuthRepository` for a
+ * [SignInRoute] (a verified address, https preferred), shows whether that route is encrypted, and hands the
+ * route back; `AuthRepository` re-reads the server and re-checks its identity before sending anything.
  */
 class SignInViewModel(
     private val serverId: String,
@@ -75,7 +81,7 @@ class SignInViewModel(
     /** Held outside [state] so it never reaches a state snapshot or log; cleared on submit. */
     val password = TextFieldState()
 
-    private var server: Server? = null
+    private var loaded = false
     private var quickConnectJob: Job? = null
     private var countdownJob: Job? = null
 
@@ -85,18 +91,31 @@ class SignInViewModel(
             if (found == null) {
                 mutableState.update { it.copy(serverMissing = true) }
             } else {
-                server = found
+                loaded = true
                 mutableState.update { it.copy(serverName = found.name) }
                 startQuickConnect()
             }
         }
     }
 
+    /** A fresh route for the next attempt; the notice always reflects the route about to be used. */
+    private suspend fun route(): SignInRoute? =
+        auth.signInRoute(serverId).also { r -> if (r != null) mutableState.update { it.copy(unencrypted = !r.encrypted) } }
+
     fun onUsernameChange(text: String) = mutableState.update { it.copy(username = text, error = null) }
 
     fun usePassword() {
         stopQuickConnect()
         mutableState.update { it.copy(mode = SignInMode.Password, error = null) }
+        // So the notice is right while the password is typed; the route is asked for again on submit.
+        viewModelScope.launch {
+            try {
+                route()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            }
+        }
     }
 
     fun useQuickConnect() = startQuickConnect()
@@ -108,17 +127,17 @@ class SignInViewModel(
     }
 
     private fun startQuickConnect() {
-        val target = server ?: return
+        if (!loaded) return
         stopQuickConnect()
         mutableState.update { it.copy(mode = SignInMode.QuickConnect, quickConnect = QuickConnectUi.Starting, error = null) }
         quickConnectJob = viewModelScope.launch {
             try {
-                val via = connections.awaitOnline(target)
-                if (via == null) {
-                    mutableState.update { it.copy(quickConnect = QuickConnectUi.Failed(unreachableMessage(target))) }
+                val route = route()
+                if (route == null) {
+                    mutableState.update { it.copy(quickConnect = QuickConnectUi.Failed(unreachableMessage())) }
                     return@launch
                 }
-                auth.quickConnect(target, via.address).collect(::onQuickConnect)
+                auth.quickConnect(route).collect(::onQuickConnect)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -165,7 +184,7 @@ class SignInViewModel(
      * at once, and the copy is wiped by `AuthRepository`; it is never in [state].
      */
     fun signInWithPassword() {
-        val target = server ?: return
+        if (!loaded) return
         val state = mutableState.value
         val username = state.username.trim()
         if (state.submitting || username.isEmpty() || password.text.isEmpty()) return
@@ -174,8 +193,8 @@ class SignInViewModel(
         mutableState.update { it.copy(submitting = true, error = null) }
         viewModelScope.launch {
             try {
-                val via = connections.awaitOnline(target) ?: throw AppError.of(offlineKind(target))
-                auth.signInWithPassword(target, via.address, username, secret)
+                val route = route() ?: throw AppError.of(offlineKind())
+                auth.signInWithPassword(route, username, secret)
                 mutableState.update { it.copy(submitting = false, signedIn = true) }
             } catch (e: CancellationException) {
                 throw e
@@ -187,11 +206,11 @@ class SignInViewModel(
         }
     }
 
-    private fun unreachableMessage(target: Server) = AppError.of(offlineKind(target)).userMessage
+    private fun unreachableMessage() = AppError.of(offlineKind()).userMessage
 
     /** A security problem on the connection is reported as that; anything else is plain unreachability. */
-    private fun offlineKind(target: Server): AppError.Kind =
-        (connections.connection(target).value as? Connection.Offline)?.reason ?: AppError.Kind.NETWORK
+    private fun offlineKind(): AppError.Kind =
+        (connections.connection(serverId).value as? Connection.Offline)?.reason ?: AppError.Kind.NETWORK
 
     private companion object {
         val TIMEOUT_SECONDS = (AuthRepository.TIMEOUT_MS / 1_000).toInt()

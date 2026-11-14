@@ -12,6 +12,7 @@ import app.shoalwatch.data.servers.QuickConnectProgress
 import app.shoalwatch.ui.FakeAuthenticator
 import app.shoalwatch.ui.FakeCatalog
 import app.shoalwatch.ui.FakeConnections
+import app.shoalwatch.ui.FakeRoute
 import app.shoalwatch.ui.MainDispatcherRule
 import app.shoalwatch.ui.testServer
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -99,7 +100,7 @@ class SignInViewModelTest {
     }
 
     @Test fun anUnreachableServerNeverStartsQuickConnect() {
-        connections.onlineAnswer = null
+        auth.routeAnswer = { null }
         val vm = vm()
         assertEquals(0, auth.quickConnectStarts)
         assertEquals(QuickConnectUi.Failed(AppError.of(AppError.Kind.NETWORK).userMessage), vm.state.value.quickConnect)
@@ -192,7 +193,7 @@ class SignInViewModelTest {
     }
 
     @Test fun anUnreachableServerFailsBeforeAnyPasswordIsSent() {
-        connections.onlineAnswer = null
+        auth.routeAnswer = { null }
         val vm = vm()
         vm.submit()
         assertTrue(auth.passwordCalls.isEmpty())
@@ -201,7 +202,7 @@ class SignInViewModelTest {
     }
 
     @Test fun aSecurityProblemOnTheConnectionIsReportedAsThat() {
-        connections.onlineAnswer = null
+        auth.routeAnswer = { null }
         connections.stateFor("srv-1").value = Connection.Offline(AppError.Kind.TLS_PIN_CHANGED)
         val vm = vm()
         vm.submit()
@@ -213,6 +214,40 @@ class SignInViewModelTest {
         vm.submit(user = " ", pass = "x")
         assertTrue(auth.passwordCalls.isEmpty())
         vm.submit(user = "ben", pass = "")
+        assertTrue(auth.passwordCalls.isEmpty())
+    }
+
+    // --- where the sign-in goes (review I2) ---------------------------------------------------------------------
+
+    @Test fun anUnencryptedRouteIsFlaggedBeforeQuickConnectStarts() {
+        auth.routeAnswer = { FakeRoute(it, encrypted = false) }
+        val vm = vm()
+        assertTrue(vm.state.value.unencrypted)
+        assertEquals(1, auth.quickConnectStarts)
+    }
+
+    @Test fun anEncryptedRouteIsNotFlagged() {
+        val vm = vm()
+        assertFalse(vm.state.value.unencrypted)
+        vm.submit()
+        assertFalse(vm.state.value.unencrypted)
+    }
+
+    @Test fun thePasswordGoesOnTheRouteAuthRepositoryGaveAndTheFlagFollowsIt() {
+        val vm = vm()
+        assertFalse(vm.state.value.unencrypted)
+        val httpOnly = FakeRoute("srv-1", encrypted = false)
+        auth.routeAnswer = { httpOnly } // the https address stopped answering
+        vm.submit()
+        assertTrue(auth.passwordRoutes.single() === httpOnly)
+        assertTrue("flagged for the attempt that went over http", vm.state.value.unencrypted)
+    }
+
+    @Test fun switchingToThePasswordAsksForAFreshRouteSoTheNoticeIsRightWhileTyping() {
+        val vm = vm()
+        auth.routeAnswer = { FakeRoute(it, encrypted = false) }
+        vm.usePassword()
+        assertTrue(vm.state.value.unencrypted)
         assertTrue(auth.passwordCalls.isEmpty())
     }
 

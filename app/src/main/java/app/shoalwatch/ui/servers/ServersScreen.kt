@@ -38,7 +38,9 @@ import app.shoalwatch.ui.components.ConfirmDialog
 import app.shoalwatch.ui.components.ErrorMessage
 import app.shoalwatch.ui.components.IconTextButton
 import app.shoalwatch.ui.components.Loading
+import app.shoalwatch.ui.components.NoticeCard
 import app.shoalwatch.ui.components.PrimaryButton
+import app.shoalwatch.ui.components.Tone
 
 class ServersActions(
     val onBack: () -> Unit,
@@ -50,6 +52,7 @@ class ServersActions(
     val onSettings: (serverId: String) -> Unit,
     val onConfirm: () -> Unit,
     val onDismissConfirm: () -> Unit,
+    val onDismissNotice: () -> Unit = {},
 )
 
 /** Every saved server with its accounts: switch the active one, add, sign out, remove, open connection settings. */
@@ -61,6 +64,13 @@ fun ServersScreen(state: ServersUiState, actions: ServersActions) {
         bottomBar = { PrimaryButton(stringResource(R.string.servers_add), actions.onAddServer) },
     ) {
         ErrorMessage(state.error)
+        state.notice?.let { notice ->
+            NoticeCard(
+                title = stringResource(if (notice == ServersNotice.SignedOutHereOnly) R.string.notice_signed_out_title else R.string.notice_removed_title),
+                body = stringResource(R.string.notice_not_revoked_body),
+                tone = Tone.Caution,
+            ) { TextButton(onClick = actions.onDismissNotice) { Text(stringResource(R.string.action_ok)) } }
+        }
         when {
             state.loading -> Loading(stringResource(R.string.loading))
             state.servers.isEmpty() -> {
@@ -87,6 +97,7 @@ fun ServersScreen(state: ServersUiState, actions: ServersActions) {
                 Text(stringResource(R.string.confirm_remove_body))
                 confirm.accountNames.forEach { BulletRow(stringResource(R.string.confirm_remove_account, it)) }
                 BulletRow(stringResource(R.string.confirm_remove_settings))
+                if (confirm.accountNames.isNotEmpty()) Text(stringResource(R.string.confirm_remove_revoke))
             }
         }
         null -> Unit

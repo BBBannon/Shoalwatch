@@ -120,11 +120,10 @@ class ServerEditViewModel(
     private val local = MutableStateFlow(Local())
     private val checker = AddressChecker(auth, prober, viewModelScope, ::addressVerified)
 
-    private val serverWithConnection = catalog.servers
-        .map { servers -> servers.firstOrNull { it.id == serverId } }
-        .flatMapLatest { server ->
-            if (server == null) flowOf(null to null) else connections.connection(server).map { server to it.toView() }
-        }
+    private val serverWithConnection = combine(
+        catalog.servers.map { servers -> servers.firstOrNull { it.id == serverId } },
+        connections.connection(serverId),
+    ) { server, connection -> server to server?.let { connection.toView() } }
 
     val state: StateFlow<ServerEditUiState> =
         combine(serverWithConnection, local, checker.state) { (server, connection), local, check ->

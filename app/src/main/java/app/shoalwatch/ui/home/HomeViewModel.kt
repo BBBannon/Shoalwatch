@@ -50,7 +50,7 @@ class HomeViewModel(
                     flowOf(HomeUiState(loading = false, signedOut = true))
                 } else {
                     val (server, account) = active
-                    connections.connection(server).map {
+                    connections.connection(server.id).map {
                         HomeUiState(false, false, server.id, server.name, account.userName, it.toView())
                     }
                 }

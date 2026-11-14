@@ -7,6 +7,7 @@ import app.shoalwatch.ui.home.HomeViewModel
 import app.shoalwatch.ui.nav.StartupState
 import app.shoalwatch.ui.nav.StartupViewModel
 import app.shoalwatch.ui.servers.Confirm
+import app.shoalwatch.ui.servers.ServersNotice
 import app.shoalwatch.ui.servers.ServersViewModel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -112,16 +113,41 @@ class ServersAndHomeViewModelTest {
 
     @Test fun removingAServerListsWhatGoesWithItAndOnlyActsOnConfirm() {
         val catalog = catalog()
+        val auth = FakeAuthenticator(catalog)
         val vm = ServersViewModel(catalog, auth)
         vm.askRemoveServer("s1")
         val ask = vm.state.value.confirm as Confirm.RemoveServer
         assertEquals("Den", ask.serverName)
         assertEquals(listOf("amy", "ben"), ask.accountNames.sorted())
-        assertTrue(catalog.removedServers.isEmpty())
+        assertTrue(auth.removedServers.isEmpty())
         vm.confirm()
-        assertEquals(listOf("s1"), catalog.removedServers)
+        assertEquals("removal goes through the revoking path", listOf("s1"), auth.removedServers)
         assertEquals(listOf("s2"), vm.state.value.servers.map { it.id })
         assertNull(vm.state.value.confirm)
+        assertNull(vm.state.value.notice)
+    }
+
+    @Test fun aRemovalThatCouldNotReachTheServerSaysSo() {
+        val catalog = catalog()
+        val auth = FakeAuthenticator(catalog).apply { revoked = false }
+        val vm = ServersViewModel(catalog, auth)
+        vm.askRemoveServer("s1")
+        vm.confirm()
+        assertEquals(ServersNotice.RemovedHereOnly, vm.state.value.notice)
+        assertEquals(listOf("s2"), vm.state.value.servers.map { it.id })
+        assertNull(vm.state.value.error)
+        vm.dismissNotice()
+        assertNull(vm.state.value.notice)
+    }
+
+    @Test fun aSignOutThatCouldNotReachTheServerSaysSo() {
+        auth.revoked = false
+        val vm = ServersViewModel(catalog(), auth)
+        vm.askSignOut("s1", "u2")
+        vm.confirm()
+        assertEquals(listOf("s1" to "u2"), auth.signedOut)
+        assertEquals(ServersNotice.SignedOutHereOnly, vm.state.value.notice)
+        assertNull(vm.state.value.error)
     }
 
     @Test fun aDoubleTapOnConfirmRunsTheActionOnce() {

@@ -10,6 +10,7 @@ import app.shoalwatch.data.servers.ServerCatalog
 import app.shoalwatch.data.servers.ServerConnections
 import app.shoalwatch.data.servers.ServerInfo
 import app.shoalwatch.data.servers.ServerNetDraft
+import app.shoalwatch.data.servers.SignInRoute
 import app.shoalwatch.net.CertificateInfo
 import app.shoalwatch.net.ServerAddress
 import kotlinx.coroutines.CompletableDeferred
@@ -60,17 +61,29 @@ fun serverInfo(
 
 fun certificate() = CertificateInfo("CN=den.example", "CN=den.example", Instant.parse("2030-01-01T00:00:00Z"), PIN)
 
-class FakeAuthenticator : Authenticator {
+/** A route as a fake: in production only `AuthRepository` makes them (and refuses any other). */
+class FakeRoute(override val serverId: String, override val encrypted: Boolean = true) : SignInRoute
+
+class FakeAuthenticator(private val catalog: FakeCatalog? = null) : Authenticator {
     val findCalls = mutableListOf<Pair<String, ServerNetDraft>>()
     var onFind: suspend (String, ServerNetDraft) -> ServerInfo = { text, _ -> serverInfo(if ("://" in text) text else "https://$text") }
 
+    /** What [signInRoute] answers; null = nothing verified. */
+    var routeAnswer: (String) -> SignInRoute? = { FakeRoute(it) }
+    val routesAsked = mutableListOf<String>()
+
     val passwordCalls = mutableListOf<Triple<String, String, String>>() // serverId, user, password text
-    var onPassword: suspend (Server, String) -> AccountSummary = { s, u -> AccountSummary(s.id, "uid", u) }
+    val passwordRoutes = mutableListOf<SignInRoute>()
+    var onPassword: suspend (String, String) -> AccountSummary = { id, u -> AccountSummary(id, "uid", u) }
 
     val signedOut = mutableListOf<Pair<String, String>>()
     var onSignOut: suspend (String, String) -> Unit = { _, _ -> }
 
-    var quickConnectFlow: (Server) -> Flow<QuickConnectProgress> = { emptyFlow() }
+    /** What sign-out and removal report: false = the server could not be reached to revoke. */
+    var revoked = true
+    val removedServers = mutableListOf<String>()
+
+    var quickConnectFlow: (String) -> Flow<QuickConnectProgress> = { emptyFlow() }
     var quickConnectStarts = 0
 
     override suspend fun findServer(input: String, draft: ServerNetDraft): ServerInfo {
@@ -78,19 +91,32 @@ class FakeAuthenticator : Authenticator {
         return onFind(input, draft)
     }
 
-    override fun quickConnect(server: Server, via: ServerAddress): Flow<QuickConnectProgress> {
+    override suspend fun signInRoute(serverId: String): SignInRoute? {
+        routesAsked += serverId
+        return routeAnswer(serverId)
+    }
+
+    override fun quickConnect(route: SignInRoute): Flow<QuickConnectProgress> {
         quickConnectStarts++
-        return quickConnectFlow(server)
+        return quickConnectFlow(route.serverId)
     }
 
-    override suspend fun signInWithPassword(server: Server, via: ServerAddress, username: String, password: CharArray): AccountSummary {
-        passwordCalls += Triple(server.id, username, String(password))
-        return onPassword(server, username)
+    override suspend fun signInWithPassword(route: SignInRoute, username: String, password: CharArray): AccountSummary {
+        passwordCalls += Triple(route.serverId, username, String(password))
+        passwordRoutes += route
+        return onPassword(route.serverId, username)
     }
 
-    override suspend fun signOut(serverId: String, userId: String) {
+    override suspend fun signOut(serverId: String, userId: String): Boolean {
         signedOut += serverId to userId
         onSignOut(serverId, userId)
+        return revoked
+    }
+
+    override suspend fun removeServer(serverId: String): Boolean {
+        removedServers += serverId
+        catalog?.remove(serverId)
+        return revoked
     }
 }
 
@@ -109,7 +135,6 @@ class FakeCatalog(servers: List<Server> = emptyList(), accounts: List<AccountSum
     val activeFlow = MutableStateFlow(active)
     val warmed = CompletableDeferred<Unit>()
     val upserts = mutableListOf<Server>()
-    val removedServers = mutableListOf<String>()
     val activated = mutableListOf<Pair<String, String>>()
     var upsertFailure: Throwable? = null
     var awaitActiveFailure: Throwable? = null
@@ -127,8 +152,8 @@ class FakeCatalog(servers: List<Server> = emptyList(), accounts: List<AccountSum
         serverList.value = serverList.value.filter { it.id != s.id } + s
     }
 
-    override suspend fun removeServer(id: String) {
-        removedServers += id
+    /** What the store does when `AuthRepository.removeServer` deletes a server. */
+    fun remove(id: String) {
         serverList.value = serverList.value.filter { it.id != id }
         accountList.value = accountList.value.filter { it.serverId != id }
         if (activeFlow.value?.serverId == id) activeFlow.value = null
@@ -161,8 +186,8 @@ class FakeConnections : ServerConnections {
 
     fun stateFor(id: String) = states.getOrPut(id) { MutableStateFlow<Connection>(Connection.Checking()) }
 
-    override fun connection(server: Server): StateFlow<Connection> = stateFor(server.id)
-    override suspend fun awaitOnline(server: Server, timeoutMs: Long): Connection.Online? = onlineAnswer
+    override fun connection(serverId: String): StateFlow<Connection> = stateFor(serverId)
+    override suspend fun awaitOnline(serverId: String, timeoutMs: Long): Connection.Online? = onlineAnswer
     override fun refresh() { refreshes++ }
 }
 

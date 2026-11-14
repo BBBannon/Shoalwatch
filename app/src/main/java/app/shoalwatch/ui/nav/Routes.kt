@@ -109,6 +109,7 @@ internal fun ServersRoute(graph: AppGraph, nav: NavHostController) {
             onSettings = { nav.navigate(Routes.serverEdit(it)) },
             onConfirm = vm::confirm,
             onDismissConfirm = vm::dismissConfirm,
+            onDismissNotice = vm::dismissNotice,
         )
     }
     ServersScreen(state, actions)

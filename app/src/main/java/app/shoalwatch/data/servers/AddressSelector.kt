@@ -12,6 +12,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.debounce
@@ -23,8 +24,9 @@ import kotlinx.coroutines.withTimeoutOrNull
 /**
  * Which address of a server is in use right now.
  *
- * A held [Online] is not proof of identity: the network may have changed since. Anything that sends a token
- * must obtain the address with [AddressSelector.awaitOnline] (or read the current state at send time).
+ * A held [Online] is not proof of identity: the network may have changed since. Code that sends a credential
+ * does not pick addresses itself: `AuthRepository` obtains one with [AddressSelector.awaitOnline] at send time
+ * and checks the server's identity on it again immediately before sending anything.
  */
 sealed interface Connection {
     data class Online(val address: ServerAddress, val isHome: Boolean) : Connection
@@ -32,7 +34,7 @@ sealed interface Connection {
     /**
      * Nothing answered as this server. [reason] is set when the cause is a security problem the user must act
      * on (changed or untrusted certificate, cleartext blocked, client certificate needed, damaged saved pin);
-     * null for ordinary unreachability. Never includes an address.
+     * null for ordinary unreachability or a server that is no longer saved. Never includes an address.
      */
     data class Offline(val reason: AppError.Kind? = null) : Connection
 
@@ -43,21 +45,34 @@ sealed interface Connection {
     data class Checking(val previous: Online? = null) : Connection
 }
 
+/** Where the selector reads a server's CURRENT settings from (`ServerStore` in the app). */
+interface ServerSettingsSource {
+    /** Every saved server; a new emission whenever any of them changes. */
+    val servers: Flow<List<Server>>
+
+    suspend fun server(id: String): Server?
+}
+
 /**
  * Decides, live, whether to talk to a server on its home (LAN) or away (remote) address.
  *
- * Both addresses are probed concurrently with `publicInfo` and an anonymous configuration, so no token is
- * sent to an address until it has proved to be the right server (its id must match [Server.id], by
- * equality, since ids are normalised at the gateway: [JellyfinId]; a different server on that address counts as unreachable). Home gets [homeTimeoutMs], away
- * [awayTimeoutMs]. If home answers correctly it wins at once and the away probe is cancelled; otherwise away
- * is used when it answers, or the server is [Connection.Offline].
+ * Callers name a server by id only. Each probe reads that server's addresses and security settings from
+ * [source] when it starts, and the selector watches [source], so a change of addresses, pin, cleartext consent,
+ * client certificate or headers resets the state to `Checking` and re-probes. No caller can hand it an older copy
+ * of a server, and a server that is no longer saved is [Connection.Offline] without anything being sent.
+ *
+ * Both addresses are probed concurrently with `publicInfo` and an anonymous configuration, so no token is sent
+ * to an address until it has proved to be the right server (its id must equal [Server.id]; ids are normalised at
+ * the gateway, see [JellyfinId]; a different server on that address counts as unreachable). Home gets
+ * [homeTimeoutMs], away [awayTimeoutMs]. If home answers correctly it wins at once and the away probe is
+ * cancelled; otherwise away is used when it answers, or the server is [Connection.Offline].
  *
  * One probe loop per server id. On every [NetworkMonitor] change and every [refresh] the state becomes
  * [Connection.Checking] synchronously (so an `Online` from before the change is never still published), and a
  * probe follows: after [probeDebounceMs] for network changes (they come in storms), at once for [refresh].
  * Requests collapse: one made while a probe runs leads to exactly one more afterwards, so probes never
- * overlap, and a result that started before the latest change is discarded. Callers should [refresh] when a
- * request on the current address fails. Time is `withTimeout`/`delay`, so tests use virtual time.
+ * overlap, and a result that started before the latest change is discarded. Time is `withTimeout`/`delay`,
+ * so tests use virtual time.
  */
 @OptIn(FlowPreview::class)
 class AddressSelector(
@@ -65,16 +80,21 @@ class AddressSelector(
     private val monitor: NetworkMonitor,
     private val scope: CoroutineScope,
     private val device: DeviceIdentity,
+    private val source: ServerSettingsSource,
     private val homeTimeoutMs: Long = HOME_TIMEOUT_MS,
     private val awayTimeoutMs: Long = AWAY_TIMEOUT_MS,
     private val probeDebounceMs: Long = PROBE_DEBOUNCE_MS,
 ) : ServerConnections {
     /** Everything but [requests] and [job] is guarded by `synchronized(this)`. */
-    private class Entry(var server: Server) {
+    private class Entry(val serverId: String) {
         val state = MutableStateFlow<Connection>(Connection.Checking())
 
         /** Bumped by every event that makes an in-flight probe's result stale. */
         var generation = 0L
+
+        /** What the last probe was started with (null before the first): see [probeSettings]. */
+        private var settings: List<Any?>? = null
+        private var probed = false
 
         /** Conflated: any number of requests while a probe runs become one pending request. */
         val requests = Channel<Unit>(Channel.CONFLATED)
@@ -88,14 +108,30 @@ class AddressSelector(
             state.value = Connection.Checking(previous)
         }
 
-        /** New addresses or security settings: earlier results (and the old address) no longer apply. */
-        @Synchronized fun replace(newServer: Server) {
-            server = newServer
-            generation++
-            state.value = Connection.Checking()
+        /**
+         * A probe starts with the settings just read from the store. If they differ from what the last probe used,
+         * earlier results (and the old address) no longer apply: back to `Checking`, and older in-flight results are dropped.
+         */
+        @Synchronized fun begin(current: List<Any?>?): Long {
+            if (probed && current != settings) {
+                generation++
+                state.value = Connection.Checking()
+            }
+            settings = current
+            probed = true
+            return generation
         }
 
-        @Synchronized fun snapshot() = server to generation
+        /**
+         * The store now holds [current]: if that differs from what the last probe used, the published state no longer
+         * applies, so it goes back to `Checking` at once (and any in-flight result is dropped). True if a probe is needed.
+         */
+        @Synchronized fun resetIfStale(current: List<Any?>?): Boolean {
+            if (!probed || current == settings) return false
+            generation++
+            state.value = Connection.Checking()
+            return true
+        }
 
         /** Check-and-set in one step: a result from before the latest event is dropped. */
         @Synchronized fun publish(result: Connection, startedAt: Long) {
@@ -105,22 +141,26 @@ class AddressSelector(
 
     private val entries = HashMap<String, Entry>()
 
-    /**
-     * The live connection for [server], keyed by its id. Calling again for the same id with different
-     * addresses or security settings switches to the new ones: state goes back to `Checking` and it is re-probed.
-     */
-    override fun connection(server: Server): StateFlow<Connection> {
-        synchronized(entries) {
-            val existing = entries[server.id]
-            if (existing != null) {
-                if (synchronized(existing) { existing.server.probeSettings() != server.probeSettings() }) {
-                    existing.replace(server)
-                    existing.requests.trySend(Unit)
+    /** Started by the first [connection]: a server whose saved settings change (or which is removed) is re-probed. */
+    private val watcher: Job by lazy {
+        scope.launch {
+            source.servers.collect { saved ->
+                val byId = saved.associateBy { it.id }
+                val live = synchronized(entries) { entries.values.toList() }
+                for (entry in live) {
+                    if (entry.resetIfStale(byId[entry.serverId]?.probeSettings())) entry.requests.trySend(Unit)
                 }
-                return existing.state
             }
-            val entry = Entry(server)
-            entries[server.id] = entry
+        }
+    }
+
+    /** The live connection for the server with [serverId]. One probe loop per id, shared by every caller. */
+    override fun connection(serverId: String): StateFlow<Connection> {
+        watcher.start()
+        synchronized(entries) {
+            entries[serverId]?.let { return it.state }
+            val entry = Entry(serverId)
+            entries[serverId] = entry
             entry.job = scope.launch {
                 launch {
                     monitor.changes
@@ -136,17 +176,20 @@ class AddressSelector(
     }
 
     /**
-     * The next [Connection.Online] for [server] (verified as that server by a probe), or null if it turns out
-     * [Connection.Offline] or nothing is verified within [timeoutMs]. A `Checking` state is never returned.
+     * The next [Connection.Online] for [serverId], or null if it turns out [Connection.Offline] or nothing is
+     * verified within [timeoutMs]. A `Checking` state is never returned.
      *
-     * The guarantee is no stronger than the monitor's: a value published before the OS delivered a
-     * network-change callback can still be returned (the phone may already have moved networks). Callers must
-     * treat a failed request as "the address may be stale" and call [refresh]. This is the one call
-     * token-sending code should use.
+     * What it proves: the address answered `/System/Info/Public` with this server's id, using the settings saved
+     * when the probe started, since the last network change the OS reported. What it does NOT prove: that the
+     * answer came from the real server (on plain http anyone holding that address can repeat the public id), or
+     * that the phone has not moved network since (a change the OS has not reported yet). So it is where credential
+     * code starts, not the whole check: `AuthRepository` re-reads the server, prefers a verified https address and
+     * repeats the identity check on the chosen address immediately before sending. A caller whose request fails
+     * should call [refresh].
      */
-    override suspend fun awaitOnline(server: Server, timeoutMs: Long): Connection.Online? =
+    override suspend fun awaitOnline(serverId: String, timeoutMs: Long): Connection.Online? =
         withTimeoutOrNull(timeoutMs) {
-            connection(server).first { it is Connection.Online || it is Connection.Offline } as? Connection.Online
+            connection(serverId).first { it is Connection.Online || it is Connection.Offline } as? Connection.Online
         }
 
     /** Re-probes every server now (or once its current probe finishes); each goes to `Checking` at once. */
@@ -159,7 +202,7 @@ class AddressSelector(
         }
     }
 
-    /** Stops probing [serverId] (cancelling any probe in flight). Call when the server is removed. */
+    /** Stops probing [serverId] (cancelling any probe in flight). Called when the server is removed. */
     fun forget(serverId: String) {
         val entry = synchronized(entries) { entries.remove(serverId) } ?: return
         entry.state.value = Connection.Offline() // a collector still holding the flow must not keep showing Online
@@ -167,9 +210,18 @@ class AddressSelector(
         entry.requests.close()
     }
 
+    /** Reads the server from the store now; one that is no longer saved is Offline and nothing is sent. Never throws. */
     private suspend fun probeAndPublish(entry: Entry) {
-        val (server, startedAt) = entry.snapshot()
-        entry.publish(probe(server), startedAt)
+        try {
+            val server = source.server(entry.serverId)
+            val startedAt = entry.begin(server?.probeSettings())
+            entry.publish(if (server == null) Connection.Offline() else probe(server), startedAt)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // A store failure must not end the loop or leave a stale Online on show (review m12).
+            entry.state.value = Connection.Offline()
+        }
     }
 
     private suspend fun probe(server: Server): Connection {

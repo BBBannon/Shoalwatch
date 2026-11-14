@@ -192,6 +192,22 @@ class ScreenRenderTest {
 
     // --- Sign in ------------------------------------------------------------------------------------------------
 
+    @Test fun anUnencryptedSignInShowsAPersistentNoticeInBothModes() {
+        show { SignInScreen(SignInUiState(serverName = "Den", unencrypted = true), TextFieldState(), noSignInActions) }
+        assertTrue(shown(text(R.string.signin_unencrypted_title)))
+        assertTrue(shown(text(R.string.signin_unencrypted_body)))
+    }
+
+    @Test fun anUnencryptedPasswordSignInShowsTheNoticeToo() {
+        show { SignInScreen(SignInUiState(serverName = "Den", mode = SignInMode.Password, unencrypted = true), TextFieldState(), noSignInActions) }
+        assertTrue(shown(text(R.string.signin_unencrypted_title)))
+    }
+
+    @Test fun anEncryptedSignInShowsNoNotice() {
+        show { SignInScreen(SignInUiState(serverName = "Den"), TextFieldState(), noSignInActions) }
+        assertFalse(shown(text(R.string.signin_unencrypted_title)))
+    }
+
     @Test fun quickConnectShowsTheGroupedCodeAndTheInstruction() {
         val state = SignInUiState(serverName = "Den", quickConnect = QuickConnectUi.Code("ABC123", 272))
         show { SignInScreen(state, TextFieldState(), noSignInActions) }

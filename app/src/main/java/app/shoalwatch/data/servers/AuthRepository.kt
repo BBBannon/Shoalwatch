@@ -5,17 +5,28 @@ import app.shoalwatch.core.AppError
 import app.shoalwatch.net.ServerAddress
 import app.shoalwatch.net.ServerNetConfig
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.CancellationException
 
 /**
- * Finding a server and signing in. Successful sign-ins are saved to [ServerStore] and made active.
- * Time is `delay`/`withTimeout`, so tests run it in virtual time.
+ * Finding a server, signing in, signing out and removing a server. Successful sign-ins are saved to
+ * [ServerStore] and made active. Time is `delay`/`withTimeout`, so tests run it in virtual time.
+ *
+ * Every credential (password, Quick Connect secret, access token) goes only to an address chosen HERE, from the
+ * server's settings as saved right now (callers pass ids, never a `Server`):
+ * - the address must first be verified by [connections] (`awaitOnline`), so nothing goes to an address that has
+ *   not answered as this server on the current network;
+ * - an https address of the server is preferred whenever it answers as this server, so a credential goes over
+ *   plain http only when that is the server's only address or its https address cannot be reached ([SignInRoute.encrypted]
+ *   tells the screen);
+ * - the server's identity is checked again on the chosen address immediately before the credential is sent.
  *
  * Passwords and Quick Connect secrets are never stored or logged.
  */
@@ -23,9 +34,19 @@ class AuthRepository(
     private val gateway: JellyfinGateway,
     private val store: ServerStore,
     private val device: DeviceIdentity,
+    private val connections: ServerConnections,
     private val pollIntervalMs: Long = POLL_INTERVAL_MS,
     private val timeoutMs: Long = TIMEOUT_MS,
+    private val verifyTimeoutMs: Long = AddressSelector.AWAY_TIMEOUT_MS,
+    private val signOutTimeoutMs: Long = SIGN_OUT_TIMEOUT_MS,
+    private val removeTimeoutMs: Long = REMOVE_TIMEOUT_MS,
 ) {
+    /** The only implementation of [SignInRoute]: a route the UI did not get from here is refused. */
+    private class IssuedRoute(override val serverId: String, val address: ServerAddress) : SignInRoute {
+        override val encrypted: Boolean get() = address.isSecure
+        override fun toString() = "SignInRoute(<redacted>)"
+    }
+
     /**
      * Parses [input] (a bare host gets `https://`) and asks it for `/System/Info/Public`. If no scheme was
      * typed and [draft] allows cleartext, `http://` is tried when `https://` fails.
@@ -50,42 +71,56 @@ class AuthRepository(
     }
 
     /**
+     * Where a sign-in for [serverId] would go now, or null if no address is verified. Ask again before each attempt.
+     *
+     * @throws AppError `SERVER_NOT_FOUND` if the server is no longer saved.
+     */
+    suspend fun signInRoute(serverId: String): SignInRoute? {
+        val server = store.server(serverId) ?: throw AppError.of(AppError.Kind.SERVER_NOT_FOUND)
+        return credentialAddress(server)?.let { IssuedRoute(server.id, it) }
+    }
+
+    /**
      * Quick Connect as a cold flow: collecting it starts the attempt, cancelling collection abandons it
-     * (and stops polling). First checks the address really is [server] (nothing is requested of an
+     * (and stops polling). First checks the address really is the server (nothing is requested of an
      * impostor), then emits Starting, AwaitingApproval, polls every 4 s for up to 5 minutes, then
      * Authenticating and Success, or ends with TimedOut / Failed. Network and timeout errors while polling
      * are tolerated; anything else fails at once. The flow completes after a terminal state.
      *
      * Only the gateway calls are guarded: an exception thrown by the collector is never swallowed.
      *
-     * @throws IllegalArgumentException if [via] is not one of [server]'s addresses.
+     * @throws IllegalArgumentException if [route] did not come from [signInRoute].
      */
-    fun quickConnect(server: Server, via: ServerAddress): Flow<QuickConnectState> {
-        requireOwn(server, via)
+    fun quickConnect(route: SignInRoute): Flow<QuickConnectState> {
+        val issued = issued(route)
         return flow {
             emit(QuickConnectState.Starting)
-            val (net, session) = guard { begin(server, via) }.getOrElse { emit(QuickConnectState.Failed(it)); return@flow }
+            val begun = guard { begin(issued) }.getOrElse { emit(QuickConnectState.Failed(it)); return@flow }
+            val (server, net, session) = begun
             emit(QuickConnectState.AwaitingApproval(session.code))
 
-            val approved = guard { awaitApproval(via, net, session.secret) }.getOrElse { emit(QuickConnectState.Failed(it)); return@flow }
+            val approved = guard { awaitApproval(issued.address, net, session.secret) }.getOrElse { emit(QuickConnectState.Failed(it)); return@flow }
             if (!approved) {
                 emit(QuickConnectState.TimedOut)
                 return@flow
             }
             emit(QuickConnectState.Authenticating)
             val account = guard {
-                save(server, gateway.authenticateWithQuickConnect(via, net, session.secret))
+                save(server, gateway.authenticateWithQuickConnect(issued.address, net, session.secret))
             }.getOrElse { emit(QuickConnectState.Failed(it)); return@flow }
             emit(QuickConnectState.Success(account))
         }
     }
 
-    /** Verifies the server's identity, then asks for a code. */
-    private suspend fun begin(server: Server, via: ServerAddress): Pair<ServerNetConfig, QcSession> {
+    private data class Begun(val server: Server, val net: ServerNetConfig, val session: QcSession)
+
+    /** Verifies the server's identity with its current settings, then asks for a code. */
+    private suspend fun begin(route: IssuedRoute): Begun {
+        val server = current(route)
         val net = anonymousNet(server)
-        verifyServer(server, via, net)
-        if (!gateway.quickConnectEnabled(via, net)) throw AppError.of(AppError.Kind.QUICK_CONNECT_DISABLED)
-        return net to gateway.quickConnectInitiate(via, net)
+        verifyServer(server, route.address, net)
+        if (!gateway.quickConnectEnabled(route.address, net)) throw AppError.of(AppError.Kind.QUICK_CONNECT_DISABLED)
+        return Begun(server, net, gateway.quickConnectInitiate(route.address, net))
     }
 
     /** Polls until approved (true) or [timeoutMs] passes (false). */
@@ -113,16 +148,19 @@ class AuthRepository(
     }
 
     /**
-     * Username/password sign-in. The address must be [server] (checked before the password is sent), the
-     * password is sent once, never stored, and [password] is overwritten before this returns (the `String`
-     * handed to the gateway cannot be wiped, but is not kept).
+     * Username/password sign-in on [route]. The server is read from the store now and its identity checked on the
+     * route's address before the password is sent; the password is sent once, never stored, and [password] is
+     * overwritten before this returns (the `String` handed to the gateway cannot be wiped, but is not kept).
+     *
+     * @throws IllegalArgumentException if [route] did not come from [signInRoute].
      */
-    suspend fun signInWithPassword(server: Server, via: ServerAddress, username: String, password: CharArray): Account {
+    suspend fun signInWithPassword(route: SignInRoute, username: String, password: CharArray): Account {
         try {
-            requireOwn(server, via)
+            val issued = issued(route)
+            val server = current(issued)
             val net = anonymousNet(server)
-            verifyServer(server, via, net)
-            val result = gateway.authenticateByName(via, net, username.trim(), String(password))
+            verifyServer(server, issued.address, net)
+            val result = gateway.authenticateByName(issued.address, net, username.trim(), String(password))
             return save(server, result)
         } finally {
             password.fill('\u0000')
@@ -130,27 +168,70 @@ class AuthRepository(
     }
 
     /**
-     * Revokes the token on the server (best effort: each address in turn until one works), then removes the
-     * account here regardless. Removal also drops the cached clients, and the token provider yields no token
-     * from then on.
+     * Signs [userId] out: the token is revoked on the server only through a verified address (see the class
+     * KDoc), within [signOutTimeoutMs], and the account is removed here regardless (even if cancelled). If no
+     * address is verified the token is not sent anywhere.
+     *
+     * @return false if a sign-in may still be live on the server (it could not be reached to revoke it).
      */
-    suspend fun signOut(serverId: String, userId: String) {
+    suspend fun signOut(serverId: String, userId: String): Boolean {
         try {
-            val server = store.server(serverId)
-            val account = store.accounts(serverId).first().firstOrNull { it.userId == userId }
-            if (server != null && account != null) {
-                bestEffort {
-                    // Bound to the token being revoked, for this call only: nothing is put back in the store's token map.
-                    val token = account.accessToken
-                    val net = ServerNet.authenticated(server.addresses, server, userId, device) { _, _ -> token }
-                    for (address in server.addresses) {
-                        if (bestEffort { gateway.logout(address, net) }) break
-                    }
-                }
-            }
+            val token = store.token(serverId, userId) ?: return true // nothing saved, so nothing to revoke
+            val server = store.server(serverId) ?: return false
+            return withTimeoutOrNull(signOutTimeoutMs) { revoke(server, userId, token) } ?: false
         } finally {
             withContext(NonCancellable) { store.removeAccount(serverId, userId) }
         }
+    }
+
+    /**
+     * Removes a server and its sign-ins. Each account's token is first revoked (in parallel, by the same rules
+     * as [signOut], all within [removeTimeoutMs]); the server is then deleted here regardless (even if cancelled).
+     *
+     * @return false if any sign-in may still be live on the server.
+     */
+    suspend fun removeServer(serverId: String): Boolean {
+        try {
+            val tokens = try {
+                store.tokens(serverId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                return false
+            }
+            if (tokens.isEmpty()) return true
+            val server = store.server(serverId) ?: return false
+            return withTimeoutOrNull(removeTimeoutMs) {
+                coroutineScope {
+                    tokens.map { (userId, token) -> async { revoke(server, userId, token) } }.awaitAll().all { it }
+                }
+            } ?: false
+        } finally {
+            withContext(NonCancellable) { store.removeServer(serverId) }
+        }
+    }
+
+    /**
+     * Revokes [token] via a verified address of [server] (read from the store by the caller just before). True if
+     * the server confirmed it. The caller bounds the time.
+     */
+    private suspend fun revoke(server: Server, userId: String, token: String): Boolean = bestEffort {
+        val via = credentialAddress(server) ?: throw AppError.of(AppError.Kind.NETWORK)
+        verifyServer(server, via, anonymousNet(server))
+        // Bound to the token being revoked, for this call only: nothing is put back in the store's token map.
+        gateway.logout(via, ServerNet.authenticated(server.addresses, server, userId, device) { _, _ -> token })
+    }
+
+    /**
+     * The address a credential for [server] may go to: the selector's verified address, upgraded to the server's
+     * https address when that also answers as this server. Null when nothing is verified.
+     */
+    private suspend fun credentialAddress(server: Server): ServerAddress? {
+        val online = connections.awaitOnline(server.id)?.address?.takeIf { it in server.addresses } ?: return null
+        if (online.isSecure) return online
+        val secure = server.addresses.firstOrNull { it.isSecure } ?: return online
+        val verified = withTimeoutOrNull(verifyTimeoutMs) { bestEffort { verifyServer(server, secure, anonymousNet(server)) } } ?: false
+        return if (verified) secure else online
     }
 
     /** True if [block] succeeded; any failure other than cancellation is ignored. */
@@ -163,11 +244,18 @@ class AuthRepository(
         false
     }
 
+    private fun issued(route: SignInRoute): IssuedRoute =
+        requireNotNull(route as? IssuedRoute) { "That sign-in route was not issued by AuthRepository." }
+
+    /** The server as saved now, and the route's address must still be one of its addresses. */
+    private suspend fun current(route: IssuedRoute): Server {
+        val server = store.server(route.serverId) ?: throw AppError.of(AppError.Kind.SERVER_NOT_FOUND)
+        if (route.address !in server.addresses) throw AppError.of(AppError.Kind.SERVER_NOT_FOUND)
+        return server
+    }
+
     private fun anonymousNet(server: Server): ServerNetConfig =
         ServerNet.anonymous(server.addresses, server, device)
-
-    private fun requireOwn(server: Server, via: ServerAddress) =
-        require(via in server.addresses) { "That address does not belong to this server." }
 
     /** The address must answer as [server] before anything is sent to it. */
     private suspend fun verifyServer(server: Server, via: ServerAddress, net: ServerNetConfig) {
@@ -201,5 +289,7 @@ class AuthRepository(
     companion object {
         const val POLL_INTERVAL_MS = 4_000L
         const val TIMEOUT_MS = 5 * 60_000L
+        const val SIGN_OUT_TIMEOUT_MS = 12_000L
+        const val REMOVE_TIMEOUT_MS = 6_000L
     }
 }
