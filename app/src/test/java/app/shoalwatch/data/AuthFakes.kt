@@ -24,6 +24,9 @@ internal class FakeGateway : JellyfinGateway {
     var enabled: () -> Boolean = { true }
     var polls: (Int) -> Boolean = { true }
     var pollCount = 0
+
+    /** Runs after each poll with its index (to change the world between a poll and the next step). */
+    var afterPoll: (Int) -> Unit = {}
     var auth: () -> AuthResult = { AuthResult("u1", "ben", "tok-1", "s1") }
     var logout: suspend (ServerAddress) -> Unit = {}
     var lastPassword: String? = null
@@ -38,7 +41,7 @@ internal class FakeGateway : JellyfinGateway {
     override suspend fun quickConnectEnabled(address: ServerAddress, net: ServerNetConfig): Boolean { record("enabled", address, net); return enabled() }
     override suspend fun quickConnectInitiate(address: ServerAddress, net: ServerNetConfig): QcSession { record("initiate", address, net); return QcSession("secret", "123456") }
     override suspend fun quickConnectState(address: ServerAddress, net: ServerNetConfig, secret: String): Boolean {
-        record("state", address, net); return polls(pollCount++)
+        record("state", address, net); val n = pollCount++; return polls(n).also { afterPoll(n) }
     }
     override suspend fun authenticateWithQuickConnect(address: ServerAddress, net: ServerNetConfig, secret: String): AuthResult {
         record("authQc", address, net); return auth()
@@ -52,7 +55,11 @@ internal class FakeGateway : JellyfinGateway {
 /** The selector as `AuthRepository` sees it: [online] decides what `awaitOnline` returns for each server id. */
 internal class StubConnections(var online: (String) -> Connection.Online?) : ServerConnections {
     val asked = mutableListOf<String>()
-    override fun connection(serverId: String): StateFlow<Connection> = MutableStateFlow(online(serverId) ?: Connection.Offline())
+    private val flows = HashMap<String, MutableStateFlow<Connection>>()
+
+    /** One live flow per server, starting from [online]; tests change it with [set] to simulate a network change. */
+    override fun connection(serverId: String): StateFlow<Connection> = flows.getOrPut(serverId) { MutableStateFlow(online(serverId) ?: Connection.Offline()) }
+    fun set(serverId: String, state: Connection) { (connection(serverId) as MutableStateFlow<Connection>).value = state }
     override suspend fun awaitOnline(serverId: String, timeoutMs: Long): Connection.Online? { asked += serverId; return online(serverId) }
     override fun refresh() = Unit
 }

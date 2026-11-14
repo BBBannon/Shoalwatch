@@ -10,7 +10,9 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.CancellationException
@@ -26,7 +28,9 @@ import java.util.concurrent.CancellationException
  * - an https address of the server is preferred whenever it answers as this server, so a credential goes over
  *   plain http only when that is the server's only address or its https address cannot be reached ([SignInRoute.encrypted]
  *   tells the screen);
- * - the server's identity is checked again on the chosen address immediately before the credential is sent.
+ * - the server's identity is checked again on the chosen address immediately before the credential is sent;
+ * - Quick Connect, which sends its secret repeatedly, stops the moment the selector's connection for the server is no
+ *   longer the one the route was issued on (see [quickConnect]).
  *
  * Passwords and Quick Connect secrets are never stored or logged.
  */
@@ -42,7 +46,7 @@ class AuthRepository(
     private val removeTimeoutMs: Long = REMOVE_TIMEOUT_MS,
 ) {
     /** The only implementation of [SignInRoute]: a route the UI did not get from here is refused. */
-    private class IssuedRoute(override val serverId: String, val address: ServerAddress) : SignInRoute {
+    private class IssuedRoute(override val serverId: String, val address: ServerAddress, val basis: Connection.Online) : SignInRoute {
         override val encrypted: Boolean get() = address.isSecure
         override fun toString() = "SignInRoute(<redacted>)"
     }
@@ -77,7 +81,7 @@ class AuthRepository(
      */
     suspend fun signInRoute(serverId: String): SignInRoute? {
         val server = store.server(serverId) ?: throw AppError.of(AppError.Kind.SERVER_NOT_FOUND)
-        return credentialAddress(server)?.let { IssuedRoute(server.id, it) }
+        return credentialAddress(server)?.let { IssuedRoute(server.id, it.address, it.basis) }
     }
 
     /**
@@ -85,7 +89,9 @@ class AuthRepository(
      * (and stops polling). First checks the address really is the server (nothing is requested of an
      * impostor), then emits Starting, AwaitingApproval, polls every 4 s for up to 5 minutes, then
      * Authenticating and Success, or ends with TimedOut / Failed. Network and timeout errors while polling
-     * are tolerated; anything else fails at once. The flow completes after a terminal state.
+     * are tolerated; anything else fails at once. If the selector's connection for the server changes while
+     * waiting (a network change, offline, another address) it ends with `Failed(CONNECTION_CHANGED)` and no secret
+     * is sent after that. The flow completes after a terminal state.
      *
      * Only the gateway calls are guarded: an exception thrown by the collector is never swallowed.
      *
@@ -99,13 +105,14 @@ class AuthRepository(
             val (server, net, session) = begun
             emit(QuickConnectState.AwaitingApproval(session.code))
 
-            val approved = guard { awaitApproval(issued.address, net, session.secret) }.getOrElse { emit(QuickConnectState.Failed(it)); return@flow }
+            val approved = guard { awaitApproval(issued, net, session.secret) }.getOrElse { emit(QuickConnectState.Failed(it)); return@flow }
             if (!approved) {
                 emit(QuickConnectState.TimedOut)
                 return@flow
             }
             emit(QuickConnectState.Authenticating)
             val account = guard {
+                ensureConnectionUnchanged(issued) // nothing more is sent once the network is not the one that was verified
                 save(server, gateway.authenticateWithQuickConnect(issued.address, net, session.secret))
             }.getOrElse { emit(QuickConnectState.Failed(it)); return@flow }
             emit(QuickConnectState.Success(account))
@@ -123,12 +130,28 @@ class AuthRepository(
         return Begun(server, net, gateway.quickConnectInitiate(route.address, net))
     }
 
-    /** Polls until approved (true) or [timeoutMs] passes (false). */
-    private suspend fun awaitApproval(via: ServerAddress, net: ServerNetConfig, secret: String): Boolean =
+    /**
+     * Polls until approved (true) or [timeoutMs] passes (false). A watcher on the selector's connection for this
+     * server stops the polling at once, even mid-call, when it is no longer the [IssuedRoute.basis] the secret was
+     * issued on (network change, offline, or online on another address): `CONNECTION_CHANGED`.
+     */
+    private suspend fun awaitApproval(route: IssuedRoute, net: ServerNetConfig, secret: String): Boolean =
         withTimeoutOrNull(timeoutMs) {
-            while (!approved(via, net, secret)) delay(pollIntervalMs)
-            true
+            coroutineScope {
+                val watcher = launch {
+                    connections.connection(route.serverId).first { it != route.basis }
+                    throw AppError.of(AppError.Kind.CONNECTION_CHANGED)
+                }
+                ensureConnectionUnchanged(route)
+                while (!approved(route.address, net, secret)) delay(pollIntervalMs)
+                watcher.cancel()
+                true
+            }
         } ?: false
+
+    private fun ensureConnectionUnchanged(route: IssuedRoute) {
+        if (connections.connection(route.serverId).value != route.basis) throw AppError.of(AppError.Kind.CONNECTION_CHANGED)
+    }
 
     /** Runs [block], turning any failure (except cancellation) into an [AppError]. */
     private suspend fun <T> guard(block: suspend () -> T): Outcome<T> = try {
@@ -216,7 +239,7 @@ class AuthRepository(
      * the server confirmed it. The caller bounds the time.
      */
     private suspend fun revoke(server: Server, userId: String, token: String): Boolean = bestEffort {
-        val via = credentialAddress(server) ?: throw AppError.of(AppError.Kind.NETWORK)
+        val via = credentialAddress(server)?.address ?: throw AppError.of(AppError.Kind.NETWORK)
         verifyServer(server, via, anonymousNet(server))
         // Bound to the token being revoked and sent through a one-off client: nothing is put in the store's token map
         // or the shared client cache.
@@ -227,13 +250,17 @@ class AuthRepository(
      * The address a credential for [server] may go to: the selector's verified address, upgraded to the server's
      * https address when that also answers as this server. Null when nothing is verified.
      */
-    private suspend fun credentialAddress(server: Server): ServerAddress? {
-        val online = connections.awaitOnline(server.id)?.address?.takeIf { it in server.addresses } ?: return null
-        if (online.isSecure) return online
-        val secure = server.addresses.firstOrNull { it.isSecure } ?: return online
+    private suspend fun credentialAddress(server: Server): Chosen? {
+        val basis = connections.awaitOnline(server.id)?.takeIf { it.address in server.addresses } ?: return null
+        val online = basis.address
+        if (online.isSecure) return Chosen(online, basis)
+        val secure = server.addresses.firstOrNull { it.isSecure } ?: return Chosen(online, basis)
         val verified = withTimeoutOrNull(verifyTimeoutMs) { bestEffort { verifyServer(server, secure, anonymousNet(server)) } } ?: false
-        return if (verified) secure else online
+        return Chosen(if (verified) secure else online, basis)
     }
+
+    /** The address a credential may go to, and the selector connection it was derived from (what Quick Connect watches). */
+    private class Chosen(val address: ServerAddress, val basis: Connection.Online)
 
     /** True if [block] succeeded; any failure other than cancellation is ignored. */
     private suspend fun bestEffort(block: suspend () -> Unit): Boolean = try {
