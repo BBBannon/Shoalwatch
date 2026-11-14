@@ -11,13 +11,13 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
  * [authority] is the form used everywhere to decide "is this request going to that server":
  * `host:port`, lower-case, port always explicit (443 for https, 80 for http), IPv6 hosts in brackets.
  */
-@JvmInline
-value class ServerAddress private constructor(val value: String) {
-    private val url: HttpUrl get() = requireNotNull(value.toHttpUrlOrNull())
+class ServerAddress private constructor(url: HttpUrl, val value: String) {
+    val isSecure: Boolean = url.isHttps
+    val host: String = url.host
+    val authority: String = authorityOf(url)
 
-    val isSecure: Boolean get() = url.isHttps
-    val host: String get() = url.host
-    val authority: String get() = authorityOf(url)
+    override fun equals(other: Any?) = other is ServerAddress && other.value == value
+    override fun hashCode() = value.hashCode()
 
     /** Never reveals the address, so it cannot reach a log through string templates. */
     override fun toString() = "<server>"
@@ -51,7 +51,8 @@ value class ServerAddress private constructor(val value: String) {
 
             val builder = HttpUrl.Builder().scheme(parsed.scheme).host(parsed.host).port(parsed.port)
             parsed.pathSegments.filter { it.isNotEmpty() }.forEach { builder.addPathSegment(it) }
-            return ServerAddress(builder.build().toString().trimEnd('/'))
+            val clean = builder.build()
+            return ServerAddress(clean, clean.toString().trimEnd('/'))
         }
 
         private fun invalid() = AppError(

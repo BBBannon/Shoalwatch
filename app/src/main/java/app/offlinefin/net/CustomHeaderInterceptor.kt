@@ -26,15 +26,22 @@ class CustomHeaderInterceptor(
         val builder = request.newBuilder()
         for ((name, value) in headers()) {
             validate(name, value)
-            builder.header(name, value)
+            try {
+                builder.header(name, value)
+            } catch (_: IllegalArgumentException) {
+                // OkHttp's own message can echo the value, so replace it.
+                throw IllegalArgumentException("Custom header '$name' has an invalid value.")
+            }
         }
         return chain.proceed(builder.build())
     }
 
     private fun validate(name: String, value: String) {
-        require(name.isNotEmpty() && name.all { it in TOKEN_CHARS }) { "Invalid custom header name." }
+        require(name.isNotEmpty() && name.all { it in TOKEN_CHARS }) {
+            "Custom header name contains an invalid character."
+        }
         require(FORBIDDEN.none { it.equals(name, ignoreCase = true) }) { "Custom header '$name' is not allowed." }
-        require(value.none { it.isISOControl() && it != '\t' }) { "Custom header '$name' has an invalid value." }
+        require(value.all { it == '\t' || it in ' '..'~' }) { "Custom header '$name' has an invalid value." }
     }
 
     private companion object {

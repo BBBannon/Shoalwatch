@@ -18,11 +18,11 @@ object AuthHeader {
         }
 
     private fun safe(value: String): String = buildString {
-        for (ch in value) {
+        value.codePoints().forEach { cp ->
             when {
-                ch == '"' || ch == '\\' || ch.isISOControl() -> Unit
-                ch.code < 0x7f -> append(ch)
-                else -> append(URLEncoder.encode(ch.toString(), "UTF-8"))
+                cp == '"'.code || cp == '\\'.code || cp < 0x20 || cp == 0x7f -> Unit
+                cp == '%'.code || cp > 0x7f -> append(URLEncoder.encode(String(Character.toChars(cp)), "UTF-8"))
+                else -> append(cp.toChar())
             }
         }
     }

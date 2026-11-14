@@ -74,6 +74,29 @@ class AuthInterceptorTest {
         assertEquals("/y", a.takeRequest().path)
     }
 
+    @Test fun `percent-encoded api key names are removed too`() {
+        a.enqueue(MockResponse())
+        val client = OkHttpClient.Builder().addInterceptor(interceptor(setOf(authority(a)))).build()
+        get(client, a.url("/x?api%5Fkey=1&%41piKey=2&keep=3&flag"))
+        assertEquals("/x?keep=3&flag", a.takeRequest().path)
+    }
+
+    @Test fun `legacy token headers are removed for hosts that are not allowed`() {
+        b.enqueue(MockResponse())
+        val client = OkHttpClient.Builder().addInterceptor(interceptor(setOf(authority(a)))).build()
+        client.newCall(
+            Request.Builder().url(b.url("/"))
+                .header("X-Emby-Token", "t").header("X-MediaBrowser-Token", "t").header("X-Emby-Authorization", "t")
+                .build(),
+        ).execute().close()
+        val seen = b.takeRequest()
+        assertNull(seen.getHeader("X-Emby-Token"))
+        assertNull(seen.getHeader("X-MediaBrowser-Token"))
+        assertNull(seen.getHeader("X-Emby-Authorization"))
+    }
+
+    // OkHttp itself strips Authorization on cross-origin redirects, so this variant would pass even
+    // without our interceptor; the network-interceptor variant below is the real proof.
     @Test fun `token is not sent to a second host after a redirect (application interceptor)`() {
         a.enqueue(MockResponse().setResponseCode(302).setHeader("Location", b.url("/landing").toString()))
         b.enqueue(MockResponse())

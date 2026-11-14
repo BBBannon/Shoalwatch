@@ -126,6 +126,7 @@ dependencies {
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.okhttp.mockwebserver)
+    testImplementation(libs.okhttp.tls)
     testImplementation(libs.androidx.room.testing)
 
     // On-device tests: gradlew connectedDebugAndroidTest

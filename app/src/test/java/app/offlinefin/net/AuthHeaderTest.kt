@@ -31,6 +31,11 @@ class AuthHeaderTest {
         assertEquals("""MediaBrowser Client="c", Device="abcd", DeviceId="id", Version="v"""", h)
     }
 
+    @Test fun `emoji is encoded as one code point and percent is escaped`() {
+        val h = AuthHeader.build("c", "P😀 100%", "id", "v", null)
+        assertTrue(h, h.contains("""Device="P%F0%9F%98%80%C2%A0100%25""""))
+    }
+
     @Test fun `non-ascii is percent-encoded so OkHttp accepts it`() {
         val h = AuthHeader.build("c", "Bén", "id", "v", null)
         assertTrue(h, h.contains("""Device="B%C3%A9n""""))

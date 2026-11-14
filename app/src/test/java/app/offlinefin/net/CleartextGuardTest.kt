@@ -8,8 +8,11 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.tls.HandshakeCertificates
+import okhttp3.tls.HeldCertificate
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 import java.io.IOException
@@ -50,7 +53,32 @@ class CleartextGuardTest {
             override fun onFailure(call: Call, e: IOException) { failure.set(e); done.countDown() }
             override fun onResponse(call: Call, response: Response) { response.close(); done.countDown() }
         })
-        done.await(5, TimeUnit.SECONDS)
+        assertTrue("callback not invoked", done.await(5, TimeUnit.SECONDS))
         assertEquals(AppError.Kind.CLEARTEXT_BLOCKED, AppError.from(failure.get()).kind)
+    }
+
+    @Test fun `a redirect from https to http is blocked by the network interceptor`() {
+        val held = HeldCertificate.Builder().addSubjectAlternativeName(server.hostName).build()
+        val serverCerts = HandshakeCertificates.Builder().heldCertificate(held).build()
+        val clientCerts = HandshakeCertificates.Builder().addTrustedCertificate(held.certificate).build()
+        val secure = MockWebServer().apply { useHttps(serverCerts.sslSocketFactory(), false); start() }
+        try {
+            secure.enqueue(MockResponse().setResponseCode(302).setHeader("Location", server.url("/plain").toString()))
+            server.enqueue(MockResponse())
+            val client = OkHttpClient.Builder()
+                .sslSocketFactory(clientCerts.sslSocketFactory(), clientCerts.trustManager)
+                .addNetworkInterceptor(CleartextGuard { false })
+                .build()
+            try {
+                client.newCall(Request.Builder().url(secure.url("/start")).build()).execute()
+                fail("expected a blocked request")
+            } catch (e: IOException) {
+                assertEquals(AppError.Kind.CLEARTEXT_BLOCKED, AppError.from(e).kind)
+            }
+            assertEquals(1, secure.requestCount)
+            assertEquals(0, server.requestCount)
+        } finally {
+            secure.shutdown()
+        }
     }
 }

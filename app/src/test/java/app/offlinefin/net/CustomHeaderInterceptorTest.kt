@@ -8,6 +8,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 
@@ -67,6 +68,26 @@ class CustomHeaderInterceptorTest {
             assertFalse(e.message!!.contains("the-value"))
         }
         assertEquals(0, a.requestCount)
+    }
+
+    @Test fun `non-ascii values are rejected with a name-only message`() {
+        try {
+            get(client(mapOf("X-Ok" to "sécret")), a)
+            fail("accepted")
+        } catch (e: IllegalArgumentException) {
+            assertFalse(e.message!!.contains("cret"))
+            assertTrue(e.message!!.contains("X-Ok"))
+        }
+        assertEquals(0, a.requestCount)
+    }
+
+    @Test fun `non-ascii names are rejected without echoing them`() {
+        try {
+            get(client(mapOf("X-sécretname" to "v")), a)
+            fail("accepted")
+        } catch (e: IllegalArgumentException) {
+            assertFalse(e.message!!.contains("cretname"))
+        }
     }
 
     @Test fun `no headers are read for a host that is not allowed`() {
