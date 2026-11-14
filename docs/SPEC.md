@@ -33,7 +33,7 @@ A native Android client for Jellyfin (films and TV) whose offline library behave
 | 7 | Downloads stall or won't play | Resumable queue that survives backgrounding, restarts and app updates; every finished download verified playable |
 | 8 | Getting connected | Per-server home and away addresses with automatic switching; multiple servers and users; Quick Connect; custom headers; client certificates |
 | 9 | Casting and PiP | Picture-in-picture that works on Android 14+; Chromecast as a separable build flavour |
-| 10 | Storage and housekeeping | Internal or SD card; storage view; auto-delete watched; auto-download next; watched progress sent back after offline use |
+| 10 | Storage and housekeeping | Internal or SD card; storage view; auto-delete watched; auto-download next; watched progress sent back after offline use; downloads on Wi-Fi only by default (mobile data by explicit choice); size estimate and free-space check shown before a batch download starts |
 
 ### 3.1 Watch and delete (requested by Ben, 14/11/2026)
 
