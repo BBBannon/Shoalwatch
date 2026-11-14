@@ -57,8 +57,12 @@ data class UserData(
 /** [userData] is null when the server sent none. */
 data class ItemWithUserData(val item: Item, val userData: UserData?)
 
-/** [startIndex] is where this page began; [total] is at least `items.size` and at most one million. */
-data class Page<T>(val items: List<T>, val startIndex: Int, val total: Int)
+/**
+ * One page of a list. [items] holds only the KEPT elements (the gateway skips malformed ones and removes repeats), so
+ * `items.size` is NOT how far the server's list was read: [nextStartIndex] is (`startIndex` plus every element the server
+ * sent in this response). [total] is the server's count when it gave a usable one (at most one million), else null.
+ */
+data class Page<T>(val items: List<T>, val startIndex: Int, val total: Int?, val nextStartIndex: Int, val endReached: Boolean)
 
 enum class SortBy { NAME, DATE_ADDED, RELEASE_DATE, RATING }
 

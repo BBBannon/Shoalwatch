@@ -89,10 +89,11 @@ class LibraryGatewayHostileTest : LibraryGatewayTestBase() {
         assertNull(hostile("f00b").userData) // an explicit null
     }
 
-    @Test fun theListIsCappedAtTheRequestedLimitAndTheTotalIsAtLeastWhatCameBack() {
+    @Test fun theListIsCappedAtTheRequestedLimitAndATotalBelowWhatCameBackIsUnknown() {
         val page = hostilePage(limit = 3)
         assertEquals(3, page.items.size)
-        assertEquals(3, page.total) // the server said 2
+        assertNull(page.total) // the server said 2 after sending 16 elements: nonsense, so unknown
+        assertEquals(16, page.nextStartIndex)
     }
 
     @Test fun theTotalIsAtMostOneMillion() {

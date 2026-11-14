@@ -28,7 +28,7 @@ class DisplayParagraphsTest {
     }
 
     @Test fun otherLineSeparatorsBecomeSpacesNotLineBreaks() {
-        assertEquals("a b c", displayParagraphs("a b c", 100))
+        assertEquals("a b c", displayParagraphs("a\u2028b\u2029c", 100))
     }
 
     @Test fun htmlIsLeftAloneAsText() {

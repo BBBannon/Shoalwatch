@@ -1,3 +1,4 @@
+v1.54 — 14/11/2026 — Behind the scenes for browsing: long lists now carry on from exactly where the server left off, a server's wrong item count is ignored, and Specials always appear after the numbered seasons.
 v1.53 — 14/11/2026 — Behind the scenes for browsing: the app now keeps a copy of your libraries, films, series and watched progress on the phone (separately for each profile), so browsing will work without a connection. Nothing you have already set up is changed.
 v1.52 — 14/11/2026 — Behind the scenes: the app now reads each server's saved settings faster, so browsing feels quicker and uses less battery.
 v1.51 — 14/11/2026 — Behind the scenes for browsing: one odd entry from a server no longer spoils a whole list, repeated entries are shown once, long series load in full, and episodes and seasons always appear in the right order.

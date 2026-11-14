@@ -29,7 +29,7 @@ class LibraryGatewayRobustnessTest : LibraryGatewayTestBase() {
         )
         // A number sent as a quoted string ("2020") is accepted by the JSON decoder and still range-checked.
         assertEquals(2020, page.items.single { it.item.id == id("a2") }.item.year)
-        assertEquals(13, page.total) // "many" is not a number: the count falls back to what came back
+        assertNull(page.total) // "many" is not a number: the count is unknown
     }
 
     @Test fun aUserDataThatIsNotUsableKeepsTheItemWithoutIt() {
@@ -127,5 +127,29 @@ class LibraryGatewayRobustnessTest : LibraryGatewayTestBase() {
         assertEquals(14, items.size)
         assertEquals("N".repeat(200), items.single { it.item.id.endsWith("f003") }.item.name)
         assertEquals(ItemKind.OTHER, items.single { it.item.id.endsWith("f009") }.item.kind)
+    }
+
+    // ---- A4: a container of the wrong type is a clean SERVER_ERROR
+
+    private fun assertServerError(body: String, call: suspend () -> Unit) {
+        web.enqueue(json(body))
+        assertEquals(app.shoalwatch.core.AppError.Kind.SERVER_ERROR, failure(call).kind)
+    }
+
+    @Test fun anItemsContainerThatIsAnObjectOrAStringIsAServerError() {
+        assertServerError("""{"Items":{"a":1}}""") { gateway.children(session, FILMS, 0, 10, nameAsc, ItemFilter()) }
+        assertServerError("""{"Items":"nope"}""") { gateway.children(session, FILMS, 0, 10, nameAsc, ItemFilter()) }
+        assertServerError("""{"Items":{"a":1}}""") { gateway.views(session) }
+        assertServerError("""{"Items":"nope"}""") { gateway.resume(session, 10) }
+    }
+
+    @Test fun latestGivenAnObjectInsteadOfAnArrayIsAServerError() {
+        assertServerError("""{"Items":[]}""") { gateway.latest(session, FILMS, 10) }
+    }
+
+    @Test fun aQueryEndpointGivenABareArrayIsAServerError() {
+        assertServerError("[]") { gateway.children(session, FILMS, 0, 10, nameAsc, ItemFilter()) }
+        assertServerError("[]") { gateway.nextUp(session, 10) }
+        assertServerError("[]") { gateway.episodes(session, SERIES, null) }
     }
 }

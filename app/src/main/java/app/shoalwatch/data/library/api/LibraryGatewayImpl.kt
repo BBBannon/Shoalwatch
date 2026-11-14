@@ -82,10 +82,10 @@ class LibraryGatewayImpl(private val api: ServerApi) : LibraryGateway {
             }
             val result = list(s, path, query)
             requests++
-            val raw = result.items?.size ?: 0
+            val raw = result.rawCount()
+            val total = result.usableTotal(start)
             found += result.toModels(Int.MAX_VALUE)
             start += raw
-            val total = result.reportedTotal()
             if (raw == 0 || (total != null && start >= total) || (total == null && raw < EPISODE_PAGE)) break
         }
         return found.distinctBy { it.item.id }.inEpisodeOrder().take(MAX_EPISODES)

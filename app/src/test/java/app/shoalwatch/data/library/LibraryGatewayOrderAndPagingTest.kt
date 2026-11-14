@@ -41,11 +41,29 @@ class LibraryGatewayOrderAndPagingTest : LibraryGatewayTestBase() {
         assertEquals(listOf(6, 7, 11, 8, 10, 9), order)
     }
 
-    @Test fun seasonsPutSpecialsLastAndOtherwiseGoInNumberOrder() {
-        fun season(n: Int, index: Int?, name: String) = """{"Id":"${id(n)}","Name":"$name","Type":"Season"${index?.let { ""","IndexNumber":$it""" } ?: ""}}"""
-        web.enqueue(json("""{"Items":[${season(1, 0, "Specials")},${season(2, 2, "Season 2")},${season(3, null, "Extras")},${season(4, 1, "Season 1")},${season(5, 3, "Season 3")}]}"""))
-        val ids = runBlocking { gateway.seasons(session, SERIES) }.map { num(it.item.id) }
-        assertEquals(listOf(4, 2, 5, 3, 1), ids) // 1, 2, 3, then the unnumbered one, then Specials (season 0) last
+    private fun season(n: Int, index: Int?, name: String) = """{"Id":"${id(n)}","Name":"$name","Type":"Season"${index?.let { ""","IndexNumber":$it""" } ?: ""}}"""
+
+    private fun seasonIds(vararg rows: String): List<Int> {
+        web.enqueue(json("""{"Items":[${rows.joinToString(",")}]}"""))
+        return runBlocking { gateway.seasons(session, SERIES) }.map { num(it.item.id) }
+    }
+
+    @Test fun seasonsPutSpecialsAfterTheNumberedOnesThenAnyUnnumberedOne() {
+        val ids = seasonIds(season(1, 0, "Specials"), season(2, 2, "Season 2"), season(3, null, "Extras"), season(4, 1, "Season 1"), season(5, 3, "Season 3"))
+        assertEquals(listOf(4, 2, 5, 1, 3), ids) // 1, 2, 3, then Specials (season 0), then the unnumbered one
+    }
+
+    @Test fun theSameSeasonsComeOutInTheSameOrderWhateverOrderTheServerUses() {
+        val rows = listOf(season(1, 1, "S1"), season(2, 2, "S2"), season(3, 3, "S3"), season(4, 0, "Specials"), season(5, null, "Extras"))
+        repeat(8) { seed -> assertEquals(listOf(1, 2, 3, 4, 5), seasonIds(*rows.shuffled(java.util.Random(seed.toLong())).toTypedArray())) }
+    }
+
+    @Test fun aWholeSeriesListPutsSeasonZeroAfterTheNumberedSeasonsAndNoSeasonAfterThat() {
+        val rows = listOf(
+            episode(1, 1, 1), episode(2, 1, 2), episode(3, 2, 1), episode(4, 3, 1),
+            episode(5, 0, 1), episode(6, 0, 2), episode(7, null, 1), episode(8, null, null, "zz"),
+        )
+        repeat(8) { seed -> assertEquals(listOf(1, 2, 3, 4, 5, 6, 7, 8), episodes(*rows.shuffled(java.util.Random(seed.toLong())).toTypedArray())) }
     }
 
     private class Serving(val total: Int, val limitCap: Int = Int.MAX_VALUE) : Dispatcher() {

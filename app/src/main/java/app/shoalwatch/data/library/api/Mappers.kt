@@ -136,12 +136,31 @@ internal fun List<JsonElement>?.toModels(limit: Int): List<ItemWithUserData> =
 
 internal fun BaseItemDtoQueryResult.toModels(limit: Int): List<ItemWithUserData> = items.toModels(limit)
 
-/** The server's own count of how many items there are, when it gave a usable one. */
-internal fun BaseItemDtoQueryResult.reportedTotal(): Long? = (totalRecordCount as? JsonPrimitive)?.takeIf { !it.isString }?.longOrNull
+/** How many elements the server sent in this response, before any is skipped, repeated or capped. */
+internal fun BaseItemDtoQueryResult.rawCount(): Int = items?.size ?: 0
 
+/**
+ * The server's own count of how many items there are, when it gave a usable one: a number that is not negative, is not
+ * zero while elements came back, and is not smaller than the elements already seen (`start` plus this response's
+ * [rawCount]). Anything else is nonsense and counts as unknown (null).
+ */
+internal fun BaseItemDtoQueryResult.usableTotal(start: Int): Long? {
+    val reported = (totalRecordCount as? JsonPrimitive)?.takeIf { !it.isString }?.longOrNull ?: return null
+    val raw = rawCount()
+    return reported.takeIf { it >= 0 && (raw == 0 || it > 0) && it >= start.toLong() + raw }
+}
+
+/**
+ * [Page.nextStartIndex] counts every element the server sent, so a caller never re-fetches a skipped or repeated one.
+ * The end is reached when the server sent nothing, or its usable total is reached, or (no usable total) it sent fewer
+ * than [limit].
+ */
 internal fun BaseItemDtoQueryResult.toPage(start: Int, limit: Int): Page<ItemWithUserData> {
-    val list = toModels(limit)
-    return Page(list, start, (reportedTotal() ?: list.size.toLong()).coerceIn(list.size.toLong(), Limits.TOTAL_MAX.toLong()).toInt())
+    val raw = rawCount()
+    val next = start + raw
+    val total = usableTotal(start)
+    val end = raw == 0 || (total != null && next >= total) || (total == null && raw < limit)
+    return Page(toModels(limit), start, total?.coerceAtMost(Limits.TOTAL_MAX.toLong())?.toInt(), next, end)
 }
 
 /** Only films, TV, collections and mixed libraries; other kinds (music, books, ...) and invalid ids are skipped. */

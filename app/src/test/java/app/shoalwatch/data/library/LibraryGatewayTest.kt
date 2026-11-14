@@ -243,7 +243,7 @@ class LibraryGatewayTest : LibraryGatewayTestBase() {
         web.enqueue(json("[]"))
         web.enqueue(json("""{"TotalRecordCount":0}"""))
         runBlocking {
-            assertEquals(Page(emptyList<ItemWithUserData>(), 0, 0), gateway.children(session, FILMS, 0, 10, nameAsc, ItemFilter()))
+            assertEquals(Page(emptyList<ItemWithUserData>(), 0, 0, 0, true), gateway.children(session, FILMS, 0, 10, nameAsc, ItemFilter()))
             assertEquals(emptyList<ItemWithUserData>(), gateway.resume(session, 10))
             assertEquals(emptyList<ItemWithUserData>(), gateway.latest(session, FILMS, 10))
             assertEquals(emptyList<LibraryView>(), gateway.views(session))

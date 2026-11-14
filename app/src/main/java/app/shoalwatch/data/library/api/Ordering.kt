@@ -4,24 +4,30 @@ import app.shoalwatch.data.library.ItemWithUserData
 
 // The app never depends on the order the server happens to use: seasons and episodes are put in a fixed order here.
 
-/** Season, then episode number (missing numbers last), then sort name (or name), then id. */
-internal fun List<ItemWithUserData>.inEpisodeOrder(): List<ItemWithUserData> = sortedWith(
-    compareBy<ItemWithUserData, Int?>(nullsLast()) { it.item.parentIndexNumber }
-        .thenBy(nullsLast()) { it.item.indexNumber }
-        .thenBy { it.item.sortName ?: it.item.name }
-        .thenBy { it.item.id },
-)
+/**
+ * The one rule for where a season number goes, used by both comparators: numbered seasons (1, 2, 3...) first, then
+ * season 0 (Specials), then anything without a season number.
+ */
+private fun seasonGroup(seasonNumber: Int?): Int = when (seasonNumber) {
+    null -> 2
+    0 -> 1
+    else -> 0
+}
 
-/** Season number order; a season without a number after the numbered ones, and season 0 (Specials) last of all. */
+/** Season (by [seasonGroup], then number), then episode number (missing last), then sort name (or name), then id. */
+internal fun List<ItemWithUserData>.inEpisodeOrder(): List<ItemWithUserData> = sortedWith(episodeOrder)
+
+/** Season number order by [seasonGroup]; ties by name, then id. */
 internal fun List<ItemWithUserData>.inSeasonOrder(): List<ItemWithUserData> = sortedWith(
-    compareBy<ItemWithUserData> { group(it.item.indexNumber) }
+    compareBy<ItemWithUserData> { seasonGroup(it.item.indexNumber) }
         .thenBy { it.item.indexNumber ?: 0 }
         .thenBy { it.item.name }
         .thenBy { it.item.id },
 )
 
-private fun group(indexNumber: Int?): Int = when (indexNumber) {
-    null -> 1
-    0 -> 2
-    else -> 0
-}
+internal val episodeOrder: Comparator<ItemWithUserData> =
+    compareBy<ItemWithUserData> { seasonGroup(it.item.parentIndexNumber) }
+        .thenBy { it.item.parentIndexNumber ?: 0 }
+        .thenBy(nullsLast()) { it.item.indexNumber }
+        .thenBy { it.item.sortName ?: it.item.name }
+        .thenBy { it.item.id }
