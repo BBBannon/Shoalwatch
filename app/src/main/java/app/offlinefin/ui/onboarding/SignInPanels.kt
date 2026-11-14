@@ -26,6 +26,8 @@ import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.contentType
+import androidx.compose.ui.semantics.editableText
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -102,7 +104,12 @@ internal fun PasswordPanel(state: SignInUiState, password: TextFieldState, actio
         )
         OutlinedSecureTextField(
             state = password,
-            modifier = Modifier.fillMaxWidth().semantics { contentType = ContentType.Password },
+            modifier = Modifier.fillMaxWidth().semantics {
+                contentType = ContentType.Password
+                // The field exposes its raw text to accessibility services as EditableText even though it is drawn
+                // masked; this outer modifier replaces it with bullets of the same length (the Password flag stays).
+                editableText = AnnotatedString("•".repeat(password.text.length))
+            },
             label = { Text(stringResource(R.string.password_label)) },
             enabled = !state.submitting,
             isError = state.error != null,

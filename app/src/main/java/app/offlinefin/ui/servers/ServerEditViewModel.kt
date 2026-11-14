@@ -11,6 +11,7 @@ import app.offlinefin.data.servers.ServerConnections
 import app.offlinefin.data.servers.ServerNetDraft
 import app.offlinefin.net.fingerprintForDisplay
 import app.offlinefin.net.validateCustomHeader
+import app.offlinefin.ui.AddressRole
 import app.offlinefin.ui.CertificateSummary
 import app.offlinefin.ui.ClientCertChooser
 import app.offlinefin.ui.ConnectionView
@@ -77,6 +78,10 @@ data class ServerEditUiState(
     val addressCheck: Check = Check.Idle,
     val busy: Boolean = false,
     val error: String? = null,
+    /** Removing the address would leave the server with none. */
+    val addressRequired: Boolean = false,
+    /** Which address the open editor and its checks are about. */
+    val addressRole: AddressRole? = null,
 ) {
     /** Addresses and headers never appear. */
     override fun toString() = "ServerEditUiState(loaded=$loaded, pane=${pane?.let { it::class.simpleName }})"
@@ -95,7 +100,10 @@ class ServerEditViewModel(
     private val prober: CertificateProber,
     private val connections: ServerConnections,
 ) : ViewModel() {
-    private data class Local(val pane: EditPane? = null, val busy: Boolean = false, val error: String? = null)
+    private data class Local(val pane: EditPane? = null, val busy: Boolean = false, val error: String? = null, val addressRequired: Boolean = false)
+
+    /** What the address check was started with, so only what the check itself changed is merged into the server. */
+    private var checkStart = ServerNetDraft()
 
     private val local = MutableStateFlow(Local())
     private val checker = AddressChecker(auth, prober, viewModelScope, ::addressVerified)
@@ -124,6 +132,8 @@ class ServerEditViewModel(
                     headers = server.customHeaders.entries.sortedBy { it.key.lowercase() }.map { HeaderItem(it.key, it.value) },
                     connection = connection,
                     pane = local.pane, addressCheck = check, busy = local.busy, error = local.error,
+                    addressRequired = local.addressRequired,
+                    addressRole = (local.pane as? EditPane.Address)?.slot?.let { if (it == AddressSlot.Home) AddressRole.Home else AddressRole.Away },
                 )
             }
         }.stateIn(viewModelScope, SharingStarted.Eagerly, ServerEditUiState())
@@ -133,7 +143,7 @@ class ServerEditViewModel(
 
     fun dismissPane() {
         checker.cancel()
-        local.update { it.copy(pane = null) }
+        local.update { it.copy(pane = null, addressRequired = false) }
     }
 
     // --- addresses ----------------------------------------------------------------------------------------------
@@ -147,7 +157,7 @@ class ServerEditViewModel(
     }
 
     fun onAddressText(text: String) {
-        local.update { l -> (l.pane as? EditPane.Address)?.let { l.copy(pane = it.copy(text = text)) } ?: l }
+        local.update { l -> (l.pane as? EditPane.Address)?.let { l.copy(pane = it.copy(text = text), addressRequired = false) } ?: l }
         if (checker.state.value is Check.Failed) checker.cancel()
     }
 
@@ -160,12 +170,14 @@ class ServerEditViewModel(
             if (text.isEmpty()) {
                 val other = if (pane.slot == AddressSlot.Home) server.awayAddress else server.homeAddress
                 if (other == null) {
-                    local.update { it.copy(error = AppError(AppError.Kind.UNKNOWN, "A server needs at least one address.").userMessage) }
+                    local.update { it.copy(addressRequired = true) }
                 } else {
                     save { it.withAddress(pane.slot, null) }
                 }
             } else {
-                checker.start(text, ServerNetDraft(server.allowCleartext, server.pinnedSpkiSha256, server.clientCertAlias, server.customHeaders), server.id)
+                // A new or edited address never inherits the server's consent to plain http: it is warned about again.
+                checkStart = ServerNetDraft(false, server.pinnedSpkiSha256, server.clientCertAlias, server.customHeaders)
+                checker.start(text, checkStart, server.id)
             }
         }
     }
@@ -184,12 +196,16 @@ class ServerEditViewModel(
     private suspend fun addressVerified(result: Check.Verified) {
         val pane = local.value.pane as? EditPane.Address ?: return
         val draft = result.draft
-        save {
-            it.withAddress(pane.slot, result.info.address).copy(
-                allowCleartext = draft.allowCleartext,
-                pinnedSpkiSha256 = draft.pinnedSpkiSha256,
-                clientCertAlias = draft.clientCertAlias,
-                pinInvalid = it.pinInvalid && draft.pinnedSpkiSha256 == null,
+        // The saved server is read again here: only what this check changed (a new consent, pin or certificate) is merged,
+        // so a certificate forgotten while the check ran stays forgotten.
+        save { current ->
+            val pin = if (draft.pinnedSpkiSha256 != checkStart.pinnedSpkiSha256) draft.pinnedSpkiSha256 else current.pinnedSpkiSha256
+            val alias = if (draft.clientCertAlias != checkStart.clientCertAlias) draft.clientCertAlias else current.clientCertAlias
+            current.withAddress(pane.slot, result.info.address).copy(
+                allowCleartext = current.allowCleartext || draft.allowCleartext,
+                pinnedSpkiSha256 = pin,
+                clientCertAlias = alias,
+                pinInvalid = current.pinInvalid && pin == null,
             )
         }
     }

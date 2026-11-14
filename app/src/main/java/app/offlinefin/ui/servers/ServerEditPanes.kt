@@ -16,14 +16,17 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.editableText
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import app.offlinefin.R
+import app.offlinefin.ui.AddressRole
 import app.offlinefin.ui.components.AppScreen
 import app.offlinefin.ui.components.CertificateScreen
 import app.offlinefin.ui.components.CheckingScreen
@@ -40,7 +43,7 @@ import app.offlinefin.ui.onboarding.Check
  * server?"), so a warning can appear here too; cancelling a warning returns to the field with the text kept.
  */
 @Composable
-internal fun AddressPane(pane: EditPane.Address, check: Check, actions: PaneActions) {
+internal fun AddressPane(pane: EditPane.Address, check: Check, role: AddressRole?, addressRequired: Boolean, actions: PaneActions) {
     when (check) {
         Check.Checking -> CheckingScreen(
             title = stringResource(R.string.add_title),
@@ -48,7 +51,7 @@ internal fun AddressPane(pane: EditPane.Address, check: Check, actions: PaneActi
             cancelLabel = stringResource(R.string.action_cancel),
             onCancel = actions.onCancelAddressCheck,
         )
-        Check.NeedsHttpConsent -> HttpWarningScreen(onCancel = actions.onCancelAddressCheck, onUseAnyway = actions.onAllowHttp)
+        Check.NeedsHttpConsent -> HttpWarningScreen(onCancel = actions.onCancelAddressCheck, onUseAnyway = actions.onAllowHttp, role = role)
         Check.LoadingCertificate, is Check.NeedsCertificateTrust -> CertificateScreen(
             certificate = (check as? Check.NeedsCertificateTrust)?.certificate,
             loading = check == Check.LoadingCertificate,
@@ -58,12 +61,12 @@ internal fun AddressPane(pane: EditPane.Address, check: Check, actions: PaneActi
             onCancel = actions.onCancelAddressCheck,
         )
         Check.NeedsClientCertificate -> ClientCertificateScreen(onChoose = actions.onChooseAddressClientCertificate, onCancel = actions.onCancelAddressCheck)
-        else -> AddressEditor(pane, check as? Check.Failed, actions)
+        else -> AddressEditor(pane, check as? Check.Failed, addressRequired, actions)
     }
 }
 
 @Composable
-private fun AddressEditor(pane: EditPane.Address, failed: Check.Failed?, actions: PaneActions) {
+private fun AddressEditor(pane: EditPane.Address, failed: Check.Failed?, addressRequired: Boolean, actions: PaneActions) {
     val title = stringResource(if (pane.slot == AddressSlot.Home) R.string.edit_home else R.string.edit_away)
     AppScreen(
         title = title,
@@ -82,7 +85,7 @@ private fun AddressEditor(pane: EditPane.Address, failed: Check.Failed?, actions
             onGo = actions.onSaveAddress,
         )
         Text(stringResource(R.string.edit_address_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        ErrorMessage(failed?.message)
+        ErrorMessage(failed?.message ?: if (addressRequired) stringResource(R.string.edit_address_required) else null)
         if (failed?.offerHttp == true) SecondaryButton(stringResource(R.string.add_try_http), actions.onOfferHttp)
     }
 }
@@ -113,7 +116,10 @@ internal fun HeaderDialog(pane: EditPane.Header, actions: PaneActions) {
                 OutlinedTextField(
                     value = pane.value,
                     onValueChange = actions.onHeaderValue,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().semantics {
+                        // While masked, accessibility services must not read the raw value either.
+                        if (!revealed) editableText = AnnotatedString("•".repeat(pane.value.length))
+                    },
                     label = { Text(stringResource(R.string.header_value_label)) },
                     singleLine = true,
                     isError = pane.error != null,

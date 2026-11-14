@@ -101,6 +101,48 @@ class ServerEditViewModelTest {
         assertTrue(catalog.upserts.single().allowCleartext)
     }
 
+    @Test fun anEditedAddressStartsWithoutTheServerConsentToHttp() {
+        val (catalog, vm) = setup(testServer(home = "http://192.168.1.10:8096", away = null, cleartext = true))
+        auth.onFind = { text, d ->
+            if (!d.allowCleartext && text.startsWith("http://")) throw AppError.of(AppError.Kind.CLEARTEXT_BLOCKED)
+            serverInfo(text)
+        }
+        vm.editAddress(AddressSlot.Away)
+        vm.onAddressText("http://10.9.9.9:8096")
+        vm.saveAddress()
+        assertEquals(Check.NeedsHttpConsent, vm.state.value.addressCheck)
+        assertEquals(app.offlinefin.ui.AddressRole.Away, vm.state.value.addressRole)
+        assertTrue(catalog.upserts.isEmpty())
+        vm.cancelAddressCheck()
+        assertTrue("server unchanged", catalog.upserts.isEmpty())
+        vm.saveAddress()
+        vm.allowHttpForAddress()
+        assertEquals(address("http://10.9.9.9:8096"), catalog.upserts.single().awayAddress)
+        assertTrue(catalog.upserts.single().allowCleartext)
+    }
+
+    @Test fun anEditThatNeedsNoConsentKeepsTheServerExistingFlag() {
+        val (catalog, vm) = setup(testServer(home = "http://192.168.1.10:8096", away = null, cleartext = true))
+        vm.editAddress(AddressSlot.Away)
+        vm.onAddressText("jf.example.org")
+        vm.saveAddress()
+        assertTrue(catalog.upserts.single().allowCleartext)
+    }
+
+    @Test fun aForgottenCertificateIsNotResurrectedByAnAddressCheckThatStartedBefore() {
+        val (catalog, vm) = setup(testServer(home = "https://192.168.1.10:8920", away = null, cleartext = false, pin = PIN))
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        auth.onFind = { text, _ -> gate.await(); serverInfo(if ("://" in text) text else "https://$text") }
+        vm.editAddress(AddressSlot.Away)
+        vm.onAddressText("jf.example.org")
+        vm.saveAddress()
+        vm.forgetCertificate()
+        assertNull(catalog.upserts.last().pinnedSpkiSha256)
+        gate.complete(Unit)
+        assertEquals(address("https://jf.example.org"), catalog.upserts.last().awayAddress)
+        assertNull("the forgotten pin stays forgotten", catalog.upserts.last().pinnedSpkiSha256)
+    }
+
     @Test fun cancellingTheAddressEditSavesNothing() {
         val (catalog, vm) = setup()
         auth.onFind = { _, _ -> throw AppError.of(AppError.Kind.CLEARTEXT_BLOCKED) }
@@ -140,7 +182,8 @@ class ServerEditViewModelTest {
         vm.onAddressText("")
         vm.saveAddress()
         assertTrue(catalog.upserts.isEmpty())
-        assertNotNull(vm.state.value.error)
+        assertTrue(vm.state.value.addressRequired)
+        assertNull(vm.state.value.error)
     }
 
     // --- unencrypted http toggle --------------------------------------------------------------------------------

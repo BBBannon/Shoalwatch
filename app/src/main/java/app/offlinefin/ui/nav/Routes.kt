@@ -35,7 +35,7 @@ private fun NavHostController.toHome() = navigate(Routes.HOME) { popUpTo(graph.i
 
 @Composable
 internal fun AddServerRoute(graph: AppGraph, nav: NavHostController, firstRun: Boolean) {
-    val vm = graphViewModel { AddServerViewModel(graph.authRepository, graph.certificateProber, graph.serverStore) }
+    val vm = graphViewModel { AddServerViewModel(graph.authenticator, graph.certificateProber, graph.serverCatalog) }
     val state by vm.state.collectAsStateWithLifecycle()
     val chooser = rememberClientCertChooser()
     val scope = rememberCoroutineScope()
@@ -66,7 +66,7 @@ internal fun AddServerRoute(graph: AppGraph, nav: NavHostController, firstRun: B
 
 @Composable
 internal fun SignInRoute(graph: AppGraph, nav: NavHostController, serverId: String) {
-    val vm = graphViewModel(key = serverId) { SignInViewModel(serverId, graph.authRepository, graph.serverStore, graph.addressSelector) }
+    val vm = graphViewModel(key = serverId) { SignInViewModel(serverId, graph.authenticator, graph.serverCatalog, graph.addressSelector) }
     val state by vm.state.collectAsStateWithLifecycle()
     LaunchedEffect(state.signedIn) { if (state.signedIn) nav.toHome() }
     val actions = remember(vm) {
@@ -84,7 +84,7 @@ internal fun SignInRoute(graph: AppGraph, nav: NavHostController, serverId: Stri
 
 @Composable
 internal fun HomeRoute(graph: AppGraph, nav: NavHostController) {
-    val vm = graphViewModel { HomeViewModel(graph.serverStore, graph.addressSelector) }
+    val vm = graphViewModel { HomeViewModel(graph.serverCatalog, graph.addressSelector) }
     val state by vm.state.collectAsStateWithLifecycle()
     HomePlaceholderScreen(
         state = state,
@@ -96,7 +96,7 @@ internal fun HomeRoute(graph: AppGraph, nav: NavHostController) {
 
 @Composable
 internal fun ServersRoute(graph: AppGraph, nav: NavHostController) {
-    val vm = graphViewModel { ServersViewModel(graph.serverStore, graph.authRepository) }
+    val vm = graphViewModel { ServersViewModel(graph.serverCatalog, graph.authenticator) }
     val state by vm.state.collectAsStateWithLifecycle()
     val actions = remember(vm) {
         ServersActions(
@@ -117,7 +117,7 @@ internal fun ServersRoute(graph: AppGraph, nav: NavHostController) {
 @Composable
 internal fun ServerEditRoute(graph: AppGraph, nav: NavHostController, serverId: String) {
     val vm = graphViewModel(key = serverId) {
-        ServerEditViewModel(serverId, graph.serverStore, graph.authRepository, graph.certificateProber, graph.addressSelector)
+        ServerEditViewModel(serverId, graph.serverCatalog, graph.authenticator, graph.certificateProber, graph.addressSelector)
     }
     val state by vm.state.collectAsStateWithLifecycle()
     val chooser = rememberClientCertChooser()

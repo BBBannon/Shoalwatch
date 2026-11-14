@@ -8,6 +8,7 @@ import app.offlinefin.ui.FakeAuthenticator
 import app.offlinefin.ui.FakeCatalog
 import app.offlinefin.ui.FakeChooser
 import app.offlinefin.ui.FakeProber
+import app.offlinefin.ui.AddressRole
 import app.offlinefin.ui.MainDispatcherRule
 import app.offlinefin.ui.PIN
 import app.offlinefin.ui.address
@@ -233,6 +234,49 @@ class AddServerViewModelTest {
         assertEquals(address("http://192.168.1.10:8096"), saved.homeAddress)
     }
 
+    @Test fun aSecondAddressNeverInheritsTheFirstAddressConsentToHttp() {
+        auth.onFind = blockHttp
+        val vm = vm()
+        vm.type("http://192.168.1.10:8096")
+        vm.allowHttp()
+        vm.confirmFound()
+        vm.onSecondAddressChange("http://nas.example:8096")
+        vm.addSecondAddress()
+        assertEquals("the warning appears again for this address", Check.NeedsHttpConsent, vm.state.value.check)
+        assertFalse(auth.findCalls.last().second.allowCleartext)
+        assertTrue("nothing saved until confirmed", catalog.upserts.isEmpty())
+        vm.cancelCheck()
+        vm.skipSecondAddress()
+        val saved = catalog.upserts.single()
+        assertTrue("the first address own consent is kept", saved.allowCleartext)
+        assertNull("the refused address is not saved", saved.awayAddress)
+    }
+
+    @Test fun confirmingTheSecondWarningSavesBothAddresses() {
+        auth.onFind = blockHttp
+        val vm = vm()
+        vm.type("http://192.168.1.10:8096")
+        vm.allowHttp()
+        vm.confirmFound()
+        vm.onSecondAddressChange("http://nas.example:8096")
+        vm.addSecondAddress()
+        vm.allowHttp()
+        assertEquals(address("http://nas.example:8096"), catalog.upserts.single().awayAddress)
+    }
+
+    @Test fun theHttpWarningNamesWhichAddressItIsFor() {
+        auth.onFind = blockHttp
+        val vm = vm()
+        vm.onAddressChange("http://192.168.1.10:8096")
+        vm.continueClicked()
+        assertEquals(AddressRole.Home, vm.state.value.addressRole)
+        vm.allowHttp()
+        vm.confirmFound()
+        vm.onSecondAddressChange("http://away.example:8096")
+        vm.addSecondAddress()
+        assertEquals(AddressRole.Away, vm.state.value.addressRole)
+    }
+
     @Test fun cancellingAWarningOnTheSecondAddressDoesNotLeaveItsConsentBehind() {
         val vm = vm()
         foundAt(vm, "https://jf.example.org")
@@ -268,12 +312,13 @@ class AddServerViewModelTest {
         assertFalse(vm.state.value.saving)
     }
 
-    @Test fun anAlreadySavedServerIsNeverOverwrittenWhenAddedAgain() {
+    @Test fun anAlreadySavedServerIsToldSoAndSettingsAreNeverChanged() {
         catalog.serverList.value = listOf(testServer(id = "srv-1", home = null, away = "https://old.example"))
         val vm = vm()
-        foundAt(vm, "den.example")
-        vm.skipSecondAddress()
-        assertTrue(catalog.upserts.isEmpty())
+        vm.type("den.example")
+        assertTrue(vm.state.value.found!!.alreadySaved)
+        vm.confirmFound()
+        assertTrue("no second-address step that could be silently discarded", catalog.upserts.isEmpty())
         assertEquals("srv-1", vm.state.value.savedServerId)
     }
 

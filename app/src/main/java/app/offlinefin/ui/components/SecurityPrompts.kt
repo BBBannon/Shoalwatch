@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import app.offlinefin.R
+import app.offlinefin.ui.AddressRole
 import app.offlinefin.ui.CertificateSummary
 
 /*
@@ -24,7 +25,7 @@ import app.offlinefin.ui.CertificateSummary
 
 /** Plain `http`: the user must say "use anyway" before it is allowed. */
 @Composable
-fun HttpWarningScreen(onCancel: () -> Unit, onUseAnyway: () -> Unit) {
+fun HttpWarningScreen(onCancel: () -> Unit, onUseAnyway: () -> Unit, role: AddressRole? = null) {
     AppScreen(
         title = stringResource(R.string.http_title),
         onBack = onCancel,
@@ -34,6 +35,11 @@ fun HttpWarningScreen(onCancel: () -> Unit, onUseAnyway: () -> Unit) {
         },
     ) {
         NoticeCard(title = stringResource(R.string.http_title), body = stringResource(R.string.http_body), tone = Tone.Danger)
+        when (role) {
+            AddressRole.Home -> Text(stringResource(R.string.http_for_home), style = MaterialTheme.typography.titleSmall)
+            AddressRole.Away -> Text(stringResource(R.string.http_for_away), style = MaterialTheme.typography.titleSmall)
+            null -> Unit
+        }
     }
 }
 

@@ -100,7 +100,7 @@ fun AddServerScreen(state: AddServerUiState, actions: AddServerActions, onLeave:
                 cancelLabel = stringResource(R.string.action_cancel),
                 onCancel = actions.onCancelCheck,
             )
-            Step.Http -> HttpWarningScreen(onCancel = actions.onCancelCheck, onUseAnyway = actions.onAllowHttp)
+            Step.Http -> HttpWarningScreen(onCancel = actions.onCancelCheck, onUseAnyway = actions.onAllowHttp, role = state.addressRole)
             Step.Certificate -> CertificateScreen(
                 certificate = (state.check as? Check.NeedsCertificateTrust)?.certificate,
                 loading = state.check == Check.LoadingCertificate,

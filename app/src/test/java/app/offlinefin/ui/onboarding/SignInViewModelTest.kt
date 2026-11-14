@@ -6,9 +6,9 @@ import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import app.offlinefin.core.AppError
-import app.offlinefin.data.servers.Account
+import app.offlinefin.data.servers.AccountSummary
 import app.offlinefin.data.servers.Connection
-import app.offlinefin.data.servers.QuickConnectState
+import app.offlinefin.data.servers.QuickConnectProgress
 import app.offlinefin.ui.FakeAuthenticator
 import app.offlinefin.ui.FakeCatalog
 import app.offlinefin.ui.FakeConnections
@@ -34,7 +34,7 @@ class SignInViewModelTest {
     private val auth = FakeAuthenticator()
     private val catalog = FakeCatalog(servers = listOf(testServer()))
     private val connections = FakeConnections()
-    private val qc = MutableSharedFlow<QuickConnectState>()
+    private val qc = MutableSharedFlow<QuickConnectProgress>()
 
     private fun vm(): SignInViewModel {
         auth.quickConnectFlow = { qc }
@@ -56,7 +56,7 @@ class SignInViewModelTest {
         assertEquals("Den", vm.state.value.serverName)
         assertEquals(1, auth.quickConnectStarts)
         main.dispatcher.scheduler.runCurrent()
-        kotlinx.coroutines.runBlocking { qc.emit(QuickConnectState.AwaitingApproval("ABC123")) }
+        kotlinx.coroutines.runBlocking { qc.emit(QuickConnectProgress.AwaitingApproval("ABC123")) }
         assertEquals(QuickConnectUi.Code("ABC123", 300), vm.state.value.quickConnect)
         main.dispatcher.scheduler.advanceTimeBy(3_100)
         assertEquals(QuickConnectUi.Code("ABC123", 297), vm.state.value.quickConnect)
@@ -65,19 +65,19 @@ class SignInViewModelTest {
     @Test fun approvalSignsInAndStopsTheCountdown() {
         val vm = vm()
         kotlinx.coroutines.runBlocking {
-            qc.emit(QuickConnectState.AwaitingApproval("ABC123"))
-            qc.emit(QuickConnectState.Authenticating)
+            qc.emit(QuickConnectProgress.AwaitingApproval("ABC123"))
+            qc.emit(QuickConnectProgress.Authenticating)
         }
         assertEquals(QuickConnectUi.Authenticating, vm.state.value.quickConnect)
         main.dispatcher.scheduler.advanceTimeBy(5_000)
         assertEquals(QuickConnectUi.Authenticating, vm.state.value.quickConnect)
-        kotlinx.coroutines.runBlocking { qc.emit(QuickConnectState.Success(Account("srv-1", "u1", "ben", "t"))) }
+        kotlinx.coroutines.runBlocking { qc.emit(QuickConnectProgress.Success(AccountSummary("srv-1", "u1", "ben"))) }
         assertTrue(vm.state.value.signedIn)
     }
 
     @Test fun timeoutIsShownWithAWayToStartAgain() {
         val vm = vm()
-        kotlinx.coroutines.runBlocking { qc.emit(QuickConnectState.TimedOut) }
+        kotlinx.coroutines.runBlocking { qc.emit(QuickConnectProgress.TimedOut) }
         assertEquals(QuickConnectUi.TimedOut, vm.state.value.quickConnect)
         vm.retryQuickConnect()
         assertEquals(2, auth.quickConnectStarts)
@@ -86,14 +86,14 @@ class SignInViewModelTest {
 
     @Test fun quickConnectSwitchedOffFallsBackToThePasswordWithoutAnErrorBanner() {
         val vm = vm()
-        kotlinx.coroutines.runBlocking { qc.emit(QuickConnectState.Failed(AppError.of(AppError.Kind.QUICK_CONNECT_DISABLED))) }
+        kotlinx.coroutines.runBlocking { qc.emit(QuickConnectProgress.Failed(AppError.of(AppError.Kind.QUICK_CONNECT_DISABLED))) }
         assertEquals(SignInMode.Password, vm.state.value.mode)
         assertTrue(vm.state.value.quickConnectUnavailable)
     }
 
     @Test fun otherQuickConnectFailuresShowExactlyTheAppErrorMessage() {
         val vm = vm()
-        kotlinx.coroutines.runBlocking { qc.emit(QuickConnectState.Failed(AppError.of(AppError.Kind.SERVER_MISMATCH))) }
+        kotlinx.coroutines.runBlocking { qc.emit(QuickConnectProgress.Failed(AppError.of(AppError.Kind.SERVER_MISMATCH))) }
         assertEquals(QuickConnectUi.Failed(AppError.of(AppError.Kind.SERVER_MISMATCH).userMessage), vm.state.value.quickConnect)
         assertEquals(SignInMode.QuickConnect, vm.state.value.mode)
     }
@@ -157,6 +157,14 @@ class SignInViewModelTest {
         assertEquals("", vm.password.text.toString())
         assertTrue(vm.state.value.signedIn)
         assertFalse("hunter2" in vm.state.value.toString())
+    }
+
+    @Test fun neitherTheUsernameNorTheCodeAppearsInPrintedState() {
+        val vm = vm()
+        vm.onUsernameChange("benjamin-secret")
+        assertFalse("benjamin-secret" in vm.state.value.toString())
+        assertFalse("ABC123" in QuickConnectUi.Code("ABC123", 5).toString())
+        assertFalse("ABC123" in QuickConnectProgress.AwaitingApproval("ABC123").toString())
     }
 
     @Test fun theUsernameIsTrimmed() {

@@ -53,6 +53,7 @@ internal fun FoundStep(state: AddServerUiState, actions: AddServerActions) {
                 }
             }
         }
+        if (found.alreadySaved) NoticeCard(title = stringResource(R.string.found_already_saved), body = null, tone = Tone.Info)
         if (!supported) {
             NoticeCard(
                 title = stringResource(R.string.version_warning_cd),

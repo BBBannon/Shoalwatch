@@ -1,10 +1,10 @@
 package app.offlinefin.ui
 
-import app.offlinefin.data.servers.Account
+import app.offlinefin.data.servers.AccountSummary
 import app.offlinefin.data.servers.Authenticator
 import app.offlinefin.data.servers.CertificateProber
 import app.offlinefin.data.servers.Connection
-import app.offlinefin.data.servers.QuickConnectState
+import app.offlinefin.data.servers.QuickConnectProgress
 import app.offlinefin.data.servers.Server
 import app.offlinefin.data.servers.ServerCatalog
 import app.offlinefin.data.servers.ServerConnections
@@ -65,12 +65,12 @@ class FakeAuthenticator : Authenticator {
     var onFind: suspend (String, ServerNetDraft) -> ServerInfo = { text, _ -> serverInfo(if ("://" in text) text else "https://$text") }
 
     val passwordCalls = mutableListOf<Triple<String, String, String>>() // serverId, user, password text
-    var onPassword: suspend (Server, String) -> Account = { s, u -> Account(s.id, "uid", u, "token") }
+    var onPassword: suspend (Server, String) -> AccountSummary = { s, u -> AccountSummary(s.id, "uid", u) }
 
     val signedOut = mutableListOf<Pair<String, String>>()
     var onSignOut: suspend (String, String) -> Unit = { _, _ -> }
 
-    var quickConnectFlow: (Server) -> Flow<QuickConnectState> = { emptyFlow() }
+    var quickConnectFlow: (Server) -> Flow<QuickConnectProgress> = { emptyFlow() }
     var quickConnectStarts = 0
 
     override suspend fun findServer(input: String, draft: ServerNetDraft): ServerInfo {
@@ -78,12 +78,12 @@ class FakeAuthenticator : Authenticator {
         return onFind(input, draft)
     }
 
-    override fun quickConnect(server: Server, via: ServerAddress): Flow<QuickConnectState> {
+    override fun quickConnect(server: Server, via: ServerAddress): Flow<QuickConnectProgress> {
         quickConnectStarts++
         return quickConnectFlow(server)
     }
 
-    override suspend fun signInWithPassword(server: Server, via: ServerAddress, username: String, password: CharArray): Account {
+    override suspend fun signInWithPassword(server: Server, via: ServerAddress, username: String, password: CharArray): AccountSummary {
         passwordCalls += Triple(server.id, username, String(password))
         return onPassword(server, username)
     }
@@ -103,7 +103,7 @@ class FakeProber : CertificateProber {
     }
 }
 
-class FakeCatalog(servers: List<Server> = emptyList(), accounts: List<Account> = emptyList(), active: Account? = null) : ServerCatalog {
+class FakeCatalog(servers: List<Server> = emptyList(), accounts: List<AccountSummary> = emptyList(), active: AccountSummary? = null) : ServerCatalog {
     val serverList = MutableStateFlow(servers)
     val accountList = MutableStateFlow(accounts)
     val activeFlow = MutableStateFlow(active)
@@ -112,10 +112,12 @@ class FakeCatalog(servers: List<Server> = emptyList(), accounts: List<Account> =
     val removedServers = mutableListOf<String>()
     val activated = mutableListOf<Pair<String, String>>()
     var upsertFailure: Throwable? = null
+    var awaitActiveFailure: Throwable? = null
+    var warmRetries = 0
 
     override val servers: Flow<List<Server>> = serverList
-    override val activeAccount: Flow<Account?> = activeFlow
-    override fun accounts(serverId: String): Flow<List<Account>> = accountList.map { l -> l.filter { it.serverId == serverId } }
+    override val activeAccount: Flow<AccountSummary?> = activeFlow
+    override fun accounts(serverId: String): Flow<List<AccountSummary>> = accountList.map { l -> l.filter { it.serverId == serverId } }
     override suspend fun server(id: String): Server? = serverList.value.firstOrNull { it.id == id }
 
     override suspend fun upsertServer(s: Server) {
@@ -138,8 +140,11 @@ class FakeCatalog(servers: List<Server> = emptyList(), accounts: List<Account> =
 
     override suspend fun awaitWarmed() = warmed.await()
 
-    override suspend fun awaitActive(): Pair<Server, Account>? {
+    override suspend fun retryWarmIfFailed() { warmRetries++ }
+
+    override suspend fun awaitActive(): Pair<Server, AccountSummary>? {
         awaitWarmed()
+        awaitActiveFailure?.let { throw it }
         val account = activeFlow.value ?: return null
         return serverList.value.firstOrNull { it.id == account.serverId }?.let { it to account }
     }

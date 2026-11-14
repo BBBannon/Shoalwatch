@@ -11,6 +11,7 @@ import app.offlinefin.data.servers.ServerInfo
 import app.offlinefin.data.servers.ServerNetDraft
 import app.offlinefin.data.servers.looksLikeHome
 import app.offlinefin.net.ServerAddress
+import app.offlinefin.ui.AddressRole
 import app.offlinefin.ui.ClientCertChooser
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,6 +33,8 @@ data class FoundServer(
     val compatibility: ServerInfo.Compatibility,
     /** The address the user typed was sorted as a home (local network) address; otherwise away. */
     val firstIsHome: Boolean,
+    /** The server is already saved: its settings are left alone and the user goes straight to sign-in. */
+    val alreadySaved: Boolean = false,
 )
 
 /** Everything the Add server screen shows. Addresses are user text, so [toString] hides them. */
@@ -45,6 +48,8 @@ data class AddServerUiState(
     val error: String? = null,
     /** Set once the server is saved (or was already saved); the screen moves on to sign-in. */
     val savedServerId: String? = null,
+    /** Which address the current check or warning is about. */
+    val addressRole: AddressRole? = null,
 ) {
     override fun toString() = "AddServerUiState(stage=$stage, check=${check::class.simpleName})"
 }
@@ -63,7 +68,7 @@ class AddServerViewModel(
     private val form = MutableStateFlow(AddServerUiState())
 
     val state: StateFlow<AddServerUiState> =
-        combine(form, checker.state) { f, c -> f.copy(check = c) }
+        combine(form, checker.state) { f, c -> f.copy(check = c, addressRole = roleOf(f)) }
             .stateIn(viewModelScope, SharingStarted.Eagerly, form.value)
 
     /** The first address that answered and the security choices made for it, until saved. */
@@ -97,14 +102,22 @@ class AddServerViewModel(
 
     /** The user accepted the server (and any version warning): on to the optional second address. */
     fun confirmFound() {
-        if (form.value.stage == AddServerStage.Found) form.update { it.copy(stage = AddServerStage.SecondAddress) }
+        val state = form.value
+        if (state.stage != AddServerStage.Found) return
+        if (state.found?.alreadySaved == true) {
+            // Its settings are left exactly as they are: straight to sign-in, with no step that could discard a second address.
+            viewModelScope.launch { save(second = null, draft = foundDraft) }
+        } else {
+            form.update { it.copy(stage = AddServerStage.SecondAddress) }
+        }
     }
 
     fun addSecondAddress() {
         val state = form.value
         val found = state.found ?: return
         if (state.secondAddress.isBlank() || state.saving) return
-        checker.start(state.secondAddress, foundDraft, expectedServerId = found.id)
+        // A new address never inherits consent given for another one: plain http is warned about again.
+        checker.start(state.secondAddress, foundDraft.copy(allowCleartext = false), expectedServerId = found.id)
     }
 
     fun skipSecondAddress() {
@@ -125,12 +138,21 @@ class AddServerViewModel(
                 val info = result.info
                 firstAddress = info.address
                 foundDraft = result.draft
-                val found = FoundServer(info.id, info.name, info.version, info.compatibility, info.address.looksLikeHome())
+                val saved = catalog.server(info.id) != null
+                val found = FoundServer(info.id, info.name, info.version, info.compatibility, info.address.looksLikeHome(), saved)
                 form.update { it.copy(stage = AddServerStage.Found, found = found, error = null) }
             }
             AddServerStage.SecondAddress -> save(second = result.info.address, draft = result.draft)
             AddServerStage.Found -> Unit
         }
+    }
+
+    private fun roleOf(f: AddServerUiState): AddressRole? = when (f.stage) {
+        AddServerStage.Address ->
+            runCatching { ServerAddress.parse(f.address.trim()).looksLikeHome() }.getOrNull()
+                ?.let { if (it) AddressRole.Home else AddressRole.Away }
+        AddServerStage.SecondAddress -> f.found?.let { if (it.firstIsHome) AddressRole.Away else AddressRole.Home }
+        AddServerStage.Found -> null
     }
 
     /** Saves the server with the first address and, if given, the second in the other slot. An already saved server is left as it is. */
@@ -145,7 +167,7 @@ class AddServerViewModel(
                     Server(
                         id = found.id, name = found.name, version = found.version,
                         homeAddress = home, awayAddress = away,
-                        allowCleartext = draft.allowCleartext, pinnedSpkiSha256 = draft.pinnedSpkiSha256,
+                        allowCleartext = foundDraft.allowCleartext || draft.allowCleartext, pinnedSpkiSha256 = draft.pinnedSpkiSha256,
                         clientCertAlias = draft.clientCertAlias, customHeaders = emptyMap(),
                     ),
                 )

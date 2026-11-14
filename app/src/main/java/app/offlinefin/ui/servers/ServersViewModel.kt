@@ -3,7 +3,7 @@ package app.offlinefin.ui.servers
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.offlinefin.core.AppError
-import app.offlinefin.data.servers.Account
+import app.offlinefin.data.servers.AccountSummary
 import app.offlinefin.data.servers.Authenticator
 import app.offlinefin.data.servers.Server
 import app.offlinefin.data.servers.ServerCatalog
@@ -57,7 +57,7 @@ class ServersViewModel(
 
     private val local = MutableStateFlow(Local())
 
-    private val rows: Flow<List<Pair<Server, List<Account>>>> = catalog.servers.flatMapLatest { servers ->
+    private val rows: Flow<List<Pair<Server, List<AccountSummary>>>> = catalog.servers.flatMapLatest { servers ->
         if (servers.isEmpty()) {
             flowOf(emptyList())
         } else {
@@ -99,6 +99,7 @@ class ServersViewModel(
     /** Carries out the action the user confirmed. */
     fun confirm() {
         val pending = local.value.confirm ?: return
+        if (local.value.busy) return // a second tap must not run it twice
         run {
             when (pending) {
                 is Confirm.SignOut -> auth.signOut(pending.serverId, pending.userId)

@@ -1,7 +1,7 @@
 package app.offlinefin.ui
 
 import app.offlinefin.core.AppError
-import app.offlinefin.data.servers.Account
+import app.offlinefin.data.servers.AccountSummary
 import app.offlinefin.data.servers.Connection
 import app.offlinefin.ui.home.HomeViewModel
 import app.offlinefin.ui.nav.StartupState
@@ -18,13 +18,13 @@ import org.junit.Test
 class ServersAndHomeViewModelTest {
     @get:Rule val main = MainDispatcherRule()
 
-    private val ben = Account("s1", "u1", "ben", "t1")
-    private val amy = Account("s1", "u2", "amy", "t2")
-    private val other = Account("s2", "u3", "cat", "t3")
+    private val ben = AccountSummary("s1", "u1", "ben")
+    private val amy = AccountSummary("s1", "u2", "amy")
+    private val other = AccountSummary("s2", "u3", "cat")
     private val auth = FakeAuthenticator()
     private val connections = FakeConnections()
 
-    private fun catalog(active: Account? = ben) = FakeCatalog(
+    private fun catalog(active: AccountSummary? = ben) = FakeCatalog(
         servers = listOf(testServer("s1"), testServer("s2", pinInvalid = true)),
         accounts = listOf(ben, amy, other),
         active = active,
@@ -52,6 +52,24 @@ class ServersAndHomeViewModelTest {
         val catalog = catalog(active = null)
         catalog.warmed.complete(Unit)
         assertEquals(StartupState.Home, StartupViewModel(catalog).state.value)
+    }
+
+    @Test fun aFailingReadShowsAFailureScreenNotWelcome() {
+        val catalog = catalog()
+        catalog.awaitActiveFailure = IllegalStateException("db unreadable 10.1.2.3")
+        catalog.warmed.complete(Unit)
+        assertEquals(StartupState.Failed, StartupViewModel(catalog).state.value)
+    }
+
+    @Test fun retryTriesTheWarmAgainAndReloads() {
+        val catalog = catalog()
+        catalog.awaitActiveFailure = IllegalStateException("db")
+        catalog.warmed.complete(Unit)
+        val vm = StartupViewModel(catalog)
+        catalog.awaitActiveFailure = null
+        vm.retry()
+        assertEquals(1, catalog.warmRetries)
+        assertEquals(StartupState.Home, vm.state.value)
     }
 
     // --- servers list -------------------------------------------------------------------------------------------
@@ -104,6 +122,17 @@ class ServersAndHomeViewModelTest {
         assertEquals(listOf("s1"), catalog.removedServers)
         assertEquals(listOf("s2"), vm.state.value.servers.map { it.id })
         assertNull(vm.state.value.confirm)
+    }
+
+    @Test fun aDoubleTapOnConfirmRunsTheActionOnce() {
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        auth.onSignOut = { _, _ -> gate.await() }
+        val vm = ServersViewModel(catalog(), auth)
+        vm.askSignOut("s1", "u2")
+        vm.confirm()
+        vm.confirm()
+        gate.complete(Unit)
+        assertEquals(1, auth.signedOut.size)
     }
 
     @Test fun aFailedSignOutShowsTheAppErrorMessage() {

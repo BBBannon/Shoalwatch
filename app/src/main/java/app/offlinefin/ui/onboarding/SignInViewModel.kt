@@ -8,7 +8,7 @@ import app.offlinefin.core.AppError
 import app.offlinefin.data.servers.AuthRepository
 import app.offlinefin.data.servers.Authenticator
 import app.offlinefin.data.servers.Connection
-import app.offlinefin.data.servers.QuickConnectState
+import app.offlinefin.data.servers.QuickConnectProgress
 import app.offlinefin.data.servers.Server
 import app.offlinefin.data.servers.ServerCatalog
 import app.offlinefin.data.servers.ServerConnections
@@ -27,7 +27,9 @@ sealed interface QuickConnectUi {
     data object Starting : QuickConnectUi
 
     /** [code] is shown large; [secondsLeft] counts down to the timeout. */
-    data class Code(val code: String, val secondsLeft: Int) : QuickConnectUi
+    data class Code(val code: String, val secondsLeft: Int) : QuickConnectUi {
+        override fun toString() = "Code(<redacted>)"
+    }
     data object Authenticating : QuickConnectUi
     data object TimedOut : QuickConnectUi
     data class Failed(val message: String) : QuickConnectUi
@@ -50,7 +52,10 @@ data class SignInUiState(
     val signedIn: Boolean = false,
     /** The server no longer exists (removed while signing in). */
     val serverMissing: Boolean = false,
-)
+) {
+    /** The username and Quick Connect code never appear. */
+    override fun toString() = "SignInUiState(mode=$mode, submitting=$submitting, signedIn=$signedIn)"
+}
 
 /**
  * Quick Connect first, password as the alternative. Polling lives in one cancellable job: switching to the
@@ -122,18 +127,18 @@ class SignInViewModel(
         }
     }
 
-    private fun onQuickConnect(progress: QuickConnectState) {
-        if (progress !is QuickConnectState.AwaitingApproval) countdownJob?.cancel()
+    private fun onQuickConnect(progress: QuickConnectProgress) {
+        if (progress !is QuickConnectProgress.AwaitingApproval) countdownJob?.cancel()
         when (progress) {
-            QuickConnectState.Starting -> mutableState.update { it.copy(quickConnect = QuickConnectUi.Starting) }
-            is QuickConnectState.AwaitingApproval -> {
+            QuickConnectProgress.Starting -> mutableState.update { it.copy(quickConnect = QuickConnectUi.Starting) }
+            is QuickConnectProgress.AwaitingApproval -> {
                 mutableState.update { it.copy(quickConnect = QuickConnectUi.Code(progress.code, TIMEOUT_SECONDS)) }
                 startCountdown()
             }
-            QuickConnectState.Authenticating -> mutableState.update { it.copy(quickConnect = QuickConnectUi.Authenticating) }
-            is QuickConnectState.Success -> mutableState.update { it.copy(signedIn = true) }
-            QuickConnectState.TimedOut -> mutableState.update { it.copy(quickConnect = QuickConnectUi.TimedOut) }
-            is QuickConnectState.Failed -> mutableState.update {
+            QuickConnectProgress.Authenticating -> mutableState.update { it.copy(quickConnect = QuickConnectUi.Authenticating) }
+            is QuickConnectProgress.Success -> mutableState.update { it.copy(signedIn = true) }
+            QuickConnectProgress.TimedOut -> mutableState.update { it.copy(quickConnect = QuickConnectUi.TimedOut) }
+            is QuickConnectProgress.Failed -> mutableState.update {
                 if (progress.error.kind == AppError.Kind.QUICK_CONNECT_DISABLED) {
                     it.copy(mode = SignInMode.Password, quickConnectUnavailable = true)
                 } else {

@@ -50,9 +50,10 @@ internal object Routes {
  */
 @Composable
 fun AppRoot(graph: AppGraph) {
-    val startup = graphViewModel { StartupViewModel(graph.serverStore) }
+    val startup = graphViewModel { StartupViewModel(graph.serverCatalog) }
     when (startup.state.collectAsStateWithLifecycle().value) {
         StartupState.Loading -> SplashScreen()
+        StartupState.Failed -> StartupFailedScreen(onRetry = startup::retry)
         StartupState.Welcome -> AppNavHost(graph, Routes.WELCOME)
         StartupState.Home -> AppNavHost(graph, Routes.HOME)
     }

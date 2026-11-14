@@ -37,11 +37,11 @@ class ServerStore(
     private val onClientsStale: (serverId: String, addresses: List<ServerAddress>) -> Unit = { _, _ -> },
     /** Called after a server is removed, or saved with no address left to probe, so per-server state elsewhere (e.g. address probing) can be dropped. */
     private val onServerRemoved: (serverId: String) -> Unit = {},
-) : ServerCatalog {
+) {
     private val serverDao = db.serverDao()
     private val accountDao = db.accountDao()
 
-    override val servers: Flow<List<Server>> = serverDao.observeAll().map { rows -> rows.map(::toServer) }
+    val servers: Flow<List<Server>> = serverDao.observeAll().map { rows -> rows.map(::toServer) }
 
     /** `(serverId, userId)` to token, for [cachedToken]. Changed only by [upsertAccount], [warmTokens] and removals, all under [tokenLock]. */
     private val tokens = ConcurrentHashMap<Pair<String, String>, String>()
@@ -67,39 +67,51 @@ class ServerStore(
     suspend fun warmTokens() {
         try {
             tokenLock.withLock {
-                val loaded = accountDao.getAll().mapNotNull(::toAccount).associate { (it.serverId to it.userId) to it.accessToken }
+                val loaded = loadAccounts().mapNotNull(::toAccount).associate { (it.serverId to it.userId) to it.accessToken }
                 tokens.keys.retainAll(loaded.keys)
                 tokens.putAll(loaded)
             }
+            warmFailed = false
         } catch (e: Exception) {
             currentCoroutineContext().ensureActive() // a real cancellation must propagate
+            warmFailed = true
             AppLog.w(TAG, "Loading saved sign-ins failed", e)
         }
         warmed.complete(Unit)
     }
 
+    /** Tries the warm once more if the last one failed (used by a "Retry" action); still fails closed if it fails again. */
+    suspend fun retryWarmIfFailed() {
+        if (warmFailed) warmTokens()
+    }
+
     private val warmed = CompletableDeferred<Unit>()
+
+    @Volatile private var warmFailed = false
+
+    /** Where [warmTokens] reads saved accounts from; replaceable so a test can make it fail. */
+    internal var loadAccounts: suspend () -> List<AccountEntity> = { accountDao.getAll() }
 
     /**
      * Completes when the first [warmTokens] has finished, successfully or not (a failed warm leaves the live
      * lookup empty, so requests fail closed as `NOT_SIGNED_IN`). Start-up routing waits on this before it
      * decides which screen to show.
      */
-    override suspend fun awaitWarmed() = warmed.await()
+    suspend fun awaitWarmed() = warmed.await()
 
     /** [active] after [awaitWarmed]: the one call to use before an authenticated request, so a cold start never sees "signed out". */
-    override suspend fun awaitActive(): Pair<Server, Account>? {
+    suspend fun awaitActive(): Pair<Server, Account>? {
         awaitWarmed()
         return active()
     }
 
-    override val activeAccount: Flow<Account?> = accountDao.observeActive().map { it?.let(::toAccount) }
+    val activeAccount: Flow<Account?> = accountDao.observeActive().map { it?.let(::toAccount) }
 
-    override fun accounts(serverId: String): Flow<List<Account>> =
+    fun accounts(serverId: String): Flow<List<Account>> =
         accountDao.observeForServer(serverId).map { rows -> rows.mapNotNull(::toAccount) }
 
     /** @throws IllegalArgumentException if the pin is not a valid base64 SHA-256 value. */
-    override suspend fun upsertServer(s: Server) {
+    suspend fun upsertServer(s: Server) {
         require(s.pinnedSpkiSha256 == null || isValidPin(s.pinnedSpkiSha256)) { "The certificate pin is not valid." }
         val before = serverDao.get(s.id)?.let(::toServer)
         db.withTransaction {
@@ -122,7 +134,7 @@ class ServerStore(
      * Also removes the server's accounts. The removal runs to completion even if the caller is cancelled
      * (while waiting for the lock or during the delete): a sign-out must never leave a token live.
      */
-    override suspend fun removeServer(id: String) = withContext(NonCancellable) {
+    suspend fun removeServer(id: String) = withContext(NonCancellable) {
         val addresses = server(id)?.addresses.orEmpty()
         try {
             tokenLock.withLock {
@@ -169,14 +181,14 @@ class ServerStore(
     }
 
     /** @throws IllegalArgumentException if there is no such account. */
-    override suspend fun setActive(serverId: String, userId: String) {
+    suspend fun setActive(serverId: String, userId: String) {
         db.withTransaction {
             requireNotNull(accountDao.get(serverId, userId)) { "No such account." }
             accountDao.setActive(ActiveAccountEntity(0, serverId, userId))
         }
     }
 
-    override suspend fun server(id: String): Server? = serverDao.get(id)?.let(::toServer)
+    suspend fun server(id: String): Server? = serverDao.get(id)?.let(::toServer)
 
     suspend fun active(): Pair<Server, Account>? {
         val account = accountDao.getActive()?.let(::toAccount) ?: return null

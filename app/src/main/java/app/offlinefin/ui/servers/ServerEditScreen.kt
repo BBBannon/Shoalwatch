@@ -71,7 +71,7 @@ fun ServerEditScreen(state: ServerEditUiState, actions: ServerEditActions) {
     ) { target ->
         when (target) {
             Page.Settings -> SettingsPage(state, actions)
-            Page.Address -> (state.pane as? EditPane.Address)?.let { AddressPane(it, state.addressCheck, actions.pane) }
+            Page.Address -> (state.pane as? EditPane.Address)?.let { AddressPane(it, state.addressCheck, state.addressRole, state.addressRequired, actions.pane) }
             Page.HttpWarning -> HttpWarningScreen(onCancel = actions.pane.onDismiss, onUseAnyway = actions.pane.onConfirmCleartext)
             Page.Certificate -> (state.pane as? EditPane.CertificateReview)?.let {
                 CertificateScreen(

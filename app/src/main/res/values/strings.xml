@@ -14,6 +14,8 @@
     <string name="action_hide">Hide</string>
     <string name="action_save">Save</string>
     <string name="cd_back">Back</string>
+    <string name="startup_failed_title">Something went wrong opening your saved servers</string>
+    <string name="startup_failed_body">Your servers and sign-ins have not been changed. Try again, and if it keeps happening restart the app.</string>
     <string name="splash_loading">Loading OfflineFin</string>
 
     <!-- Add server -->
@@ -27,6 +29,10 @@
 
     <string name="http_title">This connection isn’t encrypted</string>
     <string name="http_body">On a network you don’t trust, such as public Wi-Fi, other people could read what you watch and capture your sign-in. Only continue if this server is on a network you trust, like your home Wi-Fi.</string>
+    <string name="http_for_home">This warning is about your home address.</string>
+    <string name="http_for_away">This warning is about your away address.</string>
+    <string name="found_already_saved">This server is already saved. Its settings will not be changed; you can sign in to it.</string>
+    <string name="edit_address_required">A server needs at least one address, so this one cannot be removed.</string>
     <string name="http_use">Use anyway for this server</string>
 
     <string name="cert_title">This server uses its own security certificate</string>

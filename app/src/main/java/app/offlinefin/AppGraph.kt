@@ -4,6 +4,10 @@ import android.content.Context
 import app.offlinefin.data.db.AppDatabase
 import app.offlinefin.data.servers.AddressSelector
 import app.offlinefin.data.servers.AuthRepository
+import app.offlinefin.data.servers.Authenticator
+import app.offlinefin.data.servers.AuthenticatorImpl
+import app.offlinefin.data.servers.ServerCatalog
+import app.offlinefin.data.servers.StoreCatalog
 import app.offlinefin.data.servers.CertificateProber
 import app.offlinefin.data.servers.DeviceIdentity
 import app.offlinefin.data.servers.JellyfinGateway
@@ -39,4 +43,8 @@ class AppGraph(private val appContext: Context) {
     /** What the trust prompt reads; the UI never touches `HttpClientFactory` itself. */
     val certificateProber: CertificateProber by lazy { CertificateProber(httpClientFactory::probeCertificate) }
     val authRepository: AuthRepository by lazy { AuthRepository(jellyfinGateway, serverStore, deviceIdentity) }
+
+    /** What ViewModels use: the same stores without access tokens. */
+    val serverCatalog: ServerCatalog by lazy { StoreCatalog(serverStore) }
+    val authenticator: Authenticator by lazy { AuthenticatorImpl(authRepository) }
 }

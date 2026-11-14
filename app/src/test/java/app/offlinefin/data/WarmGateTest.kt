@@ -77,6 +77,20 @@ class WarmGateTest {
         assertNull(store.cachedToken("s1", "u1"))
     }
 
+    @Test fun aFailedWarmIsRetriedOnRequestAndASuccessfulOneIsNot() = runBlocking {
+        store.upsertAccount(Account("s1", "u1", "ben", "tok"), makeActive = false)
+        val cold = ServerStore(db, box)
+        var loads = 0
+        cold.loadAccounts = { loads++; throw IllegalStateException("db") }
+        cold.warmTokens()
+        assertNull(cold.cachedToken("s1", "u1"))
+        cold.loadAccounts = { loads++; db.accountDao().getAll() }
+        cold.retryWarmIfFailed()
+        assertEquals("tok", cold.cachedToken("s1", "u1"))
+        cold.retryWarmIfFailed()
+        assertEquals("a warm that worked is not repeated", 2, loads)
+    }
+
     @Test fun anAccountReadWaitsForTheWarm() = runBlocking(Dispatchers.Default) {
         store.upsertAccount(Account("s1", "u1", "ben", "tok"), makeActive = true)
         val read = async { store.awaitActive() }
