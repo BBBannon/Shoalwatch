@@ -31,7 +31,9 @@ app.offlinefin
 ├── net/         HttpClientFactory, TrustPolicy (ServerNetConfig), PinnedTrustManager (+ PinAwareHostnameVerifier), KeyChainKeyManager, CertificateInfo,
 │                AuthInterceptor, CustomHeaderInterceptor, AuthHeader, BlockedRequestException, CleartextGuard, ServerAddress, AddressSelector
 ├── data/
-│   ├── db/ servers/ library/ images/ playback/ downloads/ sync/
+│   ├── db/          AppDatabase (Room, `offlinefin.db`), ServerEntity, AccountEntity, ActiveAccountEntity, DAOs
+│   ├── servers/     Server, Account, ServerStore, ServerNet (+ ServerNetDraft), DeviceIdentity, JellyfinGateway(+Impl), AuthRepository, QuickConnectState
+│   ├── library/ images/ playback/ downloads/ sync/
 └── ui/          theme, navigation, one package per screen group
 ```
 
@@ -47,6 +49,26 @@ Only `net/HttpClientFactory` may construct an `OkHttpClient`.
 - **First contact:** `probeCertificate` handshakes with a capture-only trust manager that always fails after recording the leaf, so no request, token or header is sent on the unverified connection. It uses no `clientFor` client. The whole probe has a hard 10 s deadline: on expiry or cancellation its socket is closed (an uninterruptible DNS lookup may leave one daemon thread behind until it returns, but the caller is released).
 - **Client certificates:** `KeyChainKeyManager` offers only the stored alias; `KeyChain` calls block and refuse the main thread; a synchronous `execute()` runs the handshake on the caller's thread, so safety rests on every network call in this app running off the main thread. Any KeyChain failure presents no certificate.
 - **Clients:** all share one connection pool and dispatcher; no cache, no cookies; connect 10 s, read/write 30 s, no call timeout (it would cut long downloads). Callers hold one client per server configuration (each `clientFor` builds a new SSLContext; no cache).
+
+## Data model (servers and accounts)
+
+- **Tables:** `servers` (id, name, version, home/away address strings, allowCleartext, pinnedSpkiSha256, clientCertAlias, customHeaders BLOB), `accounts` (PK serverId+userId, userName, accessToken BLOB), `active_account` (single row, `slot = 0`).
+- **Secrets at rest:** access tokens and custom headers are stored only as `SecretBox` ciphertext in BLOB columns (tests assert the raw bytes contain neither). An account whose token cannot be decrypted (lost Keystore key) is hidden so the user signs in again; unreadable headers load as none.
+- **Integrity:** accounts cascade-delete with their server; `active_account` cascades from the account, so removing the active account (or its server) leaves nobody active, and the single-row key means there can never be two. Writes use `@Upsert`, never `REPLACE` (REPLACE deletes first and would cascade away accounts). No destructive-migration fallback; the schema is exported to `app/schemas/`.
+- **Pins:** `upsertServer` rejects a malformed pin (`IllegalArgumentException`, fixed message). A damaged pin already in the database loads as `pinnedSpkiSha256 = null` with `Server.pinInvalid = true`; `ServerNet.config` then throws `TLS_UNTRUSTED`, so the next connection prompts for re-trust rather than silently falling back to system trust. Saving other edits to such a server keeps the damaged column untouched.
+- **One place for security settings:** `ServerNet.config(addresses, draft-or-Server, authHeader)` is the only code that turns a server's settings into a `ServerNetConfig`.
+- **Device identity:** random UUID generated once, kept in private SharedPreferences (excluded from backup); client name `OfflineFin`, version from `BuildConfig.VERSION_NAME`, device name from `Build.MODEL` sanitised.
+
+## Jellyfin client decision (SDK vs direct)
+
+**Decision: `JellyfinGateway` is implemented directly on OkHttp + kotlinx.serialization; the Jellyfin Kotlin SDK is not used for any request.**
+
+- AAFin's `JellyfinClients.kt` shows `OkHttpFactory(httpClient)` does accept an injected `OkHttpClient`, so injection is possible. But the SDK builds its own requests and applies its own authorisation and client options (its sources were not audited for this task), and proving that *every* byte of SDK traffic passes our guards and trust policy would need an audit of the SDK internals on each upgrade.
+- The sign-in surface is seven small endpoints, so a direct implementation is cheaper than that audit and gives one auditable HTTP path: every call goes through `HttpClientFactory.clientFor(config)`, so the cleartext, header and token guards, the trust policy and the pin all apply.
+- Endpoints: `GET /System/Info/Public`, `GET /QuickConnect/Enabled`, `POST /QuickConnect/Initiate`, `GET /QuickConnect/Connect?secret=`, `POST /Users/AuthenticateWithQuickConnect`, `POST /Users/AuthenticateByName`, `POST /Sessions/Logout`. Unauthenticated calls send `Authorization: MediaBrowser Client, Device, DeviceId, Version` without a token (the interceptor applies it from the config).
+- **Untrusted responses (S11):** bodies over 1 MiB are refused, JSON is decoded with `ignoreUnknownKeys`, and a missing token or user id is an error. Error text never includes response content.
+- **Documented exception to "no secrets in URLs":** the Quick Connect `secret` is sent as a query parameter for the `Connect` poll because the Jellyfin API requires it. It is short-lived, never logged, and the client logs no URLs.
+- **Clients:** the gateway keeps a small LRU (8) of clients keyed by `ServerNetConfig`, so callers should reuse one config instance per operation. Note `jellyfin-core` is still in the Gradle dependencies from the project scaffold but nothing imports it yet; remove it unless a later task needs SDK models.
 
 ## Version checks
 
