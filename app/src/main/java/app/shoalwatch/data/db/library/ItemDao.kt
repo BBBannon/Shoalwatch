@@ -86,35 +86,58 @@ abstract class ItemDao {
     abstract suspend fun getUserData(serverId: String, userId: String, itemId: String): UserDataEntity?
 
     /**
+     * Makes sure the user has a row for the item, with defaults, without touching an existing one. Plain `INSERT OR IGNORE`
+     * plus `UPDATE`, never SQL UPSERT (`ON CONFLICT ... DO UPDATE`): that needs SQLite 3.24 and Android 10 ships 3.22
+     * (`SqlCompatibilityTest` keeps it out).
+     */
+    @Query(
+        "INSERT OR IGNORE INTO user_data (serverId, userId, itemId, played, positionMs, playedPercentage, playCount, favourite, lastPlayed, unplayedItemCount, updatedAt) " +
+            "VALUES (:serverId, :userId, :itemId, 0, 0, NULL, 0, 0, NULL, NULL, :nowMs)",
+    )
+    protected abstract suspend fun ensureUserData(serverId: String, userId: String, itemId: String, nowMs: Long)
+
+    @Query(
+        "UPDATE user_data SET played = :played, positionMs = :positionMs, playedPercentage = NULL, " +
+            "playCount = CASE WHEN :played THEN MAX(playCount, 1) ELSE 0 END, " +
+            "lastPlayed = CASE WHEN :played THEN :nowMs ELSE lastPlayed END, updatedAt = :nowMs " +
+            "WHERE serverId = :serverId AND userId = :userId AND itemId = :itemId",
+    )
+    protected abstract suspend fun updatePlayed(serverId: String, userId: String, itemId: String, played: Boolean, positionMs: Long, nowMs: Long)
+
+    @Query("UPDATE user_data SET favourite = :favourite, updatedAt = :nowMs WHERE serverId = :serverId AND userId = :userId AND itemId = :itemId")
+    protected abstract suspend fun updateFavourite(serverId: String, userId: String, itemId: String, favourite: Boolean, nowMs: Long)
+
+    @Query(
+        "UPDATE user_data SET positionMs = :positionMs, playedPercentage = NULL, " +
+            "lastPlayed = CASE WHEN :positionMs > 0 THEN :nowMs ELSE lastPlayed END, updatedAt = :nowMs " +
+            "WHERE serverId = :serverId AND userId = :userId AND itemId = :itemId",
+    )
+    protected abstract suspend fun updatePosition(serverId: String, userId: String, itemId: String, positionMs: Long, nowMs: Long)
+
+    /**
      * Marks an item watched or not for this user, creating the row if there is none. Watched sets the last-played time and
      * keeps at least one play; not watched resets the play count. [positionMs] is stored as given (a watched item has 0).
      * The percentage is cleared (it is derived from position and runtime). [nowMs] is stored as `updatedAt`.
      */
-    @Query(
-        "INSERT INTO user_data (serverId, userId, itemId, played, positionMs, playedPercentage, playCount, favourite, lastPlayed, unplayedItemCount, updatedAt) " +
-            "VALUES (:serverId, :userId, :itemId, :played, :positionMs, NULL, CASE WHEN :played THEN 1 ELSE 0 END, 0, CASE WHEN :played THEN :nowMs ELSE NULL END, NULL, :nowMs) " +
-            "ON CONFLICT (serverId, userId, itemId) DO UPDATE SET played = excluded.played, positionMs = excluded.positionMs, playedPercentage = NULL, " +
-            "playCount = CASE WHEN excluded.played THEN MAX(playCount, 1) ELSE 0 END, " +
-            "lastPlayed = CASE WHEN excluded.played THEN excluded.lastPlayed ELSE lastPlayed END, updatedAt = excluded.updatedAt",
-    )
-    abstract suspend fun setPlayed(serverId: String, userId: String, itemId: String, played: Boolean, positionMs: Long, nowMs: Long)
+    @Transaction
+    open suspend fun setPlayed(serverId: String, userId: String, itemId: String, played: Boolean, positionMs: Long, nowMs: Long) {
+        ensureUserData(serverId, userId, itemId, nowMs)
+        updatePlayed(serverId, userId, itemId, played, positionMs, nowMs)
+    }
 
     /** Sets favourite for this user, creating the row if there is none. */
-    @Query(
-        "INSERT INTO user_data (serverId, userId, itemId, played, positionMs, playedPercentage, playCount, favourite, lastPlayed, unplayedItemCount, updatedAt) " +
-            "VALUES (:serverId, :userId, :itemId, 0, 0, NULL, 0, :favourite, NULL, NULL, :nowMs) " +
-            "ON CONFLICT (serverId, userId, itemId) DO UPDATE SET favourite = excluded.favourite, updatedAt = excluded.updatedAt",
-    )
-    abstract suspend fun setFavourite(serverId: String, userId: String, itemId: String, favourite: Boolean, nowMs: Long)
+    @Transaction
+    open suspend fun setFavourite(serverId: String, userId: String, itemId: String, favourite: Boolean, nowMs: Long) {
+        ensureUserData(serverId, userId, itemId, nowMs)
+        updateFavourite(serverId, userId, itemId, favourite, nowMs)
+    }
 
     /** Records where playback stopped for this user (0 clears it), creating the row if there is none. Does not change watched. */
-    @Query(
-        "INSERT INTO user_data (serverId, userId, itemId, played, positionMs, playedPercentage, playCount, favourite, lastPlayed, unplayedItemCount, updatedAt) " +
-            "VALUES (:serverId, :userId, :itemId, 0, :positionMs, NULL, 0, 0, CASE WHEN :positionMs > 0 THEN :nowMs ELSE NULL END, NULL, :nowMs) " +
-            "ON CONFLICT (serverId, userId, itemId) DO UPDATE SET positionMs = excluded.positionMs, playedPercentage = NULL, " +
-            "lastPlayed = CASE WHEN excluded.positionMs > 0 THEN excluded.lastPlayed ELSE lastPlayed END, updatedAt = excluded.updatedAt",
-    )
-    abstract suspend fun setPosition(serverId: String, userId: String, itemId: String, positionMs: Long, nowMs: Long)
+    @Transaction
+    open suspend fun setPosition(serverId: String, userId: String, itemId: String, positionMs: Long, nowMs: Long) {
+        ensureUserData(serverId, userId, itemId, nowMs)
+        updatePosition(serverId, userId, itemId, positionMs, nowMs)
+    }
 
     companion object {
         /** Well under SQLite's bound-variable limit on every Android version. */
