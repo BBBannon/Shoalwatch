@@ -5,6 +5,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.SocketPolicy
 import okhttp3.tls.HandshakeCertificates
 import okhttp3.tls.HeldCertificate
 import org.junit.After
@@ -14,6 +15,7 @@ import org.junit.Test
 import java.io.IOException
 import java.net.InetAddress
 import java.net.Socket
+import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
 import javax.net.ssl.X509KeyManager
@@ -40,7 +42,13 @@ class ClientCertificateTest {
         HandshakeCertificates.Builder().heldCertificate(clientLeaf).build().keyManager
     })
 
-    private fun server(protocol: String? = null, require: Boolean = true, response: MockResponse = MockResponse().setBody("ok")): MockWebServer {
+    private fun server(
+        protocol: String? = null,
+        require: Boolean = true,
+        response: MockResponse = MockResponse().setBody("ok"),
+        then: List<MockResponse> = emptyList(),
+        http1: Boolean = false,
+    ): MockWebServer {
         val handshake = HandshakeCertificates.Builder()
             .heldCertificate(leaf, root.certificate)
             .addTrustedCertificate(clientRoot.certificate)
@@ -48,8 +56,10 @@ class ClientCertificateTest {
         return MockWebServer().apply {
             val factory = handshake.sslSocketFactory()
             useHttps(if (protocol == null) factory else OnlyProtocol(factory, protocol), false)
+            if (http1) protocols = listOf(okhttp3.Protocol.HTTP_1_1)
             if (require) requireClientAuth() else requestClientAuth()
             enqueue(response)
+            then.forEach { enqueue(it) }
             start()
             servers += this
         }
@@ -121,6 +131,45 @@ class ClientCertificateTest {
         val s = server()
         val c = other.clientFor(ServerNetConfig(setOf(ServerAddress.parse("https://127.0.0.1:${s.port}").authority), false, null, "phone-cert", emptyMap()) { null })
         assertEquals(false, kindOf { get(c, s) } == AppError.Kind.CLIENT_CERT_REQUIRED)
+    }
+
+    // ---- only a failure that can be blamed on the missing certificate is remapped (review F5)
+
+    @Test fun aGenuine403OnAnAlreadyProvenConnectionIsForbiddenNotAMissingCertificate() {
+        // A proxy with optional client auth: it asks, serves the first request, and later Jellyfin itself answers 403.
+        val s = server(require = false, then = listOf(MockResponse().setResponseCode(403).setBody("no")), http1 = true)
+        val c = client(s)
+        assertEquals(200 to "ok", get(c, s))
+        val (code, _) = get(c, s) // a response, not an exception
+        assertEquals(403, code)
+        assertEquals(AppError.Kind.FORBIDDEN, AppError.fromHttpStatus(code).kind)
+    }
+
+    @Test fun aReadTimeoutAfterASuccessfulFirstResponseIsATimeoutNotAMissingCertificate() {
+        val s = server(require = false, then = listOf(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE)), http1 = true)
+        val c = client(s)
+        assertEquals(200 to "ok", get(c, s))
+        val quick = c.newBuilder().readTimeout(300, TimeUnit.MILLISECONDS).build()
+        assertEquals(AppError.Kind.TIMEOUT, kindOf { get(quick, s) })
+    }
+
+    @Test fun aFirstResponseOf403OnAFreshConnectionWhereACertificateWasAskedForIsReportedAsNeedingOne() {
+        val s = server(require = false, response = MockResponse().setResponseCode(403))
+        assertEquals(AppError.Kind.CLIENT_CERT_REQUIRED, kindOf { get(client(s), s) })
+    }
+
+    @Test fun aServerThatNeverAskedIsNeverBlamedOnACertificate() {
+        val s = MockWebServer().apply {
+            useHttps(HandshakeCertificates.Builder().heldCertificate(leaf, root.certificate).build().sslSocketFactory(), false)
+            protocols = listOf(okhttp3.Protocol.HTTP_1_1)
+            enqueue(MockResponse().setResponseCode(403))
+            enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+            start()
+            servers += this
+        }
+        val c = client(s)
+        assertEquals(403, get(c, s).first)
+        assertEquals(AppError.Kind.TIMEOUT, kindOf { get(c.newBuilder().readTimeout(300, TimeUnit.MILLISECONDS).build(), s) })
     }
 
     /** Server side only: pins the TLS version MockWebServer negotiates. */

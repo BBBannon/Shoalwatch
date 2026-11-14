@@ -1,3 +1,4 @@
+v1.37 — 14/11/2026 — Shoalwatch no longer mistakes an ordinary "not allowed" reply or a network hiccup for a missing security certificate on servers that only optionally ask for one.
 v1.36 — 14/11/2026 — If Shoalwatch can't read a saved sign-in, signing out or removing the server now says it couldn't sign you out on the server, and tells you how to remove it from the server's dashboard.
 v1.35 — 14/11/2026 — Behind the scenes: servers and users saved on the phone must now have a properly formed identifier, so a malformed one can never be stored.
 v1.34 — 14/11/2026 — Quick Connect now stops straight away if your network changes while you wait, and asks you to start again instead of carrying on over a different connection.
