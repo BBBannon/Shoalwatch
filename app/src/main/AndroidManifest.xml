@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -7,8 +8,13 @@
     <!--
         usesCleartextTraffic="true" is deliberate. Users may opt in to a plain-HTTP LAN server, per
         server, and the manifest cannot express per-user hosts. HTTPS stays the default: the
-        CleartextGuard OkHttp interceptor (net/, a later task) refuses http:// unless that server
+        CleartextGuard OkHttp interceptor (net/CleartextGuard) refuses http:// unless that server
         has the opt-in. No network_security_config is used, so user-installed CAs are not trusted.
+
+        Library components removed below (S7, S10; checked on the merged release manifest by
+        the verifyReleaseManifest Gradle task): the profile installer's exported receiver and its
+        start-up initialiser, and the EmojiCompat initialiser, which can ask Google Play services
+        for an emoji font (the app contacts nobody but the user's own servers).
     -->
     <application
         android:name=".ShoalwatchApp"
@@ -31,5 +37,21 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <receiver
+            android:name="androidx.profileinstaller.ProfileInstallReceiver"
+            tools:node="remove" />
+
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.emoji2.text.EmojiCompatInitializer"
+                tools:node="remove" />
+            <meta-data
+                android:name="androidx.profileinstaller.ProfileInstallerInitializer"
+                tools:node="remove" />
+        </provider>
     </application>
 </manifest>

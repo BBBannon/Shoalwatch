@@ -1,4 +1,7 @@
+import com.android.build.api.artifact.SingleArtifact
 import java.util.Properties
+import javax.xml.parsers.DocumentBuilderFactory
+import org.w3c.dom.Element
 
 plugins {
     alias(libs.plugins.android.application)
@@ -83,6 +86,72 @@ android {
 
 kotlin {
     jvmToolchain(17)
+}
+
+/**
+ * S2, S7, S9 and S10 checked on what actually ships: the MERGED release manifest (libraries add components the
+ * source manifest never mentions). Fails the build unless backups are off, the app is not debuggable, the
+ * launcher activity is the only exported component, the permissions are exactly [expectedPermissions], the only
+ * provider is androidx.startup's (not exported), and no initialiser that could contact a third party remains.
+ */
+abstract class VerifyReleaseManifest : DefaultTask() {
+    @get:InputFile @get:PathSensitive(PathSensitivity.NONE) abstract val manifest: RegularFileProperty
+    @get:Input abstract val expectedPermissions: SetProperty<String>
+    @get:Input abstract val launcherActivity: Property<String>
+    @get:OutputFile abstract val report: RegularFileProperty
+
+    @TaskAction fun verify() {
+        val ns = "http://schemas.android.com/apk/res/android"
+        val doc = DocumentBuilderFactory.newInstance().apply { isNamespaceAware = true }
+            .newDocumentBuilder().parse(manifest.get().asFile).documentElement
+        fun elements(tag: String) = doc.getElementsByTagName(tag).let { list -> (0 until list.length).map { list.item(it) as Element } }
+        fun Element.attr(name: String) = getAttributeNS(ns, name)
+        val problems = mutableListOf<String>()
+
+        val application = elements("application").single()
+        if (application.attr("allowBackup") != "false") problems += "android:allowBackup must be false"
+        if (application.attr("debuggable") == "true") problems += "the release build must not be debuggable"
+
+        val components = listOf("activity", "activity-alias", "service", "receiver", "provider").flatMap(::elements)
+        val exported = components.filter { it.attr("exported") == "true" }.map { it.attr("name") }
+        if (exported != listOf(launcherActivity.get())) problems += "only ${launcherActivity.get()} may be exported, found $exported"
+
+        val permissions = elements("uses-permission").map { it.attr("name") }.toSet()
+        if (permissions != expectedPermissions.get()) problems += "permissions must be exactly ${expectedPermissions.get().sorted()}, found ${permissions.sorted()}"
+
+        val providers = elements("provider").map { it.attr("name") }
+        if (providers.any { it != "androidx.startup.InitializationProvider" }) problems += "unexpected provider in $providers"
+
+        val initialisers = elements("meta-data").map { it.attr("name") }
+        for (banned in listOf("androidx.emoji2.text.EmojiCompatInitializer", "androidx.profileinstaller.ProfileInstallerInitializer")) {
+            if (banned in initialisers) problems += "$banned must be removed"
+        }
+
+        if (problems.isNotEmpty()) throw GradleException("Release manifest check failed:\n - " + problems.joinToString("\n - "))
+        report.get().asFile.writeText("Release manifest check passed.\n")
+    }
+}
+
+androidComponents {
+    onVariants(selector().withBuildType("release")) { variant ->
+        val check = tasks.register<VerifyReleaseManifest>("verify${variant.name.replaceFirstChar { it.uppercase() }}Manifest") {
+            group = "verification"
+            description = "Checks the merged ${variant.name} manifest against the security rules (S2, S7, S9, S10)."
+            manifest.set(variant.artifacts.get(SingleArtifact.MERGED_MANIFEST))
+            launcherActivity.set("app.shoalwatch.ui.MainActivity")
+            expectedPermissions.set(
+                setOf(
+                    "android.permission.INTERNET",
+                    "android.permission.ACCESS_NETWORK_STATE",
+                    // Declared (signature level) by androidx.core for receivers registered as not exported.
+                    "app.shoalwatch.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
+                ),
+            )
+            report.set(layout.buildDirectory.file("reports/release-manifest/${variant.name}.txt"))
+        }
+        tasks.named("check") { dependsOn(check) }
+        tasks.matching { it.name == "assemble${variant.name.replaceFirstChar { c -> c.uppercase() }}" }.configureEach { dependsOn(check) }
+    }
 }
 
 ksp {

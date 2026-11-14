@@ -16,7 +16,9 @@ import org.w3c.dom.Element
  * Guards the S2, S9 and S10 rows of the security table in docs/SPEC.md.
  *
  * The component and permission checks read the source manifest rather than the merged one, so
- * debug-only libraries (ui-test-manifest adds an exported activity) cannot make them flaky.
+ * debug-only libraries (ui-test-manifest adds an exported activity) cannot make them flaky. What ships is
+ * checked too: the `verifyReleaseManifest` Gradle task (part of `check` and `assembleRelease`) reads the MERGED
+ * release manifest.
  */
 @RunWith(RobolectricTestRunner::class)
 class ManifestSecurityTest {
@@ -52,7 +54,7 @@ class ManifestSecurityTest {
     fun cleartextIsAllowedAtManifestLevelOnly() {
         // Required, not an oversight: users may opt in to plain-HTTP LAN servers per server.
         // The manifest cannot express per-user hosts, so CleartextGuard (an OkHttp interceptor,
-        // a later task) is what actually refuses http:// for every server without that opt-in.
+        // net/CleartextGuard) is what actually refuses http:// for every server without that opt-in.
         val info = ApplicationProvider.getApplicationContext<android.app.Application>().applicationInfo
         assertTrue(info.flags and ApplicationInfo.FLAG_USES_CLEARTEXT_TRAFFIC != 0)
         assertEquals("true", application.attr("usesCleartextTraffic"))
