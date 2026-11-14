@@ -1,4 +1,6 @@
-# OfflineFin — Specification
+# Shoalwatch — Specification
+
+> Working folder is still `OfflineFin`; the app was named Shoalwatch on 14/11/2026.
 
 **Approved by Ben:** 14/11/2026 · **Evidence:** `research/offline-downloads-research.md`, `research/android-client-flaws-research.md`
 
@@ -16,7 +18,7 @@ A native Android client for Jellyfin (films and TV) whose offline library behave
 | Build | Gradle 8.11.1, JDK 17 at `C:\Users\Ben\Android\jdk17`, SDK at `C:\Users\Ben\Android\sdk` |
 | Structure | One `:app` module, strict package boundaries (§5). No DI framework: one `AppGraph` of lazy singletons, as in AAFin |
 | Reuse | Port AAFin's tested pieces (server URL handling, Quick Connect, error model, device profile, playback resolver, progress reporter) by copying and adapting. No shared library between the two apps |
-| Identity | `applicationId` and namespace `app.offlinefin` |
+| Identity | `applicationId` and namespace `app.shoalwatch`. App name **Shoalwatch** (sits alongside Shoalcade) |
 | Servers | Jellyfin 10.10 to 12.x supported; warn on anything else. Ben's server is 12.4 |
 | Content in v1 | Films, TV, collections, plus **server admin essentials** (§3.4). **Out:** music, live TV, books, SyncPlay, Android Auto (AAFin covers it), Android TV, Play Store listing (later) |
 
@@ -95,8 +97,8 @@ Shown only when the signed-in account is a server administrator. **Native screen
 ## 5. Package map
 
 ```
-app.offlinefin
-├── OfflineFinApp, AppGraph
+app.shoalwatch
+├── ShoalwatchApp, AppGraph
 ├── core/        AppError, Ticks, dispatchers, logging (redacting)
 ├── security/    SecretBox (Keystore AES-GCM), AppLock, redaction helpers
 ├── net/         HttpClientFactory, AuthInterceptor, CleartextGuard, TrustPolicy (pins, client certs),
