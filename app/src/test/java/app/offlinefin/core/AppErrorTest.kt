@@ -16,6 +16,11 @@ import org.junit.Test
 class AppErrorTest {
     private val leak = "https://secret.host/Items?api_key=LEAKME"
 
+    @Test fun appErrorWrappedInCauseChainIsUnwrapped() {
+        val inner = AppError.of(AppError.Kind.CLEARTEXT_BLOCKED)
+        assertSame(inner, AppError.from(IOException("outer", RuntimeException("mid", inner))))
+    }
+
     @Test fun sslPeerUnverifiedIsTlsUntrusted() =
         assertEquals(AppError.Kind.TLS_UNTRUSTED, AppError.from(SSLPeerUnverifiedException(leak)).kind)
 

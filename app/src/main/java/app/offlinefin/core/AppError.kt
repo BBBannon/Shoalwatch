@@ -21,7 +21,7 @@ class AppError(val kind: Kind, val userMessage: String, cause: Throwable? = null
         fun of(kind: Kind, cause: Throwable? = null): AppError = AppError(kind, messageFor(kind), cause)
 
         fun from(t: Throwable): AppError {
-            if (t is AppError) return t
+            findAppError(t)?.let { return it }
             val kind = when {
                 t is SocketTimeoutException -> Kind.TIMEOUT
                 isTlsProblem(t) -> Kind.TLS_UNTRUSTED
@@ -40,6 +40,18 @@ class AppError(val kind: Kind, val userMessage: String, cause: Throwable? = null
                 else -> Kind.UNKNOWN
             },
         )
+
+        /** An [AppError] anywhere in [t]'s cause chain, e.g. one carried through OkHttp inside an IOException. */
+        private fun findAppError(t: Throwable): AppError? {
+            var current: Throwable? = t
+            var depth = 0
+            while (current != null && depth < 10) {
+                if (current is AppError) return current
+                current = current.cause
+                depth++
+            }
+            return null
+        }
 
         private fun isTlsProblem(t: Throwable): Boolean {
             var current: Throwable? = t
