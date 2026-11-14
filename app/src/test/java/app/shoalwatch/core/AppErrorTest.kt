@@ -101,4 +101,12 @@ class AppErrorTest {
         "That address belongs to a different server. Check the address and try again.",
         AppError.of(AppError.Kind.SERVER_MISMATCH).userMessage,
     )
+
+    @Test fun connectionChangeMessagesAreExactAndPlain() {
+        assertEquals(
+            "The secure connection isn't available right now. Check the notice above, then press Sign in again to continue.",
+            AppError.of(AppError.Kind.SECURE_CONNECTION_LOST).userMessage,
+        )
+        assertEquals("Your connection changed. Start Quick Connect again.", AppError.of(AppError.Kind.CONNECTION_CHANGED).userMessage)
+    }
 }

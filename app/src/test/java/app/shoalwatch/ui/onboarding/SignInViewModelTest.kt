@@ -219,11 +219,70 @@ class SignInViewModelTest {
 
     // --- where the sign-in goes (review I2) ---------------------------------------------------------------------
 
-    @Test fun anUnencryptedRouteIsFlaggedBeforeQuickConnectStarts() {
+    @Test fun anUnencryptedRouteIsFlaggedAtOpenAndQuickConnectWaitsForTheUserToHaveSeenTheNotice() {
         auth.routeAnswer = { FakeRoute(it, encrypted = false) }
         val vm = vm()
-        assertTrue(vm.state.value.unencrypted)
+        assertTrue("the notice is up", vm.state.value.unencrypted)
+        assertEquals("no Quick Connect secret is sent before the notice has been seen", 0, auth.quickConnectStarts)
+        assertTrue(vm.state.value.quickConnect is QuickConnectUi.Failed)
+        vm.retryQuickConnect() // the user has now seen the notice and asks again
         assertEquals(1, auth.quickConnectStarts)
+    }
+
+    @Test fun quickConnectIsNotStartedWhenTheRouteTurnsUnencryptedUnderAnEncryptedScreen() {
+        val vm = vm()
+        assertEquals(1, auth.quickConnectStarts)
+        assertFalse(vm.state.value.unencrypted)
+        auth.routeAnswer = { FakeRoute(it, encrypted = false) } // https stopped answering
+        vm.retryQuickConnect()
+        assertEquals("not started", 1, auth.quickConnectStarts)
+        assertTrue("notice now shown", vm.state.value.unencrypted)
+        assertTrue(vm.state.value.quickConnect is QuickConnectUi.Failed)
+        vm.retryQuickConnect() // second explicit request, notice seen
+        assertEquals(2, auth.quickConnectStarts)
+    }
+
+    // --- the route flips from https to http at submit (review F1) ---------------------------------------------
+
+    @Test fun aRouteThatTurnsUnencryptedAtSubmitSendsNothingShowsTheNoticeAndKeepsThePassword() {
+        val vm = vm()
+        vm.usePassword()
+        vm.onUsernameChange("ben")
+        vm.password.setTextAndPlaceCursorAtEnd("hunter2")
+        assertFalse(vm.state.value.unencrypted)
+        auth.routeAnswer = { FakeRoute(it, encrypted = false) } // https stopped answering after the user last looked
+        vm.signInWithPassword()
+        assertTrue("no credential call was made", auth.passwordCalls.isEmpty())
+        assertTrue("the notice is now up", vm.state.value.unencrypted)
+        assertEquals("the typed password stays in the field", "hunter2", vm.password.text.toString())
+        assertFalse(vm.state.value.submitting)
+        assertFalse(vm.state.value.signedIn)
+        assertTrue("an inline message tells the user what to do", vm.state.value.error != null)
+        assertFalse("hunter2" in vm.state.value.error.orEmpty())
+    }
+
+    @Test fun theNextExplicitSubmitSendsOnceTheNoticeHasBeenShown() {
+        val vm = vm()
+        vm.usePassword()
+        vm.onUsernameChange("ben")
+        vm.password.setTextAndPlaceCursorAtEnd("hunter2")
+        val httpOnly = FakeRoute("srv-1", encrypted = false)
+        auth.routeAnswer = { httpOnly }
+        vm.signInWithPassword()
+        vm.signInWithPassword()
+        assertEquals(listOf(Triple("srv-1", "ben", "hunter2")), auth.passwordCalls)
+        assertTrue(auth.passwordRoutes.single() === httpOnly)
+        assertEquals("", vm.password.text.toString())
+        assertTrue(vm.state.value.signedIn)
+    }
+
+    @Test fun aRouteThatWasAlreadyUnencryptedWhenTheNoticeShowedSendsOnTheFirstSubmit() {
+        auth.routeAnswer = { FakeRoute(it, encrypted = false) }
+        val vm = vm()
+        vm.submit() // usePassword() refreshes the notice, then the submit goes straight through
+        assertEquals(1, auth.passwordCalls.size)
+        assertTrue(vm.state.value.unencrypted)
+        assertTrue(vm.state.value.signedIn)
     }
 
     @Test fun anEncryptedRouteIsNotFlagged() {
@@ -238,7 +297,7 @@ class SignInViewModelTest {
         assertFalse(vm.state.value.unencrypted)
         val httpOnly = FakeRoute("srv-1", encrypted = false)
         auth.routeAnswer = { httpOnly } // the https address stopped answering
-        vm.submit()
+        vm.submit() // usePassword() shows the notice first, so this submit may go ahead
         assertTrue(auth.passwordRoutes.single() === httpOnly)
         assertTrue("flagged for the attempt that went over http", vm.state.value.unencrypted)
     }

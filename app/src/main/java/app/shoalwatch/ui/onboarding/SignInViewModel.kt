@@ -132,9 +132,17 @@ class SignInViewModel(
         mutableState.update { it.copy(mode = SignInMode.QuickConnect, quickConnect = QuickConnectUi.Starting, error = null) }
         quickConnectJob = viewModelScope.launch {
             try {
+                val sawNotice = mutableState.value.unencrypted
                 val route = route()
                 if (route == null) {
                     mutableState.update { it.copy(quickConnect = QuickConnectUi.Failed(unreachableMessage())) }
+                    return@launch
+                }
+                if (!route.encrypted && !sawNotice) {
+                    // The user was looking at a secure screen: nothing is sent until they have seen the notice (now up) and ask again.
+                    mutableState.update {
+                        it.copy(quickConnect = QuickConnectUi.Failed(AppError.of(AppError.Kind.SECURE_CONNECTION_LOST_QUICK_CONNECT).userMessage))
+                    }
                     return@launch
                 }
                 auth.quickConnect(route).collect(::onQuickConnect)
@@ -180,20 +188,31 @@ class SignInViewModel(
     }
 
     /**
-     * Signs in with the typed username and password. The password is copied out of the field, which is cleared
-     * at once, and the copy is wiped by `AuthRepository`; it is never in [state].
+     * Signs in with the typed username and password. The route is fetched first: if it is plain http while the screen
+     * showed no notice, nothing is sent and the password stays in the field until the next explicit press. Otherwise
+     * the password is copied out of the field, which is cleared at once, and the copy is wiped by `AuthRepository`;
+     * it is never in [state].
      */
     fun signInWithPassword() {
         if (!loaded) return
         val state = mutableState.value
         val username = state.username.trim()
         if (state.submitting || username.isEmpty() || password.text.isEmpty()) return
-        val secret = CharArray(password.text.length) { password.text[it] }
-        password.clearText()
+        val sawNotice = state.unencrypted
         mutableState.update { it.copy(submitting = true, error = null) }
         viewModelScope.launch {
+            var secret: CharArray? = null
+            var keepPassword = false
             try {
                 val route = route() ?: throw AppError.of(offlineKind())
+                if (!route.encrypted && !sawNotice) {
+                    // The screen said "encrypted" when the user pressed the button. The notice is up now; the password stays
+                    // in the field and goes only when they press Sign in again.
+                    keepPassword = true
+                    throw AppError.of(AppError.Kind.SECURE_CONNECTION_LOST)
+                }
+                secret = CharArray(password.text.length) { password.text[it] }
+                password.clearText()
                 auth.signInWithPassword(route, username, secret)
                 mutableState.update { it.copy(submitting = false, signedIn = true) }
             } catch (e: CancellationException) {
@@ -201,7 +220,8 @@ class SignInViewModel(
             } catch (e: Exception) {
                 mutableState.update { it.copy(submitting = false, error = AppError.from(e).userMessage) }
             } finally {
-                secret.fill('\u0000')
+                secret?.fill(' ')
+                if (!keepPassword) password.clearText()
             }
         }
     }

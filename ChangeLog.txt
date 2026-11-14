@@ -1,3 +1,4 @@
+v1.33 — 14/11/2026 — If a server's secure connection stops working just as you press Sign in, the app now waits: it shows the unencrypted-connection notice and keeps your password in the box until you press Sign in again.
 v1.32 — 14/11/2026 — Signing out of a server now uses its own separate connection, so it can never mix up one sign-in with another.
 v1.31 — 14/11/2026 — Updated the technical notes and the milestone security check to match the safety fixes, including the one risk that remains when a server only offers an unencrypted address.
 v1.30 — 14/11/2026 — Trusting a server's new certificate now first checks it is still the same server, and switching on unencrypted connections does nothing when the server has no unencrypted address.
