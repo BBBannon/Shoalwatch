@@ -52,6 +52,17 @@ A native Android client for Jellyfin (films and TV) whose offline library behave
 - If the server holds a newer change for the same item (watched on another device meanwhile), the later of the two wins for resume position; **watched is never undone by a sync**.
 - The app shows how many items are waiting to sync, and when the last sync succeeded.
 
+### 3.3 Shared downloads between profiles (requested by Ben, 14/11/2026)
+
+For a device used by more than one person (e.g. a shared tablet), signed in to the **same server** with more than one profile.
+
+- A setting, **"Share downloads between profiles"** (off by default, per server). When on, a download made by one profile is stored **once** and appears in the offline library of every profile on that server on this device. Nobody has to download or stream it again.
+- **Watched state stays per profile.** Whoever watches it has it marked watched on their own profile and synced to their own account (§3.2). Each profile keeps its own resume position.
+- **Watch and delete (§3.1) removes the file from the device for everyone**, as it frees shared storage. The prompt offers a second one-press option, **"Watched together"**, which also marks it watched for the other sharing profile(s) so their accounts stay accurate.
+- Setting **"Delete shared downloads"**: **After anyone has watched** (default, as Ben described) or **After everyone has watched**.
+- **Permission rule (security):** a shared download is only shown to a profile whose own account is allowed to see that item on the server (checked when online and remembered). This stops a restricted or child profile gaining access to something through sharing. Items never cross between different servers.
+- Design consequence for milestone 4: downloads are keyed by **server + item**, not by account; "who has it in their library" and per-profile watch state are separate records.
+
 ## 4. Architecture principles
 
 1. **The database is the single source of truth.** Screens read only from Room (as flows). The network layer writes into Room. There is no separate "offline mode" code path in the UI.
@@ -111,7 +122,7 @@ Each milestone has its own plan in `docs/plans/`, ends with automated tests pass
 | 2 | Room library cache, native browsing (home, libraries, series/season/episode, film detail, search), Continue Watching tidy-up, artwork cache |
 | 3 | Player: device profile, direct play/transcode, quality choice, resume and progress reporting, track memory, subtitle styling, gestures, speed, skip segments, sleep timer |
 | 4 | Downloads and offline library: queue, batch season/series/unwatched, original or transcoded, artwork/subtitles/previews pinned, verification, internal/SD storage. Begins with a short spike against the real server to settle how transcoded downloads are fetched resumably and whether Jellyfin 12 needs anything special for downloads |
-| 5 | Housekeeping (watch-and-delete prompt §3.1, auto-download next, storage view) and playstate outbox sync (§3.2) |
+| 5 | Housekeeping (watch-and-delete prompt §3.1, auto-download next, storage view), playstate outbox sync (§3.2) and shared downloads between profiles (§3.3) |
 | 6 | Picture-in-picture, Chromecast flavour, tablet layout, app lock (S8), polish |
 | 7 | Security-team review, fixes, signed first release, README |
 
