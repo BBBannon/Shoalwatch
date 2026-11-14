@@ -66,21 +66,26 @@ class HttpClientFactory internal constructor(
      */
     fun clientFor(config: ServerNetConfig): OkHttpClient {
         val trustManager = PinnedTrustManager(systemTrust, config.pinnedSpkiSha256)
-        val keyManagers: Array<KeyManager>? = config.clientCertAlias?.let { arrayOf(keyManagerFor(it)) }
+        // Always a key manager, even with no certificate configured: it records whether the server asked for one.
+        val certWatch = ClientCertWatch()
+        val keyManagers: Array<KeyManager> = arrayOf(certWatch.keyManager(config.clientCertAlias?.let(keyManagerFor)))
         val sslContext = SSLContext.getInstance("TLS").apply { init(keyManagers, arrayOf(trustManager), SecureRandom()) }
         val authorities = { config.authorities }
 
+        val clientCert = certWatch.interceptor(hasCertificate = config.clientCertAlias != null)
         val cleartextGuard = CleartextGuard { config.allowCleartext }
         val customHeaders = CustomHeaderInterceptor(authorities) { config.customHeaders }
         val auth = AuthInterceptor(authorities) { config.authHeader() }
 
         // Each guard is both an application and a network interceptor: the network position sees
-        // every redirect hop, which is what keeps the token and headers on their own server.
+        // every redirect hop, which is what keeps the token and headers on their own server. The
+        // client-certificate check comes first, so it sees the final failure of the whole call.
         return base.newBuilder()
             .sslSocketFactory(sslContext.socketFactory, trustManager)
             .hostnameVerifier(PinAwareHostnameVerifier(config.pinnedSpkiSha256, base.hostnameVerifier))
+            .eventListenerFactory(certWatch.events)
             .apply {
-                for (guard in listOf(cleartextGuard, customHeaders, auth)) {
+                for (guard in listOf(clientCert, cleartextGuard, customHeaders, auth)) {
                     addInterceptor(guard)
                     addNetworkInterceptor(guard)
                 }

@@ -144,23 +144,7 @@ class AddServerViewModelTest {
 
     // --- client certificate -------------------------------------------------------------------------------------
 
-    @Test fun aClientCertificateIsChosenThenStoredAndTheAddressRechecked() = runBlocking {
-        auth.onFind = { text, draft ->
-            if (draft.clientCertAlias == null) throw AppError.of(AppError.Kind.CLIENT_CERT_REQUIRED)
-            serverInfo("https://$text")
-        }
-        val vm = vm()
-        vm.type("den.example")
-        assertEquals(Check.NeedsClientCertificate, vm.state.value.check)
-        vm.chooseClientCertificate(FakeChooser(null)) // cancelled in the system picker
-        assertEquals(Check.NeedsClientCertificate, vm.state.value.check)
-        assertEquals(1, auth.findCalls.size)
-        vm.chooseClientCertificate(FakeChooser("my-cert"))
-        assertEquals("my-cert", auth.findCalls.last().second.clientCertAlias)
-        vm.confirmFound()
-        vm.skipSecondAddress()
-        assertEquals("my-cert", catalog.upserts.single().clientCertAlias)
-    }
+    // The client-certificate flow is tested through the real error mapping in ClientCertFlowTest.
 
     // --- version ------------------------------------------------------------------------------------------------
 
