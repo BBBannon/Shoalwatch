@@ -136,11 +136,11 @@ class ServerEditViewModelTest {
         vm.editAddress(AddressSlot.Away)
         vm.onAddressText("jf.example.org")
         vm.saveAddress()
-        vm.forgetCertificate()
-        assertNull(catalog.upserts.last().pinnedSpkiSha256)
+        // The certificate is forgotten elsewhere while the check is still running.
+        catalog.serverList.value = catalog.serverList.value.map { it.copy(pinnedSpkiSha256 = null) }
         gate.complete(Unit)
-        assertEquals(address("https://jf.example.org"), catalog.upserts.last().awayAddress)
-        assertNull("the forgotten pin stays forgotten", catalog.upserts.last().pinnedSpkiSha256)
+        assertEquals(address("https://jf.example.org"), catalog.upserts.single().awayAddress)
+        assertNull("the forgotten pin stays forgotten", catalog.upserts.single().pinnedSpkiSha256)
     }
 
     @Test fun cancellingTheAddressEditSavesNothing() {
@@ -210,10 +210,17 @@ class ServerEditViewModelTest {
 
     // --- certificates -------------------------------------------------------------------------------------------
 
-    @Test fun forgettingTheCertificateRemovesThePin() {
+    @Test fun forgettingTheCertificateNeedsConfirmationAndThenRemovesThePin() {
         val (catalog, vm) = setup(testServer(pin = PIN))
-        vm.forgetCertificate()
+        vm.askForgetCertificate()
+        assertEquals(EditPane.ConfirmDestructive(Destructive.ForgetCertificate), vm.state.value.pane)
+        assertTrue("nothing happens before confirming", catalog.upserts.isEmpty())
+        vm.dismissPane()
+        assertTrue(catalog.upserts.isEmpty())
+        vm.askForgetCertificate()
+        vm.confirmDestructive()
         assertNull(catalog.upserts.single().pinnedSpkiSha256)
+        assertNull(vm.state.value.pane)
     }
 
     @Test fun aChangedCertificateRaisesTheProminentAlertFromTheConnectionOrADamagedPin() {
@@ -257,13 +264,15 @@ class ServerEditViewModelTest {
         assertEquals(AppError.of(AppError.Kind.TLS_UNTRUSTED).userMessage, pane.error)
     }
 
-    @Test fun aClientCertificateCanBeChosenAndCleared() = runBlocking {
+    @Test fun aClientCertificateCanBeChosenAndRemovedAfterConfirming() = runBlocking {
         val (catalog, vm) = setup()
         vm.chooseClientCertificate(FakeChooser(null))
         assertTrue(catalog.upserts.isEmpty())
         vm.chooseClientCertificate(FakeChooser("my-cert"))
         assertEquals("my-cert", catalog.upserts.last().clientCertAlias)
-        vm.clearClientCertificate()
+        vm.askRemoveClientCertificate()
+        assertEquals("my-cert", catalog.upserts.last().clientCertAlias)
+        vm.confirmDestructive()
         assertNull(catalog.upserts.last().clientCertAlias)
     }
 
@@ -319,9 +328,12 @@ class ServerEditViewModelTest {
         assertEquals(mapOf("x-proxy" to "new"), catalog.upserts.single().customHeaders)
     }
 
-    @Test fun headersCanBeRemoved() {
+    @Test fun deletingAHeaderNeedsConfirmation() {
         val (catalog, vm) = setup(testServer(headers = mapOf("X-A" to "1", "X-B" to "2")))
-        vm.removeHeader("X-A")
+        vm.askRemoveHeader("X-A")
+        assertEquals(EditPane.ConfirmDestructive(Destructive.RemoveHeader("X-A")), vm.state.value.pane)
+        assertTrue(catalog.upserts.isEmpty())
+        vm.confirmDestructive()
         assertEquals(mapOf("X-B" to "2"), catalog.upserts.single().customHeaders)
     }
 
@@ -329,8 +341,6 @@ class ServerEditViewModelTest {
         val (catalog, vm) = setup()
         catalog.upsertFailure = IllegalStateException("db error for $secret")
         vm.setCleartext(false)
-        vm.removeHeader("none")
-        vm.clearClientCertificate()
         assertEquals(AppError.from(IllegalStateException()).userMessage, vm.state.value.error)
         assertFalse(secret in vm.state.value.error.orEmpty())
     }

@@ -10,6 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -46,7 +47,12 @@ internal fun FoundStep(state: AddServerUiState, actions: AddServerActions) {
     ) {
         Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
             Row(Modifier.padding(20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(36.dp))
+                Icon(
+                    if (supported) Icons.Filled.CheckCircle else Icons.Filled.Warning,
+                    contentDescription = null,
+                    tint = if (supported) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary,
+                    modifier = Modifier.size(36.dp),
+                )
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(found.name, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
                     Text(stringResource(R.string.found_version, found.version), style = MaterialTheme.typography.bodyLarge)
@@ -56,7 +62,7 @@ internal fun FoundStep(state: AddServerUiState, actions: AddServerActions) {
         if (found.alreadySaved) NoticeCard(title = stringResource(R.string.found_already_saved), body = null, tone = Tone.Info)
         if (!supported) {
             NoticeCard(
-                title = stringResource(R.string.version_warning_cd),
+                title = stringResource(R.string.version_warning_title),
                 body = stringResource(
                     when (found.compatibility) {
                         ServerInfo.Compatibility.TOO_OLD -> R.string.version_old
@@ -78,20 +84,24 @@ internal fun FoundStep(state: AddServerUiState, actions: AddServerActions) {
 
 /** The optional other address: explains home against away and checks the new address is the same server before it is saved. */
 @Composable
-internal fun SecondAddressStep(state: AddServerUiState, actions: AddServerActions) {
-    val failed = state.check as? Check.Failed
+internal fun SecondAddressStep(state: AddServerUiState, checking: Boolean, failed: Check.Failed?, actions: AddServerActions) {
     val firstIsHome = state.found?.firstIsHome == true
+    val busy = checking || state.saving
     AppScreen(
         title = stringResource(R.string.second_title),
         onBack = actions.onBackToAddress,
         bottomBar = {
             PrimaryButton(
-                text = stringResource(if (state.saving) R.string.second_saving else R.string.second_add),
+                text = stringResource(R.string.second_add),
                 onClick = actions.onAddSecond,
                 enabled = state.secondAddress.isNotBlank(),
-                loading = state.saving,
+                loading = busy,
             )
-            SecondaryButton(stringResource(R.string.action_skip), actions.onSkipSecond, enabled = !state.saving)
+            if (checking) {
+                SecondaryButton(stringResource(R.string.action_cancel), actions.onCancelCheck)
+            } else {
+                SecondaryButton(stringResource(R.string.action_skip), actions.onSkipSecond, enabled = !busy)
+            }
         },
     ) {
         Text(stringResource(R.string.second_body), style = MaterialTheme.typography.bodyLarge)
@@ -105,8 +115,8 @@ internal fun SecondAddressStep(state: AddServerUiState, actions: AddServerAction
             value = state.secondAddress,
             onChange = actions.onSecondAddressChange,
             label = stringResource(R.string.second_label),
-            hint = stringResource(R.string.add_address_hint),
             isError = failed != null || state.error != null,
+            enabled = !busy,
             onGo = actions.onAddSecond,
         )
         ErrorMessage(failed?.message ?: state.error)

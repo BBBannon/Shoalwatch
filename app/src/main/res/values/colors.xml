@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Deep-sea teal used behind the launcher icon, the welcome mark and the window while the app starts. -->
+    <color name="brand_deep_sea">#04302C</color>
+    <color name="window_background">#0F1716</color>
+</resources>

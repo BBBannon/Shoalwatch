@@ -5,6 +5,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import app.offlinefin.R
@@ -15,6 +16,7 @@ import app.offlinefin.ui.components.HttpWarningScreen
 import app.offlinefin.ui.components.Loading
 import app.offlinefin.ui.components.NoticeCard
 import app.offlinefin.ui.components.SecureWindow
+import app.offlinefin.ui.onboarding.Check
 import app.offlinefin.ui.components.Tone
 
 class ServerEditActions(
@@ -36,6 +38,7 @@ class ServerEditActions(
 class PaneActions(
     val onDismiss: () -> Unit,
     val onConfirmCleartext: () -> Unit,
+    val onConfirmDestructive: () -> Unit,
     val onTrustReviewed: () -> Unit,
     val onAddressText: (String) -> Unit,
     val onSaveAddress: () -> Unit,
@@ -58,37 +61,45 @@ private enum class Page { Settings, Address, HttpWarning, Certificate }
 @Composable
 fun ServerEditScreen(state: ServerEditUiState, actions: ServerEditActions) {
     SecureWindow()
-    val page = when (state.pane) {
-        is EditPane.Address -> Page.Address
-        EditPane.HttpWarning -> Page.HttpWarning
-        is EditPane.CertificateReview -> Page.Certificate
-        else -> Page.Settings
+    // System back does what the top-bar arrow does: close the open sub-page (or just a running check), not the screen.
+    BackHandler(enabled = state.pane.page() != Page.Settings) {
+        if (state.pane.page() == Page.Address && state.addressCheck != Check.Idle) actions.pane.onCancelAddressCheck() else actions.pane.onDismiss()
     }
     AnimatedContent(
-        targetState = page,
+        targetState = state,
+        contentKey = { it.pane.page() },
         transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(120)) },
         label = "server-edit-page",
-    ) { target ->
-        when (target) {
-            Page.Settings -> SettingsPage(state, actions)
-            Page.Address -> (state.pane as? EditPane.Address)?.let { AddressPane(it, state.addressCheck, state.addressRole, state.addressRequired, actions.pane) }
-            Page.HttpWarning -> HttpWarningScreen(onCancel = actions.pane.onDismiss, onUseAnyway = actions.pane.onConfirmCleartext)
-            Page.Certificate -> (state.pane as? EditPane.CertificateReview)?.let {
-                CertificateScreen(
-                    certificate = it.certificate, loading = it.loading, error = it.error, changed = state.certificateChanged,
-                    onTrust = actions.pane.onTrustReviewed, onCancel = actions.pane.onDismiss,
-                )
-            }
+    ) { shown ->
+        when (val pane = shown.pane) {
+            is EditPane.Address -> AddressPane(pane, shown.addressCheck, shown.addressRole, shown.addressRequired, actions.pane)
+            EditPane.HttpWarning -> HttpWarningScreen(onCancel = actions.pane.onDismiss, onUseAnyway = actions.pane.onConfirmCleartext)
+            is EditPane.CertificateReview -> CertificateScreen(
+                certificate = pane.certificate, loading = pane.loading, error = pane.error, changed = shown.certificateChanged,
+                onTrust = actions.pane.onTrustReviewed, onCancel = actions.pane.onDismiss,
+            )
+            else -> SettingsPage(shown, actions)
         }
     }
-    (state.pane as? EditPane.Header)?.let { HeaderDialog(it, actions.pane) }
+    when (val pane = state.pane) {
+        is EditPane.Header -> HeaderDialog(pane, actions.pane)
+        is EditPane.ConfirmDestructive -> DestructiveDialog(pane.action, actions.pane)
+        else -> Unit
+    }
+}
+
+private fun EditPane?.page() = when (this) {
+    is EditPane.Address -> Page.Address
+    EditPane.HttpWarning -> Page.HttpWarning
+    is EditPane.CertificateReview -> Page.Certificate
+    else -> Page.Settings
 }
 
 @Composable
 private fun SettingsPage(state: ServerEditUiState, actions: ServerEditActions) {
     AppScreen(title = stringResource(R.string.edit_title), onBack = actions.onBack) {
         when {
-            !state.loaded -> Loading(stringResource(R.string.splash_loading))
+            !state.loaded -> Loading(stringResource(R.string.loading))
             state.missing -> NoticeCard(title = stringResource(R.string.edit_missing), body = null, tone = Tone.Info)
             else -> {
                 ErrorMessage(state.error)

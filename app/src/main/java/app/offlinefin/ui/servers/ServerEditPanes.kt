@@ -12,7 +12,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -28,15 +28,15 @@ import androidx.compose.ui.unit.dp
 import app.offlinefin.R
 import app.offlinefin.ui.AddressRole
 import app.offlinefin.ui.components.AppScreen
-import app.offlinefin.ui.components.CertificateScreen
-import app.offlinefin.ui.components.CheckingScreen
-import app.offlinefin.ui.components.ClientCertificateScreen
+import app.offlinefin.ui.components.ConfirmDialog
 import app.offlinefin.ui.components.ErrorMessage
-import app.offlinefin.ui.components.HttpWarningScreen
 import app.offlinefin.ui.components.PrimaryButton
+import app.offlinefin.ui.components.RevealToggle
 import app.offlinefin.ui.components.SecondaryButton
+import app.offlinefin.ui.components.SecureDialog
 import app.offlinefin.ui.onboarding.AddressField
 import app.offlinefin.ui.onboarding.Check
+import app.offlinefin.ui.onboarding.CheckGate
 
 /**
  * Editing one address. Saving runs the same checks as adding a server (including "is this the same
@@ -44,44 +44,37 @@ import app.offlinefin.ui.onboarding.Check
  */
 @Composable
 internal fun AddressPane(pane: EditPane.Address, check: Check, role: AddressRole?, addressRequired: Boolean, actions: PaneActions) {
-    when (check) {
-        Check.Checking -> CheckingScreen(
-            title = stringResource(R.string.add_title),
-            detail = stringResource(R.string.add_checking),
-            cancelLabel = stringResource(R.string.action_cancel),
-            onCancel = actions.onCancelAddressCheck,
-        )
-        Check.NeedsHttpConsent -> HttpWarningScreen(onCancel = actions.onCancelAddressCheck, onUseAnyway = actions.onAllowHttp, role = role)
-        Check.LoadingCertificate, is Check.NeedsCertificateTrust -> CertificateScreen(
-            certificate = (check as? Check.NeedsCertificateTrust)?.certificate,
-            loading = check == Check.LoadingCertificate,
-            error = null,
-            changed = false,
-            onTrust = actions.onTrustAddressCertificate,
-            onCancel = actions.onCancelAddressCheck,
-        )
-        Check.NeedsClientCertificate -> ClientCertificateScreen(onChoose = actions.onChooseAddressClientCertificate, onCancel = actions.onCancelAddressCheck)
-        else -> AddressEditor(pane, check as? Check.Failed, addressRequired, actions)
-    }
+    CheckGate(
+        check = check,
+        role = role,
+        onCancel = actions.onCancelAddressCheck,
+        onAllowHttp = actions.onAllowHttp,
+        onTrustCertificate = actions.onTrustAddressCertificate,
+        onChooseClientCertificate = actions.onChooseAddressClientCertificate,
+    ) { checking, failed -> AddressEditor(pane, checking, failed, addressRequired, actions) }
 }
 
 @Composable
-private fun AddressEditor(pane: EditPane.Address, failed: Check.Failed?, addressRequired: Boolean, actions: PaneActions) {
+private fun AddressEditor(pane: EditPane.Address, checking: Boolean, failed: Check.Failed?, addressRequired: Boolean, actions: PaneActions) {
     val title = stringResource(if (pane.slot == AddressSlot.Home) R.string.edit_home else R.string.edit_away)
     AppScreen(
         title = title,
         onBack = actions.onDismiss,
         bottomBar = {
-            PrimaryButton(stringResource(R.string.edit_address_save), actions.onSaveAddress)
-            SecondaryButton(stringResource(R.string.action_cancel), actions.onDismiss)
+            PrimaryButton(stringResource(R.string.edit_address_save), actions.onSaveAddress, loading = checking)
+            if (checking) {
+                SecondaryButton(stringResource(R.string.action_cancel), actions.onCancelAddressCheck)
+            } else {
+                SecondaryButton(stringResource(R.string.action_cancel), actions.onDismiss)
+            }
         },
     ) {
         AddressField(
             value = pane.text,
             onChange = actions.onAddressText,
             label = title,
-            hint = stringResource(R.string.add_address_hint),
             isError = failed != null,
+            enabled = !checking,
             onGo = actions.onSaveAddress,
         )
         Text(stringResource(R.string.edit_address_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -90,12 +83,15 @@ private fun AddressEditor(pane: EditPane.Address, failed: Check.Failed?, address
     }
 }
 
-/** Add or edit a header. The value is masked while typing unless revealed; errors never repeat it. */
+/** Add or edit a header. The value is masked while typing unless revealed; errors never repeat it. The dialog window is secured too. */
 @Composable
 internal fun HeaderDialog(pane: EditPane.Header, actions: PaneActions) {
-    var revealed by rememberSaveable { mutableStateOf(false) }
+    var revealed by remember { mutableStateOf(false) }
+    val reveal = if (pane.name.isBlank()) stringResource(R.string.header_reveal_generic) else stringResource(R.string.header_reveal_cd, pane.name)
+    val hide = if (pane.name.isBlank()) stringResource(R.string.action_hide) else stringResource(R.string.header_hide_cd, pane.name)
     AlertDialog(
         onDismissRequest = actions.onDismiss,
+        properties = SecureDialog,
         title = {
             Text(
                 stringResource(if (pane.originalName == null) R.string.header_add_title else R.string.header_edit_title),
@@ -125,11 +121,7 @@ internal fun HeaderDialog(pane: EditPane.Header, actions: PaneActions) {
                     isError = pane.error != null,
                     visualTransformation = if (revealed) VisualTransformation.None else PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false, keyboardType = KeyboardType.Password),
-                    trailingIcon = {
-                        TextButton(onClick = { revealed = !revealed }) {
-                            Text(stringResource(if (revealed) R.string.action_hide else R.string.action_show))
-                        }
-                    },
+                    trailingIcon = { RevealToggle(revealed, { revealed = !revealed }, if (revealed) hide else reveal) },
                 )
                 ErrorMessage(pane.error)
             }
@@ -137,4 +129,30 @@ internal fun HeaderDialog(pane: EditPane.Header, actions: PaneActions) {
         dismissButton = { TextButton(onClick = actions.onDismiss) { Text(stringResource(R.string.action_cancel)) } },
         confirmButton = { TextButton(onClick = actions.onSaveHeader) { Text(stringResource(R.string.action_save)) } },
     )
+}
+
+/** Confirmation for forgetting the certificate, removing the client certificate or deleting a header. */
+@Composable
+internal fun DestructiveDialog(action: Destructive, actions: PaneActions) {
+    val title: String
+    val body: String
+    val confirm: String
+    when (action) {
+        Destructive.ForgetCertificate -> {
+            title = stringResource(R.string.confirm_forget_cert_title)
+            body = stringResource(R.string.confirm_forget_cert_body)
+            confirm = stringResource(R.string.confirm_forget_cert_action)
+        }
+        Destructive.RemoveClientCertificate -> {
+            title = stringResource(R.string.confirm_client_cert_title)
+            body = stringResource(R.string.confirm_client_cert_body)
+            confirm = stringResource(R.string.action_remove)
+        }
+        is Destructive.RemoveHeader -> {
+            title = stringResource(R.string.confirm_header_title, action.name)
+            body = stringResource(R.string.confirm_header_body)
+            confirm = stringResource(R.string.action_remove)
+        }
+    }
+    ConfirmDialog(title = title, confirmLabel = confirm, onConfirm = actions.onConfirmDestructive, onDismiss = actions.onDismiss) { Text(body) }
 }

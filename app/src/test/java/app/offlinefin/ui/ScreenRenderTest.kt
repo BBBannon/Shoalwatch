@@ -5,7 +5,11 @@ import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.unit.Density
@@ -34,6 +38,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.annotation.Config
 import org.robolectric.RobolectricTestRunner
 
 /**
@@ -49,7 +54,7 @@ class ScreenRenderTest {
 
     private fun show(fontScale: Float = 1f, content: @Composable () -> Unit) = rule.setContent {
         CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, fontScale)) {
-            OfflineFinTheme(dynamicColor = false, content = content)
+            OfflineFinTheme(content = content)
         }
     }
 
@@ -108,6 +113,41 @@ class ScreenRenderTest {
         assertTrue(shown(text(R.string.action_skip)))
     }
 
+    @Test @Config(qualifiers = "w320dp-h480dp")
+    fun onASmallScreenAtTwiceTheFontSizeTheContinueButtonIsReachableByScrolling() {
+        show(fontScale = 2f) { AddServerScreen(AddServerUiState(address = "den.example"), noAddActions, onLeave = null) }
+        rule.onNode(hasText(text(R.string.action_continue)) and hasClickAction()).performScrollTo().assertIsDisplayed()
+    }
+
+    @Test @Config(qualifiers = "w320dp-h480dp")
+    fun theSecondAddressActionsAreReachableOnASmallScreenAtTwiceTheFontSize() {
+        val found = FoundServer("srv-1", "Den", "10.10.3", ServerInfo.Compatibility.SUPPORTED, firstIsHome = true)
+        show(fontScale = 2f) { AddServerScreen(AddServerUiState(stage = AddServerStage.SecondAddress, found = found, secondAddress = "x"), noAddActions, onLeave = null) }
+        rule.onNode(hasText(text(R.string.second_add)) and hasClickAction()).performScrollTo().assertIsDisplayed()
+        rule.onNode(hasText(text(R.string.action_skip)) and hasClickAction()).performScrollTo().assertIsDisplayed()
+    }
+
+    @Test fun anAddressCheckInProgressShowsOnTheButtonWithACancelNotAFullScreenSpinner() {
+        show { AddServerScreen(AddServerUiState(address = "den.example", check = Check.Checking), noAddActions, onLeave = null) }
+        assertTrue(shown(text(R.string.add_address_label)))
+        assertTrue(shown(text(R.string.action_cancel)))
+        assertTrue(shown(text(R.string.add_address_example)))
+    }
+
+    @Test fun anUnsupportedVersionUsesTheWarningTitleNotAGenericOne() {
+        val found = FoundServer("srv-1", "Den", "10.8.0", ServerInfo.Compatibility.TOO_OLD, firstIsHome = true, alreadySaved = true)
+        show { AddServerScreen(AddServerUiState(stage = AddServerStage.Found, found = found), noAddActions, onLeave = null) }
+        assertTrue(shown(text(R.string.version_warning_title)))
+        assertTrue(shown(text(R.string.found_already_saved)))
+        assertTrue(shown(text(R.string.found_home_note)))
+    }
+
+    @Test fun theHttpWarningNamesTheAddressRoleAndTheSecurityCheckTitleIsShortened() {
+        show { AddServerScreen(AddServerUiState(check = Check.NeedsHttpConsent, addressRole = app.offlinefin.ui.AddressRole.Away), noAddActions, onLeave = null) }
+        assertTrue(shown(text(R.string.http_for_away)))
+        assertTrue(shown(text(R.string.security_check_title)))
+    }
+
     @Test fun addServerSurvivesTwiceTheFontSize() {
         show(fontScale = 2f) { AddServerScreen(AddServerUiState(), noAddActions, onLeave = null) }
         assertTrue(shown(text(R.string.add_title_first)))
@@ -119,7 +159,8 @@ class ScreenRenderTest {
         val state = SignInUiState(serverName = "Den", quickConnect = QuickConnectUi.Code("ABC123", 272))
         show { SignInScreen(state, TextFieldState(), noSignInActions) }
         assertTrue(shown("ABC 123"))
-        assertTrue(shown(text(R.string.qc_instruction)))
+        assertTrue(shown("1. " + text(R.string.qc_step_1)))
+        assertTrue(shown("3. " + text(R.string.qc_step_3)))
         assertTrue(shown(text(R.string.qc_expires, "4:32")))
         assertTrue(shown(text(R.string.qc_use_password)))
         assertEquals(1, rule.onAllNodesWithContentDescription(text(R.string.qc_code_cd, "A B C 1 2 3")).fetchSemanticsNodes().size)

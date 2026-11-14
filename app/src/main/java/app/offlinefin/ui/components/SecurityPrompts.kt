@@ -13,6 +13,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import app.offlinefin.R
 import app.offlinefin.ui.AddressRole
@@ -20,14 +23,15 @@ import app.offlinefin.ui.CertificateSummary
 
 /*
  * The blocking security steps, shared by Add server (as screens) and Connection settings (as sub-pages).
- * Each is a full screen: the safe choice is the filled button, the risky one is a red text button.
+ * Each is a full screen: the safe choice is the filled button, the risky one is a red text button. The app bar
+ * says "Security check" and the card carries the full wording, so the title is read once.
  */
 
-/** Plain `http`: the user must say "use anyway" before it is allowed. */
+/** Plain `http`: the user must say "use anyway" before it is allowed. [role] names which address it is about. */
 @Composable
 fun HttpWarningScreen(onCancel: () -> Unit, onUseAnyway: () -> Unit, role: AddressRole? = null) {
     AppScreen(
-        title = stringResource(R.string.http_title),
+        title = stringResource(R.string.security_check_title),
         onBack = onCancel,
         bottomBar = {
             SafeButton(stringResource(R.string.action_cancel), onCancel)
@@ -56,9 +60,8 @@ fun CertificateScreen(
     onTrust: () -> Unit,
     onCancel: () -> Unit,
 ) {
-    val title = stringResource(if (changed) R.string.cert_changed_title else R.string.cert_title)
     AppScreen(
-        title = title,
+        title = stringResource(R.string.security_check_title),
         onBack = onCancel,
         bottomBar = {
             SafeButton(stringResource(R.string.action_cancel), onCancel)
@@ -68,7 +71,7 @@ fun CertificateScreen(
         },
     ) {
         NoticeCard(
-            title = title,
+            title = stringResource(if (changed) R.string.cert_changed_title else R.string.cert_title),
             body = stringResource(if (changed) R.string.cert_changed_body else R.string.cert_body),
             tone = if (changed) Tone.Danger else Tone.Caution,
             icon = Icons.Filled.Lock,
@@ -85,7 +88,7 @@ fun CertificateScreen(
 @Composable
 fun ClientCertificateScreen(onChoose: () -> Unit, onCancel: () -> Unit) {
     AppScreen(
-        title = stringResource(R.string.clientcert_title),
+        title = stringResource(R.string.security_check_title),
         onBack = onCancel,
         bottomBar = {
             PrimaryButton(stringResource(R.string.clientcert_choose), onChoose)
@@ -101,23 +104,14 @@ fun ClientCertificateScreen(onChoose: () -> Unit, onCancel: () -> Unit) {
     }
 }
 
-/** A cancellable wait. */
-@Composable
-fun CheckingScreen(title: String, detail: String?, cancelLabel: String, onCancel: () -> Unit) {
-    AppScreen(
-        title = title,
-        onBack = onCancel,
-        bottomBar = { SecondaryButton(cancelLabel, onCancel) },
-    ) {
-        Loading(detail ?: title)
-    }
-}
-
-/** A spinner and a line of text in a block of fixed height, so the layout does not jump when it appears or goes. */
+/**
+ * A spinner and a line of text in a block of fixed height, so the layout does not jump when it appears or goes.
+ * Announced politely to screen readers when it appears.
+ */
 @Composable
 fun Loading(text: String, modifier: Modifier = Modifier) {
     Column(
-        modifier.fillMaxWidth().heightIn(min = 120.dp),
+        modifier.fillMaxWidth().heightIn(min = 160.dp).semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
         verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {

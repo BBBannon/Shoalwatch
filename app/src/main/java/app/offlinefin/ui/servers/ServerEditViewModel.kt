@@ -39,6 +39,15 @@ data class HeaderItem(val name: String, val value: String) {
     override fun toString() = "HeaderItem(<redacted>)"
 }
 
+/** The destructive actions on the settings screen, each behind a confirmation. */
+sealed interface Destructive {
+    data object ForgetCertificate : Destructive
+    data object RemoveClientCertificate : Destructive
+    data class RemoveHeader(val name: String) : Destructive {
+        override fun toString() = "RemoveHeader(<redacted>)"
+    }
+}
+
 /** A sub-page or dialog opened from the connection settings screen. */
 sealed interface EditPane {
     /** Editing an address; the checks run through [ServerEditUiState.addressCheck]. */
@@ -51,6 +60,9 @@ sealed interface EditPane {
 
     /** Reviewing a changed or untrusted certificate; trusting is always an explicit button. */
     data class CertificateReview(val loading: Boolean, val certificate: CertificateSummary?, val error: String?) : EditPane
+
+    /** Waiting for the user to confirm something that cannot be undone. */
+    data class ConfirmDestructive(val action: Destructive) : EditPane
 
     /** Adding ([originalName] null) or editing a header. [error] is the data layer's message and never contains the value. */
     data class Header(val originalName: String?, val name: String, val value: String, val error: String?) : EditPane {
@@ -231,8 +243,24 @@ class ServerEditViewModel(
 
     // --- certificates -------------------------------------------------------------------------------------------
 
-    fun forgetCertificate() {
-        viewModelScope.launch { save(closePane = false) { it.copy(pinnedSpkiSha256 = null) } }
+    fun askForgetCertificate() = ask(Destructive.ForgetCertificate)
+    fun askRemoveClientCertificate() = ask(Destructive.RemoveClientCertificate)
+    fun askRemoveHeader(name: String) = ask(Destructive.RemoveHeader(name))
+
+    private fun ask(action: Destructive) = local.update { it.copy(pane = EditPane.ConfirmDestructive(action), error = null) }
+
+    /** Carries out what the user confirmed. */
+    fun confirmDestructive() {
+        val action = (local.value.pane as? EditPane.ConfirmDestructive)?.action ?: return
+        viewModelScope.launch {
+            save {
+                when (action) {
+                    Destructive.ForgetCertificate -> it.copy(pinnedSpkiSha256 = null)
+                    Destructive.RemoveClientCertificate -> it.copy(clientCertAlias = null)
+                    is Destructive.RemoveHeader -> it.copy(customHeaders = it.customHeaders - action.name)
+                }
+            }
+        }
     }
 
     /** Reads the certificate the server presents now and shows it; nothing is trusted until [trustReviewedCertificate]. */
@@ -261,10 +289,6 @@ class ServerEditViewModel(
     suspend fun chooseClientCertificate(chooser: ClientCertChooser) {
         val alias = chooser.choose() ?: return
         save(closePane = false) { it.copy(clientCertAlias = alias) }
-    }
-
-    fun clearClientCertificate() {
-        viewModelScope.launch { save(closePane = false) { it.copy(clientCertAlias = null) } }
     }
 
     // --- custom headers -----------------------------------------------------------------------------------------
@@ -300,10 +324,6 @@ class ServerEditViewModel(
                 server.copy(customHeaders = others + (name to pane.value))
             }
         }
-    }
-
-    fun removeHeader(name: String) {
-        viewModelScope.launch { save(closePane = false) { it.copy(customHeaders = it.customHeaders - name) } }
     }
 
     // --- saving -------------------------------------------------------------------------------------------------

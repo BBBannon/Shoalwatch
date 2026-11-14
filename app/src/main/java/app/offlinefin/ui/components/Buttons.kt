@@ -16,6 +16,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import app.offlinefin.R
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -79,5 +83,13 @@ fun IconTextButton(
         Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(8.dp))
         Text(text)
+    }
+}
+
+/** Show / Hide for a masked value; [description] names what is revealed (for screen readers). */
+@Composable
+fun RevealToggle(revealed: Boolean, onToggle: () -> Unit, description: String, modifier: Modifier = Modifier) {
+    TextButton(onClick = onToggle, modifier = modifier.semantics { contentDescription = description }) {
+        Text(stringResource(if (revealed) R.string.action_hide else R.string.action_show))
     }
 }

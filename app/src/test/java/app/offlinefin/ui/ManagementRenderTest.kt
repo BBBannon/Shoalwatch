@@ -6,7 +6,13 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.unit.Density
 import androidx.test.core.app.ApplicationProvider
@@ -15,6 +21,7 @@ import app.offlinefin.core.AppError
 import app.offlinefin.net.fingerprintForDisplay
 import app.offlinefin.ui.onboarding.Check
 import app.offlinefin.ui.servers.AccountItem
+import app.offlinefin.ui.servers.Destructive
 import app.offlinefin.ui.servers.Confirm
 import app.offlinefin.ui.servers.EditPane
 import app.offlinefin.ui.servers.HeaderItem
@@ -32,6 +39,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.annotation.Config
 import org.robolectric.RobolectricTestRunner
 
 /** Renders the servers list and the connection settings on the JVM: every state composes and shows its key text. */
@@ -44,14 +52,14 @@ class ManagementRenderTest {
 
     private fun show(fontScale: Float = 1f, content: @Composable () -> Unit) = rule.setContent {
         CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, fontScale)) {
-            OfflineFinTheme(dynamicColor = false, content = content)
+            OfflineFinTheme(content = content)
         }
     }
 
     private fun shown(label: String) = rule.onAllNodesWithText(label).fetchSemanticsNodes().isNotEmpty()
 
     private val serversActions = ServersActions({}, {}, { _, _ -> }, { _, _ -> }, {}, {}, {}, {}, {})
-    private val pane = PaneActions({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {})
+    private val pane = PaneActions({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {})
     private val editActions = ServerEditActions({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, pane)
 
     private val servers = ServersUiState(
@@ -83,9 +91,9 @@ class ManagementRenderTest {
     @Test fun removingAServerListsWhatWillGo() {
         show { ServersScreen(servers.copy(confirm = Confirm.RemoveServer("s1", "Den", listOf("ben", "amy"))), serversActions) }
         assertTrue(shown(text(R.string.confirm_remove_title, "Den")))
-        assertTrue(shown("• " + text(R.string.confirm_remove_account, "ben")))
-        assertTrue(shown("• " + text(R.string.confirm_remove_account, "amy")))
-        assertTrue(shown("• " + text(R.string.confirm_remove_settings)))
+        assertTrue(shown(text(R.string.confirm_remove_account, "ben")))
+        assertTrue(shown(text(R.string.confirm_remove_account, "amy")))
+        assertTrue(shown(text(R.string.confirm_remove_settings)))
     }
 
     @Test fun noServersOffersToAddOne() {
@@ -115,7 +123,7 @@ class ManagementRenderTest {
         listOf(
             R.string.edit_connection, R.string.edit_addresses, R.string.edit_security, R.string.edit_headers,
             R.string.edit_home, R.string.edit_away, R.string.edit_not_set, R.string.edit_http_toggle,
-            R.string.edit_forget_cert, R.string.edit_client_cert_set, R.string.edit_clear, R.string.edit_header_add,
+            R.string.edit_forget_cert, R.string.edit_client_cert_set, R.string.edit_client_cert_remove, R.string.edit_header_add,
         ).forEach { assertTrue(context.getString(it), shown(text(it))) }
         assertTrue(shown("http://192.168.1.10:8096"))
         assertTrue(shown(fingerprintForDisplay(PIN).split(':').take(4).joinToString(":")))
@@ -173,6 +181,30 @@ class ManagementRenderTest {
         // The value field is a password-style field, so it is drawn masked and screen readers do not read it out.
         val masked = rule.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.Password)).fetchSemanticsNodes()
         assertTrue("value field must be masked", masked.isNotEmpty())
+    }
+
+    @Test fun forgettingTheCertificateAsksFirst() {
+        show { ServerEditScreen(edit.copy(pane = EditPane.ConfirmDestructive(Destructive.ForgetCertificate)), editActions) }
+        assertTrue(shown(text(R.string.confirm_forget_cert_title)))
+        assertTrue(shown(text(R.string.confirm_forget_cert_body)))
+    }
+
+    @Test fun deletingAHeaderAndRemovingTheClientCertificateAskFirst() {
+        show { ServerEditScreen(edit.copy(pane = EditPane.ConfirmDestructive(Destructive.RemoveHeader("X-Proxy"))), editActions) }
+        assertTrue(shown(text(R.string.confirm_header_title, "X-Proxy")))
+        assertFalse(shown(secret))
+    }
+
+    @Test fun theMaskedValueIsAnnouncedAsHidden() {
+        show { ServerEditScreen(edit, editActions) }
+        assertTrue(rule.onAllNodesWithContentDescription(text(R.string.header_hidden)).fetchSemanticsNodes().isNotEmpty())
+    }
+
+    @Test @Config(qualifiers = "w320dp-h480dp")
+    fun headerActionsStayReachableOnASmallScreenAtTwiceTheFontSize() {
+        show(fontScale = 2f) { ServerEditScreen(edit, editActions) }
+        rule.onNode(hasText(text(R.string.edit_header_add)) and hasClickAction()).performScrollTo().assertIsDisplayed()
+        rule.onNode(hasContentDescription(text(R.string.header_remove_cd, "X-Proxy"))).performScrollTo().assertIsDisplayed()
     }
 
     @Test fun settingsSurviveTwiceTheFontSize() {

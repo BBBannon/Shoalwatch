@@ -3,6 +3,8 @@ package app.offlinefin.ui.servers
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -23,7 +25,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,6 +42,7 @@ import app.offlinefin.ui.components.FingerprintBlock
 import app.offlinefin.ui.components.IconTextButton
 import app.offlinefin.ui.components.NoticeCard
 import app.offlinefin.ui.components.PrimaryButton
+import app.offlinefin.ui.components.RevealToggle
 import app.offlinefin.ui.components.SecondaryButton
 import app.offlinefin.ui.components.Tone
 
@@ -129,6 +132,7 @@ private fun CertificateRow(state: ServerEditUiState, actions: ServerEditActions)
 private fun ClientCertificateRow(state: ServerEditUiState, actions: ServerEditActions) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(stringResource(R.string.edit_client_cert), style = MaterialTheme.typography.labelLarge)
+        Text(stringResource(R.string.edit_client_cert_hint), style = MaterialTheme.typography.bodyMedium)
         Text(
             stringResource(if (state.hasClientCertificate) R.string.edit_client_cert_set else R.string.edit_client_cert_none),
             style = MaterialTheme.typography.bodyMedium,
@@ -137,7 +141,7 @@ private fun ClientCertificateRow(state: ServerEditUiState, actions: ServerEditAc
         Row {
             TextButton(onClick = actions.onChooseClientCertificate, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.edit_choose)) }
             if (state.hasClientCertificate) {
-                TextButton(onClick = actions.onClearClientCertificate, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.edit_clear)) }
+                TextButton(onClick = actions.onClearClientCertificate, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.edit_client_cert_remove)) }
             }
         }
     }
@@ -151,28 +155,34 @@ private fun HeadersSection(state: ServerEditUiState, actions: ServerEditActions)
     IconTextButton(stringResource(R.string.edit_header_add), Icons.Filled.Add, actions.onAddHeader)
 }
 
-/** A header whose value stays masked until the user reveals it. */
+/**
+ * A header whose value stays masked until revealed. The name and value are on the first line; the actions wrap
+ * onto the next line(s), so nothing is squeezed at a large font. Reveal state is not saved across restarts.
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun HeaderRow(header: HeaderItem, actions: ServerEditActions) {
-    var revealed by rememberSaveable(header.name) { mutableStateOf(false) }
-    val toggleLabel = stringResource(if (revealed) R.string.header_hide_cd else R.string.header_reveal_cd, header.name)
-    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text(header.name, style = MaterialTheme.typography.bodyLarge)
-            Text(
-                if (revealed) header.value else stringResource(R.string.header_masked),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+    var revealed by remember(header.name) { mutableStateOf(false) }
+    val hidden = stringResource(R.string.header_hidden)
+    Column(Modifier.fillMaxWidth()) {
+        Text(header.name, style = MaterialTheme.typography.bodyLarge)
+        Text(
+            if (revealed) header.value else stringResource(R.string.header_masked),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.semantics { if (!revealed) contentDescription = hidden },
+        )
+        FlowRow(verticalArrangement = Arrangement.Center) {
+            RevealToggle(
+                revealed, { revealed = !revealed },
+                stringResource(if (revealed) R.string.header_hide_cd else R.string.header_reveal_cd, header.name),
             )
-        }
-        TextButton(onClick = { revealed = !revealed }, modifier = Modifier.semantics { contentDescription = toggleLabel }) {
-            Text(stringResource(if (revealed) R.string.action_hide else R.string.action_show))
-        }
-        IconButton(onClick = { actions.onEditHeader(header.name) }) {
-            Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.header_edit_cd, header.name))
-        }
-        IconButton(onClick = { actions.onRemoveHeader(header.name) }) {
-            Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.header_remove_cd, header.name), tint = MaterialTheme.colorScheme.error)
+            IconButton(onClick = { actions.onEditHeader(header.name) }) {
+                Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.header_edit_cd, header.name))
+            }
+            IconButton(onClick = { actions.onRemoveHeader(header.name) }) {
+                Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.header_remove_cd, header.name), tint = MaterialTheme.colorScheme.error)
+            }
         }
     }
 }

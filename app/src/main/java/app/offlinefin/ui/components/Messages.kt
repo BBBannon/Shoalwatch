@@ -29,7 +29,7 @@ import androidx.compose.ui.unit.dp
 fun ErrorMessage(text: String?, modifier: Modifier = Modifier) {
     if (text == null) return
     Row(
-        modifier.fillMaxWidth().semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Assertive },
+        modifier.fillMaxWidth().semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.Top,
     ) {

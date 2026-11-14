@@ -20,7 +20,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import app.offlinefin.R
@@ -65,7 +67,11 @@ fun ConnectionChip(view: ConnectionView, modifier: Modifier = Modifier) {
             color = if (view.kind == Kind.CHECKING) Color.Transparent else container,
             contentColor = if (view.kind == Kind.CHECKING) MaterialTheme.colorScheme.onSurfaceVariant else content,
             border = if (view.kind == Kind.CHECKING) androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant) else null,
-            modifier = Modifier.semantics(mergeDescendants = true) { contentDescription = description },
+            // Only settled states are announced, so a flicker of "Checking" never interrupts a screen reader.
+            modifier = Modifier.semantics(mergeDescendants = true) {
+                contentDescription = description
+                if (view.kind != Kind.CHECKING) liveRegion = LiveRegionMode.Polite
+            },
         ) {
             Row(
                 Modifier.padding(horizontal = 16.dp, vertical = 12.dp),

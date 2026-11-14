@@ -10,7 +10,12 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Modifier
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.SecureFlagPolicy
 import app.offlinefin.R
+
+/** Dialogs are separate windows, so they need the secure flag themselves. */
+val SecureDialog = DialogProperties(securePolicy = SecureFlagPolicy.SecureOn)
 
 /** A confirmation for something that can't be undone. [confirmLabel] is in the error colour; Cancel is the default. */
 @Composable
@@ -23,6 +28,7 @@ fun ConfirmDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
+        properties = SecureDialog,
         title = { Text(title, Modifier.semantics { heading() }) },
         text = content,
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },

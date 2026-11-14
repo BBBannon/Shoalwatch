@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
@@ -18,7 +19,6 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -33,6 +33,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import app.offlinefin.R
 import app.offlinefin.ui.components.AppScreen
+import app.offlinefin.ui.components.BulletRow
 import app.offlinefin.ui.components.ConfirmDialog
 import app.offlinefin.ui.components.ErrorMessage
 import app.offlinefin.ui.components.IconTextButton
@@ -57,20 +58,11 @@ fun ServersScreen(state: ServersUiState, actions: ServersActions) {
     AppScreen(
         title = stringResource(R.string.servers_title),
         onBack = actions.onBack,
-        actions = {
-            IconButton(onClick = actions.onAddServer) {
-                Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.servers_add))
-            }
-        },
-        bottomBar = if (!state.loading && state.servers.isEmpty()) {
-            { PrimaryButton(stringResource(R.string.servers_add), actions.onAddServer) }
-        } else {
-            null
-        },
+        bottomBar = { PrimaryButton(stringResource(R.string.servers_add), actions.onAddServer) },
     ) {
         ErrorMessage(state.error)
         when {
-            state.loading -> Loading(stringResource(R.string.splash_loading))
+            state.loading -> Loading(stringResource(R.string.loading))
             state.servers.isEmpty() -> {
                 Text(stringResource(R.string.servers_empty_title), style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
                 Text(stringResource(R.string.servers_empty_body), style = MaterialTheme.typography.bodyLarge)
@@ -93,8 +85,8 @@ fun ServersScreen(state: ServersUiState, actions: ServersActions) {
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(stringResource(R.string.confirm_remove_body))
-                confirm.accountNames.forEach { Text("• " + stringResource(R.string.confirm_remove_account, it)) }
-                Text("• " + stringResource(R.string.confirm_remove_settings))
+                confirm.accountNames.forEach { BulletRow(stringResource(R.string.confirm_remove_account, it)) }
+                BulletRow(stringResource(R.string.confirm_remove_settings))
             }
         }
         null -> Unit
@@ -116,7 +108,7 @@ private fun ServerCard(server: ServerItem, actions: ServersActions) {
             if (server.accounts.isEmpty()) {
                 Text(stringResource(R.string.no_accounts), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 12.dp))
             } else {
-                Column(Modifier.padding(top = 8.dp)) { server.accounts.forEach { AccountRow(server.id, it, actions) } }
+                Column(Modifier.padding(top = 8.dp).selectableGroup()) { server.accounts.forEach { AccountRow(server.id, it, actions) } }
             }
             IconTextButton(stringResource(R.string.server_add_account), Icons.Filled.Add, { actions.onAddAccount(server.id) })
             IconTextButton(stringResource(R.string.server_settings), Icons.Filled.Settings, { actions.onSettings(server.id) })

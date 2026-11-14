@@ -14,11 +14,10 @@ import androidx.compose.material3.OutlinedSecureTextField
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,6 +37,7 @@ import app.offlinefin.R
 import app.offlinefin.data.servers.AuthRepository
 import app.offlinefin.ui.components.ErrorMessage
 import app.offlinefin.ui.components.Loading
+import app.offlinefin.ui.components.RevealToggle
 import app.offlinefin.ui.theme.CodeStyles
 
 private val TotalSeconds = (AuthRepository.TIMEOUT_MS / 1_000).toInt()
@@ -68,10 +68,14 @@ private fun CodeCard(ui: QuickConnectUi.Code) {
                 textAlign = TextAlign.Center,
                 modifier = Modifier.semantics { contentDescription = spoken },
             )
-            Text(stringResource(R.string.qc_instruction), style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center)
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(R.string.qc_step_1, R.string.qc_step_2, R.string.qc_step_3).forEachIndexed { index, step ->
+                    Text("${index + 1}. " + stringResource(step), style = MaterialTheme.typography.bodyLarge)
+                }
+            }
             LinearProgressIndicator(progress = { ui.secondsLeft / TotalSeconds.toFloat() }, modifier = Modifier.fillMaxWidth())
             Text(
-                stringResource(R.string.qc_expires, "%d:%02d".format(ui.secondsLeft / 60, ui.secondsLeft % 60)),
+                stringResource(R.string.qc_expires, stringResource(R.string.duration_minutes_seconds, ui.secondsLeft / 60, ui.secondsLeft % 60)),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -85,7 +89,7 @@ private fun CodeCard(ui: QuickConnectUi.Code) {
  */
 @Composable
 internal fun PasswordPanel(state: SignInUiState, password: TextFieldState, actions: SignInActions) {
-    var revealed by rememberSaveable { mutableStateOf(false) }
+    var revealed by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         OutlinedTextField(
             value = state.username,
@@ -117,10 +121,7 @@ internal fun PasswordPanel(state: SignInUiState, password: TextFieldState, actio
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false, imeAction = ImeAction.Go),
             onKeyboardAction = KeyboardActionHandler { actions.onSignIn() },
             trailingIcon = {
-                val description = stringResource(if (revealed) R.string.password_hide_cd else R.string.password_show_cd)
-                TextButton(onClick = { revealed = !revealed }, modifier = Modifier.semantics { contentDescription = description }) {
-                    Text(stringResource(if (revealed) R.string.action_hide else R.string.action_show))
-                }
+                RevealToggle(revealed, { revealed = !revealed }, stringResource(if (revealed) R.string.password_hide_cd else R.string.password_show_cd))
             },
         )
         ErrorMessage(state.error)

@@ -14,15 +14,18 @@
     <string name="action_hide">Hide</string>
     <string name="action_save">Save</string>
     <string name="cd_back">Back</string>
+    <string name="security_check_title">Security check</string>
     <string name="startup_failed_title">Something went wrong opening your saved servers</string>
     <string name="startup_failed_body">Your servers and sign-ins have not been changed. Try again, and if it keeps happening restart the app.</string>
     <string name="splash_loading">Loading OfflineFin</string>
+    <string name="loading">Loading…</string>
 
     <!-- Add server -->
     <string name="add_title_first">Welcome to OfflineFin</string>
     <string name="add_title">Add a server</string>
     <string name="add_intro">Enter the address of your Jellyfin server. It’s the one you’d type into a browser to watch.</string>
     <string name="add_address_label">Server address</string>
+    <string name="add_address_example">For example jellyfin.example.org or 192.168.1.10:8096</string>
     <string name="add_address_hint">jellyfin.example.org or 192.168.1.10:8096</string>
     <string name="add_checking">Checking the server…</string>
     <string name="add_try_http">Try an unencrypted connection instead…</string>
@@ -36,7 +39,7 @@
     <string name="http_use">Use anyway for this server</string>
 
     <string name="cert_title">This server uses its own security certificate</string>
-    <string name="cert_body">Only trust this if it’s your server. Compare the fingerprint below with the one shown on your server.</string>
+    <string name="cert_body">Only trust this if it’s your own server. If someone else runs it, ask them to confirm this fingerprint. Not sure? Press Cancel.</string>
     <string name="cert_trust">Trust this certificate</string>
     <string name="cert_loading">Reading the server’s certificate…</string>
     <string name="cert_fingerprint_label">Fingerprint (SHA-256)</string>
@@ -52,21 +55,21 @@
     <string name="cert_none_found">No certificate could be read. Check the server address and that it uses https.</string>
 
     <string name="clientcert_title">This server needs a certificate from your phone</string>
-    <string name="clientcert_body">Choose the client certificate, installed on this phone, that your server expects.</string>
+    <string name="clientcert_body">A client certificate proves to your server that this phone is allowed to connect. Choose the one your server expects. If none is listed, install it on this phone first, or ask whoever runs the server.</string>
     <string name="clientcert_choose">Choose certificate</string>
 
     <string name="found_title">Server found</string>
     <string name="found_version">Jellyfin %1$s</string>
-    <string name="found_home_note">Saved as your home address, used when you’re on your own Wi-Fi.</string>
-    <string name="found_away_note">Saved as your away address, used when you’re out and about.</string>
+    <string name="found_home_note">This will be saved as your home address, used when you’re on your own Wi-Fi.</string>
+    <string name="found_away_note">This will be saved as your away address, used when you’re out and about.</string>
     <string name="version_old">This server runs Jellyfin %1$s, which is older than the versions OfflineFin is tested with (10.10 to 12). It may work, but some things might not.</string>
     <string name="version_new">This server runs Jellyfin %1$s, which is newer than the versions OfflineFin is tested with (10.10 to 12). It should work, but it hasn’t been checked.</string>
     <string name="version_unknown">OfflineFin couldn’t tell which Jellyfin version this server runs, so it can’t promise everything will work.</string>
     <string name="version_continue">Continue anyway</string>
-    <string name="version_warning_cd">Warning</string>
+    <string name="version_warning_title">Untested Jellyfin version</string>
 
     <string name="second_title">Add a second address</string>
-    <string name="second_body">Servers often have two addresses: a fast one for your own Wi-Fi and one that works when you’re out. OfflineFin picks the right one automatically. This step is optional and you can do it later in the server’s settings.</string>
+    <string name="second_body">Add a second address if your server has one for home and one for away. You can skip this.</string>
     <string name="second_home_title">Home address</string>
     <string name="second_home_body">Fast, used on your Wi-Fi. Often starts with 192.168.</string>
     <string name="second_away_title">Away address</string>
@@ -79,8 +82,11 @@
 
     <!-- Sign in -->
     <string name="signin_title">Sign in</string>
-    <string name="signin_to">to %1$s</string>
-    <string name="qc_instruction">Enter this code in Jellyfin on a device where you’re already signed in: Settings → Quick Connect.</string>
+    <string name="signin_to">Signing in to %1$s</string>
+    <string name="qc_step_1">Open Jellyfin on a device where you’re already signed in.</string>
+    <string name="qc_step_2">Go to Settings → Quick Connect.</string>
+    <string name="qc_step_3">Enter this code.</string>
+    <string name="duration_minutes_seconds">%1$d:%2$02d</string>
     <string name="qc_code_cd">Quick Connect code: %1$s</string>
     <string name="qc_expires">Code expires in %1$s</string>
     <string name="qc_starting">Getting a code…</string>
@@ -113,7 +119,7 @@
     <string name="cert_badge">Certificate changed</string>
     <string name="no_accounts">Not signed in</string>
     <string name="confirm_signout_title">Sign out %1$s?</string>
-    <string name="confirm_signout_body">You’ll be signed out of %1$s on this phone and the sign-in will be revoked on the server. You can sign in again at any time.</string>
+    <string name="confirm_signout_body">You’ll be signed out of %1$s on this phone. You’ll also be signed out on the server. You can sign in again at any time.</string>
     <string name="confirm_remove_title">Remove %1$s?</string>
     <string name="confirm_remove_body">This removes the server and everything saved for it on this phone:</string>
     <string name="confirm_remove_account">Sign-in for %1$s</string>
@@ -133,15 +139,16 @@
     <string name="edit_http_toggle">Allow unencrypted HTTP</string>
     <string name="edit_http_hint">Off is safest. Turn on only for a server on a network you trust.</string>
     <string name="edit_cert">Trusted certificate</string>
-    <string name="edit_cert_none">None pinned. The server needs a publicly trusted certificate.</string>
+    <string name="edit_cert_none">No certificate saved. This server must use one your phone already trusts.</string>
     <string name="edit_forget_cert">Forget certificate</string>
     <string name="edit_client_cert">Client certificate</string>
+    <string name="edit_client_cert_hint">Only needed if your server asks this phone for a certificate. Not sure? Leave it as it is.</string>
     <string name="edit_client_cert_set">A certificate is selected.</string>
     <string name="edit_client_cert_none">None selected.</string>
     <string name="edit_choose">Choose</string>
-    <string name="edit_clear">Clear</string>
+    <string name="edit_client_cert_remove">Remove certificate</string>
     <string name="edit_headers">Custom headers</string>
-    <string name="edit_headers_hint">Sent with every request to this server, for example to get through a reverse proxy. Values are hidden by default.</string>
+    <string name="edit_headers_hint">Advanced. Only needed if your server sits behind an extra sign-in layer, such as a reverse proxy. These are sent with every request to this server. Values are hidden by default.</string>
     <string name="edit_headers_none">No custom headers.</string>
     <string name="edit_header_add">Add header</string>
     <string name="header_add_title">Add header</string>
@@ -149,10 +156,19 @@
     <string name="header_name_label">Header name</string>
     <string name="header_value_label">Header value</string>
     <string name="header_masked">••••••••</string>
+    <string name="header_reveal_generic">Show the value</string>
+    <string name="header_hidden">Hidden</string>
     <string name="header_reveal_cd">Show the value of %1$s</string>
     <string name="header_hide_cd">Hide the value of %1$s</string>
     <string name="header_edit_cd">Edit %1$s</string>
     <string name="header_remove_cd">Remove %1$s</string>
+    <string name="confirm_forget_cert_title">Forget this certificate?</string>
+    <string name="confirm_forget_cert_body">You won’t be able to connect until you trust it again.</string>
+    <string name="confirm_forget_cert_action">Forget</string>
+    <string name="confirm_header_title">Remove %1$s?</string>
+    <string name="confirm_header_body">This header will no longer be sent to the server.</string>
+    <string name="confirm_client_cert_title">Remove the client certificate?</string>
+    <string name="confirm_client_cert_body">Your phone will stop offering it to this server. You can choose it again later.</string>
     <string name="edit_missing">This server has been removed.</string>
 
     <!-- Connection state and home -->

@@ -51,7 +51,7 @@ fun HomePlaceholderScreen(
         },
     ) {
         when {
-            state.loading -> Loading(stringResource(R.string.splash_loading))
+            state.loading -> Loading(stringResource(R.string.loading))
             state.signedOut -> NoticeCard(
                 title = stringResource(R.string.home_signed_out_title),
                 body = stringResource(R.string.home_signed_out_body),
@@ -64,7 +64,8 @@ fun HomePlaceholderScreen(
 
 @Composable
 private fun SignedIn(state: HomeUiState, onRetry: () -> Unit, onReviewCertificate: (String) -> Unit) {
-    val connection = state.connection ?: return
+    // No connection reading yet: show "Checking" rather than nothing.
+    val connection = state.connection ?: ConnectionView(ConnectionView.Kind.CHECKING)
     Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(state.serverName.orEmpty(), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })

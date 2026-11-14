@@ -31,7 +31,7 @@ class PasswordExposureTest {
 
     @Test fun noAccessibilityTextOfThePasswordFieldContainsThePassword() {
         rule.setContent {
-            OfflineFinTheme(dynamicColor = false) {
+            OfflineFinTheme() {
                 PasswordPanel(SignInUiState(mode = SignInMode.Password), TextFieldState(secret), SignInActions({}, {}, {}, {}, {}, {}))
             }
         }
