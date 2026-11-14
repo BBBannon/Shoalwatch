@@ -48,7 +48,7 @@ sealed interface Connection {
  *
  * Both addresses are probed concurrently with `publicInfo` and an anonymous configuration, so no token is
  * sent to an address until it has proved to be the right server (its id must match [Server.id], by
- * [sameServerId]; a different server on that address counts as unreachable). Home gets [homeTimeoutMs], away
+ * equality, since ids are normalised at the gateway: [JellyfinId]; a different server on that address counts as unreachable). Home gets [homeTimeoutMs], away
  * [awayTimeoutMs]. If home answers correctly it wins at once and the away probe is cancelled; otherwise away
  * is used when it answers, or the server is [Connection.Offline].
  *
@@ -205,7 +205,7 @@ class AddressSelector(
     private suspend fun reach(server: Server, address: ServerAddress, net: ServerNetConfig, timeoutMs: Long): Reach =
         withTimeoutOrNull(timeoutMs) {
             try {
-                if (sameServerId(gateway.publicInfo(address, net).id, server.id)) Reach.Yes else Reach.No(null)
+                if (gateway.publicInfo(address, net).id == server.id) Reach.Yes else Reach.No(null)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

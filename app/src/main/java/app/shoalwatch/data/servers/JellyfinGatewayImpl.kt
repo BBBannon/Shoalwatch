@@ -1,6 +1,7 @@
 package app.shoalwatch.data.servers
 
 import app.shoalwatch.core.AppError
+import app.shoalwatch.core.displayText
 import app.shoalwatch.net.ServerAddress
 import app.shoalwatch.net.ServerNetConfig
 import kotlinx.coroutines.Dispatchers
@@ -26,18 +27,21 @@ import kotlin.coroutines.resumeWithException
 /**
  * [JellyfinGateway] on plain OkHttp + kotlinx.serialization (see "Jellyfin client decision" in
  * docs/ARCHITECTURE.md). Calls use `ServerClients` (no redirects). Responses are untrusted: bodies over [MAX_BODY_BYTES] are refused and unknown
- * JSON keys ignored. Nothing here logs or puts a URL, token, secret or password in an exception.
+ * JSON keys ignored; server and user ids must be GUIDs and leave here normalised ([JellyfinId]); names and the version
+ * are made safe to display ([displayText]). Nothing here logs or puts a URL, token, secret or password in an exception.
  */
 class JellyfinGatewayImpl(private val clients: ServerClients) : JellyfinGateway {
 
     override suspend fun publicInfo(address: ServerAddress, net: ServerNetConfig): ServerInfo {
         val body = send(address, net, "System/Info/Public", badBody = AppError.Kind.SERVER_NOT_FOUND)
         val info = decode<PublicInfoDto>(body, AppError.Kind.SERVER_NOT_FOUND)
-        val id = info.id?.takeIf { it.isNotBlank() } ?: throw AppError.of(AppError.Kind.SERVER_NOT_FOUND)
-        val version = info.version.orEmpty()
+        if (info.id.isNullOrBlank()) throw AppError.of(AppError.Kind.SERVER_NOT_FOUND)
+        // Something answered as Jellyfin, but with an id that is not a GUID: never used as a key, route or path.
+        val id = JellyfinId.parseOrNull(info.id) ?: throw AppError.of(AppError.Kind.SERVER_UNSUPPORTED)
+        val version = displayText(info.version, MAX_VERSION_LENGTH)
         return ServerInfo(
-            id = id,
-            name = info.serverName?.takeIf { it.isNotBlank() } ?: "Jellyfin",
+            id = id.value,
+            name = displayText(info.serverName, MAX_NAME_LENGTH).ifEmpty { "Jellyfin" },
             version = version,
             address = address,
             compatibility = ServerInfo.compatibilityOf(version),
@@ -77,10 +81,11 @@ class JellyfinGatewayImpl(private val clients: ServerClients) : JellyfinGateway 
     private suspend fun authenticate(address: ServerAddress, net: ServerNetConfig, path: String, json: String): AuthResult {
         val dto = decode<AuthResultDto>(send(address, net, path, post = json.toRequestBody(JSON)), AppError.Kind.SERVER_ERROR)
         val user = dto.user
-        val userId = user?.id?.takeIf { it.isNotBlank() }
+        val userId = JellyfinId.parseOrNull(user?.id)
+        val serverId = JellyfinId.parseOrNull(dto.serverId)
         val token = dto.accessToken?.takeIf { it.isNotBlank() }
-        if (userId == null || token == null) throw AppError.of(AppError.Kind.SERVER_ERROR)
-        return AuthResult(userId, user.name.orEmpty(), token, dto.serverId.orEmpty())
+        if (userId == null || serverId == null || token == null) throw AppError.of(AppError.Kind.SERVER_ERROR)
+        return AuthResult(userId.value, displayText(user?.name, MAX_NAME_LENGTH), token, serverId.value)
     }
 
     /**
@@ -166,6 +171,8 @@ class JellyfinGatewayImpl(private val clients: ServerClients) : JellyfinGateway 
 
     private companion object {
         const val MAX_BODY_BYTES = 1L shl 20
+        const val MAX_NAME_LENGTH = 80
+        const val MAX_VERSION_LENGTH = 40
         val JSON = "application/json".toMediaType()
         val LENIENT = Json { ignoreUnknownKeys = true }
     }

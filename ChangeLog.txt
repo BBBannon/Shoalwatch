@@ -1,3 +1,4 @@
+v1.24 — 14/11/2026 — Behind the scenes: a server is recognised the same way however it writes its ID, so it can't be added twice, and server and user names are cleaned up before they're shown, so a server can't disguise them with hidden characters.
 v1.23 — 14/11/2026 — Behind the scenes: the app never follows a server's redirect to another address, so your sign-in and any custom access headers can't be passed on to a different site.
 v1.22 — 14/11/2026 — Fixes from testing on a phone: the Continue button stays above the keyboard and the keyboard closes when you submit, the password box reports itself as a password to screen readers, plus clearer wording and an automatic retry if saved sign-ins fail to load.
 v1.21 — 14/11/2026 — The app is now called Shoalwatch: new name on the welcome screen and in the launcher, and its saved servers and sign-ins use new private storage names (nothing had been released, so nothing is lost).

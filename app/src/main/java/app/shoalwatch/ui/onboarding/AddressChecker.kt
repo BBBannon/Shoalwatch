@@ -5,7 +5,6 @@ import app.shoalwatch.data.servers.Authenticator
 import app.shoalwatch.data.servers.CertificateProber
 import app.shoalwatch.data.servers.ServerInfo
 import app.shoalwatch.data.servers.ServerNetDraft
-import app.shoalwatch.data.servers.sameServerId
 import app.shoalwatch.net.ServerAddress
 import app.shoalwatch.ui.CertificateSummary
 import app.shoalwatch.ui.toSummary
@@ -122,7 +121,7 @@ class AddressChecker(
     private suspend fun attempt(): Check = try {
         val info = auth.findServer(input, draft)
         val expected = expectedServerId
-        if (expected != null && !sameServerId(info.id, expected)) {
+        if (expected != null && info.id != expected) {
             Check.Failed(AppError.of(AppError.Kind.SERVER_MISMATCH).userMessage)
         } else {
             Check.Verified(info, draft)

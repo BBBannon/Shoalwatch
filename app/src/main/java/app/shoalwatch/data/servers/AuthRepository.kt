@@ -171,12 +171,12 @@ class AuthRepository(
 
     /** The address must answer as [server] before anything is sent to it. */
     private suspend fun verifyServer(server: Server, via: ServerAddress, net: ServerNetConfig) {
-        if (!sameServerId(gateway.publicInfo(via, net).id, server.id)) throw AppError.of(AppError.Kind.SERVER_MISMATCH)
+        if (gateway.publicInfo(via, net).id != server.id) throw AppError.of(AppError.Kind.SERVER_MISMATCH)
     }
 
     /** Saves the account as the active one, after checking the token was minted by [server] itself. */
     private suspend fun save(server: Server, result: AuthResult): Account {
-        if (!sameServerId(result.serverId, server.id)) throw AppError.of(AppError.Kind.SERVER_MISMATCH)
+        if (result.serverId != server.id) throw AppError.of(AppError.Kind.SERVER_MISMATCH)
         val account = Account(server.id, result.userId, result.userName, result.accessToken)
         try {
             store.upsertAccount(account, makeActive = true)
@@ -202,10 +202,4 @@ class AuthRepository(
         const val POLL_INTERVAL_MS = 4_000L
         const val TIMEOUT_MS = 5 * 60_000L
     }
-}
-
-/** True when both ids are non-empty and equal ignoring case and dashes (Jellyfin reports ids with or without them). */
-internal fun sameServerId(a: String, b: String): Boolean {
-    fun normalised(id: String) = id.lowercase().replace("-", "")
-    return normalised(a).isNotEmpty() && normalised(a) == normalised(b)
 }

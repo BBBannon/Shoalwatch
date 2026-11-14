@@ -34,7 +34,7 @@ class AddressSelectorTest {
     private val away = ServerAddress.parse("https://away.example")
     private val device = DeviceIdentity("dev-1", "Pixel", "Shoalwatch", "0.1")
 
-    private fun server(h: ServerAddress? = home, a: ServerAddress? = away, id: String = "abc-123", cleartext: Boolean = true) =
+    private fun server(h: ServerAddress? = home, a: ServerAddress? = away, id: String = "abc123", cleartext: Boolean = true) =
         Server(id, "Den", "10.10.3", h, a, cleartext, null, null, emptyMap())
 
     private class FakeGateway : JellyfinGateway {
@@ -136,13 +136,6 @@ class AddressSelectorTest {
         val flow = selector().connection(server())
         settle()
         assertEquals(Connection.Offline(), flow.value)
-    }
-
-    @Test fun idsDifferingOnlyByCaseAndDashesMatch() = runTest {
-        gateway.behaviour[home] = { "ABC123" }
-        val flow = selector().connection(server(id = "abc-123"))
-        runCurrent()
-        assertEquals(Connection.Online(home, isHome = true), flow.value)
     }
 
     @Test fun offlineWhenNeitherAnswersAfterTheAwayTimeout() = runTest {
@@ -412,7 +405,7 @@ class AddressSelectorTest {
         val s = selector()
         s.connection(server(a = null))
         runCurrent()
-        s.forget("abc-123")
+        s.forget("abc123")
         runCurrent()
         assertEquals(listOf(home), gateway.cancelled)
         monitor.flow.emit(Unit)
@@ -426,7 +419,7 @@ class AddressSelectorTest {
         val flow = s.connection(server(a = null))
         runCurrent()
         assertEquals(Connection.Online(home, isHome = true), flow.value)
-        s.forget("abc-123")
+        s.forget("abc123")
         assertEquals(Connection.Offline(), flow.value)
     }
 

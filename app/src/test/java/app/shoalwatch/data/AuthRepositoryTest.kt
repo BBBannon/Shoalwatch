@@ -339,15 +339,6 @@ class AuthRepositoryTest {
         assertEquals(AppError.Kind.SERVER_MISMATCH, e2!!.kind)
     }
 
-    @Test fun serverIdsDifferingOnlyByCaseOrDashesMatch() = runTest {
-        val dashed = server.copy(id = "AB12CD34-ef56-7890-ABCD-ef1234567890")
-        store.upsertServer(dashed)
-        gateway.info = { ServerInfo("ab12cd34ef567890abcdef1234567890", "Den", "10.10.3", it, ServerInfo.Compatibility.SUPPORTED) }
-        gateway.auth = { AuthResult("u1", "ben", "tok-1", "AB12CD34EF567890ABCDEF1234567890") }
-        val account = repo.signInWithPassword(dashed, home, "ben", "pw".toCharArray())
-        assertEquals(dashed.id, account.serverId)
-    }
-
     @Test fun quickConnectChecksServerIdentityBeforeStartingAndOnResult() = runTest {
         gateway.info = ::otherServerInfo
         val first = repo.quickConnect(server, home).toList()

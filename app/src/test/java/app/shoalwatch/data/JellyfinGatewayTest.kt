@@ -53,13 +53,13 @@ class JellyfinGatewayTest {
         error("unreachable")
     }
 
-    private val authBody = """{"AccessToken":"tok-XYZ","ServerId":"srv1","User":{"Id":"user1","Name":"ben","Extra":1},"Other":true}"""
+    private val authBody = """{"AccessToken":"tok-XYZ","ServerId":"0123abcd456789ef0123456789abcdef","User":{"Id":"fedcba9876543210fedcba9876543210","Name":"ben","Extra":1},"Other":true}"""
 
     @Test fun publicInfoParsesAndSendsAnonymousAuthorizationHeader() {
-        server.start(); server.enqueue(json("""{"Id":"srv1","ServerName":"Den","Version":"10.10.3","Unknown":[1]}"""))
+        server.start(); server.enqueue(json("""{"Id":"0123abcd456789ef0123456789abcdef","ServerName":"Den","Version":"10.10.3","Unknown":[1]}"""))
         val info = runBlocking { gateway.publicInfo(address(), net()) }
 
-        assertEquals(ServerInfo("srv1", "Den", "10.10.3", address(), ServerInfo.Compatibility.SUPPORTED), info)
+        assertEquals(ServerInfo("0123abcd456789ef0123456789abcdef", "Den", "10.10.3", address(), ServerInfo.Compatibility.SUPPORTED), info)
         val r = server.takeRequest()
         assertEquals("GET", r.method)
         assertEquals("/System/Info/Public", r.path)
@@ -70,13 +70,13 @@ class JellyfinGatewayTest {
     }
 
     @Test fun publicInfoHonoursABasePath() {
-        server.start(); server.enqueue(json("""{"Id":"a","ServerName":"x","Version":"10.10.0"}"""))
+        server.start(); server.enqueue(json("""{"Id":"0123abcd456789ef0123456789abcdef","ServerName":"x","Version":"10.10.0"}"""))
         runBlocking { gateway.publicInfo(address("/jellyfin"), net(address("/jellyfin"))) }
         assertEquals("/jellyfin/System/Info/Public", server.takeRequest().path)
     }
 
     @Test fun blankServerNameFallsBackAndMissingVersionIsUnknown() {
-        server.start(); server.enqueue(json("""{"Id":"a","ServerName":" "}"""))
+        server.start(); server.enqueue(json("""{"Id":"0123abcd456789ef0123456789abcdef","ServerName":" "}"""))
         val info = runBlocking { gateway.publicInfo(address(), net()) }
         assertEquals("Jellyfin", info.name)
         assertEquals(ServerInfo.Compatibility.UNKNOWN, info.compatibility)
@@ -130,8 +130,8 @@ class JellyfinGatewayTest {
     @Test fun authenticateWithQuickConnectPostsSecretBodyAndParsesResult() {
         server.start(); server.enqueue(json(authBody))
         val result = runBlocking { gateway.authenticateWithQuickConnect(address(), net(), "sec-123") }
-        assertEquals("user1", result.userId); assertEquals("ben", result.userName)
-        assertEquals("tok-XYZ", result.accessToken); assertEquals("srv1", result.serverId)
+        assertEquals("fedcba9876543210fedcba9876543210", result.userId); assertEquals("ben", result.userName)
+        assertEquals("tok-XYZ", result.accessToken); assertEquals("0123abcd456789ef0123456789abcdef", result.serverId)
         assertFalse(result.toString().contains("tok-XYZ"))
         val r = server.takeRequest()
         assertEquals("POST", r.method)

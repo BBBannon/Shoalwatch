@@ -2,6 +2,7 @@ package app.shoalwatch.net
 
 import android.content.Context
 import app.shoalwatch.core.AppError
+import app.shoalwatch.core.displayText
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeout
@@ -141,8 +142,8 @@ class HttpClientFactory internal constructor(
         } catch (e: IOException) {
             val leaf = capture.leaf ?: throw AppError.from(e)
             return CertificateInfo(
-                subject = leaf.subjectX500Principal.name,
-                issuer = leaf.issuerX500Principal.name,
+                subject = displayText(leaf.subjectX500Principal.name, MAX_NAME_LENGTH),
+                issuer = displayText(leaf.issuerX500Principal.name, MAX_NAME_LENGTH),
                 notAfter = leaf.notAfter.toInstant(),
                 spkiSha256 = spkiSha256Base64(leaf),
             )
@@ -169,6 +170,7 @@ class HttpClientFactory internal constructor(
     private companion object {
         const val CONNECT_TIMEOUT_S = 10L
         const val IO_TIMEOUT_S = 30L
+        const val MAX_NAME_LENGTH = 200
 
         val TLS_SPEC: ConnectionSpec = ConnectionSpec.Builder(ConnectionSpec.MODERN_TLS)
             .tlsVersions(TlsVersion.TLS_1_3, TlsVersion.TLS_1_2)
