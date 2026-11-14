@@ -24,6 +24,7 @@ class AppError(val kind: Kind, val userMessage: String, cause: Throwable? = null
             findAppError(t)?.let { return it }
             val kind = when {
                 t is SocketTimeoutException -> Kind.TIMEOUT
+                hasPinMismatch(t) -> Kind.TLS_PIN_CHANGED
                 isTlsProblem(t) -> Kind.TLS_UNTRUSTED
                 t is IOException -> Kind.NETWORK
                 else -> Kind.UNKNOWN
@@ -53,6 +54,17 @@ class AppError(val kind: Kind, val userMessage: String, cause: Throwable? = null
             return null
         }
 
+        private fun hasPinMismatch(t: Throwable): Boolean {
+            var current: Throwable? = t
+            var depth = 0
+            while (current != null && depth < 10) {
+                if (current is PinMismatchException) return true
+                current = current.cause
+                depth++
+            }
+            return false
+        }
+
         private fun isTlsProblem(t: Throwable): Boolean {
             var current: Throwable? = t
             var depth = 0
@@ -70,7 +82,7 @@ class AppError(val kind: Kind, val userMessage: String, cause: Throwable? = null
             Kind.NETWORK -> "Couldn't reach the server. Check your connection and the server address."
             Kind.TIMEOUT -> "The server took too long to respond. Please try again."
             Kind.TLS_UNTRUSTED -> "This server's security certificate isn't trusted."
-            Kind.TLS_PIN_CHANGED -> "This server's security certificate has changed since you trusted it."
+            Kind.TLS_PIN_CHANGED -> "This server's security certificate has changed. Don't continue unless you expected this."
             Kind.CLEARTEXT_BLOCKED -> "Unencrypted connections to this server are blocked."
             Kind.CLIENT_CERT_REQUIRED -> "This server requires a client certificate, which isn't supported."
             Kind.SERVER_NOT_FOUND -> "No Jellyfin server was found at that address."

@@ -11,7 +11,7 @@ import java.net.URLDecoder
  *
  * [allowedHosts] holds authorities (`host:port`, lower-case, port explicit; see
  * [ServerAddress.authority]). For every request this interceptor sees it:
- * - removes `api_key` / `ApiKey` query parameters (any letter case, and percent-encoded spellings),
+ * - removes `api_key` / `ApiKey` / `X-Emby-Token` / `X-MediaBrowser-Token` / `X-Emby-Authorization` query parameters (any letter case, and percent-encoded spellings),
  *   so credentials never sit in a URL;
  * - for an allowed authority, replaces any `Authorization` header with [header] (adds nothing if null);
  * - for any other authority, removes `Authorization` and the legacy Jellyfin/Emby token headers, so a
@@ -61,7 +61,7 @@ class AuthInterceptor(
 
     private companion object {
         const val AUTHORIZATION = "Authorization"
-        val API_KEYS = listOf("api_key", "ApiKey")
+        val API_KEYS = listOf("api_key", "ApiKey", "X-Emby-Token", "X-MediaBrowser-Token", "X-Emby-Authorization")
         val LEGACY_TOKEN_HEADERS = listOf("X-Emby-Token", "X-MediaBrowser-Token", "X-Emby-Authorization")
     }
 }

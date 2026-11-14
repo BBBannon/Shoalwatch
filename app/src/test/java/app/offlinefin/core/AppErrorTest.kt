@@ -14,6 +14,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AppErrorTest {
+    @Test fun pinMismatchAnywhereInChainIsPinChanged() {
+        val e = AppError.from(javax.net.ssl.SSLHandshakeException("x").apply { initCause(PinMismatchException()) })
+        assertEquals(AppError.Kind.TLS_PIN_CHANGED, e.kind)
+        assertEquals(
+            "This server's security certificate has changed. Don't continue unless you expected this.",
+            e.userMessage,
+        )
+    }
+
     private val leak = "https://secret.host/Items?api_key=LEAKME"
 
     @Test fun appErrorWrappedInCauseChainIsUnwrapped() {

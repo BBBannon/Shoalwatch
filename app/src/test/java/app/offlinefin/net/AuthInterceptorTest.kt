@@ -62,6 +62,13 @@ class AuthInterceptorTest {
         assertNull(a.takeRequest().getHeader("Authorization"))
     }
 
+    @Test fun `removes token-bearing query parameters in any case and encoding`() {
+        a.enqueue(MockResponse())
+        val client = OkHttpClient.Builder().addInterceptor(interceptor(setOf(authority(a)))).build()
+        get(client, a.url("/x?X-Emby-Token=1&keep=2&x-mediabrowser-token=3&X-Emby-Authorization=4&X%2DEmby%2DToken=5"))
+        assertEquals("/x?keep=2", a.takeRequest().path)
+    }
+
     @Test fun `removes api_key and ApiKey in any case, keeps other parameters`() {
         a.enqueue(MockResponse())
         a.enqueue(MockResponse())
