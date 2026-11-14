@@ -2,6 +2,7 @@ package app.offlinefin.data.servers
 
 import androidx.room.withTransaction
 import app.offlinefin.core.AppError
+import app.offlinefin.core.AppLog
 import app.offlinefin.data.db.AccountEntity
 import app.offlinefin.data.db.ActiveAccountEntity
 import app.offlinefin.data.db.AppDatabase
@@ -9,10 +10,15 @@ import app.offlinefin.data.db.ServerEntity
 import app.offlinefin.net.ServerAddress
 import app.offlinefin.net.isValidPin
 import app.offlinefin.security.SecretBox
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
@@ -53,13 +59,38 @@ class ServerStore(
      * Loads every saved account's token. Call once at app start, before any authenticated request; safe to
      * repeat. Serialised with sign-in and removal and re-reads the rows inside the lock, so a removal that
      * finished first is simply absent.
+     *
+     * Never throws (except for cancellation): a database or Keystore failure is logged by kind only and
+     * leaves the map as it was, so authenticated requests are refused as signed out. [awaitWarmed] completes
+     * either way.
      */
     suspend fun warmTokens() {
-        tokenLock.withLock {
-            val loaded = accountDao.getAll().mapNotNull(::toAccount).associate { (it.serverId to it.userId) to it.accessToken }
-            tokens.keys.retainAll(loaded.keys)
-            tokens.putAll(loaded)
+        try {
+            tokenLock.withLock {
+                val loaded = accountDao.getAll().mapNotNull(::toAccount).associate { (it.serverId to it.userId) to it.accessToken }
+                tokens.keys.retainAll(loaded.keys)
+                tokens.putAll(loaded)
+            }
+        } catch (e: Exception) {
+            currentCoroutineContext().ensureActive() // a real cancellation must propagate
+            AppLog.w(TAG, "Loading saved sign-ins failed", e)
         }
+        warmed.complete(Unit)
+    }
+
+    private val warmed = CompletableDeferred<Unit>()
+
+    /**
+     * Completes when the first [warmTokens] has finished, successfully or not (a failed warm leaves the live
+     * lookup empty, so requests fail closed as `NOT_SIGNED_IN`). Start-up routing waits on this before it
+     * decides which screen to show.
+     */
+    suspend fun awaitWarmed() = warmed.await()
+
+    /** [active] after [awaitWarmed]: the one call to use before an authenticated request, so a cold start never sees "signed out". */
+    suspend fun awaitActive(): Pair<Server, Account>? {
+        awaitWarmed()
+        return active()
     }
 
     val activeAccount: Flow<Account?> = accountDao.observeActive().map { it?.let(::toAccount) }
@@ -87,8 +118,11 @@ class ServerStore(
         if (s.addresses.isEmpty()) onServerRemoved(s.id)
     }
 
-    /** Also removes the server's accounts. */
-    suspend fun removeServer(id: String) {
+    /**
+     * Also removes the server's accounts. The removal runs to completion even if the caller is cancelled
+     * (while waiting for the lock or during the delete): a sign-out must never leave a token live.
+     */
+    suspend fun removeServer(id: String) = withContext(NonCancellable) {
         val addresses = server(id)?.addresses.orEmpty()
         try {
             tokenLock.withLock {
@@ -117,8 +151,8 @@ class ServerStore(
         onClientsStale(a.serverId, addresses)
     }
 
-    /** If it was the active account, nobody is active afterwards. */
-    suspend fun removeAccount(serverId: String, userId: String) {
+    /** If it was the active account, nobody is active afterwards. Runs to completion even if the caller is cancelled (see [removeServer]). */
+    suspend fun removeAccount(serverId: String, userId: String) = withContext(NonCancellable) {
         val addresses = server(serverId)?.addresses.orEmpty()
         try {
             tokenLock.withLock {
@@ -182,6 +216,7 @@ class ServerStore(
     }
 
     private companion object {
+        const val TAG = "ServerStore"
         val HEADERS = MapSerializer(String.serializer(), String.serializer())
     }
 }

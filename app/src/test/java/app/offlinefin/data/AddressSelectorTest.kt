@@ -421,6 +421,15 @@ class AddressSelectorTest {
         assertEquals(1, gateway.calls.size)
     }
 
+    @Test fun aForgottenServerNoLongerShowsOnline() = runTest {
+        val s = selector()
+        val flow = s.connection(server(a = null))
+        runCurrent()
+        assertEquals(Connection.Online(home, isHome = true), flow.value)
+        s.forget("abc-123")
+        assertEquals(Connection.Offline(), flow.value)
+    }
+
     @Test fun anUnexpectedGatewayCrashIsJustUnreachable() = runTest {
         gateway.behaviour[home] = { throw IllegalStateException("boom") }
         gateway.behaviour[away] = { throw IllegalStateException("boom") }

@@ -136,9 +136,13 @@ class AddressSelector(
     }
 
     /**
-     * The verified address to send to *now*: the next [Connection.Online] for [server], or null if it turns
-     * out [Connection.Offline] or nothing is verified within [timeoutMs]. Never a stale value from before a
-     * network change. This is the one call token-sending code should use.
+     * The next [Connection.Online] for [server] (verified as that server by a probe), or null if it turns out
+     * [Connection.Offline] or nothing is verified within [timeoutMs]. A `Checking` state is never returned.
+     *
+     * The guarantee is no stronger than the monitor's: a value published before the OS delivered a
+     * network-change callback can still be returned (the phone may already have moved networks). Callers must
+     * treat a failed request as "the address may be stale" and call [refresh]. This is the one call
+     * token-sending code should use.
      */
     suspend fun awaitOnline(server: Server, timeoutMs: Long = AWAIT_TIMEOUT_MS): Connection.Online? =
         withTimeoutOrNull(timeoutMs) {
@@ -158,6 +162,7 @@ class AddressSelector(
     /** Stops probing [serverId] (cancelling any probe in flight). Call when the server is removed. */
     fun forget(serverId: String) {
         val entry = synchronized(entries) { entries.remove(serverId) } ?: return
+        entry.state.value = Connection.Offline() // a collector still holding the flow must not keep showing Online
         entry.job.cancel()
         entry.requests.close()
     }

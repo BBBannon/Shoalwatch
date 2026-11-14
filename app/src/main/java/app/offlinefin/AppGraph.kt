@@ -33,7 +33,7 @@ class AppGraph(private val appContext: Context) {
     val jellyfinGateway: JellyfinGateway by lazy { JellyfinGatewayImpl(serverClients) }
     val networkMonitor: NetworkMonitor by lazy { AndroidNetworkMonitor(appContext, appScope) }
     val addressSelector: AddressSelector by lazy { AddressSelector(jellyfinGateway, networkMonitor, appScope, deviceIdentity) }
-    /** Loads saved tokens into the store's live lookup. Started at app start; join it before the first authenticated request. */
+    /** Loads saved tokens into the store's live lookup. Started at app start; anything authenticated waits on `serverStore.awaitWarmed()` (or uses `awaitActive()`). */
     val tokensWarmed: Job by lazy { appScope.launch { serverStore.warmTokens() } }
     val authRepository: AuthRepository by lazy { AuthRepository(jellyfinGateway, serverStore, deviceIdentity) }
 }
