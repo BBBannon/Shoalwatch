@@ -1,0 +1,283 @@
+{
+  "Items": [
+    {
+      "Name": "Alien Harbour",
+      "ServerId": "5a3e1c0d9b7f4e2a8c6d0b1f3e5a7c9d",
+      "Id": "aa000000000000000000000000000001",
+      "SortName": "alien harbour",
+      "Type": "Movie",
+      "ParentId": "c0ffee00000000000000000000000001",
+      "RunTimeTicks": 63000000000,
+      "ProductionYear": 1979,
+      "PremiereDate": "1979-06-01T00:00:00.0000000Z",
+      "CommunityRating": 7.4,
+      "OfficialRating": "12A",
+      "ImageTags": {
+        "Primary": "abc123def456",
+        "Thumb": "thumb1234",
+        "Logo": "logo99"
+      },
+      "BackdropImageTags": [
+        "bd7788aa"
+      ],
+      "PrimaryImageAspectRatio": 0.6666666666666666,
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 2,
+        "IsFavorite": false,
+        "Played": true,
+        "Key": "aa000000000000000000000000000001",
+        "ItemId": "00000000000000000000000000000000",
+        "LastPlayedDate": "2026-01-05T20:30:00.0000000Z",
+        "Rating": null,
+        "Likes": null
+      },
+      "Etag": "e9c1d2a3b4f5",
+      "DateCreated": "2025-03-02T10:15:30.1234567Z",
+      "CanDelete": false,
+      "CanDownload": true,
+      "HasSubtitles": true,
+      "Container": "mkv",
+      "Genres": [
+        "Drama",
+        "Mystery"
+      ],
+      "GenreItems": [
+        {
+          "Name": "Drama",
+          "Id": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1"
+        }
+      ],
+      "ProviderIds": {
+        "Imdb": "tt0000001",
+        "Tmdb": "1234"
+      },
+      "IsHD": true,
+      "IsFolder": false,
+      "LocationType": "FileSystem",
+      "MediaType": "Video",
+      "Taglines": [],
+      "People": [
+        {
+          "Name": "A Person",
+          "Id": "p1p1",
+          "Type": "Actor"
+        }
+      ],
+      "Studios": [],
+      "Tags": [],
+      "Width": 1920,
+      "Height": 1080,
+      "ExtraField": {
+        "nested": [
+          1,
+          2,
+          3
+        ]
+      }
+    },
+    {
+      "Name": "Blade of Dawn",
+      "ServerId": "5a3e1c0d9b7f4e2a8c6d0b1f3e5a7c9d",
+      "Id": "aa000000000000000000000000000002",
+      "SortName": "blade of dawn",
+      "Type": "Movie",
+      "ParentId": "c0ffee00000000000000000000000001",
+      "RunTimeTicks": 63000000000,
+      "ProductionYear": 1982,
+      "PremiereDate": "1982-06-01T00:00:00.0000000Z",
+      "CommunityRating": null,
+      "OfficialRating": null,
+      "ImageTags": {
+        "Primary": "abc123def456",
+        "Thumb": "thumb1234",
+        "Logo": "logo99"
+      },
+      "BackdropImageTags": [
+        "bd7788aa"
+      ],
+      "PrimaryImageAspectRatio": 0.6666666666666666,
+      "UserData": {
+        "PlaybackPositionTicks": 18000000000,
+        "PlayCount": 0,
+        "IsFavorite": true,
+        "Played": false,
+        "Key": "aa000000000000000000000000000002",
+        "ItemId": "00000000000000000000000000000000",
+        "PlayedPercentage": 28.57,
+        "LastPlayedDate": "2026-02-10T19:00:00Z",
+        "Rating": null,
+        "Likes": null
+      },
+      "Etag": "e9c1d2a3b4f5",
+      "DateCreated": "2025-03-02T10:15:30.1234567Z",
+      "CanDelete": false,
+      "CanDownload": true,
+      "HasSubtitles": true,
+      "Container": "mkv",
+      "Genres": [
+        "Drama",
+        "Mystery"
+      ],
+      "GenreItems": [
+        {
+          "Name": "Drama",
+          "Id": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1"
+        }
+      ],
+      "ProviderIds": {
+        "Imdb": "tt0000001",
+        "Tmdb": "1234"
+      },
+      "IsHD": true,
+      "IsFolder": false,
+      "LocationType": "FileSystem",
+      "MediaType": "Video",
+      "Taglines": [],
+      "People": [
+        {
+          "Name": "A Person",
+          "Id": "p1p1",
+          "Type": "Actor"
+        }
+      ],
+      "Studios": [],
+      "Tags": [],
+      "Width": 1920,
+      "Height": 1080,
+      "ExtraField": {
+        "nested": [
+          1,
+          2,
+          3
+        ]
+      }
+    },
+    {
+      "Name": "Casablanca Nights",
+      "ServerId": "5a3e1c0d9b7f4e2a8c6d0b1f3e5a7c9d",
+      "Id": "aa000000000000000000000000000003",
+      "SortName": "casablanca nights",
+      "Type": "Movie",
+      "ParentId": "c0ffee00000000000000000000000001",
+      "RunTimeTicks": null,
+      "ProductionYear": 1942,
+      "PremiereDate": null,
+      "CommunityRating": 7.4,
+      "OfficialRating": "12A",
+      "ImageTags": {},
+      "BackdropImageTags": [],
+      "PrimaryImageAspectRatio": 0.6666666666666666,
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "aa000000000000000000000000000003",
+        "ItemId": "00000000000000000000000000000000",
+        "Rating": null,
+        "Likes": null
+      },
+      "Etag": "e9c1d2a3b4f5",
+      "DateCreated": "2025-03-02T10:15:30.1234567Z",
+      "CanDelete": false,
+      "CanDownload": true,
+      "HasSubtitles": true,
+      "Container": "mkv",
+      "Genres": [
+        "Drama",
+        "Mystery"
+      ],
+      "GenreItems": [
+        {
+          "Name": "Drama",
+          "Id": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1"
+        }
+      ],
+      "ProviderIds": {
+        "Imdb": "tt0000001",
+        "Tmdb": "1234"
+      },
+      "IsHD": true,
+      "IsFolder": false,
+      "LocationType": "FileSystem",
+      "MediaType": "Video",
+      "Taglines": [],
+      "People": [
+        {
+          "Name": "A Person",
+          "Id": "p1p1",
+          "Type": "Actor"
+        }
+      ],
+      "Studios": [],
+      "Tags": [],
+      "Width": 1920,
+      "Height": 1080,
+      "ExtraField": {
+        "nested": [
+          1,
+          2,
+          3
+        ]
+      }
+    },
+    {
+      "Name": "Harbour Lights",
+      "ServerId": "5a3e1c0d9b7f4e2a8c6d0b1f3e5a7c9d",
+      "Id": "aa000000000000000000000000000004",
+      "SortName": "harbour lights",
+      "Type": "Series",
+      "ParentId": "c0ffee00000000000000000000000002",
+      "IsFolder": true,
+      "ChildCount": 2,
+      "RecursiveItemCount": 12,
+      "ProductionYear": 2015,
+      "CommunityRating": 8.2,
+      "OfficialRating": "PG",
+      "Status": "Continuing",
+      "ImageTags": {
+        "Primary": "serprim01"
+      },
+      "BackdropImageTags": [
+        "serbd01"
+      ],
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "aa000000000000000000000000000004",
+        "ItemId": "00000000000000000000000000000000",
+        "UnplayedItemCount": 7,
+        "Rating": null,
+        "Likes": null
+      },
+      "ExtraField": null
+    },
+    {
+      "Name": "Space Collection",
+      "ServerId": "5a3e1c0d9b7f4e2a8c6d0b1f3e5a7c9d",
+      "Id": "aa000000000000000000000000000005",
+      "Type": "BoxSet",
+      "ParentId": "c0ffee00000000000000000000000001",
+      "IsFolder": true,
+      "ChildCount": 3,
+      "ImageTags": {
+        "Primary": "boxprim01"
+      },
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "aa000000000000000000000000000005",
+        "ItemId": "00000000000000000000000000000000",
+        "Rating": null,
+        "Likes": null
+      }
+    }
+  ],
+  "TotalRecordCount": 57,
+  "StartIndex": 0
+}

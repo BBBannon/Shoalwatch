@@ -3,6 +3,8 @@ package app.shoalwatch
 import android.content.Context
 import app.shoalwatch.data.api.ServerApi
 import app.shoalwatch.data.db.AppDatabase
+import app.shoalwatch.data.library.api.LibraryGateway
+import app.shoalwatch.data.library.api.LibraryGatewayImpl
 import app.shoalwatch.data.servers.AddressSelector
 import app.shoalwatch.data.servers.AuthRepository
 import app.shoalwatch.data.servers.Authenticator
@@ -41,6 +43,8 @@ class AppGraph(private val appContext: Context) {
     val addressSelector: AddressSelector by lazy { AddressSelector(jellyfinGateway, networkMonitor, appScope, deviceIdentity, serverStore) }
     /** The one path for every signed-in request; nothing in the UI uses it yet. */
     val serverApi: ServerApi by lazy { ServerApi(serverStore, addressSelector, serverClients, deviceIdentity) }
+    /** Library endpoints as safe models; nothing in the UI uses it yet. */
+    val libraryGateway: LibraryGateway by lazy { LibraryGatewayImpl(serverApi) }
     /** Loads saved tokens into the store's live lookup. Started at app start; anything authenticated waits on `serverStore.awaitWarmed()` (or uses `awaitActive()`). */
     val tokensWarmed: Job by lazy { appScope.launch { serverStore.warmTokens() } }
     /** What the trust prompt reads; the UI never touches `HttpClientFactory` itself. */

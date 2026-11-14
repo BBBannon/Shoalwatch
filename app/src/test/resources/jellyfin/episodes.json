@@ -1,0 +1,104 @@
+{
+  "Items": [
+    {
+      "Name": "Episode 1",
+      "ServerId": "5a3e1c0d9b7f4e2a8c6d0b1f3e5a7c9d",
+      "Id": "ee00000000000000000000000000e101",
+      "Type": "Episode",
+      "ParentId": "5e0000000000000000000000000000a1",
+      "SeasonId": "5e0000000000000000000000000000a1",
+      "SeasonName": "Season 1",
+      "SeriesId": "aa000000000000000000000000000004",
+      "SeriesName": "Harbour Lights",
+      "IndexNumber": 1,
+      "ParentIndexNumber": 1,
+      "RunTimeTicks": 27000000000,
+      "Overview": "Episode 1 of season 1.",
+      "PremiereDate": "2022-09-01T00:00:00.0000000Z",
+      "ImageTags": {
+        "Primary": "epimg11"
+      },
+      "SeriesPrimaryImageTag": "serprim01",
+      "IsFolder": false,
+      "MediaType": "Video",
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 1,
+        "IsFavorite": false,
+        "Played": true,
+        "Key": "ee00000000000000000000000000e101",
+        "ItemId": "00000000000000000000000000000000",
+        "LastPlayedDate": "2026-04-01T20:00:00Z",
+        "Rating": null,
+        "Likes": null
+      }
+    },
+    {
+      "Name": "Episode 2",
+      "ServerId": "5a3e1c0d9b7f4e2a8c6d0b1f3e5a7c9d",
+      "Id": "ee00000000000000000000000000e102",
+      "Type": "Episode",
+      "ParentId": "5e0000000000000000000000000000a1",
+      "SeasonId": "5e0000000000000000000000000000a1",
+      "SeasonName": "Season 1",
+      "SeriesId": "aa000000000000000000000000000004",
+      "SeriesName": "Harbour Lights",
+      "IndexNumber": 2,
+      "ParentIndexNumber": 1,
+      "RunTimeTicks": 27000000000,
+      "Overview": "Episode 2 of season 1.",
+      "PremiereDate": "2022-09-02T00:00:00.0000000Z",
+      "ImageTags": {
+        "Primary": "epimg12"
+      },
+      "SeriesPrimaryImageTag": "serprim01",
+      "IsFolder": false,
+      "MediaType": "Video",
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "ee00000000000000000000000000e102",
+        "ItemId": "00000000000000000000000000000000",
+        "Rating": null,
+        "Likes": null
+      }
+    },
+    {
+      "Name": "Episode 1",
+      "ServerId": "5a3e1c0d9b7f4e2a8c6d0b1f3e5a7c9d",
+      "Id": "ee00000000000000000000000000e201",
+      "Type": "Episode",
+      "ParentId": "5e0000000000000000000000000000a2",
+      "SeasonId": "5e0000000000000000000000000000a2",
+      "SeasonName": "Season 2",
+      "SeriesId": "aa000000000000000000000000000004",
+      "SeriesName": "Harbour Lights",
+      "IndexNumber": 1,
+      "ParentIndexNumber": 2,
+      "RunTimeTicks": 27000000000,
+      "Overview": "Episode 1 of season 2.",
+      "PremiereDate": "2022-09-01T00:00:00.0000000Z",
+      "ImageTags": {
+        "Primary": "epimg21"
+      },
+      "SeriesPrimaryImageTag": "serprim01",
+      "IsFolder": false,
+      "MediaType": "Video",
+      "UserData": {
+        "PlaybackPositionTicks": 9000000000,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "ee00000000000000000000000000e201",
+        "ItemId": "00000000000000000000000000000000",
+        "PlayedPercentage": 33.3,
+        "Rating": null,
+        "Likes": null
+      }
+    }
+  ],
+  "TotalRecordCount": 3,
+  "StartIndex": 0
+}

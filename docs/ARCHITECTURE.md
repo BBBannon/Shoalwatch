@@ -43,7 +43,8 @@ app.shoalwatch
 │   ├── servers/     Server (+ ServerSummary), Account, JellyfinId, ServerStore, ServerNet (+ ServerNetDraft), DeviceIdentity, JellyfinGateway(+Impl),
 │   │                AuthRepository, QuickConnectState, AddressSelector (+ Connection, ServerSettingsSource), Seams
 │   ├── api/         ServerApi (the one authenticated call path), ApiRequest (+ Session, URL building and path checks), JsonBodies (bounded read + decode, shared with the gateway), CallAwait
-│   ├── library/ images/ playback/ downloads/ sync/
+│   ├── library/     Models (Item, ItemWithUserData, UserData, Page, Sort, ItemFilter, ...); api/ Dtos (internal), Mappers (internal), LibraryGateway(+Impl)
+│   ├── images/ playback/ downloads/ sync/
 └── ui/          theme, nav, components, one package per screen group (see "UI" below)
 ```
 
@@ -97,6 +98,36 @@ Every signed-in request in the app goes through `data/api/ServerApi`: `get` (dec
 - **Status mapping** (a response is an answer, never retried): 401 `UNAUTHORISED`, 403 `FORBIDDEN`, 404 `SERVER_NOT_FOUND`, any 3xx `SERVER_NOT_FOUND` (no client follows redirects), 5xx and every other 4xx `SERVER_ERROR`.
 - **Network failure before a response:** `selector.refresh()`; if the call's `retry` flag is set (default true for GET and `getBytes`, false for POST and DELETE; callers opt in only for idempotent operations), `awaitOnline` is asked again and the call repeated exactly once (nothing verified now: `OFFLINE`); a second failure is `AppError.from`. A guard refusal (`BlockedRequestException`: cleartext, signed out, client certificate, pin) is never retried. A failure while reading the body is mapped (and asks for a re-check) without a retry.
 - **Bodies** (`JsonBodies`, shared with `JellyfinGatewayImpl`): bounded read (one byte past the limit decides; default 4 MiB for `get`), `ignoreUnknownKeys` and null-tolerant decoding, decode failure is a fixed `SERVER_ERROR`, nothing from a body in any message. `getBytes` hands the caller a source that fails with `SERVER_ERROR` past `maxBytes` (and refuses a larger declared length before the reader runs); the response is closed when the reader returns or throws.
+
+## Library endpoints (`LibraryGateway`)
+
+`data/library/api/LibraryGateway` is the typed face of the server's library endpoints, built on `ServerApi`. It returns the app's own models (`data/library/Models.kt`), never DTOs or JSON; the DTOs (`Dtos.kt`) and mappers (`Mappers.kt`) are `internal`. Every request names the user (`userId`), asks for user data (`enableUserData=true`) and images (`enableImages=true`, `enableImageTypes=Primary,Backdrop,Thumb`, `imageTypeLimit=1`) where the endpoint offers them. Names and enum values below were checked against `docs/reference/jellyfin-openapi-12.4.0.json`.
+
+| Gateway call | Method and path | Parameters used (besides `userId` and the image set) | Response |
+|---|---|---|---|
+| `views` | GET `/UserViews` | none | `BaseItemDtoQueryResult` |
+| `children` | GET `/Items` | `parentId`, `startIndex`, `limit` (1..200), `sortBy` (SortName, DateCreated, PremiereDate, CommunityRating), `sortOrder`, `filters` (IsUnplayed, IsFavorite), `includeItemTypes`, `recursive`, `fields=ChildCount` | `BaseItemDtoQueryResult` |
+| `item` | GET `/Items/{itemId}` | none (detail includes the overview; no image or field options exist) | `BaseItemDto` |
+| `seasons` | GET `/Shows/{seriesId}/Seasons` | `fields=ChildCount` | `BaseItemDtoQueryResult` |
+| `episodes` | GET `/Shows/{seriesId}/Episodes` | `seasonId` (optional), `fields=Overview` | `BaseItemDtoQueryResult` |
+| `resume` | GET `/UserItems/Resume` | `limit` (1..200), `includeItemTypes=Movie,Episode` | `BaseItemDtoQueryResult` |
+| `nextUp` | GET `/Shows/NextUp` | `limit` (1..200), `enableResumable=false`, `enableRewatching=false` | `BaseItemDtoQueryResult` |
+| `latest` | GET `/Items/Latest` | `parentId`, `limit` (1..200) | bare array of `BaseItemDto` |
+| `search` | GET `/Items` | `searchTerm` (at most 100 characters; blank sends nothing), `recursive=true`, `includeItemTypes=Movie,Series,Episode`, `limit` (1..50) | `BaseItemDtoQueryResult` |
+| `setPlayed` | POST / DELETE `/UserPlayedItems/{itemId}` | none | `UserItemDataDto` (ignored) |
+| `setFavourite` | POST / DELETE `/UserFavoriteItems/{itemId}` | none | `UserItemDataDto` (ignored) |
+| `clearResume` | POST `/UserItems/{itemId}/UserData` | JSON body `{"PlaybackPositionTicks":0}` (`UpdateUserItemDataDto`) | `UserItemDataDto` (ignored) |
+
+List views do not request `Overview` (large); detail and episodes do. The three mutations are idempotent, so they opt in to `ServerApi`'s one retry. Array parameters are sent comma-delimited, as the reference describes.
+
+**Untrusted-input rules at this boundary (SPEC S11):**
+- **Ids** go through `JellyfinId` (normalised: lower case, no dashes). An item whose own id is not a GUID is dropped from a list; a single `item()` fails as `SERVER_ERROR`. Invalid optional ids (`parentId`, `seriesId`, `seasonId`) become null. Ids the caller passes in that are not GUIDs fail as `SERVER_NOT_FOUND` before any request.
+- **Display strings** go through `displayText` (control and format characters, including bidi and zero-width, removed): name, series name and sort name 200 characters, official rating 20. The overview (4,000) keeps line breaks (at most one blank line in a row) but loses everything else unusual; HTML is not stripped here, the UI shows it as plain text.
+- **Numbers** are range-checked: index numbers 0..100,000 else null; year 1800..2200 else null; rating 0..10 else null; runtime, position, counts and percentages must be in range else null (position and play count 0). Ticks become milliseconds with `Ticks`.
+- **Dates** (`premiereDate`, `lastPlayed`) parse leniently; an unparseable date is null.
+- **Image tags** must match `[A-Za-z0-9]{1,64}` else null (they become cache keys and query values).
+- **Sizes:** lists are capped at the requested limit (seasons and episodes, which have no limit parameter, at 1,000, views at 100) even if the server sends more; `Page.total` is clamped to at least the items returned and at most 1,000,000.
+- Libraries whose collection type is not films, TV, collections or mixed (music, books, photos, live TV, playlists, home videos...) are skipped.
 
 ## Data model (servers and accounts)
 

@@ -1,0 +1,78 @@
+{
+  "Name": "Alien Harbour",
+  "ServerId": "5a3e1c0d9b7f4e2a8c6d0b1f3e5a7c9d",
+  "Id": "aa000000000000000000000000000001",
+  "SortName": "alien harbour",
+  "Type": "Movie",
+  "ParentId": "c0ffee00000000000000000000000001",
+  "RunTimeTicks": 63000000000,
+  "ProductionYear": 1979,
+  "PremiereDate": "1979-06-01T00:00:00.0000000Z",
+  "CommunityRating": 7.4,
+  "OfficialRating": "12A",
+  "ImageTags": {
+    "Primary": "abc123def456",
+    "Thumb": "thumb1234",
+    "Logo": "logo99"
+  },
+  "BackdropImageTags": [
+    "bd7788aa"
+  ],
+  "PrimaryImageAspectRatio": 0.6666666666666666,
+  "UserData": {
+    "PlaybackPositionTicks": 12345670000,
+    "PlayCount": 1,
+    "IsFavorite": true,
+    "Played": false,
+    "Key": "aa000000000000000000000000000001",
+    "ItemId": "00000000000000000000000000000000",
+    "PlayedPercentage": 19.6,
+    "LastPlayedDate": "2026-03-04T21:15:42.5000000Z",
+    "Rating": null,
+    "Likes": null
+  },
+  "Etag": "e9c1d2a3b4f5",
+  "DateCreated": "2025-03-02T10:15:30.1234567Z",
+  "CanDelete": false,
+  "CanDownload": true,
+  "HasSubtitles": true,
+  "Container": "mkv",
+  "Genres": [
+    "Drama",
+    "Mystery"
+  ],
+  "GenreItems": [
+    {
+      "Name": "Drama",
+      "Id": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1"
+    }
+  ],
+  "ProviderIds": {
+    "Imdb": "tt0000001",
+    "Tmdb": "1234"
+  },
+  "IsHD": true,
+  "IsFolder": false,
+  "LocationType": "FileSystem",
+  "MediaType": "Video",
+  "Taglines": [],
+  "People": [
+    {
+      "Name": "A Person",
+      "Id": "p1p1",
+      "Type": "Actor"
+    }
+  ],
+  "Studios": [],
+  "Tags": [],
+  "Width": 1920,
+  "Height": 1080,
+  "ExtraField": {
+    "nested": [
+      1,
+      2,
+      3
+    ]
+  },
+  "Overview": "In a quiet harbour town,\nsomething stirs beneath the pier.\n\nA thriller."
+}

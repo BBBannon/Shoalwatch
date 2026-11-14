@@ -1,3 +1,4 @@
+v1.48 — 14/11/2026 — Behind the scenes for browsing: the app can now read your libraries, films, series, seasons, episodes, "continue watching" and search results from the server, and check everything it reads before using it.
 v1.47 — 14/11/2026 — Added a small pretend Jellyfin server (for testing only) so browsing can be tried on the emulator without a real server, including slow and failing connections.
 v1.46 — 14/11/2026 — Behind the scenes for browsing: one careful route now carries every request to your server. It only sends your sign-in to a connection that has just been checked, and says plainly when you are offline.
 v1.45 — 14/11/2026 — First milestone finished: adding a server, signing in and switching between home and away addresses are built, reviewed and tested on an emulator. Work has started on browsing your library.

@@ -1,0 +1,117 @@
+{
+  "Items": [
+    {
+      "Name": "Blade of Dawn",
+      "ServerId": "5a3e1c0d9b7f4e2a8c6d0b1f3e5a7c9d",
+      "Id": "aa000000000000000000000000000002",
+      "SortName": "blade of dawn",
+      "Type": "Movie",
+      "ParentId": "c0ffee00000000000000000000000001",
+      "RunTimeTicks": 63000000000,
+      "ProductionYear": 1982,
+      "PremiereDate": "1982-06-01T00:00:00.0000000Z",
+      "CommunityRating": 7.4,
+      "OfficialRating": "12A",
+      "ImageTags": {
+        "Primary": "abc123def456",
+        "Thumb": "thumb1234",
+        "Logo": "logo99"
+      },
+      "BackdropImageTags": [
+        "bd7788aa"
+      ],
+      "PrimaryImageAspectRatio": 0.6666666666666666,
+      "UserData": {
+        "PlaybackPositionTicks": 18000000000,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "aa000000000000000000000000000002",
+        "ItemId": "00000000000000000000000000000000",
+        "PlayedPercentage": 28.57,
+        "LastPlayedDate": "2026-02-10T19:00:00Z",
+        "Rating": null,
+        "Likes": null
+      },
+      "Etag": "e9c1d2a3b4f5",
+      "DateCreated": "2025-03-02T10:15:30.1234567Z",
+      "CanDelete": false,
+      "CanDownload": true,
+      "HasSubtitles": true,
+      "Container": "mkv",
+      "Genres": [
+        "Drama",
+        "Mystery"
+      ],
+      "GenreItems": [
+        {
+          "Name": "Drama",
+          "Id": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1"
+        }
+      ],
+      "ProviderIds": {
+        "Imdb": "tt0000001",
+        "Tmdb": "1234"
+      },
+      "IsHD": true,
+      "IsFolder": false,
+      "LocationType": "FileSystem",
+      "MediaType": "Video",
+      "Taglines": [],
+      "People": [
+        {
+          "Name": "A Person",
+          "Id": "p1p1",
+          "Type": "Actor"
+        }
+      ],
+      "Studios": [],
+      "Tags": [],
+      "Width": 1920,
+      "Height": 1080,
+      "ExtraField": {
+        "nested": [
+          1,
+          2,
+          3
+        ]
+      }
+    },
+    {
+      "Name": "Episode 1",
+      "ServerId": "5a3e1c0d9b7f4e2a8c6d0b1f3e5a7c9d",
+      "Id": "ee00000000000000000000000000e201",
+      "Type": "Episode",
+      "ParentId": "5e0000000000000000000000000000a2",
+      "SeasonId": "5e0000000000000000000000000000a2",
+      "SeasonName": "Season 2",
+      "SeriesId": "aa000000000000000000000000000004",
+      "SeriesName": "Harbour Lights",
+      "IndexNumber": 1,
+      "ParentIndexNumber": 2,
+      "RunTimeTicks": 27000000000,
+      "Overview": "Episode 1 of season 2.",
+      "PremiereDate": "2022-09-01T00:00:00.0000000Z",
+      "ImageTags": {
+        "Primary": "epimg21"
+      },
+      "SeriesPrimaryImageTag": "serprim01",
+      "IsFolder": false,
+      "MediaType": "Video",
+      "UserData": {
+        "PlaybackPositionTicks": 9000000000,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "ee00000000000000000000000000e201",
+        "ItemId": "00000000000000000000000000000000",
+        "PlayedPercentage": 33.3,
+        "LastPlayedDate": "2026-04-02T20:00:00Z",
+        "Rating": null,
+        "Likes": null
+      }
+    }
+  ],
+  "TotalRecordCount": 2,
+  "StartIndex": 0
+}
