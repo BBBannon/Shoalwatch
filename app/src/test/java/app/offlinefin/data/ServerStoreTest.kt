@@ -32,6 +32,7 @@ class ServerStoreTest {
     private val box = SecretBox { key }
     private lateinit var db: AppDatabase
     private lateinit var store: ServerStore
+    private val stale = mutableListOf<Pair<String, List<ServerAddress>>>()
 
     private val validPin = Base64.getEncoder().encodeToString(ByteArray(32) { it.toByte() })
 
@@ -53,7 +54,7 @@ class ServerStoreTest {
     @Before fun open() {
         db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java)
             .allowMainThreadQueries().build()
-        store = ServerStore(db, box)
+        store = ServerStore(db, box) { id, addresses -> stale += id to addresses }
     }
 
     @After fun close() = db.close()
@@ -221,5 +222,31 @@ class ServerStoreTest {
         assertEquals("my-cert", c.clientCertAlias)
         assertEquals(mapOf("X-Proxy-Key" to "headervalue-12345"), c.customHeaders)
         assertEquals("hdr", c.authHeader())
+    }
+
+    @Test fun changesThatAffectClientsReportTheServerAndItsAddresses() = runBlocking {
+        val s = server()
+        store.upsertServer(s)
+        assertEquals("s1", stale.last().first)
+        assertTrue(stale.last().second.containsAll(listOf(s.homeAddress, s.awayAddress)))
+
+        stale.clear(); store.upsertAccount(account(), makeActive = true)
+        assertTrue(stale.isEmpty())
+
+        store.removeAccount("s1", "u1")
+        assertEquals("s1", stale.single().first)
+        assertTrue(stale.single().second.contains(s.homeAddress))
+
+        stale.clear(); store.removeServer("s1")
+        assertEquals("s1", stale.single().first)
+        assertTrue(stale.single().second.contains(s.awayAddress))
+    }
+
+    @Test fun upsertReportsTheOldAddressesToo() = runBlocking {
+        store.upsertServer(server())
+        stale.clear()
+        store.upsertServer(server().copy(homeAddress = ServerAddress.parse("https://new.example")))
+        val reported = stale.single().second.map { it.authority }
+        assertTrue("home.example:8920" in reported && "new.example:443" in reported)
     }
 }

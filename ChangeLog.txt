@@ -1,3 +1,4 @@
+v1.12 — 14/11/2026 — Behind the scenes: signing in now checks the address really is your server before sending your password, sign-in details are cleared properly when you sign out, and sign-in requests are never redirected elsewhere.
 v1.11 — 14/11/2026 — Behind the scenes: the app can now remember your servers and sign-ins securely on the phone, and sign in to a server with Quick Connect or a username and password.
 v1.10 — 14/11/2026 — Behind the scenes: checking a server's certificate now gives up after 10 seconds instead of hanging, and the security messages are clearer.
 v1.9 — 14/11/2026 — Behind the scenes: the app now has a single secure way to connect to your server. It trusts self-signed servers only if you approve their certificate, warns if it later changes, and never sends your sign-in to a different server.

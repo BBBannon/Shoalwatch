@@ -3,6 +3,7 @@ package app.offlinefin.data
 import app.offlinefin.core.AppError
 import app.offlinefin.data.servers.DeviceIdentity
 import app.offlinefin.data.servers.JellyfinGatewayImpl
+import app.offlinefin.data.servers.ServerClients
 import app.offlinefin.data.servers.ServerInfo
 import app.offlinefin.data.servers.ServerNet
 import app.offlinefin.data.servers.ServerNetDraft
@@ -19,12 +20,13 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
+import java.util.concurrent.atomic.AtomicReference
 
 class JellyfinGatewayTest {
     private val server = MockWebServer()
     private val device = DeviceIdentity("device-id-1", "Pixel 9", "OfflineFin", "0.1")
     private val noTrust = HandshakeCertificates.Builder().build().trustManager
-    private val gateway = JellyfinGatewayImpl(HttpClientFactory(noTrust, { error("no client certificates here") }))
+    private val gateway = JellyfinGatewayImpl(ServerClients(HttpClientFactory(noTrust, { error("no client certificates here") })))
 
     @After fun stop() = server.shutdown()
 
@@ -191,5 +193,57 @@ class JellyfinGatewayTest {
         assertEquals("Pixel 9 Pro", DeviceIdentity.sanitiseDeviceName("  Pixel\t9\u0000 Pro \""))
         assertEquals("Android", DeviceIdentity.sanitiseDeviceName(""))
         assertEquals(64, DeviceIdentity.sanitiseDeviceName("a".repeat(200)).length)
+    }
+
+    // ---- fix round 1
+
+    @Test fun credentialRequestsAreNeverRedirected() {
+        val other = MockWebServer().apply { start(); enqueue(json(authBody)) }
+        try {
+            server.start()
+            server.enqueue(MockResponse().setResponseCode(307).setHeader("Location", "http://127.0.0.1:${other.port}/Users/AuthenticateByName"))
+            val e = kindOf { gateway.authenticateByName(address(), net(), "ben", "pw") }
+            assertEquals(AppError.Kind.SERVER_NOT_FOUND, e.kind)
+            assertEquals(0, other.requestCount)
+        } finally {
+            other.shutdown()
+        }
+    }
+
+    @Test fun anyRedirectOnAnyEndpointIsAnError() {
+        server.start(); server.enqueue(MockResponse().setResponseCode(302).setHeader("Location", "/elsewhere"))
+        assertEquals(AppError.Kind.SERVER_NOT_FOUND, kindOf { gateway.publicInfo(address(), net()) }.kind)
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test fun hostileJsonIsAnAppErrorNotACrash() {
+        server.start()
+        val bodies = listOf("[]", "[1,2]", """{"AccessToken":5,"User":{"Id":"u"}}""", """{"AccessToken":"t","User":[]}""", "null", "\"str\"", "")
+        bodies.forEach { server.enqueue(json(it)) }
+        bodies.forEach { assertEquals(it, AppError.Kind.SERVER_ERROR, kindOf { gateway.authenticateByName(address(), net(), "n", "p") }.kind) }
+
+        val qc = listOf("""{"Authenticated":"yes"}""", "[]", "42", """{"Authenticated":{}}""")
+        qc.forEach { server.enqueue(json(it)) }
+        qc.forEach { assertEquals(it, AppError.Kind.SERVER_ERROR, kindOf { gateway.quickConnectState(address(), net(), "s") }.kind) }
+
+        server.enqueue(json("""{"Secret":7,"Code":[]}"""))
+        assertEquals(AppError.Kind.SERVER_ERROR, kindOf { gateway.quickConnectInitiate(address(), net()) }.kind)
+        server.enqueue(json("""{"Secret":"","Code":"123"}"""))
+        assertEquals(AppError.Kind.SERVER_ERROR, kindOf { gateway.quickConnectInitiate(address(), net()) }.kind)
+        server.enqueue(json("\"maybe\""))
+        assertEquals(AppError.Kind.SERVER_ERROR, kindOf { gateway.quickConnectEnabled(address(), net()) }.kind)
+    }
+
+    @Test fun theTokenProviderIsReadLiveOnEveryRequest() {
+        server.start(); server.enqueue(MockResponse().setResponseCode(204)); server.enqueue(MockResponse().setResponseCode(204))
+        val token = AtomicReference<String?>("tok-XYZ")
+        val a = address()
+        val config = ServerNet.config(listOf(a), ServerNetDraft(allowCleartext = true), authKey = "s1:u1") { device.authHeader(token.get()) }
+        runBlocking { gateway.logout(a, config) }
+        token.set(null)
+        runBlocking { gateway.logout(a, ServerNet.config(listOf(a), ServerNetDraft(allowCleartext = true), authKey = "s1:u1") { "ignored" }) }
+        assertTrue("Token=\"tok-XYZ\"" in server.takeRequest().getHeader("Authorization")!!)
+        // Same configuration value: the cached client (and its live provider) is reused, and now yields no token.
+        assertFalse("Token=" in server.takeRequest().getHeader("Authorization")!!)
     }
 }

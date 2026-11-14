@@ -20,24 +20,33 @@ object ServerNet {
     /**
      * @param addresses the addresses that count as "this server" (nulls are ignored); the login token and
      *   custom headers are only ever sent to these.
+     * @param authKey whose token [authHeader] supplies: null = anonymous, else `serverId:userId`. Part of the
+     *   configuration's identity, so the provider must read the token live rather than capture a string.
      * @param authHeader read per request: the `Authorization` value, or null to send none.
      */
-    fun config(addresses: Collection<ServerAddress?>, draft: ServerNetDraft, authHeader: () -> String?) =
+    fun config(addresses: Collection<ServerAddress?>, draft: ServerNetDraft, authKey: String? = null, authHeader: () -> String?) =
         ServerNetConfig(
             authorities = addresses.filterNotNull().map { it.authority }.toSet(),
             allowCleartext = draft.allowCleartext,
             pinnedSpkiSha256 = draft.pinnedSpkiSha256,
             clientCertAlias = draft.clientCertAlias,
             customHeaders = draft.customHeaders,
+            authKey = authKey,
             authHeader = authHeader,
         )
 
     /** @throws AppError `TLS_UNTRUSTED` if the saved pin was damaged (see [Server.pinInvalid]). */
-    fun config(addresses: Collection<ServerAddress?>, server: Server, authHeader: () -> String?): ServerNetConfig {
+    fun config(
+        addresses: Collection<ServerAddress?>,
+        server: Server,
+        authKey: String? = null,
+        authHeader: () -> String?,
+    ): ServerNetConfig {
         if (server.pinInvalid) throw AppError.of(AppError.Kind.TLS_UNTRUSTED)
         return config(
             addresses,
             ServerNetDraft(server.allowCleartext, server.pinnedSpkiSha256, server.clientCertAlias, server.customHeaders),
+            authKey,
             authHeader,
         )
     }

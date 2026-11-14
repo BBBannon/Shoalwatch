@@ -114,10 +114,6 @@ dependencies {
     implementation(libs.compose.material.icons.core)
     debugImplementation(libs.compose.ui.tooling)
 
-    implementation(libs.jellyfin.core)
-    // The Jellyfin SDK logs through kotlin-logging, which on Android needs SLF4J on the classpath.
-    // The no-op binding also keeps request URLs, which can contain secrets, out of logcat.
-    implementation(libs.slf4j.nop)
     implementation(libs.okhttp)
 
     testImplementation(libs.junit)

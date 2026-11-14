@@ -96,4 +96,9 @@ class AppErrorTest {
         val t = SocketTimeoutException()
         assertSame(t, AppError.from(t).cause)
     }
+
+    @Test fun serverMismatchHasItsOwnMessage() = assertEquals(
+        "That address belongs to a different server. Check the address and try again.",
+        AppError.of(AppError.Kind.SERVER_MISMATCH).userMessage,
+    )
 }

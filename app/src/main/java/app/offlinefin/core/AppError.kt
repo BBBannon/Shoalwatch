@@ -14,7 +14,7 @@ class AppError(val kind: Kind, val userMessage: String, cause: Throwable? = null
     enum class Kind {
         NETWORK, TIMEOUT, TLS_UNTRUSTED, TLS_PIN_CHANGED, CLEARTEXT_BLOCKED, CLIENT_CERT_REQUIRED,
         SERVER_NOT_FOUND, SERVER_UNSUPPORTED, UNAUTHORISED, QUICK_CONNECT_DISABLED, FORBIDDEN,
-        SERVER_ERROR, NOT_SIGNED_IN, UNKNOWN,
+        SERVER_ERROR, SERVER_MISMATCH, NOT_SIGNED_IN, UNKNOWN,
     }
 
     companion object {
@@ -87,6 +87,7 @@ class AppError(val kind: Kind, val userMessage: String, cause: Throwable? = null
             Kind.QUICK_CONNECT_DISABLED -> "Quick Connect is switched off on this server."
             Kind.FORBIDDEN -> "You don't have permission to do that."
             Kind.SERVER_ERROR -> "The server reported a problem. Please try again later."
+            Kind.SERVER_MISMATCH -> "That address belongs to a different server. Check the address and try again."
             Kind.NOT_SIGNED_IN -> "You're not signed in."
             Kind.UNKNOWN -> "Something went wrong. Please try again."
         }

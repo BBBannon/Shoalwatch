@@ -21,7 +21,12 @@ import kotlinx.serialization.json.Json
  * token cannot be opened is hidden (the user signs in again), headers that cannot be opened load as none,
  * and a damaged certificate pin is surfaced as [Server.pinInvalid].
  */
-class ServerStore(private val db: AppDatabase, private val box: SecretBox) {
+class ServerStore(
+    private val db: AppDatabase,
+    private val box: SecretBox,
+    /** Called after anything that makes cached API clients stale (account or server removed, settings saved). */
+    private val onClientsStale: (serverId: String, addresses: List<ServerAddress>) -> Unit = { _, _ -> },
+) {
     private val serverDao = db.serverDao()
     private val accountDao = db.accountDao()
 
@@ -35,6 +40,7 @@ class ServerStore(private val db: AppDatabase, private val box: SecretBox) {
     /** @throws IllegalArgumentException if the pin is not a valid base64 SHA-256 value. */
     suspend fun upsertServer(s: Server) {
         require(s.pinnedSpkiSha256 == null || isValidPin(s.pinnedSpkiSha256)) { "The certificate pin is not valid." }
+        val before = serverDao.get(s.id)?.let(::toServer)
         db.withTransaction {
             // A server loaded with a damaged pin keeps that column as it is until the user re-trusts it.
             val pin = if (s.pinInvalid && s.pinnedSpkiSha256 == null) serverDao.get(s.id)?.pinnedSpkiSha256 else s.pinnedSpkiSha256
@@ -47,10 +53,15 @@ class ServerStore(private val db: AppDatabase, private val box: SecretBox) {
                 ),
             )
         }
+        onClientsStale(s.id, (before?.addresses.orEmpty() + s.addresses).distinct())
     }
 
     /** Also removes the server's accounts. */
-    suspend fun removeServer(id: String) = serverDao.delete(id)
+    suspend fun removeServer(id: String) {
+        val addresses = server(id)?.addresses.orEmpty()
+        serverDao.delete(id)
+        onClientsStale(id, addresses)
+    }
 
     /** The server must already be saved. */
     suspend fun upsertAccount(a: Account, makeActive: Boolean) {
@@ -61,7 +72,10 @@ class ServerStore(private val db: AppDatabase, private val box: SecretBox) {
     }
 
     /** If it was the active account, nobody is active afterwards. */
-    suspend fun removeAccount(serverId: String, userId: String) = accountDao.delete(serverId, userId)
+    suspend fun removeAccount(serverId: String, userId: String) {
+        accountDao.delete(serverId, userId)
+        onClientsStale(serverId, server(serverId)?.addresses.orEmpty())
+    }
 
     /** @throws IllegalArgumentException if there is no such account. */
     suspend fun setActive(serverId: String, userId: String) {
