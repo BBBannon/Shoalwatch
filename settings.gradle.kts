@@ -20,5 +20,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "OfflineFin"
+rootProject.name = "Shoalwatch"
 include(":app")

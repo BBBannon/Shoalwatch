@@ -1,4 +1,4 @@
-# OfflineFin version catalogue (started from AAFin's).
+# Shoalwatch version catalogue (started from AAFin's).
 # Constraints: Gradle 8.11.1, JDK 17, compileSdk 35 (no android-36 platform installed).
 # Checks against AAR metadata (minCompileSdk <= 35) are recorded in docs/ARCHITECTURE.md.
 [versions]

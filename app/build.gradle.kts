@@ -16,11 +16,11 @@ val keystoreProperties = Properties().apply {
 }
 
 android {
-    namespace = "app.offlinefin"
+    namespace = "app.shoalwatch"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "app.offlinefin"
+        applicationId = "app.shoalwatch"
         minSdk = 29
         targetSdk = 35
         versionCode = 1

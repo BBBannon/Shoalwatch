@@ -1,4 +1,4 @@
-# OfflineFin architecture
+# Shoalwatch architecture
 
 Full design lives in `SPEC.md`. This page covers build, package map and version checks.
 
@@ -24,14 +24,14 @@ Full design lives in `SPEC.md`. This page covers build, package map and version 
 ## Package map (SPEC section 5)
 
 ```
-app.offlinefin
-├── OfflineFinApp, AppGraph
+app.shoalwatch
+├── ShoalwatchApp, AppGraph
 ├── core/        AppError, Ticks, dispatchers, logging (redacting)
 ├── security/    SecretBox (Keystore AES-GCM), AppLock, redaction helpers
 ├── net/         HttpClientFactory, TrustPolicy (ServerNetConfig), PinnedTrustManager (+ PinAwareHostnameVerifier), KeyChainKeyManager, CertificateInfo,
 │                AuthInterceptor, CustomHeaderInterceptor, AuthHeader, BlockedRequestException, CleartextGuard, ServerAddress, NetworkMonitor (+ AndroidNetworkMonitor)
 ├── data/
-│   ├── db/          AppDatabase (Room, `offlinefin.db`), ServerEntity, AccountEntity, ActiveAccountEntity, DAOs
+│   ├── db/          AppDatabase (Room, `shoalwatch.db`), ServerEntity, AccountEntity, ActiveAccountEntity, DAOs
 │   ├── servers/     Server, Account, ServerStore, ServerNet (+ ServerNetDraft), DeviceIdentity, JellyfinGateway(+Impl), AuthRepository, QuickConnectState, AddressSelector (+ Connection)
 │   ├── library/ images/ playback/ downloads/ sync/
 └── ui/          theme, nav, components, one package per screen group (see "UI" below)
@@ -57,7 +57,7 @@ Only `net/HttpClientFactory` may construct an `OkHttpClient`.
 - **Integrity:** accounts cascade-delete with their server; `active_account` cascades from the account, so removing the active account (or its server) leaves nobody active, and the single-row key means there can never be two. Writes use `@Upsert`, never `REPLACE` (REPLACE deletes first and would cascade away accounts). No destructive-migration fallback; the schema is exported to `app/schemas/`.
 - **Pins:** `upsertServer` rejects a malformed pin (`IllegalArgumentException`, fixed message). A damaged pin already in the database loads as `pinnedSpkiSha256 = null` with `Server.pinInvalid = true`; `ServerNet.config` then throws `TLS_UNTRUSTED`, so the next connection prompts for re-trust rather than silently falling back to system trust. Saving other edits to such a server keeps the damaged column untouched.
 - **One place for security settings:** `ServerNet.config(addresses, draft-or-Server, authHeader)` is the only code that turns a server's settings into a `ServerNetConfig`.
-- **Device identity:** random UUID generated once, kept in private SharedPreferences (excluded from backup); client name `OfflineFin`, version from `BuildConfig.VERSION_NAME`, device name from `Build.MODEL` sanitised.
+- **Device identity:** random UUID generated once, kept in private SharedPreferences (excluded from backup); client name `Shoalwatch`, version from `BuildConfig.VERSION_NAME`, device name from `Build.MODEL` sanitised.
 
 ## Jellyfin client decision (SDK vs direct)
 

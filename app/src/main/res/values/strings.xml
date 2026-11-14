@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">OfflineFin</string>
+    <string name="app_name">Shoalwatch</string>
     <string name="placeholder_tagline">Your Jellyfin library, available offline.</string>
 
     <!-- Common -->
@@ -17,11 +17,11 @@
     <string name="security_check_title">Security check</string>
     <string name="startup_failed_title">Something went wrong opening your saved servers</string>
     <string name="startup_failed_body">Your servers and sign-ins have not been changed. Try again, and if it keeps happening restart the app.</string>
-    <string name="splash_loading">Loading OfflineFin</string>
+    <string name="splash_loading">Loading Shoalwatch</string>
     <string name="loading">Loading…</string>
 
     <!-- Add server -->
-    <string name="add_title_first">Welcome to OfflineFin</string>
+    <string name="add_title_first">Welcome to Shoalwatch</string>
     <string name="add_title">Add a server</string>
     <string name="add_intro">Enter the address of your Jellyfin server. It’s the one you’d type into a browser to watch.</string>
     <string name="add_address_label">Server address</string>
@@ -62,9 +62,9 @@
     <string name="found_version">Jellyfin %1$s</string>
     <string name="found_home_note">This will be saved as your home address, used when you’re on your own Wi-Fi.</string>
     <string name="found_away_note">This will be saved as your away address, used when you’re out and about.</string>
-    <string name="version_old">This server runs Jellyfin %1$s, which is older than the versions OfflineFin is tested with (10.10 to 12). It may work, but some things might not.</string>
-    <string name="version_new">This server runs Jellyfin %1$s, which is newer than the versions OfflineFin is tested with (10.10 to 12). It should work, but it hasn’t been checked.</string>
-    <string name="version_unknown">OfflineFin couldn’t tell which Jellyfin version this server runs, so it can’t promise everything will work.</string>
+    <string name="version_old">This server runs Jellyfin %1$s, which is older than the versions Shoalwatch is tested with (10.10 to 12). It may work, but some things might not.</string>
+    <string name="version_new">This server runs Jellyfin %1$s, which is newer than the versions Shoalwatch is tested with (10.10 to 12). It should work, but it hasn’t been checked.</string>
+    <string name="version_unknown">Shoalwatch couldn’t tell which Jellyfin version this server runs, so it can’t promise everything will work.</string>
     <string name="version_continue">Continue anyway</string>
     <string name="version_warning_title">Untested Jellyfin version</string>
 
