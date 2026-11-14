@@ -89,10 +89,51 @@ kotlin {
 }
 
 /**
- * S2, S7, S9 and S10 checked on what actually ships: the MERGED release manifest (libraries add components the
- * source manifest never mentions). Fails the build unless backups are off, the app is not debuggable, the
- * launcher activity is the only exported component, the permissions are exactly [expectedPermissions], the only
- * provider is androidx.startup's (not exported), and no initialiser that could contact a third party remains.
+ * The release-manifest rules (S2, S4, S7, S9, S10), as plain functions with no Gradle types so the same code checks
+ * the real merged manifest ([VerifyReleaseManifest]) and the fixture manifests that prove each rule can fail
+ * ([VerifyManifestRuleFixtures]).
+ */
+object ManifestRules {
+    private const val NS = "http://schemas.android.com/apk/res/android"
+    private val bannedInitialisers = listOf("androidx.emoji2.text.EmojiCompatInitializer", "androidx.profileinstaller.ProfileInstallerInitializer")
+
+    /** Every rule the manifest in [file] breaks (empty = passes). */
+    fun problems(file: File, launcherActivity: String, expectedPermissions: Set<String>): List<String> {
+        val doc = DocumentBuilderFactory.newInstance().apply { isNamespaceAware = true }.newDocumentBuilder().parse(file).documentElement
+        fun elements(tag: String) = doc.getElementsByTagName(tag).let { list -> (0 until list.length).map { list.item(it) as Element } }
+        fun Element.attr(name: String) = getAttributeNS(NS, name)
+        val problems = mutableListOf<String>()
+
+        val application = elements("application").single()
+        if (application.attr("allowBackup") != "false") problems += "android:allowBackup must be false"
+        if (application.attr("debuggable") == "true") problems += "the release build must not be debuggable"
+        // S4: user-installed CAs are never trusted, which holds only while the platform default applies.
+        if (application.hasAttributeNS(NS, "networkSecurityConfig")) problems += "android:networkSecurityConfig must not be set (user CAs must never be trusted)"
+
+        val components = listOf("activity", "activity-alias", "service", "receiver", "provider").flatMap(::elements)
+        val exported = components.filter { it.attr("exported") == "true" }.map { it.attr("name") }
+        if (exported != listOf(launcherActivity)) problems += "only $launcherActivity may be exported, found $exported"
+
+        val permissions = elements("uses-permission").map { it.attr("name") }.toSet()
+        if (permissions != expectedPermissions) problems += "permissions must be exactly ${expectedPermissions.sorted()}, found ${permissions.sorted()}"
+
+        val providers = elements("provider").map { it.attr("name") }
+        if (providers.any { it != "androidx.startup.InitializationProvider" }) problems += "unexpected provider in $providers"
+
+        val initialisers = elements("meta-data").map { it.attr("name") }
+        for (banned in bannedInitialisers) {
+            if (banned in initialisers) problems += "$banned must be removed"
+        }
+        return problems
+    }
+}
+
+/**
+ * S2, S4, S7, S9 and S10 checked on what actually ships: the MERGED release manifest (libraries add components the
+ * source manifest never mentions). Fails the build unless backups are off, the app is not debuggable, there is no
+ * `networkSecurityConfig`, the launcher activity is the only exported component, the permissions are exactly
+ * [expectedPermissions], the only provider is androidx.startup's (not exported), and no initialiser that could
+ * contact a third party remains. The rules are in [ManifestRules].
  */
 abstract class VerifyReleaseManifest : DefaultTask() {
     @get:InputFile @get:PathSensitive(PathSensitivity.NONE) abstract val manifest: RegularFileProperty
@@ -101,34 +142,36 @@ abstract class VerifyReleaseManifest : DefaultTask() {
     @get:OutputFile abstract val report: RegularFileProperty
 
     @TaskAction fun verify() {
-        val ns = "http://schemas.android.com/apk/res/android"
-        val doc = DocumentBuilderFactory.newInstance().apply { isNamespaceAware = true }
-            .newDocumentBuilder().parse(manifest.get().asFile).documentElement
-        fun elements(tag: String) = doc.getElementsByTagName(tag).let { list -> (0 until list.length).map { list.item(it) as Element } }
-        fun Element.attr(name: String) = getAttributeNS(ns, name)
-        val problems = mutableListOf<String>()
-
-        val application = elements("application").single()
-        if (application.attr("allowBackup") != "false") problems += "android:allowBackup must be false"
-        if (application.attr("debuggable") == "true") problems += "the release build must not be debuggable"
-
-        val components = listOf("activity", "activity-alias", "service", "receiver", "provider").flatMap(::elements)
-        val exported = components.filter { it.attr("exported") == "true" }.map { it.attr("name") }
-        if (exported != listOf(launcherActivity.get())) problems += "only ${launcherActivity.get()} may be exported, found $exported"
-
-        val permissions = elements("uses-permission").map { it.attr("name") }.toSet()
-        if (permissions != expectedPermissions.get()) problems += "permissions must be exactly ${expectedPermissions.get().sorted()}, found ${permissions.sorted()}"
-
-        val providers = elements("provider").map { it.attr("name") }
-        if (providers.any { it != "androidx.startup.InitializationProvider" }) problems += "unexpected provider in $providers"
-
-        val initialisers = elements("meta-data").map { it.attr("name") }
-        for (banned in listOf("androidx.emoji2.text.EmojiCompatInitializer", "androidx.profileinstaller.ProfileInstallerInitializer")) {
-            if (banned in initialisers) problems += "$banned must be removed"
-        }
-
+        val problems = ManifestRules.problems(manifest.get().asFile, launcherActivity.get(), expectedPermissions.get())
         if (problems.isNotEmpty()) throw GradleException("Release manifest check failed:\n - " + problems.joinToString("\n - "))
         report.get().asFile.writeText("Release manifest check passed.\n")
+    }
+}
+
+/**
+ * Proves the rules in [ManifestRules] can fail, without touching the real manifest: `ok.xml` in [fixtures] must pass
+ * and every `bad-*.xml` must fail with the message in [expectations] (fixture name to expected text).
+ */
+abstract class VerifyManifestRuleFixtures : DefaultTask() {
+    @get:InputDirectory @get:PathSensitive(PathSensitivity.RELATIVE) abstract val fixtures: DirectoryProperty
+    @get:Input abstract val expectations: MapProperty<String, String>
+    @get:Input abstract val launcherActivity: Property<String>
+    @get:Input abstract val expectedPermissions: SetProperty<String>
+    @get:OutputFile abstract val report: RegularFileProperty
+
+    @TaskAction fun verify() {
+        val dir = fixtures.get().asFile
+        fun check(name: String) = ManifestRules.problems(File(dir, name), launcherActivity.get(), expectedPermissions.get())
+        val failures = mutableListOf<String>()
+        check("ok.xml").let { if (it.isNotEmpty()) failures += "ok.xml should pass but reported $it" }
+        for ((name, expected) in expectations.get()) {
+            val found = check(name)
+            if (found.none { expected in it }) failures += "$name should fail with \"$expected\" but reported $found"
+        }
+        val unlisted = dir.listFiles { f -> f.name.startsWith("bad-") }.orEmpty().map { it.name }.toSet() - expectations.get().keys
+        if (unlisted.isNotEmpty()) failures += "fixtures with no expectation: $unlisted"
+        if (failures.isNotEmpty()) throw GradleException("Manifest rule fixtures failed:\n - " + failures.joinToString("\n - "))
+        report.get().asFile.writeText("Manifest rule fixtures: ${expectations.get().size} rules shown to fail, ok.xml passes.\n")
     }
 }
 
@@ -136,7 +179,7 @@ androidComponents {
     onVariants(selector().withBuildType("release")) { variant ->
         val check = tasks.register<VerifyReleaseManifest>("verify${variant.name.replaceFirstChar { it.uppercase() }}Manifest") {
             group = "verification"
-            description = "Checks the merged ${variant.name} manifest against the security rules (S2, S7, S9, S10)."
+            description = "Checks the merged ${variant.name} manifest against the security rules (S2, S4, S7, S9, S10)."
             manifest.set(variant.artifacts.get(SingleArtifact.MERGED_MANIFEST))
             launcherActivity.set("app.shoalwatch.ui.MainActivity")
             expectedPermissions.set(
@@ -149,10 +192,41 @@ androidComponents {
             )
             report.set(layout.buildDirectory.file("reports/release-manifest/${variant.name}.txt"))
         }
+        val capitalised = variant.name.replaceFirstChar { c -> c.uppercase() }
         tasks.named("check") { dependsOn(check) }
-        tasks.matching { it.name == "assemble${variant.name.replaceFirstChar { c -> c.uppercase() }}" }.configureEach { dependsOn(check) }
+        // Both artefacts that ship, the APK and the bundle, are only produced after the check passes.
+        tasks.matching { it.name == "assemble$capitalised" || it.name == "bundle$capitalised" }.configureEach { dependsOn(check) }
     }
 }
+
+// Each rule fails on its own fixture manifest (the real manifest is never changed to prove it).
+tasks.register<VerifyManifestRuleFixtures>("verifyManifestRuleFixtures") {
+    group = "verification"
+    description = "Proves each release-manifest rule can fail, using fixture manifests."
+    fixtures.set(layout.projectDirectory.dir("src/test/manifest-fixtures"))
+    launcherActivity.set("app.shoalwatch.ui.MainActivity")
+    expectedPermissions.set(
+        setOf(
+            "android.permission.INTERNET",
+            "android.permission.ACCESS_NETWORK_STATE",
+            "app.shoalwatch.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
+        ),
+    )
+    expectations.set(
+        mapOf(
+            "bad-extra-exported-component.xml" to "may be exported",
+            "bad-extra-permission.xml" to "permissions must be exactly",
+            "bad-allow-backup.xml" to "allowBackup must be false",
+            "bad-network-security-config.xml" to "networkSecurityConfig must not be set",
+            "bad-debuggable.xml" to "must not be debuggable",
+            "bad-banned-initialiser.xml" to "must be removed",
+            "bad-foreign-provider.xml" to "unexpected provider",
+            "bad-no-launcher.xml" to "may be exported",
+        ),
+    )
+    report.set(layout.buildDirectory.file("reports/release-manifest/fixtures.txt"))
+}
+tasks.named("check") { dependsOn("verifyManifestRuleFixtures") }
 
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")

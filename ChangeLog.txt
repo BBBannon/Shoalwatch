@@ -1,3 +1,4 @@
+v1.39 — 14/11/2026 — The build now also checks the app bundle's permissions and settings, makes sure the app can never be set to trust user-installed certificates, and proves each of those safety checks really can fail.
 v1.38 — 14/11/2026 — Names and Quick Connect codes sent by a server are cleaned up more thoroughly before they are shown, and a name made only of invisible characters now gets a plain placeholder.
 v1.37 — 14/11/2026 — Shoalwatch no longer mistakes an ordinary "not allowed" reply or a network hiccup for a missing security certificate on servers that only optionally ask for one.
 v1.36 — 14/11/2026 — If Shoalwatch can't read a saved sign-in, signing out or removing the server now says it couldn't sign you out on the server, and tells you how to remove it from the server's dashboard.
