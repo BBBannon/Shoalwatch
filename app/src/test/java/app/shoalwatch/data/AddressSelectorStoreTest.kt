@@ -106,4 +106,45 @@ class AddressSelectorStoreTest : AddressSelectorTestBase() {
         runCurrent()
         assertEquals(Connection.Online(home, true), flow.value)
     }
+
+    // ---- the store watcher survives a failing flow (review F8)
+
+    @Test fun theWatcherSurvivesAFailingStoreFlowAndPicksTheChangeUpAfterABackoff() = runTest {
+        val s = selector()
+        val flow = s.connection(server(cleartext = true))
+        runCurrent()
+        assertEquals(Connection.Online(home, true), flow.value)
+
+        source.failOnEmit = 1
+        source.put(server(cleartext = false)) // this emission throws inside the store's flow
+        runCurrent()
+        assertEquals("what was shown can no longer be trusted", Connection.Offline(), flow.value)
+
+        advanceTimeBy(999)
+        runCurrent()
+        assertEquals("not before the backoff", 1, source.subscriptions)
+        advanceTimeBy(1)
+        runCurrent()
+        assertEquals("resubscribed", 2, source.subscriptions)
+        assertEquals("and re-probed with the settings now saved", Connection.Online(home, true), flow.value)
+        assertEquals(false, gateway.nets.last().allowCleartext)
+    }
+
+    @Test fun aStoreFlowThatKeepsFailingIsRetriedWithABoundedBackoffNotATightLoop() = runTest {
+        source.failOnSubscribe = true
+        val flow = selector().connection(server())
+        advanceTimeBy(120_000)
+        runCurrent()
+        assertTrue("backs off: ${source.subscriptions} subscriptions in 120 s", source.subscriptions in 5..12)
+        assertEquals(Connection.Offline(), flow.value)
+
+        source.failOnSubscribe = false
+        advanceTimeBy(30_000)
+        runCurrent()
+        val settled = source.subscriptions
+        advanceTimeBy(120_000)
+        runCurrent()
+        assertEquals("a healthy flow is subscribed once and left alone", settled, source.subscriptions)
+        assertEquals(Connection.Online(home, true), flow.value)
+    }
 }

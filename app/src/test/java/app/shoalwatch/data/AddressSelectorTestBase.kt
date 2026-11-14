@@ -17,9 +17,11 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.currentTime
@@ -83,7 +85,23 @@ abstract class AddressSelectorTestBase {
     protected class FakeSource : ServerSettingsSource {
         val list = MutableStateFlow<List<Server>>(emptyList())
         var failure: Exception? = null
-        override val servers = list
+
+        /** How many times the selector has subscribed to [servers]. */
+        var subscriptions = 0
+
+        /** The next N emissions throw instead of being delivered (the store's flow failing). */
+        var failOnEmit = 0
+
+        /** Every subscription throws at once while true. */
+        var failOnSubscribe = false
+        override val servers: Flow<List<Server>> = flow {
+            subscriptions++
+            if (failOnSubscribe) throw IllegalStateException("store flow failed")
+            list.collect {
+                if (failOnEmit > 0) { failOnEmit--; throw IllegalStateException("store flow failed") }
+                emit(it)
+            }
+        }
         override suspend fun server(id: String): Server? {
             failure?.let { throw it }
             return list.value.firstOrNull { it.id == id }

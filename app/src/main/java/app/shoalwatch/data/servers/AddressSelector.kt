@@ -12,6 +12,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -133,6 +134,12 @@ class AddressSelector(
             return true
         }
 
+        /** The store can no longer be watched: what was shown is not to be trusted, and older in-flight results are dropped. */
+        @Synchronized fun failClosed() {
+            generation++
+            state.value = Connection.Offline()
+        }
+
         /** Check-and-set in one step: a result from before the latest event is dropped. */
         @Synchronized fun publish(result: Connection, startedAt: Long) {
             if (generation == startedAt) state.value = result
@@ -141,14 +148,37 @@ class AddressSelector(
 
     private val entries = HashMap<String, Entry>()
 
-    /** Started by the first [connection]: a server whose saved settings change (or which is removed) is re-probed. */
+    /**
+     * Started by the first [connection]: a server whose saved settings change (or which is removed) is re-probed.
+     * If the store's flow fails, every server shown is published `Offline` (settings changes can no longer be seen,
+     * so nothing shown can be trusted; in-flight results are dropped) and the flow is subscribed again after a
+     * backoff of 1 s doubling to 30 s, reset by a healthy emission. The first emission after a failure re-probes
+     * every live server.
+     */
     private val watcher: Job by lazy {
         scope.launch {
-            source.servers.collect { saved ->
-                val byId = saved.associateBy { it.id }
-                val live = synchronized(entries) { entries.values.toList() }
-                for (entry in live) {
-                    if (entry.resetIfStale(byId[entry.serverId]?.probeSettings())) entry.requests.trySend(Unit)
+            var backoff = WATCH_BACKOFF_MIN_MS
+            var recovering = false
+            while (true) {
+                try {
+                    source.servers.collect { saved ->
+                        backoff = WATCH_BACKOFF_MIN_MS
+                        val byId = saved.associateBy { it.id }
+                        val live = synchronized(entries) { entries.values.toList() }
+                        for (entry in live) {
+                            val stale = entry.resetIfStale(byId[entry.serverId]?.probeSettings())
+                            if (stale || recovering) entry.requests.trySend(Unit)
+                        }
+                        recovering = false
+                    }
+                    return@launch
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    synchronized(entries) { entries.values.toList() }.forEach { it.failClosed() }
+                    recovering = true
+                    delay(backoff)
+                    backoff = minOf(backoff * 2, WATCH_BACKOFF_MAX_MS)
                 }
             }
         }
@@ -273,6 +303,8 @@ class AddressSelector(
         const val AWAY_TIMEOUT_MS = 5_000L
         const val PROBE_DEBOUNCE_MS = 500L
         const val AWAIT_TIMEOUT_MS = 6_000L
+        const val WATCH_BACKOFF_MIN_MS = 1_000L
+        const val WATCH_BACKOFF_MAX_MS = 30_000L
 
         private val SECURITY_KINDS = setOf(
             AppError.Kind.TLS_PIN_CHANGED, AppError.Kind.TLS_UNTRUSTED,
