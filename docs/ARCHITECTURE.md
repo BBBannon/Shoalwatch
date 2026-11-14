@@ -29,10 +29,10 @@ app.offlinefin
 ├── core/        AppError, Ticks, dispatchers, logging (redacting)
 ├── security/    SecretBox (Keystore AES-GCM), AppLock, redaction helpers
 ├── net/         HttpClientFactory, TrustPolicy (ServerNetConfig), PinnedTrustManager (+ PinAwareHostnameVerifier), KeyChainKeyManager, CertificateInfo,
-│                AuthInterceptor, CustomHeaderInterceptor, AuthHeader, BlockedRequestException, CleartextGuard, ServerAddress, AddressSelector
+│                AuthInterceptor, CustomHeaderInterceptor, AuthHeader, BlockedRequestException, CleartextGuard, ServerAddress, NetworkMonitor (+ AndroidNetworkMonitor)
 ├── data/
 │   ├── db/          AppDatabase (Room, `offlinefin.db`), ServerEntity, AccountEntity, ActiveAccountEntity, DAOs
-│   ├── servers/     Server, Account, ServerStore, ServerNet (+ ServerNetDraft), DeviceIdentity, JellyfinGateway(+Impl), AuthRepository, QuickConnectState
+│   ├── servers/     Server, Account, ServerStore, ServerNet (+ ServerNetDraft), DeviceIdentity, JellyfinGateway(+Impl), AuthRepository, QuickConnectState, AddressSelector (+ Connection)
 │   ├── library/ images/ playback/ downloads/ sync/
 └── ui/          theme, navigation, one package per screen group
 ```
@@ -73,6 +73,14 @@ Only `net/HttpClientFactory` may construct an `OkHttpClient`.
 - **Client holder and eviction:** `ServerClients` (data/servers) holds one client per configuration. `ServerNetConfig` equality is by value (authorities, cleartext flag, pin, client-cert alias, headers, `authKey`) and excludes the token-provider lambda; `authKey` is null for anonymous calls or `serverId:userId`. `ServerNet` has two entry points: `anonymous(...)` (no token, `authKey` null) and `authenticated(addresses, server, userId, device, tokens)` (`authKey` = `serverId:userId`, always set), so a token provider can never be paired with a null key. **Live tokens:** `ServerStore` keeps an in-memory `serverId:userId -> token` map (`cachedToken`, suspend-free, no per-request decryption); it is written on `upsertAccount`, filled on any read of an account (`accounts`, `active`, `activeAccount`, `putIfAbsent`, so a cold start loads it as soon as the account is read) and emptied on `removeAccount`/`removeServer`. `authenticated` is handed `store::cachedToken`, so a cached client (which keeps the first provider for its key) still sends the current token after a re-sign-in and none after sign-out. `signOut` reads the account first, so it sends the token it is revoking. `ServerStore` reports every account upsert, account removal (in a `finally`, independent of the delete), server removal and server upsert (old and new addresses) to `ServerClients.evict`, which drops matching clients and evicts their idle connections. Only `HttpClientFactory` constructs clients.
 - **Sign-out:** logout is tried on each address (home, then away) until one succeeds; the account is deleted locally regardless.
 - **Clients (older note):** callers reuse one config per operation. The unused `jellyfin-core` and `slf4j-nop` dependencies were removed from the build and the catalogue (their entries may linger in `verification-metadata.xml`, which is harmless).
+
+## Home / away address selection
+
+- `AddressSelector` (data/servers) turns a server's home and away addresses into a live `StateFlow<Connection>` (`Checking` / `Online(address, isHome)` / `Offline`), one probe loop per server id (`connection(server)`; `refresh()`; `forget(serverId)`, called by `ServerStore.removeServer`).
+- **Probing is anonymous** (`ServerNet.anonymous`, `publicInfo`): no token reaches an address before it has proved to be the server. An address counts only if its reported id matches `server.id` (`sameServerId`); a different server there is unreachable.
+- **Timing:** home 1.5 s, away 5 s, probed concurrently with coroutine timeouts (a timed-out or no-longer-needed probe cancels its HTTP call). Home answering correctly wins at once; otherwise away is used when it answers; otherwise `Offline`. A missing address is skipped.
+- **Re-probing:** on every `NetworkMonitor.changes` emission, on `refresh()` (callers call it when a request on the current address fails) and when `connection` sees changed addresses or security settings. Requests collapse through a conflated channel: one more probe after the running one, never overlapping. The last known state stays visible while re-probing; only the first probe (or changed settings) shows `Checking`.
+- `AndroidNetworkMonitor` registers `registerDefaultNetworkCallback` when the first collector arrives and unregisters after the last (`shareIn` with `WhileSubscribed`), debounced 500 ms. `AppGraph` owns the process-wide `appScope` they run in.
 
 ## Version checks
 

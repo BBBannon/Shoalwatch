@@ -1,3 +1,4 @@
+v1.14 — 14/11/2026 — Behind the scenes: the app can now work out whether to reach your server on its home network address or its away address, and switches automatically when your Wi-Fi or mobile connection changes.
 v1.13 — 14/11/2026 — Behind the scenes: signing out (or signing in again) now takes effect immediately everywhere, so an old sign-in is never used again and a new one is picked up straight away.
 v1.12 — 14/11/2026 — Behind the scenes: signing in now checks the address really is your server before sending your password, sign-in details are cleared properly when you sign out, and sign-in requests are never redirected elsewhere.
 v1.11 — 14/11/2026 — Behind the scenes: the app can now remember your servers and sign-ins securely on the phone, and sign in to a server with Quick Connect or a username and password.

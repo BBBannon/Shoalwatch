@@ -27,6 +27,8 @@ class ServerStore(
     private val box: SecretBox,
     /** Called after anything that makes cached API clients stale (account or server removed, settings saved). */
     private val onClientsStale: (serverId: String, addresses: List<ServerAddress>) -> Unit = { _, _ -> },
+    /** Called after a server is removed, so per-server state elsewhere (e.g. address probing) can be dropped. */
+    private val onServerRemoved: (serverId: String) -> Unit = {},
 ) {
     private val serverDao = db.serverDao()
     private val accountDao = db.accountDao()
@@ -75,6 +77,7 @@ class ServerStore(
         } finally {
             tokens.keys.removeAll { it.startsWith("$id:") }
             onClientsStale(id, addresses)
+            onServerRemoved(id)
         }
     }
 

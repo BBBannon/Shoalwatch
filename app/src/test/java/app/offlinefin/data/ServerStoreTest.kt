@@ -55,7 +55,7 @@ class ServerStoreTest {
     @Before fun open() {
         db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java)
             .allowMainThreadQueries().build()
-        store = ServerStore(db, box) { id, addresses -> stale += id to addresses }
+        store = ServerStore(db, box, onClientsStale = { id, addresses -> stale += id to addresses })
     }
 
     @After fun close() = db.close()
@@ -251,5 +251,16 @@ class ServerStoreTest {
         store.upsertServer(server().copy(homeAddress = ServerAddress.parse("https://new.example")))
         val reported = stale.single().second.map { it.authority }
         assertTrue("home.example:8920" in reported && "new.example:443" in reported)
+    }
+
+    @Test fun removingAServerTellsTheOnRemovedHook() = runBlocking {
+        val removed = mutableListOf<String>()
+        val hooked = ServerStore(db, box, onServerRemoved = { removed += it })
+        hooked.upsertServer(server())
+        hooked.upsertAccount(account(), makeActive = false)
+        hooked.removeAccount("s1", "u1")
+        assertTrue(removed.isEmpty())
+        hooked.removeServer("s1")
+        assertEquals(listOf("s1"), removed)
     }
 }
