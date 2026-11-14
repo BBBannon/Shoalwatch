@@ -94,4 +94,29 @@ class GatewayBoundaryTest {
     @Test fun aNameThatIsOnlyInvisibleCharactersFallsBack() {
         assertEquals("Jellyfin", publicInfo("0123abcd456789ef0123456789abcdef", name = "\\u202E\\u200B ").name)
     }
+
+    @Test fun aUserNameThatIsOnlyInvisibleCharactersFallsBack() {
+        web.enqueue(json("""{"AccessToken":"tok","ServerId":"0123abcd456789ef0123456789abcdef","User":{"Id":"fedcba9876543210fedcba9876543210","Name":"‮⁣​"}}"""))
+        assertEquals("Unnamed user", runBlocking { gateway.authenticateByName(address, net, "ben", "pw") }.userName)
+    }
+
+    // ---- the Quick Connect code is shown on screen, so it is checked here (review F6)
+
+    private fun initiate(code: String) = runBlocking {
+        web.enqueue(json("""{"Secret":"sec-1","Code":"$code","Authenticated":false}"""))
+        gateway.quickConnectInitiate(address, net)
+    }
+
+    @Test fun aQuickConnectCodeOfFourToTwelveAsciiLettersAndDigitsIsAccepted() {
+        for (ok in listOf("1234", "AB12cd", "123456789012")) assertEquals(ok, initiate(ok).code)
+    }
+
+    @Test fun anyOtherQuickConnectCodeIsAServerErrorAndIsNeverEchoed() {
+        val bad = listOf("123", "1234567890123", "12 34", "12-34", "١٢٣٤", "ab‮cd", "<b>12</b>", "12\n34")
+        for (code in bad) {
+            val e = failure { initiate(code) }
+            assertEquals(code, AppError.Kind.SERVER_ERROR, e.kind)
+            assertFalse(e.message!!.contains(code))
+        }
+    }
 }

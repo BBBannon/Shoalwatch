@@ -1,13 +1,15 @@
 package app.shoalwatch.core
 
 /**
- * Makes text from a server (or a certificate) safe to show: control characters and line breaks become spaces,
- * Unicode direction overrides, isolates and marks and zero-width characters are removed (so a hostile server
- * cannot reorder or hide what the user reads), runs of white space collapse to one, and the result is trimmed
- * and capped at [maxLength] characters (whole code points, so a pair is never split). May return an empty string.
+ * Makes text from a server (or a certificate) safe to show: control characters and line breaks become spaces, every
+ * Unicode format character (category Cf: bidi marks, embeddings, overrides and isolates, zero-width characters, soft
+ * hyphen, invisible operators, tag characters, the byte-order mark, ...) is removed (so a hostile server cannot reorder
+ * or hide what the user reads), runs of white space collapse to one, and the result is trimmed and capped at
+ * [maxLength] characters (whole code points, so a pair is never split). If nothing visible is left, [fallback] is
+ * returned (empty unless the caller supplies a neutral name such as "Unnamed user").
  */
-fun displayText(raw: String?, maxLength: Int): String {
-    if (raw.isNullOrEmpty()) return ""
+fun displayText(raw: String?, maxLength: Int, fallback: String = ""): String {
+    if (raw.isNullOrEmpty()) return fallback
     val out = StringBuilder()
     var count = 0
     var pendingSpace = false
@@ -16,7 +18,7 @@ fun displayText(raw: String?, maxLength: Int): String {
         val cp = raw.codePointAt(i)
         i += Character.charCount(cp)
         when {
-            cp in INVISIBLE -> Unit
+            Character.getType(cp) == Character.FORMAT.toInt() -> Unit
             Character.isWhitespace(cp) || Character.isSpaceChar(cp) || Character.getType(cp) == Character.CONTROL.toInt() ->
                 pendingSpace = out.isNotEmpty()
             else -> {
@@ -31,14 +33,5 @@ fun displayText(raw: String?, maxLength: Int): String {
             }
         }
     }
-    return out.toString()
-}
-
-/** Bidi marks, embeddings, overrides and isolates; zero-width space, joiners and the byte-order mark. */
-private val INVISIBLE: Set<Int> = buildSet {
-    add(0x061C); add(0x200E); add(0x200F)
-    addAll(0x202A..0x202E)
-    addAll(0x2066..0x2069)
-    addAll(0x200B..0x200D)
-    add(0x2060); add(0xFEFF)
+    return out.toString().ifEmpty { fallback }
 }
