@@ -50,7 +50,11 @@ internal class FileFetcher(
     ): FetchResult {
         val onDisk = if (part.exists()) part.length() else 0L
         val from = if (resumeFrom in 1..onDisk) resumeFrom else 0L
-        if (onDisk > from) FetchSupport.truncate(part, from) // a torn tail, or more than Room ever claimed
+        try {
+            if (onDisk > from) FetchSupport.truncate(part, from) // a torn tail, or more than Room ever claimed
+        } catch (e: IOException) {
+            return FetchSupport.forIo(e) // a card remounted read-only, say: a result, never an escape (review I-3)
+        }
         val job = Job(part, target, from, validator.takeIf { from > 0 }, expectedBytes, storedTotal.takeIf { from > 0 }, restarts, progress)
         val request = Request.Builder()
             .url(route.url(StreamSource("/Items/$itemId/Download", emptyList(), hls = false)))

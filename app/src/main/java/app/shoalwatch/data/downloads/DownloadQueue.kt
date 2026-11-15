@@ -140,6 +140,13 @@ internal class DownloadQueue(
             Step.Next
         } catch (e: Moved) {
             Step.Next
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Anything unforeseen (a card remounted read-only, say) is one attempt, so the item ends FAILED rather than
+            // staying RUNNING at the head of the queue for ever (Tasks 9-10 review I-3). Logged by class only.
+            AppLog.w(TAG, "download step failed: ${e.javaClass.simpleName}")
+            retry(j.key, (e as? AppError)?.kind ?: AppError.Kind.UNKNOWN)
         }
     }
 

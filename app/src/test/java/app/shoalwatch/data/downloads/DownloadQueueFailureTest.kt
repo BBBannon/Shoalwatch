@@ -141,6 +141,20 @@ class DownloadQueueFailureTest : DownloadQueueTestBase() {
         assertEquals("the restart and the retry", 3, download(f1)!!.attempts)
     }
 
+    /** Tasks 9-10 review I-3: an unexpected exception is an attempt, never a row left RUNNING that blocks the queue. */
+    @Test fun anUnexpectedExceptionIsAnAttemptAndEightAreServerErrorThenTheNextItemRuns() {
+        queued(a, f1, f2)
+        playable(9)
+        repeat(8) { files.steps += { throw java.io.IOException("read-only file system") } }
+        assertEquals(QueueRun.Retry(AppError.Kind.UNKNOWN), drain())
+        assertEquals(DownloadState.QUEUED, download(f1)!!.state)
+        assertEquals(1, download(f1)!!.attempts)
+        var runs = 1
+        while (download(f1)!!.state != DownloadState.FAILED && runs++ < 12) drain()
+        assertEquals(DownloadState.FAILED to DownloadFailure.SERVER_ERROR, failure(f1))
+        assertEquals(DownloadState.COMPLETE, download(f2)!!.state)
+    }
+
     @Test fun conversionRestartsCountTowardsTheAttempts() {
         queued(a, f1, quality = DownloadQuality.MEDIUM)
         repeat(3) { convertible() }
