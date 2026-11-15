@@ -190,7 +190,7 @@ class PlaybackController internal constructor(
         if (reason != EndReason.SIGNED_OUT && c != null) stopReport(c, failed = false)
         engine.setMediaMetadata(null, null)
         engine.release()
-        if (reason == null) token?.let(activePlayback::release)
+        token?.let(activePlayback::release) // a no-op when ActivePlayback ended it; a self-ended one must not stay held (M-3)
         token = null
         trackControl.clear()
         _state.value = PlaybackState.CLOSED

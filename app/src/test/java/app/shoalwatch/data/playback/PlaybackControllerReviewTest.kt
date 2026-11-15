@@ -115,4 +115,13 @@ internal class PlaybackControllerReviewTest : PlaybackControllerTestBase() {
         assertEquals(Phase.FAILED, c.state.value.phase)
         assertFalse(engine.isPlaying)
     }
+
+    // ---- M-3: a controller that ends itself releases its record
+
+    @Test fun aSignedOutRouteEndReleasesTheRecord() = runTest {
+        val c = controller(); openAndPlay(c)
+        assertTrue(activePlayback.registered)
+        engine.emit(EngineEvent.Failed(EngineFailure.NOT_SIGNED_IN)); runCurrent()
+        assertFalse(activePlayback.registered)
+    }
 }

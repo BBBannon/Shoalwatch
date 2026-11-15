@@ -53,6 +53,9 @@ class ActivePlayback(
         return token
     }
 
+    /** Whether a playback is registered now (for tests). */
+    internal val registered: Boolean get() = current != null
+
     /** Main thread. Only the holder's own token releases it. */
     fun release(token: Token) {
         if (current?.token === token) current = null
