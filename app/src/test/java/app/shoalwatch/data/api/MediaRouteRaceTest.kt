@@ -5,6 +5,7 @@ import app.shoalwatch.U1
 import app.shoalwatch.core.AppError
 import app.shoalwatch.data.playback.MediaPaths
 import app.shoalwatch.data.servers.Connection
+import app.shoalwatch.data.servers.Server
 import kotlinx.coroutines.runBlocking
 import okhttp3.Call
 import okhttp3.Callback
@@ -65,5 +66,22 @@ class MediaRouteRaceTest : ServerApiTestBase() {
         val c = call(route())
         c.clone().execute().use { assertEquals("bytes", it.body.string()) }
         assertEquals(1, web.requestCount)
+    }
+
+    @Test fun aSettingsChangeWhileTheRouteIsBeingMadeNeverLetsItSendWithTheOldSettings() {
+        selector.onConnection = {
+            selector.onConnection = {}
+            runBlocking { store.upsertServer(Server(S1, "Den", "10.10.3", address(), null, true, null, null, mapOf("X-Gate" to "new"))) }
+        }
+        val made = runCatching { route() }
+        made.exceptionOrNull()?.let { assertEquals(AppError.Kind.OFFLINE, AppError.from(it).kind); return }
+        web.enqueue(MockResponse())
+        try {
+            call(made.getOrThrow()).execute().close()
+        } catch (e: IOException) {
+            assertEquals(0, web.requestCount)
+            return
+        }
+        assertEquals("a request went with the old settings", "new", web.takeRequest(3, TimeUnit.SECONDS)!!.getHeader("X-Gate"))
     }
 }

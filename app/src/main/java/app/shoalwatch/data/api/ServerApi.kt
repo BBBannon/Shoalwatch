@@ -129,6 +129,14 @@ class ServerApi(
         val base = online.address.value.toHttpUrl()
         val state = selector.connection(session.serverId)
         val client = clients.clientFor(net)
+        // A settings save between the read above and clientFor would have evicted the old client, and clientFor would then have
+        // cached a new one from the OLD settings, which isCurrent would keep accepting. Read again: a save after this read evicts
+        // this client, so isCurrent catches it.
+        val now = store.server(session.serverId)
+        if (now == null || ServerNet.authenticated(now.addresses, now, session.userId, device, store::cachedToken) != net) {
+            clients.evict(session.serverId, server.addresses)
+            throw AppError.of(AppError.Kind.OFFLINE)
+        }
         val guard = GuardedCallFactory(
             client,
             authority = online.address.authority,
