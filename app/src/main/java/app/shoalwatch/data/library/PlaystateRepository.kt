@@ -56,6 +56,14 @@ class PlaystateRepository(
     override suspend fun removeFromContinueWatching(s: Session, itemId: String) =
         act(s, itemId, { item -> local.clearResume(s, item.item.itemId) }, { id -> gateway.clearResume(s, id) })
 
+    /** Finished is marking watched; otherwise the position is a local change with nothing to send (the stop report carried it). */
+    override suspend fun recordStop(s: Session, itemId: String, positionMs: Long, finished: Boolean) =
+        if (finished) {
+            setPlayed(s, itemId, true)
+        } else {
+            act(s, itemId, { item -> local.stoppedAt(s, item.item.itemId, positionMs.coerceAtLeast(0)) }, { })
+        }
+
     /** [change] makes the optimistic change (steps 1 and 2) for the item as this user may see it; [send] is step 3. */
     private suspend fun act(
         s: Session,

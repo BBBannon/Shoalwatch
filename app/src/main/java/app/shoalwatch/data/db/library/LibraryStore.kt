@@ -203,6 +203,12 @@ class LibraryStore(
         items.setPosition(s.serverId, s.userId, itemId, 0, nowMs, pending = true)
     }
 
+    /** An optimistic "stopped here" from the player: position as given, `played` untouched, marker set. */
+    suspend fun setPositionPending(s: Session, itemId: String, positionMs: Long, nowMs: Long) {
+        changes.record(s, itemId)
+        items.setPosition(s.serverId, s.userId, itemId, positionMs, nowMs, pending = true)
+    }
+
     suspend fun setUnplayedCountPending(s: Session, itemId: String, count: Int?, nowMs: Long) {
         changes.record(s, itemId)
         items.setUnplayedCount(s.serverId, s.userId, itemId, count, nowMs, pending = true)

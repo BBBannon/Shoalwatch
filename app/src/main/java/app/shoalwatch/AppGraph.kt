@@ -15,7 +15,9 @@ import app.shoalwatch.data.library.PlaystateRepository
 import app.shoalwatch.data.library.PrefsMaintenanceLog
 import app.shoalwatch.data.library.api.LibraryGateway
 import app.shoalwatch.data.library.api.LibraryGatewayImpl
+import app.shoalwatch.data.playback.ActivePlayback
 import app.shoalwatch.data.playback.AndroidDeviceCapabilities
+import app.shoalwatch.data.playback.ServerPlaybackReports
 import app.shoalwatch.data.playback.PlaybackResolver
 import app.shoalwatch.data.playback.api.PlaybackGateway
 import app.shoalwatch.data.playback.api.PlaybackGatewayImpl
@@ -55,8 +57,14 @@ class AppGraph(private val appContext: Context) {
     val serverClients: ServerClients by lazy { ServerClients(httpClientFactory) }
     val serverStore: ServerStore by lazy { ServerStore(
         database, secretBox, serverClients::evict,
-        onServerRemoved = { addressSelector.forget(it); libraryRepository.forget(it); artworkEviction.onServerRemoved(it) },
-        onAccountGone = { server, user -> libraryRepository.forget(server, user); artworkEviction.onAccountGone(server) },
+        onServerRemoved = {
+            activePlayback.end(it); playbackReports.forget(it)
+            addressSelector.forget(it); libraryRepository.forget(it); artworkEviction.onServerRemoved(it)
+        },
+        onAccountGone = { server, user ->
+            activePlayback.end(server, user); playbackReports.forget(server, user)
+            libraryRepository.forget(server, user); artworkEviction.onAccountGone(server)
+        },
         onAccountSignedIn = { server, user -> libraryRepository.forget(server, user) },
     ) }
     val httpClientFactory: HttpClientFactory by lazy { HttpClientFactory(appContext) }
@@ -92,6 +100,14 @@ class AppGraph(private val appContext: Context) {
     val browseMemory: BrowseMemory by lazy { BrowseMemory() }
     /** The tidy-up actions (remove from Continue Watching, mark watched, favourite): Room first, then the server, rolled back on failure (see "Tidy-up actions" in docs/ARCHITECTURE.md). */
     val playstate: Playstate by lazy { PlaystateRepository(libraryGateway, libraryRepository, appScope, Dispatchers.IO, System::currentTimeMillis) }
+    /** Progress reports and the final stop (also saved through `playstate`), best effort; see "Progress reports and teardown" in docs/ARCHITECTURE.md. */
+    val playbackReports: ServerPlaybackReports by lazy { ServerPlaybackReports(playbackGateway, playstate, addressSelector, appScope) }
+    /** Who is playing: ended by the store hooks above and whenever the active session changes. */
+    val activePlayback: ActivePlayback by lazy {
+        ActivePlayback({ s -> serverStore.cachedToken(s.serverId, s.userId) != null }).also { a ->
+            appScope.launch { serverCatalog.activeSession().collect(a::sessionChanged) }
+        }
+    }
     /** Loads saved tokens into the store's live lookup. Started at app start; anything authenticated waits on `serverStore.awaitWarmed()` (or uses `awaitActive()`). */
     val tokensWarmed: Job by lazy { appScope.launch { serverStore.warmTokens() } }
     /** What the trust prompt reads; the UI never touches `HttpClientFactory` itself. */

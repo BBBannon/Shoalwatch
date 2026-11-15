@@ -37,6 +37,14 @@ interface Playstate {
 
     /** Removes an item from Continue Watching without marking it watched: its saved position goes back to the start. */
     suspend fun removeFromContinueWatching(s: Session, itemId: String)
+
+    /**
+     * Saves where playback stopped, on this phone, for this user. finished = true is setPlayed(true) (local change, server call,
+     * rollback on failure, as today). finished = false sets the saved position only (no server call: the stop report carried it),
+     * noted in LocalChangeLog so an older refresh cannot undo it, then refreshes resume and nextUp. Same per-user queue and write
+     * gate as the other actions. Never called for an item this user was not shown (SERVER_NOT_FOUND, nothing changed).
+     */
+    suspend fun recordStop(s: Session, itemId: String, positionMs: Long, finished: Boolean)
 }
 
 /** A list the server recomputes after an action, for [LibraryRepository] to refresh. Repository-internal vocabulary, not a screen API. */

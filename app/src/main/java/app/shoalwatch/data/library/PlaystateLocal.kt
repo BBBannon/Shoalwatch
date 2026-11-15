@@ -66,6 +66,13 @@ internal class PlaystateLocal(private val store: LibraryStore, private val clock
         t.recompute += Recompute.Resume
     }
 
+    /** Where the player stopped, `played` untouched; the server recomputes Continue Watching and Next Up from its stop report. */
+    suspend fun stoppedAt(s: Session, itemId: String, positionMs: Long): Touched = Touched().also { t ->
+        t.remember(s, itemId)
+        store.setPositionPending(s, itemId, positionMs, clock())
+        t.recompute += listOf(Recompute.Resume, Recompute.NextUp)
+    }
+
     suspend fun favourite(s: Session, itemId: String, favourite: Boolean): Touched = Touched().also { t ->
         t.remember(s, itemId)
         store.setFavouritePending(s, itemId, favourite, clock())
