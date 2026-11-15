@@ -1,5 +1,6 @@
 """Run from this folder: python -I test_mock_jellyfin.py   (or: python -m unittest test_mock_jellyfin)"""
 import http.client
+import email.utils
 import json
 import os
 import sys
@@ -388,9 +389,34 @@ class Downloads(Served):
         for name in ("api_key", "ApiKey", "X-Emby-Token"):
             self.assertEqual(400, self.raw(f"{DOWNLOAD}?{name}={self.token}")[0], name)
 
-    def test_an_unknown_or_unplayable_item_is_404(self):
+    def test_an_unknown_item_is_404_and_one_that_cannot_be_downloaded_is_400(self):
+        # Jellyfin's GetDownload throws ArgumentException (400) for a known item with no file to download (spike section 2).
         self.assertEqual(404, self.raw(f"/Items/{'f' * 32}/Download")[0])
-        self.assertEqual(404, self.raw(f"/Items/{NOT_PLAYABLE}/Download")[0])
+        self.assertEqual(400, self.raw(f"/Items/{NOT_PLAYABLE}/Download")[0])
+
+    # --- --no-etag: what real Jellyfin sends (Last-Modified only; ASP.NET PhysicalFile)
+    def test_no_etag_sends_only_last_modified(self):
+        m.CONFIG["no_etag"] = True
+        status, headers, body, _ = self.raw(DOWNLOAD)
+        self.assertEqual(200, status)
+        self.assertNotIn("ETag", headers)
+        self.assertIn("GMT", headers["Last-Modified"])
+        self.assertEqual(CLIP.read_bytes(), body)
+
+    def test_no_etag_ignores_an_entity_tag_if_range_and_serves_the_range(self):
+        m.CONFIG["no_etag"] = True
+        status, headers, body, _ = self.raw(DOWNLOAD, {"Range": "bytes=100-", "If-Range": '"anything"'})
+        self.assertEqual(206, status)
+        self.assertEqual(f"bytes 100-{SIZE - 1}/{SIZE}", headers["Content-Range"])
+
+    def test_no_etag_date_if_range_resumes_only_when_not_modified_since(self):
+        m.CONFIG["no_etag"] = True
+        modified = self.raw(DOWNLOAD)[1]["Last-Modified"]
+        later = email.utils.formatdate(email.utils.parsedate_to_datetime(modified).timestamp() + 60, usegmt=True)
+        earlier = email.utils.formatdate(email.utils.parsedate_to_datetime(modified).timestamp() - 60, usegmt=True)
+        self.assertEqual(206, self.raw(DOWNLOAD, {"Range": "bytes=100-", "If-Range": modified})[0])
+        self.assertEqual(206, self.raw(DOWNLOAD, {"Range": "bytes=100-", "If-Range": later})[0])
+        self.assertEqual(200, self.raw(DOWNLOAD, {"Range": "bytes=100-", "If-Range": earlier})[0])
 
     def test_mock_downloads_lists_each_media_request_without_secrets(self):
         self.raw(DOWNLOAD, {"Range": "bytes=10-", "If-Range": '"a1b2c3"'})

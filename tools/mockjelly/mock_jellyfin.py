@@ -374,7 +374,7 @@ def png(item, width, height):
 # One flag per way a real server might behave (Milestone 4 Task 1; see the README and research/2026-11-downloads-spike.md).
 DOWNLOAD_FLAGS = {"drop_after": None, "no_range": False, "etag_changes": False, "octet_stream": False, "no_download": False,
                   "candownload_missing": False, "download_forbidden": False, "legacy_auth_only": False, "hls_recut": False,
-                  "hls_idle_kill": None}
+                  "hls_idle_kill": None, "no_etag": False}
 ETAG = "a1b2c3"
 API_KEY_NAMES = {"api_key", "apikey", "x-emby-token", "x-mediabrowser-token", "x-emby-authorization"}  # compared lower-cased
 DOWNLOADS = []  # each media request, newest last (read back at /mock/downloads); never a token or a query value
@@ -417,6 +417,19 @@ def validators():
         n = MEDIA_STATE["validators"]
         return f"{ETAG}x{n}", email.utils.formatdate(NOW.timestamp() + n, usegmt=True)
     return ETAG, email.utils.formatdate(NOW.timestamp(), usegmt=True)
+
+
+def if_range_matches(if_range, etag, modified):
+    """As ASP.NET Core serves a file: with --no-etag an entity tag cannot be compared and is ignored (the range is served),
+    and a date matches when the file was not modified after it; otherwise the ETag or the exact date must match."""
+    if not CONFIG["no_etag"]:
+        return if_range in (f'"{etag}"', modified)
+    if if_range.startswith('"') or if_range.startswith("W/"):
+        return True
+    try:
+        return email.utils.parsedate_to_datetime(modified) <= email.utils.parsedate_to_datetime(if_range)
+    except (TypeError, ValueError):
+        return False
 
 
 def segment_shape():
@@ -561,7 +574,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, list(DOWNLOADS))
         if method == "GET" and low[0] == "items" and len(segs) == 3 and low[2] == "download":
             target = item(segs[1])
-            return self.download() if target and playable(target) else self.reply(404)
+            if not target:
+                return self.reply(404)
+            return self.download() if playable(target) else self.reply(400)  # Jellyfin: ArgumentException for a folder
         if method == "POST" and low[:2] == ["sessions", "playing"] and len(segs) <= 3:
             kind = {"": "start", "progress": "progress", "stopped": "stopped", "ping": "ping"}.get(low[2] if len(segs) == 3 else "")
             if kind is None:
@@ -650,14 +665,14 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(403)
         data = (MEDIA_DIR / "clip.mp4").read_bytes()
         etag, modified = validators()
-        headers = {"ETag": f'"{etag}"', "Last-Modified": modified}
+        headers = {"Last-Modified": modified} if CONFIG["no_etag"] else {"ETag": f'"{etag}"', "Last-Modified": modified}
         content_type = "application/octet-stream" if CONFIG["octet_stream"] else "video/mp4"
         if CONFIG["no_range"]:
             return self.reply(200, raw=data, headers=headers, content_type=content_type, media=True)
         headers["Accept-Ranges"] = "bytes"
         span = byte_range(self.headers.get("Range", ""), len(data))
         if_range = self.headers.get("If-Range")
-        if span is not None and if_range is not None and if_range not in (f'"{etag}"', modified):
+        if span is not None and if_range is not None and not if_range_matches(if_range, etag, modified):
             span = None  # a validator that no longer matches: the whole file, as 200
         if span == "bad":
             return self.reply(416, headers={**headers, "Content-Range": f"bytes */{len(data)}"})
@@ -751,6 +766,7 @@ def main():
     downloads.add_argument("--download-forbidden", action="store_true", help="CanDownload true, but /Download is 403")
     downloads.add_argument("--legacy-auth-only", action="store_true", help="/Download and HLS segments refuse header auth and want api_key")
     downloads.add_argument("--hls-recut", action="store_true", help="each PlaybackInfo gets a media playlist of a different shape")
+    downloads.add_argument("--no-etag", action="store_true", help="/Download sends Last-Modified only, as real Jellyfin does")
     downloads.add_argument("--hls-idle-kill", type=float, metavar="SECONDS", help="a play session's segments are 404 after SECONDS idle")
     args = parser.parse_args()
     CONFIG.update(latency=args.latency_ms / 1000, fail_rate=args.fail_rate, refuse=args.refuse)

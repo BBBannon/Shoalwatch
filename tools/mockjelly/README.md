@@ -72,7 +72,7 @@ All need a token (401 otherwise). Why each flag exists, and what Jellyfin's own 
 | Route | Behaviour (no flags) |
 |---|---|
 | `GET /Items?ids=&fields=CanDownload,MediaSources&userId=` | The listed items, wherever they are in the catalogue. Only when `fields` asks for them: `CanDownload` (true for every film and episode, false for anything else) and `MediaSources` (films and episodes: one source, `Id` = item id, `Container` `mp4`, `Size` = the exact byte count of `clip.mp4`, `ETag` `a1b2c3`) |
-| `GET /Items/{id}/Download` | `clip.mp4` as `video/mp4` with `Accept-Ranges: bytes`, `ETag: "a1b2c3"` and `Last-Modified`. `Range: bytes=N-` gets `206` with an exact `Content-Range`; an `If-Range` that matches neither validator gets the whole file as `200`; an unsatisfiable range is `416`. 400 if any `api_key`-like query name is present (`api_key`, `ApiKey`, `X-Emby-Token`, `X-MediaBrowser-Token`, `X-Emby-Authorization`, any case). Not a film or episode: 404 |
+| `GET /Items/{id}/Download` | `clip.mp4` as `video/mp4` with `Accept-Ranges: bytes`, `ETag: "a1b2c3"` and `Last-Modified`. `Range: bytes=N-` gets `206` with an exact `Content-Range`; an `If-Range` that matches neither validator gets the whole file as `200`; an unsatisfiable range is `416`. 400 if any `api_key`-like query name is present (`api_key`, `ApiKey`, `X-Emby-Token`, `X-MediaBrowser-Token`, `X-Emby-Authorization`, any case). An unknown id: 404; a known item that is not a film or episode: 400 (Jellyfin's `ArgumentException` for an item with no file) |
 | `POST /Items/{id}/PlaybackInfo` with `EnableTranscoding: false` | As above, with no `TranscodingUrl` |
 | `GET /videos/{id}/hls/{playSessionId}/main.m3u8`, `.../seg{n}.ts` | The play session's own media playlist (`#EXT-X-PLAYLIST-TYPE:VOD`, five 2 s segments). Each segment URI is relative and ends `?api_key=MOCKLEAK`, which the app must strip (a request that keeps it is a 400). The same 400 rule now covers every media path (`/Download`, `/Videos/{id}/stream` and the HLS files) |
 | `GET /mock/downloads` | **Not a Jellyfin route; test only.** Each media request (`/Download`, `/stream`, HLS files), newest last: `Path` (no query), `Range`, `IfRange`, `PlaySessionId` (from the path, else the query), `Token` and `ApiKey` (`yes`/`no`). No token or query value is stored |
@@ -88,6 +88,7 @@ All need a token (401 otherwise). Why each flag exists, and what Jellyfin's own 
 | `--download-forbidden` | `CanDownload: true`, but `/Download` is 403 (the server's own policy disagrees) |
 | `--legacy-auth-only` | `/Download` and HLS segments are 401 unless an `api_key`-like query holds a token this server issued (the header is ignored for them); `/Items`, PlaybackInfo and the playlists accept the header. An `api_key` query is then not a 400 |
 | `--hls-recut` | Each PlaybackInfo gets a media playlist of a different shape (5, 4, 3, 5... segments of 10 s ÷ count) |
+| `--no-etag` | `/Download` sends `Last-Modified` only, no `ETag` (what real Jellyfin sends: ASP.NET `PhysicalFile`). An entity-tag `If-Range` cannot be compared and is ignored, so the range is served (206); a date `If-Range` gets 206 when the file was not modified after that date, else 200 |
 | `--hls-idle-kill=SECONDS` | A play session's segments are 404 (for good) once none of them was requested for SECONDS, counted from its PlaybackInfo |
 
 By hand (set `T` and `ID` as under "Playback"):
@@ -116,6 +117,7 @@ Flag by flag (start the server with the flag, then):
 --download-forbidden   curl -H "$H" -D - -o /dev/null http://127.0.0.1:8096/Items/$ID/Download   # 403 while /Items says true
 --legacy-auth-only     curl -H "$H" -D - -o /dev/null http://127.0.0.1:8096/Items/$ID/Download   # 401 (only ?api_key=$T works)
 --hls-recut            curl -H "$H" http://127.0.0.1:8096/videos/$ID/hls/<PlaySessionId>/main.m3u8   # new PlaybackInfo, new shape
+--no-etag              curl -H "$H" -H "Range: bytes=100-" -H 'If-Range: "x"' -D - -o rest.bin http://127.0.0.1:8096/Items/$ID/Download   # 206: no ETag to compare
 --hls-idle-kill=2      curl -H "$H" -o seg1.ts http://127.0.0.1:8096/videos/$ID/hls/<PlaySessionId>/seg1.ts   # 404 after 2 s idle
 ```
 
