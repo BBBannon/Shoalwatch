@@ -11,7 +11,11 @@ import app.shoalwatch.data.playback.api.toPlaybackInfo
 import app.shoalwatch.data.servers.Connection
 import app.shoalwatch.data.servers.Session
 import app.shoalwatch.net.ServerAddress
+import app.shoalwatch.data.playback.engine.EngineEvent
+import app.shoalwatch.data.playback.engine.EngineItem
+import app.shoalwatch.data.playback.engine.PlayerEngine
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.MutableSharedFlow
 import okhttp3.Call
 import okhttp3.HttpUrl.Companion.toHttpUrl
 
@@ -44,12 +48,18 @@ internal class FakePlaybackGateway : PlaybackGateway {
     val failOps = mutableMapOf<String, Throwable>()
     /** Holds every report call until completed. */
     var gate: CompletableDeferred<Unit>? = null
+    /** Holds every PlaybackInfo call (after it is recorded) until completed. */
+    var infoGate: CompletableDeferred<Unit>? = null
+    /** What [segments] answers, or throws [segmentsFail]. */
+    var segmentAnswer: List<MediaSegment> = emptyList()
+    var segmentsFail: Throwable? = null
 
     fun answer(vararg info: PlaybackInfo) { infos.addAll(info) }
 
     override suspend fun playbackInfo(s: Session, itemId: String, body: PlaybackInfoBody): PlaybackInfo {
         calls += "playbackInfo:$itemId"
         bodies += body
+        infoGate?.await()
         failWith?.let { throw it }
         return infos.removeFirstOrNull() ?: error("no PlaybackInfo answer queued")
     }
@@ -71,7 +81,53 @@ internal class FakePlaybackGateway : PlaybackGateway {
         failOps["ping"]?.let { throw it }
     }
 
-    override suspend fun segments(s: Session, itemId: String): List<app.shoalwatch.data.playback.MediaSegment> = emptyList()
+    override suspend fun segments(s: Session, itemId: String): List<MediaSegment> {
+        calls += "segments:$itemId"
+        segmentsFail?.let { throw it }
+        return segmentAnswer
+    }
     override suspend fun subtitleFile(s: Session, itemId: String, mediaSourceId: String, index: Int, format: String): ByteArray =
         throw AppError.of(AppError.Kind.SERVER_NOT_FOUND)
+}
+
+/**
+ * A [PlayerEngine] that behaves like ExoPlayer where the controller can tell: [pause] and [play] change [isPlaying] and say so,
+ * [seekTo] lands at once and says so. A test drives everything else with [emit] and by setting [positionMs] and [durationMs].
+ */
+internal class FakePlayerEngine : PlayerEngine {
+    private val flow = MutableSharedFlow<EngineEvent>(extraBufferCapacity = 64)
+    override val events = flow
+    override var positionMs = 0L
+    override var durationMs: Long? = null
+    override var bufferedMs = 0L
+    override var isPlaying = false
+    val loads = mutableListOf<Pair<EngineItem, Long>>()
+    val loadedAt: Long? get() = loads.lastOrNull()?.second
+    val seeks = mutableListOf<Long>()
+    var speedSet = 1f
+    var released = false
+    var metadataTitle: String? = null
+    var metadataSubtitle: String? = null
+    var audioOrdinal: Int? = null
+    var pictureOrdinal: Int? = null
+
+    fun emit(event: EngineEvent) = check(flow.tryEmit(event)) { "event buffer full" }
+
+    /** Ready and playing, as after a load with playWhenReady. */
+    fun startPlaying() { emit(EngineEvent.Ready); isPlaying = true; emit(EngineEvent.PlayingChanged(true)) }
+
+    override fun load(item: EngineItem, startMs: Long, playWhenReady: Boolean) {
+        check(!released) { "loaded after release" }
+        loads += item to startMs
+        positionMs = startMs
+        isPlaying = false
+    }
+    override fun play() { if (!isPlaying) { isPlaying = true; emit(EngineEvent.PlayingChanged(true)) } }
+    override fun pause() { if (isPlaying) { isPlaying = false; emit(EngineEvent.PlayingChanged(false)) } }
+    override fun seekTo(ms: Long) { seeks += ms; positionMs = ms; emit(EngineEvent.PositionDiscontinuity(ms)) }
+    override fun setSpeed(speed: Float) { speedSet = speed }
+    override fun selectAudio(ordinal: Int?) { audioOrdinal = ordinal }
+    override fun selectPictureSubtitle(ordinal: Int?) { pictureOrdinal = ordinal }
+    override fun setMediaMetadata(title: String?, subtitle: String?) { metadataTitle = title; metadataSubtitle = subtitle }
+    override fun release() { released = true; isPlaying = false }
 }

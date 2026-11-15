@@ -14,6 +14,8 @@ class FakePlaybackReports : PlaybackReports {
     val calls = mutableListOf<String>()
     val sessions = mutableListOf<Session>()
     val stops = mutableListOf<PlaybackReport>()
+    /** The session each stop was sent as, in order. */
+    val stopSessions = mutableListOf<Session>()
     var answer: () -> ReportOutcomeOrThrow = { ReportOutcomeOrThrow.Outcome(ReportOutcome.Sent) }
     /** Holds every call (after it is recorded) until completed. */
     var gate: CompletableDeferred<Unit>? = null
@@ -35,6 +37,7 @@ class FakePlaybackReports : PlaybackReports {
     override suspend fun ping(s: Session, playSessionId: String) = record("ping:$playSessionId", s)
     override suspend fun stopped(s: Session, r: PlaybackReport, finished: Boolean): ReportOutcome {
         stops += r
+        stopSessions += s
         return record("stopped@${r.positionMs}${if (finished) " finished" else ""}", s)
     }
 }

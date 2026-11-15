@@ -19,6 +19,11 @@ import app.shoalwatch.data.library.api.LibraryGateway
 import app.shoalwatch.data.library.api.LibraryGatewayImpl
 import app.shoalwatch.data.playback.ActivePlayback
 import app.shoalwatch.data.playback.AndroidDeviceCapabilities
+import app.shoalwatch.data.playback.EpisodeNavigator
+import app.shoalwatch.data.playback.PlaybackController
+import app.shoalwatch.data.playback.engine.ExoPlayerEngine
+import app.shoalwatch.data.playback.engine.PlayerEngine
+import app.shoalwatch.data.servers.Session
 import app.shoalwatch.data.playback.ServerPlaybackReports
 import app.shoalwatch.data.playback.PlaybackResolver
 import app.shoalwatch.data.playback.api.PlaybackGateway
@@ -117,6 +122,16 @@ class AppGraph(private val appContext: Context) {
             appScope.launch { serverCatalog.activeSession().collect(a::sessionChanged) }
         }
     }
+    /** A new Media3 player for one player screen (main thread); see "Player engine" in docs/ARCHITECTURE.md. */
+    val playerEngineFactory: () -> PlayerEngine = { ExoPlayerEngine(appContext) }
+    /**
+     * The player's state machine for one screen and one [session] ([scope]: the screen's main scope). Screens get it from here,
+     * so they never name the gateway, the resolver or a route.
+     */
+    fun playbackController(session: Session, scope: CoroutineScope, autoplayNext: () -> Boolean): PlaybackController = PlaybackController(
+        session, playerEngineFactory(), playbackResolver, playbackReports, playbackGateway, library, EpisodeNavigator(library),
+        activePlayback, scope, appScope, SystemMonotonicClock, autoplayNext,
+    )
     /** Loads saved tokens into the store's live lookup. Started at app start; anything authenticated waits on `serverStore.awaitWarmed()` (or uses `awaitActive()`). */
     val tokensWarmed: Job by lazy { appScope.launch { serverStore.warmTokens() } }
     /** What the trust prompt reads; the UI never touches `HttpClientFactory` itself. */
