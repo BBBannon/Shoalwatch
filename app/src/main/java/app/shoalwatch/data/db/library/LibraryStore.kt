@@ -15,6 +15,9 @@ data class EvictionPolicy(
     val maxUnpinnedItems: Int = 20_000,
 )
 
+/** What [LibraryStore.writePage] did. */
+enum class PageResult { Written, Stale }
+
 /**
  * The writes that span more than one table, each one transaction. Screens never call this; they observe the DAOs.
  * Reads go through `db.itemDao()`, `db.listDao()` and `db.viewDao()`.
@@ -32,9 +35,13 @@ class LibraryStore(private val db: AppDatabase) {
      * state. [total] is what the server said the list holds (null: no usable count). [nextStartIndex], [pagesLoaded] and
      * [endReached] are the paging state to resume from (see [ListStateEntity]); the defaults describe a list read in one go.
      *
-     * Positions stay contiguous from 0, so a page must begin at or before the end of what is stored.
+     * Positions stay contiguous from 0, so a page must begin at or before the end of what is stored (checked against the
+     * real positions, which are made contiguous first if something wrote around this class). A page that begins beyond
+     * the end means the list changed underneath the caller (a refresh finished first): nothing at all is written and
+     * the result is [PageResult.Stale]. So is a page given [basedOn] (the state the caller read before it fetched the page)
+     * when the stored state is no longer that one (same `refreshedAt` and `loadedCount`): the page belongs to a list that has since been replaced.
      *
-     * @throws IllegalArgumentException for a negative [start], a start beyond the stored entries, or a [listKey] that is empty or longer than 200 characters.
+     * @throws IllegalArgumentException for a negative [start], or a [listKey] that is empty or longer than 200 characters (programming errors).
      */
     suspend fun writePage(
         s: Session,
@@ -46,17 +53,72 @@ class LibraryStore(private val db: AppDatabase) {
         nextStartIndex: Int = start + page.size,
         pagesLoaded: Int = 1,
         endReached: Boolean = true,
-    ) {
+        basedOn: ListStateEntity? = null,
+    ): PageResult {
         require(start >= 0) { "A page cannot start before the first item." }
         require(listKey.isNotEmpty() && listKey.length <= ListEntryEntity.MAX_LIST_KEY) { "A list key is 1 to 200 characters." }
-        db.withTransaction {
-            require(start == 0 || start <= lists.countEntries(s.serverId, s.userId, listKey)) { "A page must continue the list it extends." }
+        return db.withTransaction {
+            if (basedOn != null) {
+                val now = lists.getState(s.serverId, s.userId, listKey)
+                if (now == null || now.refreshedAt != basedOn.refreshedAt || now.loadedCount != basedOn.loadedCount) return@withTransaction PageResult.Stale
+            }
+            val stored = if (start == 0) 0 else repacked(s, listKey)
+            if (start > stored) return@withTransaction PageResult.Stale
             writeItems(s, page, now)
             lists.deleteEntriesFrom(s.serverId, s.userId, listKey, start)
             lists.insertEntries(page.mapIndexed { i, row -> ListEntryEntity(s.serverId, s.userId, listKey, start + i, row.item.id) })
             val loaded = start + page.size
             lists.upsertState(ListStateEntity(s.serverId, s.userId, listKey, total?.coerceAtLeast(loaded), loaded, nextStartIndex, pagesLoaded, endReached, now.toEpochMilli()))
+            PageResult.Written
         }
+    }
+
+    /** How many entries the list has, after making its positions contiguous from 0 if they were not (they always are unless something wrote around this class). */
+    private suspend fun repacked(s: Session, listKey: String): Int {
+        val count = lists.countEntries(s.serverId, s.userId, listKey)
+        if ((lists.maxPosition(s.serverId, s.userId, listKey) ?: -1) + 1 != count) {
+            val all = lists.entriesFrom(s.serverId, s.userId, listKey, Int.MIN_VALUE)
+            lists.deleteEntriesFrom(s.serverId, s.userId, listKey, Int.MIN_VALUE)
+            lists.insertEntries(all.mapIndexed { i, e -> e.copy(position = i) })
+        }
+        return count
+    }
+
+    /**
+     * Removes every occurrence of [itemId] from the list, closes the gap (later entries move down, so positions stay
+     * contiguous from 0) and lowers `loadedCount` and a known `total` (never below `loadedCount`). `nextStartIndex` is a
+     * position on the SERVER and does not change. One transaction. False when the item is not in the list.
+     */
+    suspend fun removeEntry(s: Session, listKey: String, itemId: String): Boolean = db.withTransaction {
+        repacked(s, listKey)
+        val first = lists.firstPositionOf(s.serverId, s.userId, listKey, itemId) ?: return@withTransaction false
+        val tail = lists.entriesFrom(s.serverId, s.userId, listKey, first)
+        val kept = tail.filter { it.itemId != itemId }
+        lists.deleteEntriesFrom(s.serverId, s.userId, listKey, first)
+        lists.insertEntries(kept.mapIndexed { i, e -> e.copy(position = first + i) })
+        resize(s, listKey, -(tail.size - kept.size))
+        true
+    }
+
+    /**
+     * Puts [itemId] at [position] (0 up to the current length), moving later entries up: the undo of [removeEntry] for
+     * an optimistic change. One transaction. False when the list has never been loaded or [position] is out of range.
+     */
+    suspend fun insertEntryAt(s: Session, listKey: String, position: Int, itemId: String): Boolean = db.withTransaction {
+        if (lists.getState(s.serverId, s.userId, listKey) == null) return@withTransaction false
+        if (position < 0 || position > repacked(s, listKey)) return@withTransaction false
+        val tail = lists.entriesFrom(s.serverId, s.userId, listKey, position)
+        lists.deleteEntriesFrom(s.serverId, s.userId, listKey, position)
+        lists.insertEntries(listOf(ListEntryEntity(s.serverId, s.userId, listKey, position, itemId)) + tail.mapIndexed { i, e -> e.copy(position = position + 1 + i) })
+        resize(s, listKey, 1)
+        true
+    }
+
+    /** Moves `loadedCount` (and a known `total`) by [delta]; the server's paging position is left alone. */
+    private suspend fun resize(s: Session, listKey: String, delta: Int) {
+        val state = lists.getState(s.serverId, s.userId, listKey) ?: return
+        val loaded = (state.loadedCount + delta).coerceAtLeast(0)
+        lists.upsertState(state.copy(loadedCount = loaded, total = state.total?.plus(delta)?.coerceAtLeast(loaded)))
     }
 
     /** Stores items (and the user data that came with them) without touching any list, e.g. a detail fetch. Same rules as [writePage]. */

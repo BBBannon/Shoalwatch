@@ -2,6 +2,7 @@ package app.shoalwatch.data.library
 
 import app.shoalwatch.data.db.AppDatabase
 import app.shoalwatch.data.db.library.LibraryStore
+import app.shoalwatch.data.db.library.PageResult
 import app.shoalwatch.data.db.library.ListStateEntity
 import app.shoalwatch.data.db.library.toModel
 import app.shoalwatch.data.servers.Session
@@ -95,7 +96,7 @@ internal class ListCache(
 
     // ---- writing (all under the gate)
 
-    /** Saves one page of a list, replacing from [start] on (0 replaces the list). See `LibraryStore.writePage`. */
+    /** Saves one page of a list, replacing from [start] on (0 replaces the list). See `LibraryStore.writePage`: a [PageResult.Stale] page (the list changed while it was being fetched) is not written and the caller simply drops it. */
     suspend fun writePage(
         s: Session,
         key: String,
@@ -105,9 +106,10 @@ internal class ListCache(
         nextStartIndex: Int,
         pagesLoaded: Int,
         endReached: Boolean,
-    ) {
+        basedOn: ListStateEntity? = null,
+    ): PageResult {
         val reconciled = reconcileUserData(s, rows)
-        writeGate.withLock { store.writePage(s, key, start, reconciled, total, now(), nextStartIndex, pagesLoaded, endReached) }
+        return writeGate.withLock { store.writePage(s, key, start, reconciled, total, now(), nextStartIndex, pagesLoaded, endReached, basedOn) }
     }
 
     /** A list that is read in one go (resume, next up, latest, seasons, episodes). */

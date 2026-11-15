@@ -123,11 +123,12 @@ class LibraryRepository(
      */
     private suspend fun loadNextPage(s: Session, key: String, parentId: String, shape: ListShape, sort: Sort, filter: ItemFilter) {
         val state = lists.getState(s.serverId, s.userId, key)?.takeIf { canLoadMore(it) } ?: return
-        val page = gateway.children(s, parentId, state.nextStartIndex, PAGE_SIZE, sort, filter, shape.kinds, shape.recursive)
+        // Read before fetching: if a refresh replaces the list while this page is on its way, the page is for the old list and is dropped.
         val stored = lists.entryIds(s.serverId, s.userId, key)
+        val page = gateway.children(s, parentId, state.nextStartIndex, PAGE_SIZE, sort, filter, shape.kinds, shape.recursive)
         val have = stored.toHashSet()
         val added = page.items.filter { have.add(it.item.id) }
-        cache.writePage(s, key, stored.size, added, page.total ?: state.total, page.nextStartIndex, state.pagesLoaded + 1, page.endReached)
+        cache.writePage(s, key, stored.size, added, page.total ?: state.total, page.nextStartIndex, state.pagesLoaded + 1, page.endReached, basedOn = state)
     }
 
     // ---- series and items

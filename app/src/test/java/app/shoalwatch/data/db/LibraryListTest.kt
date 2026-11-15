@@ -5,12 +5,14 @@ import app.shoalwatch.S1
 import app.shoalwatch.U1
 import app.shoalwatch.U2
 import app.shoalwatch.data.db.library.ListEntryEntity
+import app.shoalwatch.data.db.library.PageResult
 import app.shoalwatch.data.db.library.toModel
 import app.shoalwatch.data.library.LibraryKind
 import app.shoalwatch.data.library.LibraryView
 import app.shoalwatch.data.servers.Session
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -94,13 +96,127 @@ class LibraryListTest : LibraryTestBase() {
         assertEquals(2, lists.getState(S1, U1, "kids")!!.total)
     }
 
-    @Test fun aPageThatWouldLeaveAGapIsRefused() = runBlocking {
+    @Test fun aPageThatWouldLeaveAGapIsReportedStaleAndWritesNothing() = runBlocking {
         library.writePage(s1u1, "kids", 0, films("a", "b"), 9, t0)
-        val failure = runCatching { library.writePage(s1u1, "kids", 5, films("c"), 9, t0) }.exceptionOrNull()
-        assertTrue(failure is IllegalArgumentException)
+        assertEquals(PageResult.Stale, library.writePage(s1u1, "kids", 5, films("c"), 9, t0.plusSeconds(1)))
         assertEquals(listOf("Film a", "Film b"), names("kids"))
-        assertTrue(runCatching { library.writePage(s1u1, "empty", 1, films("c"), 9, t0) }.exceptionOrNull() is IllegalArgumentException)
+        assertEquals("the state is not rewritten either", t0.toEpochMilli(), lists.getState(S1, U1, "kids")!!.refreshedAt)
+        assertEquals(0, count("items", "itemId = '${id("c")}'"))
+        assertEquals(PageResult.Stale, library.writePage(s1u1, "empty", 1, films("c"), 9, t0))
+        assertEquals(PageResult.Written, library.writePage(s1u1, "kids", 2, films("c"), 9, t0))
+    }
+
+    @Test fun aPageBasedOnAnOutdatedStateIsStaleEvenIfItsStartStillFits() = runBlocking {
+        library.writePage(s1u1, "kids", 0, films("a", "b"), 9, t0)
+        val before = lists.getState(S1, U1, "kids")!!
+        library.writePage(s1u1, "kids", 0, films("x", "y", "z"), 9, t0.plusSeconds(1)) // a refresh replaced the list meanwhile
+        assertEquals(PageResult.Stale, library.writePage(s1u1, "kids", 2, films("c"), 9, t0.plusSeconds(2), basedOn = before))
+        assertEquals(listOf("Film x", "Film y", "Film z"), names("kids"))
+        val current = lists.getState(S1, U1, "kids")!!
+        assertEquals(PageResult.Written, library.writePage(s1u1, "kids", 3, films("c"), 9, t0.plusSeconds(2), basedOn = current))
+    }
+
+    @Test fun aNegativeStartIsStillAProgrammingError() = runBlocking {
         assertTrue(runCatching { library.writePage(s1u1, "kids", -1, films("c"), 9, t0) }.exceptionOrNull() is IllegalArgumentException)
+    }
+
+    @Test fun theContiguityGuardChecksPositionsNotJustTheCount() = runBlocking {
+        library.writePage(s1u1, "kids", 0, films("a", "b", "c"), 9, t0)
+        sql("UPDATE list_entries SET position = 5 WHERE listKey = 'kids' AND position = 2") // a gap: 0, 1, 5 (three rows)
+        assertEquals(PageResult.Written, library.writePage(s1u1, "kids", 3, films("d"), 9, t0.plusSeconds(1)))
+        assertEquals("the live row after the gap survives", listOf("Film a", "Film b", "Film c", "Film d"), names("kids"))
+        assertEquals(listOf(0, 1, 2, 3), positions("kids"))
+    }
+
+    // ---- removing and re-inserting one entry
+
+    private fun positions(listKey: String, userId: String = U1): List<Int> =
+        db.openHelper.readableDatabase.query("SELECT position FROM list_entries WHERE serverId = '$S1' AND userId = '$userId' AND listKey = '$listKey' ORDER BY position").use { c ->
+            buildList { while (c.moveToNext()) add(c.getInt(0)) }
+        }
+
+    private suspend fun seed(labels: List<String>, total: Int? = 10, next: Int = 7) {
+        library.writePage(s1u1, "kids", 0, labels.map { row(item(it)) }, total, t0, nextStartIndex = next, pagesLoaded = 2, endReached = false)
+    }
+
+    @Test fun removingFromTheHeadMiddleAndTailKeepsPositionsContiguous() = runBlocking {
+        seed(listOf("a", "b", "c", "d", "e"))
+        assertTrue(library.removeEntry(s1u1, "kids", id("a")))
+        assertEquals(listOf("Film b", "Film c", "Film d", "Film e"), names("kids"))
+        assertTrue(library.removeEntry(s1u1, "kids", id("d")))
+        assertEquals(listOf("Film b", "Film c", "Film e"), names("kids"))
+        assertTrue(library.removeEntry(s1u1, "kids", id("e")))
+        assertEquals(listOf("Film b", "Film c"), names("kids"))
+        assertEquals(listOf(0, 1), positions("kids"))
+    }
+
+    @Test fun removingAnAbsentItemChangesNothing() = runBlocking {
+        seed(listOf("a", "b"))
+        assertFalse(library.removeEntry(s1u1, "kids", id("zzz")))
+        assertFalse(library.removeEntry(s1u1, "nolist", id("a")))
+        assertEquals(listOf("Film a", "Film b"), names("kids"))
+        assertEquals(2, lists.getState(S1, U1, "kids")!!.loadedCount)
+    }
+
+    @Test fun anItemInTheListTwiceIsRemovedEverywhere() = runBlocking {
+        seed(listOf("a", "b", "a", "c", "a"))
+        assertTrue(library.removeEntry(s1u1, "kids", id("a")))
+        assertEquals(listOf("Film b", "Film c"), names("kids"))
+        assertEquals(listOf(0, 1), positions("kids"))
+        val state = lists.getState(S1, U1, "kids")!!
+        assertEquals(2, state.loadedCount)
+        assertEquals(7, state.total)
+    }
+
+    @Test fun removingUpdatesTheCountsButNeverTheServerIndex() = runBlocking {
+        seed(listOf("a", "b", "c"), total = 10, next = 7)
+        library.removeEntry(s1u1, "kids", id("b"))
+        val state = lists.getState(S1, U1, "kids")!!
+        assertEquals(listOf(2, 9, 7, 2, false), listOf(state.loadedCount, state.total, state.nextStartIndex, state.pagesLoaded, state.endReached))
+    }
+
+    @Test fun theTotalNeverDropsBelowWhatIsLoadedAndMayStayUnknown() = runBlocking {
+        seed(listOf("a", "b", "c"), total = 3)
+        library.removeEntry(s1u1, "kids", id("a"))
+        assertEquals(2, lists.getState(S1, U1, "kids")!!.total)
+        seed(listOf("a", "b", "c"), total = null)
+        library.removeEntry(s1u1, "kids", id("a"))
+        assertNull(lists.getState(S1, U1, "kids")!!.total)
+    }
+
+    @Test fun removingIsPerUserAndPerList() = runBlocking {
+        seed(listOf("a", "b"))
+        library.writePage(s1u2, "kids", 0, films("a", "b"), 2, t0)
+        library.writePage(s1u1, "other", 0, films("a"), 1, t0)
+        library.removeEntry(s1u1, "kids", id("a"))
+        assertEquals(listOf("Film a", "Film b"), names("kids", s1u2))
+        assertEquals(listOf("Film a"), names("other"))
+        assertEquals(2, lists.getState(S1, U2, "kids")!!.loadedCount)
+    }
+
+    @Test fun insertingBackRestoresExactlyThePreviousList() = runBlocking {
+        val labels = listOf("a", "b", "c", "d")
+        for (index in labels.indices) {
+            seed(labels)
+            val before = lists.entryIds(S1, U1, "kids")
+            assertTrue(library.removeEntry(s1u1, "kids", id(labels[index])))
+            assertTrue(library.insertEntryAt(s1u1, "kids", index, id(labels[index])))
+            assertEquals("restored at $index", before, lists.entryIds(S1, U1, "kids"))
+            assertEquals(listOf(0, 1, 2, 3), positions("kids"))
+            assertEquals(4, lists.getState(S1, U1, "kids")!!.loadedCount)
+        }
+    }
+
+    @Test fun insertingAtTheEndAndOutOfRange() = runBlocking {
+        seed(listOf("a", "b"), total = 5)
+        assertTrue(library.insertEntryAt(s1u1, "kids", 2, id("c")))
+        assertEquals(listOf("a", "b", "c").map(::id), lists.entryIds(S1, U1, "kids"))
+        assertEquals(6, lists.getState(S1, U1, "kids")!!.total)
+        assertEquals(7, lists.getState(S1, U1, "kids")!!.nextStartIndex)
+        assertFalse(library.insertEntryAt(s1u1, "kids", 9, id("d")))
+        assertFalse(library.insertEntryAt(s1u1, "kids", -1, id("d")))
+        assertFalse(library.insertEntryAt(s1u1, "nolist", 0, id("d")))
+        assertEquals(3, lists.countEntries(S1, U1, "kids"))
     }
 
     @Test fun listKeysMustBeOneToTwoHundredCharacters() = runBlocking {

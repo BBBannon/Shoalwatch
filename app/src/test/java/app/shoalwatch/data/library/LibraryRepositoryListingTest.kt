@@ -61,6 +61,21 @@ class LibraryRepositoryListingTest : LibraryRepositoryTestBase() {
         assertEquals(listOf("children:0:100:movie_r", "children:100:100:movie_r", "children:200:100:movie_r"), gateway.calls.filter { it.startsWith("children") })
     }
 
+    @Test fun aPageWhoseListWasReplacedMeanwhileIsDroppedWithoutAnErrorOrAPartialWrite() = runBlocking {
+        serve(250)
+        loaded(100)
+        val ordinary = gateway.childPage
+        // While the second page is on its way, a refresh finishes and the saved list becomes one film long.
+        gateway.childPage = { p, start, limit ->
+            if (start == 100) runBlocking { library.writePage(s1u1, key, 0, films("x"), 1, t0.plusSeconds(1)) }
+            ordinary(p, start, limit)
+        }
+        more()
+        val now = listing().first5s { it.freshness == Freshness.Fresh }
+        assertEquals("the stale page was dropped, not appended", listOf("Film x"), names(now.items))
+        assertEquals(1, db.listDao().countEntries(s1u1.serverId, s1u1.userId, key))
+    }
+
     @Test fun loadMoreContinuesFromTheServersIndexNotFromHowManyRowsAreStored() = runBlocking {
         serve(300, bad = { it % 5 == 0 }) // 20 of every 100 are unusable
         val first = loaded(80)

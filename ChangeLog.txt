@@ -1,3 +1,4 @@
+v1.57 — 14/11/2026 — Behind the scenes for browsing: a single film can now be taken out of (or put back into) a saved list without upsetting the order, and a long list that is refreshed while more of it is loading no longer ends up mixed up.
 v1.56 — 14/11/2026 — Behind the scenes for browsing: saving watched and favourite marks now also works on Android 10 phones, and a new automatic check stops anything that older phones cannot handle slipping in.
 v1.55 — 14/11/2026 — Behind the scenes for browsing: the app now shows what it has saved straight away and updates it quietly in the background, keeps working without a connection, and tidies up old saved items once a day.
 v1.54 — 14/11/2026 — Behind the scenes for browsing: long lists now carry on from exactly where the server left off, a server's wrong item count is ignored, and Specials always appear after the numbered seasons.

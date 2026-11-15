@@ -32,6 +32,16 @@ interface ListDao {
     @Query("SELECT COUNT(*) FROM list_entries WHERE serverId = :serverId AND userId = :userId AND listKey = :listKey")
     suspend fun countEntries(serverId: String, userId: String, listKey: String): Int
 
+    @Query("SELECT MAX(position) FROM list_entries WHERE serverId = :serverId AND userId = :userId AND listKey = :listKey")
+    suspend fun maxPosition(serverId: String, userId: String, listKey: String): Int?
+
+    @Query("SELECT MIN(position) FROM list_entries WHERE serverId = :serverId AND userId = :userId AND listKey = :listKey AND itemId = :itemId")
+    suspend fun firstPositionOf(serverId: String, userId: String, listKey: String, itemId: String): Int?
+
+    /** The entries from [start] on, in position order. */
+    @Query("SELECT * FROM list_entries WHERE serverId = :serverId AND userId = :userId AND listKey = :listKey AND position >= :start ORDER BY position")
+    suspend fun entriesFrom(serverId: String, userId: String, listKey: String, start: Int): List<ListEntryEntity>
+
     @Query("DELETE FROM list_entries WHERE serverId = :serverId AND userId = :userId AND listKey = :listKey AND position >= :start")
     suspend fun deleteEntriesFrom(serverId: String, userId: String, listKey: String, start: Int)
 
