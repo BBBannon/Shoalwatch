@@ -25,7 +25,8 @@ import kotlinx.serialization.json.JsonObject
  * [Admin] on [ServerApi], the one authenticated call path (warm gate, verified address, the account's own client, the token only
  * in `Authorization`, 401 signs the account out locally). Every call except [me] is refused with nothing sent unless [allows]
  * says the session is a server-confirmed administrator; ids are validated before anything is sent and become path segments or a
- * query value only through `ApiRequest`'s builder. Reads use ServerApi's one retry; every action is sent once (`retry = false`).
+ * query value only through `ApiRequest`'s builder. Reads use ServerApi's one retry; every action goes through [send]: sent once
+ * (`retry = false`, `sendOnce`) and only if [allows] still holds just before it is written.
  * Every path, parameter and field was checked against the 12.4.0 reference (see "Server admin" in docs/ARCHITECTURE.md).
  * Failures are logged by kind only.
  */
@@ -55,11 +56,11 @@ internal class AdminGateway(
         val cleaned = displayText(text, AdminLimits.MESSAGE)
         require(cleaned.isNotEmpty()) { "Empty message." }
         val body = MessageBody(displayText(header, AdminLimits.MESSAGE), cleaned, MESSAGE_TIMEOUT_MS)
-        api.post(s, "/Sessions/$id/Message", jsonBody = JsonBodies.JSON.encodeToString(MessageBody.serializer(), body), retry = false, sendOnce = true)
+        send(s, "POST", "/Sessions/$id/Message", jsonBody = JsonBodies.JSON.encodeToString(MessageBody.serializer(), body))
     }
 
     override suspend fun command(s: Session, sessionId: String, command: RemoteCommand) = gated(s, "command") {
-        api.post(s, "/Sessions/${sessionId(sessionId)}/Playing/${command.wire}", retry = false, sendOnce = true)
+        send(s, "POST", "/Sessions/${sessionId(sessionId)}/Playing/${command.wire}")
     }
 
     override suspend fun libraries(s: Session): List<LibraryFolder> = gated(s, "libraries") {
@@ -67,11 +68,11 @@ internal class AdminGateway(
     }
 
     override suspend fun scanAll(s: Session) = gated(s, "scanAll") {
-        api.post(s, "/Library/Refresh", retry = false, sendOnce = true)
+        send(s, "POST", "/Library/Refresh")
     }
 
     override suspend fun scanLibrary(s: Session, libraryId: String) = gated(s, "scanLibrary") {
-        api.post(s, "/Items/${jellyfinId(libraryId)}/Refresh", SCAN_QUERY, retry = false, sendOnce = true)
+        send(s, "POST", "/Items/${jellyfinId(libraryId)}/Refresh", SCAN_QUERY)
     }
 
     override suspend fun tasks(s: Session): List<ServerTask> = gated(s, "tasks") {
@@ -79,11 +80,11 @@ internal class AdminGateway(
     }
 
     override suspend fun startTask(s: Session, taskId: String) = gated(s, "startTask") {
-        api.post(s, "/ScheduledTasks/Running/${taskId(taskId)}", retry = false, sendOnce = true)
+        send(s, "POST", "/ScheduledTasks/Running/${taskId(taskId)}")
     }
 
     override suspend fun stopTask(s: Session, taskId: String) = gated(s, "stopTask") {
-        api.delete(s, "/ScheduledTasks/Running/${taskId(taskId)}", retry = false, sendOnce = true)
+        send(s, "DELETE", "/ScheduledTasks/Running/${taskId(taskId)}")
     }
 
     override suspend fun users(s: Session): List<ServerUser> = gated(s, "users") {
@@ -96,9 +97,8 @@ internal class AdminGateway(
         if (id == s.userId) throw AppError.of(AppError.Kind.FORBIDDEN)
         val user = api.get(s, "/Users/$id", deserializer = JsonObject.serializer(), maxBytes = UserPolicyEdit.MAX_POLICY_BYTES)
         val policy = UserPolicyEdit.withDisabled(user, id, disabled) ?: throw AppError.of(AppError.Kind.SERVER_ERROR)
-        // The gate may have closed while the policy was read: nothing is posted for a session no longer allowed.
-        if (!allows(s)) throw AppError.of(AppError.Kind.FORBIDDEN)
-        api.post(s, "/Users/$id/Policy", jsonBody = policy.toString(), retry = false, sendOnce = true)
+        // The gate may have closed while the policy was read: [send] asks again just before writing, so nothing is posted then.
+        send(s, "POST", "/Users/$id/Policy", jsonBody = policy.toString())
     }
 
     override suspend fun activity(s: Session, startIndex: Int, limit: Int): ActivityPage = gated(s, "activity") {
@@ -117,18 +117,34 @@ internal class AdminGateway(
         // This phone's own device: removing it would sign out every account here. Sign out in Servers and accounts does that.
         if (deviceId == thisDeviceId) throw notFound()
         // A device id is a client-chosen string: only ever a query value, never a path segment.
-        api.delete(s, "/Devices", listOf("id" to deviceId), retry = false, sendOnce = true)
+        send(s, "DELETE", "/Devices", listOf("id" to deviceId))
     }
 
     override suspend fun restart(s: Session) = gated(s, "restart") {
-        api.post(s, "/System/Restart", retry = false, sendOnce = true)
+        send(s, "POST", "/System/Restart")
     }
 
     override suspend fun shutDown(s: Session) = gated(s, "shutDown") {
-        api.post(s, "/System/Shutdown", retry = false, sendOnce = true)
+        send(s, "POST", "/System/Shutdown")
     }
 
     // ---- rules
+
+    /**
+     * Every action: sent once and never retried (`retry = false`; `sendOnce`, so OkHttp does not resend it either), and only if
+     * [allows] still holds at the moment it is written: a profile switch while it waited for the address sends nothing.
+     */
+    private suspend fun send(s: Session, method: String, path: String, query: List<Pair<String, String>> = emptyList(), jsonBody: String? = null) {
+        val stillAllowed = { allows(s) }
+        when (method) {
+            "POST" -> api.post(s, path, query, jsonBody, retry = false, sendOnce = true, sendIf = stillAllowed)
+            "DELETE" -> {
+                require(jsonBody == null) { "No body on a DELETE." }
+                api.delete(s, path, query, retry = false, sendOnce = true, sendIf = stillAllowed)
+            }
+            else -> throw IllegalArgumentException("Not an action method.")
+        }
+    }
 
     private inline fun <T> gated(s: Session, call: String, block: () -> T): T = logged(call) {
         if (!allows(s)) throw AppError.of(AppError.Kind.FORBIDDEN)

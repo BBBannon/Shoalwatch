@@ -138,6 +138,24 @@ class AdminGatewayRulesTest : AdminGatewayTestBase() {
         assertEquals("GET", web.takeRequest().method)
     }
 
+    /**
+     * The gate closes (a profile switch) while an action waits for the server's address: it is checked again just before the
+     * request is written, so nothing goes out. setUserDisabled's policy read is a read; its POST is what must not be sent.
+     */
+    @Test fun anActionWhoseGateClosesWhileItWaitsForTheAddressIsNotSent() {
+        for ((name, call) in actions) {
+            allowed = true
+            whileWaitingForTheAddress = { allowed = false }
+            web.dispatcher = QueueDispatcher()
+            if (name == "setUserDisabled") web.enqueue(fixture("user-policy.json"))
+            val before = web.requestCount
+            assertEquals(name, AppError.Kind.FORBIDDEN, failure(call).kind)
+            val expected = if (name == "setUserDisabled") 1 else 0
+            assertEquals("$name was sent after the gate closed", expected, web.requestCount - before)
+        }
+        repeat(web.requestCount) { assertEquals("only reads went out", "GET", web.takeRequest().method) }
+    }
+
     @Test fun aReadIsRetriedOnce() {
         web.enqueue(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST))
         web.enqueue(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST))

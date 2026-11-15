@@ -36,9 +36,9 @@ import javax.crypto.KeyGenerator
 /** The real [AdminGateway] on the real [ServerApi] and OkHttp, against MockWebServer and a real in-memory store. */
 @RunWith(RobolectricTestRunner::class)
 abstract class AdminGatewayTestBase {
-    private class OnlineSelector(val online: Connection.Online) : ServerConnections {
+    private inner class OnlineSelector(val online: Connection.Online) : ServerConnections {
         override fun connection(serverId: String): StateFlow<Connection> = MutableStateFlow(online)
-        override suspend fun awaitOnline(serverId: String, timeoutMs: Long): Connection.Online = online
+        override suspend fun awaitOnline(serverId: String, timeoutMs: Long): Connection.Online = online.also { whileWaitingForTheAddress() }
         override fun refresh() {}
         override fun refresh(serverId: String) {}
         override fun refreshIfCurrent(serverId: String, failed: Connection.Online) {}
@@ -54,6 +54,9 @@ abstract class AdminGatewayTestBase {
 
     /** What `AdminRights.allows` answers; true unless a test says otherwise. */
     protected var allowed = true
+
+    /** Runs inside every `awaitOnline`, after the gateway's own check: what happens while a call waits for the address. */
+    protected var whileWaitingForTheAddress: () -> Unit = {}
 
     @Before fun open() {
         web.start()

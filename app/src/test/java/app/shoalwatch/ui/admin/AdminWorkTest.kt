@@ -2,6 +2,7 @@ package app.shoalwatch.ui.admin
 
 import app.shoalwatch.S1
 import app.shoalwatch.U1
+import app.shoalwatch.testId
 import app.shoalwatch.core.AppError
 import app.shoalwatch.data.servers.AccountSummary
 import app.shoalwatch.data.servers.Connection
@@ -108,5 +109,22 @@ class AdminWorkTest {
         runCurrent()
         assertEquals(0, done)
         assertTrue(w.running.value == null)
+    }
+
+    /** Confirmed, then waiting (for the server's address, say) when the profile is switched: the action is never sent. */
+    @Test fun anActionStillWaitingWhenTheGateClosesIsNeverSent() = runTest {
+        val w = work()
+        val address = CompletableDeferred<Unit>()
+        var sent = 0
+        w.run("restart", { address.await(); sent++ }, { done++ })
+        runCurrent()
+        catalog.activeFlow.value = AccountSummary(S1, testId("kid"), "kid")
+        runCurrent()
+        address.complete(Unit)
+        runCurrent()
+        assertEquals("nothing is sent after the gate closed", 0, sent)
+        assertEquals(0, done)
+        assertNull(w.running.value)
+        assertNull(w.problem.value)
     }
 }
