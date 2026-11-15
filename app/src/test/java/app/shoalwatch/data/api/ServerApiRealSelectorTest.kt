@@ -1,6 +1,7 @@
 package app.shoalwatch.data.api
 
 import app.shoalwatch.S1
+import kotlinx.coroutines.flow.flowOf
 import app.shoalwatch.U1
 import app.shoalwatch.core.AppError
 import app.shoalwatch.data.db.AppDatabase
@@ -97,7 +98,7 @@ class ServerApiRealSelectorTest {
     private fun wire(homeAddress: ServerAddress?, awayAddress: ServerAddress?) {
         val store = ServerStore(db, SecretBox { key }, clients::evict)
         gateway = CountingGateway(JellyfinGatewayImpl(clients))
-        selector = AddressSelector(gateway, object : NetworkMonitor { override val changes = emptyFlow<Unit>() }, scope, device, store)
+        selector = AddressSelector(gateway, object : NetworkMonitor { override val changes = emptyFlow<Unit>() }, scope, device, store, flowOf(true))
         api = ServerApi(store, selector, clients, device)
         runBlocking {
             store.upsertServer(Server(S1, "Den", "10.10.3", homeAddress, awayAddress, true, null, null, emptyMap()))

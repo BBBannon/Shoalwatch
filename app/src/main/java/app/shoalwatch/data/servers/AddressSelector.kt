@@ -54,6 +54,8 @@ class AddressSelector(
     private val scope: CoroutineScope,
     private val device: DeviceIdentity,
     private val source: ServerSettingsSource,
+    /** True while the app is in the foreground (a screen of it is started); see [recoverWhileWatched]. */
+    private val foreground: Flow<Boolean>,
     private val homeTimeoutMs: Long = HOME_TIMEOUT_MS,
     private val awayTimeoutMs: Long = AWAY_TIMEOUT_MS,
     private val probeDebounceMs: Long = PROBE_DEBOUNCE_MS,
@@ -75,6 +77,9 @@ class AddressSelector(
 
         /** How long the next unprompted re-probe of an `Offline` server waits; see [AddressSelector.recoverWhileWatched]. */
         @Volatile var recoveryWaitMs = RECOVERY_MIN_MS
+
+        /** The last probe found no saved server with this id: there is nothing to re-probe until the store changes. */
+        @Volatile var unsaved = false
 
         /** The network may have changed (or a caller asks): nothing published so far can be relied on. */
         @Synchronized fun invalidate() {
@@ -216,13 +221,20 @@ class AddressSelector(
         }
     }
 
+    /** Nothing happens for a server whose connection nobody has asked for, or one that was removed: no probing is started for it. */
     override fun refresh(serverId: String) {
-        val entry = synchronized(entries) { entries[serverId] }
-        if (entry == null) {
-            connection(serverId) // not known yet: the first probe is what was asked for
-            return
-        }
+        // One lock for the look-up and the reset, so a [forget] cannot fall between them and leave an orphan entry `Checking`.
         synchronized(entries) {
+            val entry = entries[serverId] ?: return
+            entry.invalidate()
+            entry.requests.trySend(Unit)
+        }
+    }
+
+    override fun refreshIfOffline(serverId: String) {
+        synchronized(entries) {
+            val entry = entries[serverId] ?: return
+            if (entry.state.value !is Connection.Offline) return
             entry.invalidate()
             entry.requests.trySend(Unit)
         }
@@ -230,12 +242,17 @@ class AddressSelector(
 
     /**
      * An `Offline` server is re-probed without the user asking, so a server that was down and came back is found again (the
-     * network did not change, so nothing else would re-check it). Only while something is collecting [connection] for it (a
-     * screen is looking: nothing is probed in the background for a server nobody is showing), and only for ordinary
-     * unreachability: a security reason (changed or untrusted certificate, cleartext blocked, client certificate needed, damaged
-     * pin) waits for the user. The wait starts at [RECOVERY_MIN_MS] and doubles up to [RECOVERY_MAX_MS]; it starts again when
-     * the server is `Online` and on a network change. Each probe is a small anonymous request or two, at most one a minute
-     * once settled, and none while the screen is closed. Time is `delay`, so tests use virtual time.
+     * network did not change, so nothing else would re-check it). Only while BOTH something is collecting [connection] for it (a
+     * screen's ViewModel is alive) AND the app is in the [foreground] (one of its screens is started): ViewModels live on while
+     * the app is in the background, so the first alone would probe all night. Only for ordinary unreachability of a saved server:
+     * a security reason (changed or untrusted certificate, cleartext blocked, client certificate needed, damaged pin) waits for
+     * the user. The wait starts at [RECOVERY_MIN_MS] and doubles up to [RECOVERY_MAX_MS]; it starts again when the server is
+     * `Online`, on a network change, and on coming back to the foreground, which also probes at once. Each probe is a small
+     * anonymous request or two, at most one a minute once settled, and none while the app is in the background.
+     *
+     * These probes are quiet: the state is not set to `Checking` first, so a probe that fails again publishes an equal `Offline`
+     * and nothing on screen changes or is announced; only a success (or a different reason) is published. A user's own refresh
+     * still shows `Checking`. Time is `delay`, so tests use virtual time.
      */
     private suspend fun recoverWhileWatched(entry: Entry) {
         // This function collects the state itself, so one watcher of its own is always counted.
@@ -243,20 +260,32 @@ class AddressSelector(
             if (c is Connection.Online) entry.recoveryWaitMs = RECOVERY_MIN_MS
             c is Connection.Offline && c.reason !in SECURITY_KINDS
         }
-        combine(retryable, entry.state.subscriptionCount.map { it > 1 }) { offline, watched -> offline && watched }
+        var wasInBackground = false
+        combine(retryable, entry.state.subscriptionCount.map { it > 1 }, foreground) { offline, watched, front -> Triple(offline, watched, front) }
             .distinctUntilChanged()
-            .collectLatest { active ->
-                // The probe below takes the state to `Checking`, which ends this block; the wait is kept in the entry so the
-                // next `Offline` carries on from where it was.
-                while (active) {
+            .collectLatest { (offline, watched, front) ->
+                if (!front) {
+                    wasInBackground = true
+                    return@collectLatest
+                }
+                val resumed = wasInBackground
+                wasInBackground = false
+                if (!offline || !watched) return@collectLatest
+                if (resumed) {
+                    entry.recoveryWaitMs = RECOVERY_MIN_MS
+                    reprobeQuietly(entry)
+                }
+                while (true) {
                     delay(entry.recoveryWaitMs)
                     entry.recoveryWaitMs = minOf(entry.recoveryWaitMs * 2, RECOVERY_MAX_MS)
-                    synchronized(entries) {
-                        entry.invalidate()
-                        entry.requests.trySend(Unit)
-                    }
+                    reprobeQuietly(entry)
                 }
             }
+    }
+
+    /** Asks for a probe without going through `Checking` (see [recoverWhileWatched]); nothing if the server is no longer saved. */
+    private fun reprobeQuietly(entry: Entry) {
+        if (!entry.unsaved && entry.state.value is Connection.Offline) entry.requests.trySend(Unit)
     }
 
     /**
@@ -282,6 +311,7 @@ class AddressSelector(
         try {
             val server = source.server(entry.serverId)
             val startedAt = entry.begin(server?.probeSettings())
+            entry.unsaved = server == null
             entry.publish(if (server == null) Connection.Offline() else probe(server), startedAt)
         } catch (e: CancellationException) {
             throw e

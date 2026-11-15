@@ -100,6 +100,14 @@ interface ServerConnections {
     fun refresh(serverId: String)
 
     /**
+     * [refresh] for [serverId], but only if it is `Offline` right now: what a user's own refresh asks for first. A server whose
+     * connection nobody has asked for (or one that has been removed) is not probed, and no probing is started for it.
+     */
+    fun refreshIfOffline(serverId: String) {
+        if (connection(serverId).value is Connection.Offline) refresh(serverId)
+    }
+
+    /**
      * Re-probes [serverId] alone, but only if [failed] (the very `Online` instance a request used, as returned by
      * [awaitOnline]) is still its current state. A failure that arrives after the state has already moved on (a newer
      * probe, or `Checking`) says nothing about the new state and must not discard it.

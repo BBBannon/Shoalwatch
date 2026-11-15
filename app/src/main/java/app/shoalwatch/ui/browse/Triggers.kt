@@ -17,9 +17,7 @@ import kotlinx.coroutines.flow.map
  * connection is otherwise re-checked only when the phone's network changes, so a server that was down and came back would stay
  * "offline" for good. `Online` and `Checking` need nothing: the first is fine, the second is already being probed.
  */
-fun ServerConnections.reprobeIfOffline(s: Session) {
-    if (connection(s.serverId).value is Connection.Offline) refresh(s.serverId)
-}
+fun ServerConnections.reprobeIfOffline(s: Session) = refreshIfOffline(s.serverId)
 
 /**
  * Emits the active [Session] each time the connection to its server becomes `Online` after having been anything else
