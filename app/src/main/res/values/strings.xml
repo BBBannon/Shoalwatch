@@ -259,7 +259,6 @@
     <string name="line_join">%1$s · %2$s</string>
 
     <!-- Browsing: library grid -->
-    <string name="sort_label">Sort by</string>
     <string name="sort_name">Name</string>
     <string name="sort_date_added">Date added</string>
     <string name="sort_release">Release date</string>
@@ -300,8 +299,6 @@
     <string name="season_mark_unwatched">Mark season as unwatched</string>
     <string name="season_menu_cd">Season actions</string>
     <string name="episodes_empty">No episodes in this season yet.</string>
-    <string name="episodes_heading">Episodes</string>
-    <string name="series_fact_line">%1$s · %2$s</string>
     <string name="detail_play">Play</string>
     <string name="detail_playback_later">Playback arrives in the next update</string>
     <string name="detail_watched_state">Watched</string>

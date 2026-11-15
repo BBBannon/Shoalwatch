@@ -1,0 +1,190 @@
+{
+  "Items": [
+    {
+      "Name": "Films",
+      "ServerId": "5a3e1c0d9b7f4e2a8c6d0b1f3e5a7c9d",
+      "Id": "c0ffee00000000000000000000000001",
+      "Etag": "v1",
+      "SortName": "films",
+      "Type": "CollectionFolder",
+      "IsFolder": true,
+      "ImageTags": {
+        "Primary": "vw0001"
+      },
+      "BackdropImageTags": [],
+      "LocationType": "FileSystem",
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "c0ffee00000000000000000000000001",
+        "ItemId": "c0ffee00000000000000000000000001"
+      },
+      "CollectionType": "movies"
+    },
+    {
+      "Name": "TV Shows",
+      "ServerId": "5a3e1c0d9b7f4e2a8c6d0b1f3e5a7c9d",
+      "Id": "c0ffee00000000000000000000000002",
+      "Etag": "v1",
+      "SortName": "tv shows",
+      "Type": "CollectionFolder",
+      "IsFolder": true,
+      "ImageTags": {
+        "Primary": "vw0002"
+      },
+      "BackdropImageTags": [],
+      "LocationType": "FileSystem",
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "c0ffee00000000000000000000000002",
+        "ItemId": "c0ffee00000000000000000000000002"
+      },
+      "CollectionType": "tvshows"
+    },
+    {
+      "Name": "Music",
+      "ServerId": "5a3e1c0d9b7f4e2a8c6d0b1f3e5a7c9d",
+      "Id": "c0ffee00000000000000000000000003",
+      "Etag": "v1",
+      "SortName": "music",
+      "Type": "CollectionFolder",
+      "IsFolder": true,
+      "ImageTags": {
+        "Primary": "vw0003"
+      },
+      "BackdropImageTags": [],
+      "LocationType": "FileSystem",
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "c0ffee00000000000000000000000003",
+        "ItemId": "c0ffee00000000000000000000000003"
+      },
+      "CollectionType": "music"
+    },
+    {
+      "Name": "Collections",
+      "ServerId": "5a3e1c0d9b7f4e2a8c6d0b1f3e5a7c9d",
+      "Id": "C0FFEE00-0000-0000-0000-000000000004",
+      "Etag": "v1",
+      "SortName": "collections",
+      "Type": "UserView",
+      "IsFolder": true,
+      "ImageTags": {
+        "Primary": "vw0004"
+      },
+      "BackdropImageTags": [],
+      "LocationType": "FileSystem",
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "C0FFEE00-0000-0000-0000-000000000004",
+        "ItemId": "C0FFEE00-0000-0000-0000-000000000004"
+      },
+      "CollectionType": "boxsets"
+    },
+    {
+      "Name": "Home videos",
+      "ServerId": "5a3e1c0d9b7f4e2a8c6d0b1f3e5a7c9d",
+      "Id": "c0ffee00000000000000000000000005",
+      "Etag": "v1",
+      "SortName": "home videos",
+      "Type": "CollectionFolder",
+      "IsFolder": true,
+      "ImageTags": {
+        "Primary": "vw0005"
+      },
+      "BackdropImageTags": [],
+      "LocationType": "FileSystem",
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "c0ffee00000000000000000000000005",
+        "ItemId": "c0ffee00000000000000000000000005"
+      },
+      "CollectionType": "homevideos"
+    },
+    {
+      "Name": "Mixed stuff",
+      "ServerId": "5a3e1c0d9b7f4e2a8c6d0b1f3e5a7c9d",
+      "Id": "c0ffee00000000000000000000000006",
+      "Etag": "v1",
+      "SortName": "mixed stuff",
+      "Type": "CollectionFolder",
+      "IsFolder": true,
+      "ImageTags": {
+        "Primary": "vw0006"
+      },
+      "BackdropImageTags": [],
+      "LocationType": "FileSystem",
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "c0ffee00000000000000000000000006",
+        "ItemId": "c0ffee00000000000000000000000006"
+      },
+      "CollectionType": null
+    },
+    {
+      "Name": "Playlists",
+      "ServerId": "5a3e1c0d9b7f4e2a8c6d0b1f3e5a7c9d",
+      "Id": "c0ffee00000000000000000000000007",
+      "Etag": "v1",
+      "SortName": "playlists",
+      "Type": "CollectionFolder",
+      "IsFolder": true,
+      "ImageTags": {
+        "Primary": "vw0007"
+      },
+      "BackdropImageTags": [],
+      "LocationType": "FileSystem",
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "c0ffee00000000000000000000000007",
+        "ItemId": "c0ffee00000000000000000000000007"
+      },
+      "CollectionType": "playlists"
+    },
+    {
+      "Name": "Broken",
+      "ServerId": "5a3e1c0d9b7f4e2a8c6d0b1f3e5a7c9d",
+      "Id": "not-a-guid",
+      "Etag": "v1",
+      "SortName": "broken",
+      "Type": "CollectionFolder",
+      "IsFolder": true,
+      "ImageTags": {
+        "Primary": "vwguid"
+      },
+      "BackdropImageTags": [],
+      "LocationType": "FileSystem",
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "not-a-guid",
+        "ItemId": "not-a-guid"
+      },
+      "CollectionType": "movies"
+    }
+  ],
+  "TotalRecordCount": 8,
+  "StartIndex": 0
+}
