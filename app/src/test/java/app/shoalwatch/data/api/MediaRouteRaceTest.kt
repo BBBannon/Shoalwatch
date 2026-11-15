@@ -43,6 +43,18 @@ class MediaRouteRaceTest : ServerApiTestBase() {
         refused(AppError.Kind.NOT_SIGNED_IN) { c.execute().close() }
     }
 
+    @Test fun aCallMadeBeforeANetworkChangeIsRefusedWhenExecuted() {
+        val c = call(route())
+        selector.state.value = Connection.Checking(previous = online())
+        refused(AppError.Kind.OFFLINE) { c.execute().close() }
+    }
+
+    @Test fun aCallMadeBeforeASettingsSaveIsRefusedWhenExecuted() {
+        val c = call(route())
+        saveServer(cleartext = true) // the route's client is no longer current
+        refused(AppError.Kind.OFFLINE) { c.execute().close() }
+    }
+
     @Test fun aCallMadeBeforeANetworkChangeIsRefusedWhenEnqueued() {
         val c = call(route())
         selector.state.value = Connection.Checking(previous = online())
