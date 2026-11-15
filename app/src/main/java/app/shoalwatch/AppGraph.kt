@@ -3,6 +3,7 @@ package app.shoalwatch
 import android.content.Context
 import app.shoalwatch.data.api.ServerApi
 import app.shoalwatch.data.db.AppDatabase
+import app.shoalwatch.data.images.ArtworkLoader
 import app.shoalwatch.data.library.Library
 import app.shoalwatch.data.library.LibraryRepository
 import app.shoalwatch.data.library.Playstate
@@ -27,6 +28,7 @@ import app.shoalwatch.net.HttpClientFactory
 import app.shoalwatch.net.NetworkMonitor
 import app.shoalwatch.security.KeystoreKeyProvider
 import app.shoalwatch.security.SecretBox
+import coil3.ImageLoader
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -53,6 +55,8 @@ class AppGraph(private val appContext: Context) {
     val addressSelector: AddressSelector by lazy { AddressSelector(jellyfinGateway, networkMonitor, appScope, deviceIdentity, serverStore) }
     /** The one path for every signed-in request; nothing in the UI uses it yet. */
     val serverApi: ServerApi by lazy { ServerApi(serverStore, addressSelector, serverClients, deviceIdentity) }
+    /** The one image loader: it loads `ArtworkRef`s and nothing else (see "Artwork" in docs/ARCHITECTURE.md). Coil's singleton, set up in `ShoalwatchApp`. */
+    val imageLoader: ImageLoader by lazy { ArtworkLoader.build(appContext, serverApi) }
     /** Library endpoints as safe models; only `library` uses it. */
     val libraryGateway: LibraryGateway by lazy { LibraryGatewayImpl(serverApi) }
     /** What every browsing screen reads: saved rows first, refreshed behind them (see "Library repository" in docs/ARCHITECTURE.md). */

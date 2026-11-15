@@ -254,6 +254,7 @@ dependencies {
     debugImplementation(libs.compose.ui.tooling)
 
     implementation(libs.okhttp)
+    implementation(libs.coil.compose)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
