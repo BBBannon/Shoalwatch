@@ -38,6 +38,7 @@
     <string name="admin_problem_offline">You’re offline. Server admin needs a connection to your server.</string>
     <string name="admin_problem_network">Couldn’t reach the server. Try again.</string>
     <string name="admin_problem_refused">The server refused that. Your account may not be allowed to do it.</string>
+    <string name="admin_problem_changed">What’s playing there has changed, so nothing was sent. The list has been refreshed.</string>
     <string name="admin_problem_gone">That’s no longer on the server. The list has been refreshed.</string>
     <string name="admin_problem_server">The server reported a problem. Try again later.</string>
     <string name="admin_problem_connection">The connection to the server needs checking. Open Servers and accounts.</string>

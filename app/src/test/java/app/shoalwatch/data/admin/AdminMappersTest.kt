@@ -55,6 +55,7 @@ class AdminMappersTest {
         assertEquals(AdminPlayMethod.TRANSCODE, playing.method)
         assertEquals(false to true, playing.videoDirect to playing.audioDirect)
         assertEquals(listOf(ConversionReason.VIDEO_FORMAT), playing.reasons)
+        assertEquals("what a confirmation is checked against", "6c0e2b0f4f2d4d8b9a4f3c0f4e6f7a8b", playing.itemId)
         assertTrue(tv.canControl && tv.canMessage && !tv.isThisDevice)
     }
 

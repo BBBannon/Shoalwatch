@@ -32,7 +32,8 @@ sealed interface AdminGate {
     data object Closed : AdminGate
 }
 
-enum class AdminProblem { OFFLINE, NETWORK, REFUSED, GONE, SERVER, CONNECTION, OTHER }
+/** What an admin screen says went wrong. CHANGED: the session now plays something the confirmation did not name. */
+enum class AdminProblem { OFFLINE, NETWORK, REFUSED, GONE, CHANGED, SERVER, CONNECTION, OTHER }
 
 /**
  * The session rule for one admin screen (see "Server admin" in docs/ARCHITECTURE.md). The screen belongs to the session that

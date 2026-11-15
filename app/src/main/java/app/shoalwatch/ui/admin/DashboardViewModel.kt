@@ -22,15 +22,23 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import java.time.Instant
 
-/** A Pause or Stop waiting for the admin's confirmation, naming who and where. */
+/**
+ * A Pause or Stop waiting for the admin's confirmation, naming who, where and what. [itemId] is what was playing when it was
+ * asked: if the session is playing something else by the time it is confirmed, nothing is sent.
+ */
 sealed interface SessionConfirm {
     val sessionId: String
+    val itemId: String?
 
-    data class Pause(override val sessionId: String, val userName: String, val deviceName: String, val title: String) : SessionConfirm {
+    data class Pause(
+        override val sessionId: String, val userName: String, val deviceName: String, val title: String, override val itemId: String? = null,
+    ) : SessionConfirm {
         override fun toString() = "Pause(<redacted>)"
     }
 
-    data class Stop(override val sessionId: String, val userName: String, val deviceName: String, val title: String) : SessionConfirm {
+    data class Stop(
+        override val sessionId: String, val userName: String, val deviceName: String, val title: String, override val itemId: String? = null,
+    ) : SessionConfirm {
         override fun toString() = "Stop(<redacted>)"
     }
 }
@@ -42,8 +50,8 @@ internal val SessionConfirm.who: Triple<String, String, String>
         is SessionConfirm.Stop -> Triple(userName, deviceName, title)
     }
 
-/** Who a message is being written to. */
-data class MessageTarget(val sessionId: String, val userName: String, val deviceName: String) {
+/** Who a message is being written to, and what they were playing then ([itemId], checked again before sending). */
+data class MessageTarget(val sessionId: String, val userName: String, val deviceName: String, val itemId: String? = null) {
     override fun toString() = "MessageTarget(<redacted>)"
 }
 
@@ -118,21 +126,29 @@ class DashboardViewModel(
 
     fun askPause(sessionId: String) {
         val s = controllable(sessionId)?.takeIf { it.nowPlaying?.paused == false } ?: return
-        confirmState.value = SessionConfirm.Pause(s.id, s.userName, s.deviceName, s.nowPlaying?.title.orEmpty())
+        confirmState.value = SessionConfirm.Pause(s.id, s.userName, s.deviceName, s.nowPlaying?.title.orEmpty(), s.nowPlaying?.itemId)
     }
 
     fun askStop(sessionId: String) {
         val s = controllable(sessionId) ?: return
-        confirmState.value = SessionConfirm.Stop(s.id, s.userName, s.deviceName, s.nowPlaying?.title.orEmpty())
+        confirmState.value = SessionConfirm.Stop(s.id, s.userName, s.deviceName, s.nowPlaying?.title.orEmpty(), s.nowPlaying?.itemId)
     }
 
-    /** Sends the confirmed Pause or Stop once, if that session is still in the latest list; the dialog closes either way. */
+    /**
+     * Sends the confirmed Pause or Stop once, if that session is still in the latest list and still playing what the dialog
+     * named (else GONE or CHANGED, nothing sent); the dialog closes either way.
+     */
     fun confirmCommand() {
         val c = confirmState.value ?: return
         confirmState.value = null
         if (frames.value.gate !is AdminGate.Open) return
-        if (controllable(c.sessionId) == null) {
+        val now = controllable(c.sessionId)
+        if (now == null) {
             gone()
+            return
+        }
+        if (now.nowPlaying?.itemId != c.itemId || now.nowPlaying?.title.orEmpty() != c.who.third) {
+            changed()
             return
         }
         val (command, done) = when (c) {
@@ -152,7 +168,7 @@ class DashboardViewModel(
     fun askMessage(sessionId: String) {
         val s = messageable(sessionId) ?: return
         messageText.clearText()
-        messageState.value = MessageTarget(s.id, s.userName, s.deviceName)
+        messageState.value = MessageTarget(s.id, s.userName, s.deviceName, s.nowPlaying?.itemId)
     }
 
     /**
@@ -167,8 +183,13 @@ class DashboardViewModel(
         val account = me.value?.takeIf { it.serverId == session.serverId && it.userId == session.userId } ?: return
         val header = context.getString(R.string.admin_message_header, account.userName)
         dismissMessage()
-        if (messageable(target.sessionId) == null) {
+        val now = messageable(target.sessionId)
+        if (now == null) {
             gone()
+            return
+        }
+        if (now.nowPlaying?.itemId != target.itemId) {
+            changed()
             return
         }
         work.run("message:${target.sessionId}", { s -> admin.sendMessage(s, target.sessionId, header, text) }) {
@@ -196,6 +217,12 @@ class DashboardViewModel(
 
     private fun gone() {
         work.fail(AdminProblem.GONE)
+        poll.kick()
+    }
+
+    /** The session is still there but now playing something the dialog did not name. */
+    private fun changed() {
+        work.fail(AdminProblem.CHANGED)
         poll.kick()
     }
 

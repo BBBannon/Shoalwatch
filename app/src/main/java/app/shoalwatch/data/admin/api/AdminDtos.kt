@@ -54,6 +54,7 @@ import kotlinx.serialization.json.JsonElement
 )
 
 @Serializable internal class NowPlayingItemDto(
+    @SerialName("Id") val id: String? = null,
     @SerialName("Name") val name: String? = null,
     @SerialName("SeriesName") val seriesName: String? = null,
     @SerialName("ParentIndexNumber") val parentIndexNumber: Long? = null,

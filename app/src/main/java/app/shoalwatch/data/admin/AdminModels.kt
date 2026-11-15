@@ -36,6 +36,8 @@ data class NowPlaying(
     val audioDirect: Boolean?,
     /** Distinct, in the server's order, at most 8. Empty unless [method] is TRANSCODE. */
     val reasons: List<ConversionReason>,
+    /** The item's normalised `JellyfinId`, or null: what a confirmation is checked against before Pause, Stop or a message. */
+    val itemId: String? = null,
 ) {
     override fun toString() = "NowPlaying(<redacted>)"
 }

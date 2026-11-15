@@ -191,6 +191,7 @@ private fun SessionDto.nowPlaying(): NowPlaying? {
         reasons = transcoding?.transcodeReasons.orEmpty().asSequence().take(AdminLimits.REASONS_READ)
             .mapNotNull { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content?.let(::conversionReason) }
             .distinct().take(AdminLimits.REASONS).toList(),
+        itemId = JellyfinId.parseOrNull(item.id)?.value,
     )
 }
 

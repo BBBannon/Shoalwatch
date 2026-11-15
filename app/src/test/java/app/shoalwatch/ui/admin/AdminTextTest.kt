@@ -147,6 +147,7 @@ class AdminTextTest {
         val problems = mapOf(
             AdminProblem.OFFLINE to R.string.admin_problem_offline, AdminProblem.NETWORK to R.string.admin_problem_network,
             AdminProblem.REFUSED to R.string.admin_problem_refused, AdminProblem.GONE to R.string.admin_problem_gone,
+            AdminProblem.CHANGED to R.string.admin_problem_changed,
             AdminProblem.SERVER to R.string.admin_problem_server, AdminProblem.CONNECTION to R.string.admin_problem_connection,
             AdminProblem.OTHER to R.string.admin_problem_other,
         )

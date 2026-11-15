@@ -120,6 +120,7 @@ class AdminText(private val s: Strings, private val zone: ZoneId) {
             AdminProblem.NETWORK -> R.string.admin_problem_network
             AdminProblem.REFUSED -> R.string.admin_problem_refused
             AdminProblem.GONE -> R.string.admin_problem_gone
+            AdminProblem.CHANGED -> R.string.admin_problem_changed
             AdminProblem.SERVER -> R.string.admin_problem_server
             AdminProblem.CONNECTION -> R.string.admin_problem_connection
             AdminProblem.OTHER -> R.string.admin_problem_other

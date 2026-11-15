@@ -164,6 +164,41 @@ class DashboardSessionsTest {
         vm.setVisible(false)
     }
 
+    /**
+     * The same session id, but kid has moved on to the next episode since the dialog named what is playing: nothing is sent, the
+     * admin is told it has changed, and the list is refreshed. The same for a message.
+     */
+    @Test fun aSessionNowPlayingSomethingElseIsNotActedOn() = main.adminTest(models) {
+        val shown = kidOnTv.copy(nowPlaying = AdminSamples.episode.copy(itemId = "a".repeat(32)))
+        val moved = kidOnTv.copy(nowPlaying = AdminSamples.episode.copy(itemId = "b".repeat(32), title = "The next one"))
+        val vm = vm()
+        vm.setVisible(true)
+        val asks: List<(String) -> Unit> = listOf(vm::askStop, vm::askPause)
+        for (ask in asks) {
+            admin.sessions = listOf(shown)
+            vm.refresh()
+            ask(shown.id)
+            admin.sessions = listOf(moved)
+            vm.refresh()
+            val before = loads()
+            vm.confirmCommand()
+            assertEquals("nothing is sent for what the dialog did not name", emptyList<String>(), commands())
+            assertEquals(AdminProblem.CHANGED, vm.state.value.frame.problem)
+            assertEquals("the list is refreshed", before + 1, loads())
+            vm.dismissProblem()
+        }
+        admin.sessions = listOf(shown)
+        vm.refresh()
+        vm.askMessage(shown.id)
+        vm.messageText.setTextAndPlaceCursorAtEnd("Bedtime")
+        admin.sessions = listOf(moved)
+        vm.refresh()
+        vm.sendMessage(context)
+        assertTrue("no message is sent", admin.messages.isEmpty())
+        assertEquals(AdminProblem.CHANGED, vm.state.value.frame.problem)
+        vm.setVisible(false)
+    }
+
     @Test fun aMessageIsTrimmedAndCarriesTheAdminsName() = main.adminTest(models) {
         val vm = vm()
         vm.setVisible(true)
