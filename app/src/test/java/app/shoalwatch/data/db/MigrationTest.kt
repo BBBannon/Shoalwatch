@@ -1,6 +1,7 @@
 package app.shoalwatch.data.db
 
 import android.content.Context
+import android.database.Cursor
 import androidx.room.Room
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.sqlite.db.SupportSQLiteOpenHelper
@@ -10,9 +11,12 @@ import app.shoalwatch.S1
 import app.shoalwatch.U1
 import app.shoalwatch.data.db.library.LibraryStore
 import app.shoalwatch.data.library.ItemKind
+import app.shoalwatch.data.playback.TrackChoice
+import app.shoalwatch.data.playback.TrackPreferences
 import app.shoalwatch.data.servers.ServerStore
 import app.shoalwatch.data.servers.Session
 import app.shoalwatch.security.SecretBox
+import app.shoalwatch.testId
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -33,7 +37,7 @@ import java.time.Instant
 import javax.crypto.KeyGenerator
 
 /**
- * Migration 1 to 2 against a REAL version-1 database. The v1 database is built from the exported schema
+ * Migrations 1 to 2 and 2 to 3 against REAL older databases. The v1 database is built from the exported schema
  * (`app/schemas/.../1.json`: its `createSql` statements and Room's `setupQueries`), not by Room, so this is what a phone
  * that installed Milestone 1 actually holds. Room then opens it with [Migration1To2]; opening validates the migrated tables
  * against 2.json and throws on any difference.
@@ -73,35 +77,49 @@ class MigrationTest {
     }
 
     /** Builds `shoalwatch` at version 1 with one server, one account (and the active marker) holding the sealed bytes above. */
-    private fun createVersion1() {
+    private fun createVersion1() = createVersion(1) { }
+
+    /** A real version-2 database: the v1 rows plus a row in every library table. */
+    private fun createVersion2() = createVersion(2) { db ->
+        db.execSQL("INSERT INTO items (serverId, itemId, kind, name, nameKey, overview, communityRating, fetchedAt, pinned) VALUES (?, ?, 'SERIES', 'Show', 'show', 'Über', 7.5, 11, 1)", arrayOf(S1, SERIES))
+        db.execSQL("INSERT INTO user_data (serverId, userId, itemId, played, positionMs, playedPercentage, playCount, favourite, lastPlayed, unplayedItemCount, updatedAt, pendingSyncAt) VALUES (?, ?, ?, 1, 61500, 42.5, 3, 1, 99, 4, 12, 13)", arrayOf(S1, U1, SERIES))
+        db.execSQL("INSERT INTO views (serverId, userId, viewId, name, kind, position) VALUES (?, ?, ?, 'Films', 'MOVIES', 0)", arrayOf(S1, U1, SERIES))
+        db.execSQL("INSERT INTO list_entries (serverId, userId, listKey, position, itemId) VALUES (?, ?, 'resume', 0, ?)", arrayOf(S1, U1, SERIES))
+        db.execSQL("INSERT INTO list_state (serverId, userId, listKey, total, loadedCount, nextStartIndex, pagesLoaded, endReached, refreshedAt) VALUES (?, ?, 'resume', 1, 1, 1, 1, 1, 14)", arrayOf(S1, U1))
+        db.execSQL("INSERT INTO visible_items (serverId, userId, itemId, seenAt) VALUES (?, ?, ?, 15)", arrayOf(S1, U1, SERIES))
+    }
+
+    /** Builds `shoalwatch` at [version] from its exported schema, with one server, one account and the active marker, then [extra]. */
+    private fun createVersion(version: Int, extra: (SupportSQLiteDatabase) -> Unit) {
         val helper = FrameworkSQLiteOpenHelperFactory().create(
-            SupportSQLiteOpenHelper.Configuration.builder(context).name(name).callback(object : SupportSQLiteOpenHelper.Callback(1) {
+            SupportSQLiteOpenHelper.Configuration.builder(context).name(name).callback(object : SupportSQLiteOpenHelper.Callback(version) {
                 override fun onCreate(db: SupportSQLiteDatabase) {
-                    creationSql(1).forEach(db::execSQL)
+                    creationSql(version).forEach(db::execSQL)
                     db.execSQL(
                         "INSERT INTO servers (id, name, version, homeAddress, awayAddress, allowCleartext, pinnedSpkiSha256, clientCertAlias, customHeaders) VALUES (?, 'Den', '10.10.3', 'https://home.example', NULL, 0, NULL, NULL, ?)",
                         arrayOf(S1, sealedHeaders),
                     )
                     db.execSQL("INSERT INTO accounts (serverId, userId, userName, accessToken) VALUES (?, ?, 'ann', ?)", arrayOf(S1, U1, sealedToken))
                     db.execSQL("INSERT INTO active_account (slot, serverId, userId) VALUES (0, ?, ?)", arrayOf(S1, U1))
+                    extra(db)
                 }
 
                 override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
             }).build(),
         )
-        helper.writableDatabase.version.let { assertEquals(1, it) }
+        helper.writableDatabase.version.let { assertEquals(version, it) }
         helper.close()
     }
 
     private fun openWithMigration(file: String = name): AppDatabase =
-        Room.databaseBuilder(context, AppDatabase::class.java, file).addMigrations(Migration1To2).allowMainThreadQueries().build()
+        Room.databaseBuilder(context, AppDatabase::class.java, file).addMigrations(Migration1To2, Migration2To3).allowMainThreadQueries().build()
             .also { opened += it }
 
     @Test fun aVersion1DatabaseOpensAndKeepsItsServersAndAccountsByteForByte() = runBlocking {
         createVersion1()
         val db = openWithMigration()
-        db.openHelper.writableDatabase // forces the migration and Room's validation against 2.json
-        assertEquals(2, db.openHelper.writableDatabase.version)
+        db.openHelper.writableDatabase // forces the migrations and Room's validation against the current schema
+        assertEquals(3, db.openHelper.writableDatabase.version)
         val server = db.serverDao().get(S1)!!
         assertEquals("Den", server.name)
         assertEquals("https://home.example", server.homeAddress)
@@ -158,7 +176,75 @@ class MigrationTest {
 
     @Test fun theVersion2SchemaIsExportedAndNamesTheNewTables() {
         val tables = schema(2)["entities"]!!.jsonArray.map { it.jsonObject["tableName"]!!.jsonPrimitive.content }.toSet()
-        assertEquals(setOf("servers", "accounts", "active_account", "items", "user_data", "views", "list_entries", "list_state", "visible_items"), tables)
+        assertEquals(V2_TABLES.toSet(), tables)
+    }
+
+    // ---- 2 to 3: track_choices
+
+    @Test fun theVersion3SchemaIsExportedAndAddsOnlyTrackChoices() {
+        val tables = schema(3)["entities"]!!.jsonArray.map { it.jsonObject["tableName"]!!.jsonPrimitive.content }.toSet()
+        assertEquals(V2_TABLES.toSet() + "track_choices", tables)
+    }
+
+    @Test fun aVersion2DatabaseKeepsEveryTableAndRowByteForByte() {
+        createVersion2()
+        val helper = FrameworkSQLiteOpenHelperFactory().create(
+            SupportSQLiteOpenHelper.Configuration.builder(context).name(name).callback(object : SupportSQLiteOpenHelper.Callback(2) {
+                override fun onCreate(db: SupportSQLiteDatabase) = Unit
+                override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+            }).build(),
+        )
+        val before = rowsOf(helper.readableDatabase, V2_TABLES)
+        helper.close()
+        assertTrue("every v2 table has a row to keep", before.values.all { it.isNotEmpty() })
+        val db = openWithMigration()
+        assertEquals(3, db.openHelper.writableDatabase.version)
+        assertEquals(before, rowsOf(db.openHelper.readableDatabase, V2_TABLES))
+    }
+
+    @Test fun trackChoicesWorkAfterMigrationAndCascadeWithTheAccount() = runBlocking {
+        createVersion2()
+        val db = openWithMigration()
+        val prefs = TrackPreferences(db.trackChoiceDao()) { 5 }
+        val ann = Session(S1, U1)
+        val choice = TrackChoice("jpn", "eng", subtitlesOff = false, forced = false, hearingImpaired = true)
+        prefs.remember(ann, SERIES, choice)
+        assertEquals(choice, prefs.get(ann, SERIES))
+        ServerStore(db, box).removeAccount(S1, U1)
+        assertEquals(0, db.openHelper.readableDatabase.query("SELECT COUNT(*) FROM track_choices").use { it.moveToFirst(); it.getInt(0) })
+    }
+
+    @Test fun aDatabaseMigratedFromVersion2AndAFreshOneHaveIdenticalSchemas() {
+        createVersion2()
+        val migrated = openWithMigration()
+        val fresh = openWithMigration("fresh-test.db")
+        assertEquals(schemaOf(fresh), schemaOf(migrated))
+        assertTrue("track_choices is in it", schemaOf(migrated).any { it.startsWith("table track_choices:") })
+        context.deleteDatabase("fresh-test.db")
+    }
+
+    /** Every row of [tables], every column as its stored type and value (blobs in hex), in rowid order. */
+    private fun rowsOf(db: SupportSQLiteDatabase, tables: List<String>): Map<String, List<String>> = tables.associateWith { table ->
+        db.query("SELECT * FROM `" + table + "` ORDER BY rowid").use { c ->
+            buildList {
+                while (c.moveToNext()) {
+                    add((0 until c.columnCount).joinToString("|") { i ->
+                        when (c.getType(i)) {
+                            Cursor.FIELD_TYPE_NULL -> "null"
+                            Cursor.FIELD_TYPE_BLOB -> "blob:" + c.getBlob(i).joinToString("") { b -> "%02x".format(b) }
+                            Cursor.FIELD_TYPE_INTEGER -> "int:" + c.getLong(i)
+                            Cursor.FIELD_TYPE_FLOAT -> "real:" + c.getDouble(i)
+                            else -> "text:" + c.getString(i)
+                        }
+                    })
+                }
+            }
+        }
+    }
+
+    private companion object {
+        val SERIES = testId("series")
+        val V2_TABLES = listOf("servers", "accounts", "active_account", "items", "user_data", "views", "list_entries", "list_state", "visible_items")
     }
 }
 

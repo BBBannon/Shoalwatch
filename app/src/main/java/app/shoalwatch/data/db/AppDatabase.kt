@@ -16,6 +16,8 @@ import app.shoalwatch.data.db.library.UserDataEntity
 import app.shoalwatch.data.db.library.ViewDao
 import app.shoalwatch.data.db.library.ViewEntity
 import app.shoalwatch.data.db.library.VisibleItemEntity
+import app.shoalwatch.data.db.playback.TrackChoiceDao
+import app.shoalwatch.data.db.playback.TrackChoiceEntity
 
 /**
  * Schema is exported to `app/schemas/` and checked in. There is deliberately no destructive
@@ -25,8 +27,9 @@ import app.shoalwatch.data.db.library.VisibleItemEntity
     entities = [
         ServerEntity::class, AccountEntity::class, ActiveAccountEntity::class,
         ItemEntity::class, UserDataEntity::class, ViewEntity::class, ListEntryEntity::class, ListStateEntity::class, VisibleItemEntity::class,
+        TrackChoiceEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 @TypeConverters(ItemKindConverter::class)
@@ -37,13 +40,14 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun listDao(): ListDao
     abstract fun viewDao(): ViewDao
     abstract fun libraryMaintenanceDao(): LibraryMaintenanceDao
+    abstract fun trackChoiceDao(): TrackChoiceDao
 
     companion object {
         const val FILE_NAME = "shoalwatch.db"
 
         fun open(context: Context): AppDatabase =
             Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, FILE_NAME)
-                .addMigrations(Migration1To2)
+                .addMigrations(Migration1To2, Migration2To3)
                 .build()
     }
 }
