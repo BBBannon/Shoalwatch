@@ -1,6 +1,7 @@
 package app.shoalwatch.ui.nav
 
 import android.net.Uri
+import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -19,6 +20,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.background
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -31,12 +33,17 @@ import app.shoalwatch.R
 internal object Routes {
     const val WELCOME = "welcome"
     const val ADD_SERVER = "add_server"
-    const val HOME = "home"
+    const val ARG_FRESH = "fresh"
+
+    /** Home (the shell). [ARG_FRESH] is set when it is reached by a successful sign-in, so it asks the server for its rows once. */
+    const val HOME = "home?$ARG_FRESH={$ARG_FRESH}"
+    const val DOWNLOADS = "downloads"
     const val SERVERS = "servers"
     const val ARG_SERVER = "serverId"
     const val SIGN_IN = "sign_in/{$ARG_SERVER}"
     const val SERVER_EDIT = "server/{$ARG_SERVER}"
 
+    fun home(fresh: Boolean = false) = "home?$ARG_FRESH=$fresh"
     fun signIn(serverId: String) = "sign_in/${Uri.encode(serverId)}"
     fun serverEdit(serverId: String) = "server/${Uri.encode(serverId)}"
 }
@@ -68,6 +75,11 @@ private fun SplashScreen() {
     ) { CircularProgressIndicator() }
 }
 
+private val TabRoutes = setOf(Routes.HOME, Routes.DOWNLOADS)
+
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.betweenTabs() =
+    initialState.destination.route in TabRoutes && targetState.destination.route in TabRoutes
+
 @Composable
 private fun AppNavHost(graph: AppGraph, start: String) {
     val nav = rememberNavController()
@@ -75,15 +87,19 @@ private fun AppNavHost(graph: AppGraph, start: String) {
     NavHost(
         navController = nav,
         startDestination = start,
-        enterTransition = { fadeIn(tween(220)) + slideInHorizontally(tween(220)) { it / 16 } },
-        exitTransition = { fadeOut(tween(160)) },
-        popEnterTransition = { fadeIn(tween(220)) },
-        popExitTransition = { fadeOut(tween(160)) + slideOutHorizontally(tween(220)) { it / 16 } },
+        // Between the tabs (Home, Search, Downloads) there is only a short fade: they are siblings, not a journey.
+        enterTransition = { if (betweenTabs()) fadeIn(tween(150)) else fadeIn(tween(220)) + slideInHorizontally(tween(220)) { it / 16 } },
+        exitTransition = { fadeOut(tween(if (betweenTabs()) 100 else 160)) },
+        popEnterTransition = { fadeIn(tween(if (betweenTabs()) 150 else 220)) },
+        popExitTransition = { if (betweenTabs()) fadeOut(tween(100)) else fadeOut(tween(160)) + slideOutHorizontally(tween(220)) { it / 16 } },
     ) {
         composable(Routes.WELCOME) { AddServerRoute(graph, nav, firstRun = true) }
         composable(Routes.ADD_SERVER) { AddServerRoute(graph, nav, firstRun = false) }
         composable(Routes.SIGN_IN, serverArg) { SignInRoute(graph, nav, it.arguments?.getString(Routes.ARG_SERVER).orEmpty()) }
-        composable(Routes.HOME) { HomeRoute(graph, nav) }
+        composable(Routes.HOME, listOf(navArgument(Routes.ARG_FRESH) { type = NavType.BoolType; defaultValue = false })) {
+            HomeRoute(graph, nav, fresh = it.arguments?.getBoolean(Routes.ARG_FRESH) == true)
+        }
+        composable(Routes.DOWNLOADS) { DownloadsRoute(graph, nav) }
         composable(Routes.SERVERS) { ServersRoute(graph, nav) }
         composable(Routes.SERVER_EDIT, serverArg) { ServerEditRoute(graph, nav, it.arguments?.getString(Routes.ARG_SERVER).orEmpty()) }
     }

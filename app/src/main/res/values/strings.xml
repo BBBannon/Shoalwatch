@@ -184,8 +184,6 @@
     <string name="conn_checking_was">Checking… (was %1$s)</string>
     <string name="conn_offline">Offline</string>
     <string name="conn_cd">Connection: %1$s</string>
-    <string name="home_signed_in_as">Signed in as %1$s</string>
-    <string name="home_coming">Browsing your library arrives in the next update.</string>
     <string name="home_signed_out_title">You’re not signed in</string>
     <string name="home_signed_out_body">Choose an account, or add one, under Servers and accounts.</string>
     <string name="home_manage">Servers and accounts</string>

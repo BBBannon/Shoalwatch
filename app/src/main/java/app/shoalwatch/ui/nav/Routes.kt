@@ -8,8 +8,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import app.shoalwatch.AppGraph
-import app.shoalwatch.ui.home.HomePlaceholderScreen
-import app.shoalwatch.ui.home.HomeViewModel
 import app.shoalwatch.ui.onboarding.AddServerActions
 import app.shoalwatch.ui.onboarding.AddServerScreen
 import app.shoalwatch.ui.onboarding.AddServerViewModel
@@ -31,7 +29,7 @@ import kotlinx.coroutines.launch
  * screen's lambdas to ViewModel functions and navigation. All logic is in the ViewModels.
  */
 
-private fun NavHostController.toHome() = navigate(Routes.HOME) { popUpTo(graph.id) { inclusive = true } }
+private fun NavHostController.toHome() = navigate(Routes.home(fresh = true)) { popUpTo(graph.id) { inclusive = true } }
 
 @Composable
 internal fun AddServerRoute(graph: AppGraph, nav: NavHostController, firstRun: Boolean) {
@@ -80,18 +78,6 @@ internal fun SignInRoute(graph: AppGraph, nav: NavHostController, serverId: Stri
         )
     }
     SignInScreen(state, vm.password, actions)
-}
-
-@Composable
-internal fun HomeRoute(graph: AppGraph, nav: NavHostController) {
-    val vm = graphViewModel { HomeViewModel(graph.serverCatalog, graph.addressSelector) }
-    val state by vm.state.collectAsStateWithLifecycle()
-    HomePlaceholderScreen(
-        state = state,
-        onOpenServers = { nav.navigate(Routes.SERVERS) },
-        onRetry = vm::retry,
-        onReviewCertificate = { nav.navigate(Routes.serverEdit(it)) },
-    )
 }
 
 @Composable

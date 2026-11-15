@@ -27,8 +27,6 @@ import app.shoalwatch.core.AppError
 import app.shoalwatch.data.servers.Connection
 import app.shoalwatch.data.servers.ServerInfo
 import app.shoalwatch.net.fingerprintForDisplay
-import app.shoalwatch.ui.home.HomePlaceholderScreen
-import app.shoalwatch.ui.home.HomeUiState
 import app.shoalwatch.ui.onboarding.AddServerActions
 import app.shoalwatch.ui.onboarding.AddServerScreen
 import app.shoalwatch.ui.onboarding.AddServerStage
@@ -239,41 +237,5 @@ class ScreenRenderTest {
         val state = SignInUiState(serverName = "Den", quickConnect = QuickConnectUi.Code("ABC123", 300))
         show(fontScale = 2f) { SignInScreen(state, TextFieldState(), noSignInActions) }
         assertTrue(shown(text(R.string.qc_use_password)))
-    }
-
-    // --- Home ---------------------------------------------------------------------------------------------------
-
-    private fun home(connection: Connection, name: String = "ben") =
-        HomeUiState(loading = false, serverId = "srv-1", serverName = "Den", userName = name, connection = connection.toView())
-
-    private fun homeChip(connection: Connection, label: String) {
-        show { HomePlaceholderScreen(home(connection), {}, {}, {}) }
-        assertTrue("label $label", shown(label))
-    }
-
-    @Test fun homeChipSaysHomeNetwork() = homeChip(Connection.Online(address("http://192.168.1.10:8096"), true), text(R.string.conn_home))
-    @Test fun homeChipSaysAway() = homeChip(Connection.Online(address("https://away.example"), false), text(R.string.conn_away))
-    @Test fun homeChipSaysChecking() = homeChip(Connection.Checking(), text(R.string.conn_checking))
-    @Test fun homeChipSaysWhatItWasWhileChecking() =
-        homeChip(Connection.Checking(Connection.Online(address("https://away.example"), false)), text(R.string.conn_checking_was, text(R.string.conn_away)))
-    @Test fun homeChipSaysOffline() = homeChip(Connection.Offline(), text(R.string.conn_offline))
-
-    @Test fun anOfflineReasonIsInPlainEnglishWithARetry() {
-        show { HomePlaceholderScreen(home(Connection.Offline(AppError.Kind.CLIENT_CERT_REQUIRED)), {}, {}, {}) }
-        assertTrue(shown(AppError.of(AppError.Kind.CLIENT_CERT_REQUIRED).userMessage))
-        assertTrue(shown(text(R.string.action_retry)))
-        assertTrue(shown(text(R.string.home_signed_in_as, "ben")))
-    }
-
-    @Test fun aChangedCertificateGetsTheProminentCardWithReview() {
-        show { HomePlaceholderScreen(home(Connection.Offline(AppError.Kind.TLS_PIN_CHANGED)), {}, {}, {}) }
-        assertTrue(shown(text(R.string.cert_changed_title)))
-        assertTrue(shown(text(R.string.cert_review)))
-    }
-
-    @Test fun homeWithNobodySignedInOffersTheServersList() {
-        show { HomePlaceholderScreen(HomeUiState(loading = false, signedOut = true), {}, {}, {}) }
-        assertTrue(shown(text(R.string.home_signed_out_title)))
-        assertTrue(shown(text(R.string.home_manage)))
     }
 }

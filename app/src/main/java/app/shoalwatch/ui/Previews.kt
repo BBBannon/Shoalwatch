@@ -5,8 +5,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
 import app.shoalwatch.data.servers.Connection
 import app.shoalwatch.data.servers.ServerInfo
-import app.shoalwatch.ui.home.HomePlaceholderScreen
-import app.shoalwatch.ui.home.HomeUiState
 import app.shoalwatch.ui.onboarding.AddServerActions
 import app.shoalwatch.ui.onboarding.AddServerScreen
 import app.shoalwatch.ui.onboarding.AddServerStage
@@ -79,22 +77,6 @@ private fun QuickConnectPreview() = Themed {
 @Preview(showBackground = true, name = "Password") @Composable
 private fun PasswordPreview() = Themed {
     SignInScreen(SignInUiState(serverName = "Den", mode = SignInMode.Password), TextFieldState(), signInActions)
-}
-
-@Preview(showBackground = true, name = "Home") @Composable
-private fun HomePreview() = Themed {
-    HomePlaceholderScreen(
-        HomeUiState(loading = false, serverId = "srv", serverName = "Den", userName = "ben", connection = ConnectionView(ConnectionView.Kind.HOME)),
-        {}, {}, {},
-    )
-}
-
-@Preview(showBackground = true, name = "Home: offline") @Composable
-private fun HomeOfflinePreview() = Themed {
-    HomePlaceholderScreen(
-        HomeUiState(loading = false, serverId = "srv", serverName = "Den", userName = "ben", connection = Connection.Offline().toView()),
-        {}, {}, {},
-    )
 }
 
 @Preview(showBackground = true, name = "Servers") @Composable

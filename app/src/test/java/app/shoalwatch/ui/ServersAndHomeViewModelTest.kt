@@ -172,50 +172,6 @@ class ServersAndHomeViewModelTest {
         assertNull(vm.state.value.error)
     }
 
-    // --- home ---------------------------------------------------------------------------------------------------
-
-    @Test fun homeShowsTheActiveServerUserAndLiveConnection() {
-        val vm = HomeViewModel(catalog(), connections)
-        assertEquals("Den", vm.state.value.serverName)
-        assertEquals("ben", vm.state.value.userName)
-        assertEquals(ConnectionView.Kind.CHECKING, vm.state.value.connection?.kind)
-        connections.stateFor("s1").value = Connection.Online(address("http://192.168.1.10:8096"), isHome = true)
-        assertEquals(ConnectionView.Kind.HOME, vm.state.value.connection?.kind)
-        connections.stateFor("s1").value = Connection.Online(address("https://away.example"), isHome = false)
-        assertEquals(ConnectionView.Kind.AWAY, vm.state.value.connection?.kind)
-    }
-
-    @Test fun homeRetriesAFailedWarmOnStartAndReportsIfItStillFails() {
-        val catalog = catalog()
-        catalog.warmStillFailing = true
-        val vm = HomeViewModel(catalog, connections)
-        assertEquals(1, catalog.warmRetries)
-        assertTrue(vm.state.value.loadFailed)
-    }
-
-    @Test fun theConnectionRetryAlsoRetriesTheWarmAndClearsTheFailure() {
-        val catalog = catalog()
-        catalog.warmStillFailing = true
-        val vm = HomeViewModel(catalog, connections)
-        catalog.warmStillFailing = false
-        vm.retry()
-        assertEquals(2, catalog.warmRetries)
-        assertFalse(vm.state.value.loadFailed)
-        assertEquals(1, connections.refreshes)
-    }
-
-    @Test fun homeWithNobodySignedInSaysSo() {
-        val vm = HomeViewModel(catalog(active = null), connections)
-        assertFalse(vm.state.value.loading)
-        assertTrue(vm.state.value.signedOut)
-    }
-
-    @Test fun retryRefreshesTheConnection() {
-        val vm = HomeViewModel(catalog(), connections)
-        vm.retry()
-        assertEquals(1, connections.refreshes)
-    }
-
     // --- the connection chip, every variant ---------------------------------------------------------------------
 
     private val home = Connection.Online(address("http://192.168.1.10:8096"), isHome = true)

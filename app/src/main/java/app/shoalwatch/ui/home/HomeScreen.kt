@@ -1,0 +1,244 @@
+package app.shoalwatch.ui.home
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import app.shoalwatch.R
+import app.shoalwatch.data.library.ItemKind
+import app.shoalwatch.data.library.ItemWithUserData
+import app.shoalwatch.ui.ConnectionView
+import app.shoalwatch.ui.components.BannerActions
+import app.shoalwatch.ui.components.CollectMessages
+import app.shoalwatch.ui.components.ConnectionChip
+import app.shoalwatch.ui.components.EmptyState
+import app.shoalwatch.ui.components.FreshnessBanner
+import app.shoalwatch.ui.components.Gutter
+import app.shoalwatch.ui.components.ItemActionsSheet
+import app.shoalwatch.ui.components.NoticeCard
+import app.shoalwatch.ui.components.PrimaryButton
+import app.shoalwatch.ui.components.ReadableBox
+import app.shoalwatch.ui.components.RefreshLine
+import app.shoalwatch.ui.components.SheetActions
+import app.shoalwatch.ui.components.SheetTarget
+import app.shoalwatch.ui.components.SkeletonRow
+import app.shoalwatch.ui.components.Tone
+import app.shoalwatch.ui.components.isWideScreen
+import app.shoalwatch.ui.present.Destination
+import app.shoalwatch.ui.present.detailsDestination
+import app.shoalwatch.ui.present.displayName
+import app.shoalwatch.ui.present.rememberStrings
+import kotlinx.coroutines.flow.Flow
+
+/** Everything Home can ask for. The route wires these to the ViewModel and to navigation. */
+class HomeActions(
+    val onOpenServers: () -> Unit,
+    val onSwitchAccount: (userId: String) -> Unit,
+    /** Pull-to-refresh and a banner's Retry. */
+    val onRefresh: () -> Unit,
+    /** The connection chip's Retry (and the empty state's). */
+    val onRetryConnection: () -> Unit,
+    val onOpenLibrary: (viewId: String) -> Unit,
+    val onOpen: (Destination) -> Unit,
+    val onSignIn: (serverId: String) -> Unit,
+    val onReview: (serverId: String) -> Unit,
+    val onRemoveFromResume: (itemId: String) -> Unit,
+    val onSetPlayed: (itemId: String, played: Boolean) -> Unit,
+    val onSetFavourite: (itemId: String, favourite: Boolean) -> Unit,
+)
+
+/**
+ * Home. The top bar carries the server name, a compact connection chip and the account button. Below, in order: Continue
+ * Watching, Next Up, "Latest in <library>" for each library, then the libraries; a row with nothing in it is left out. Pull down
+ * to refresh. Long-press a card, or use its dots, for the item actions.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun HomeScreen(state: HomeUiState, actions: HomeActions, messages: Flow<String>, snackbar: SnackbarHostState) {
+    CollectMessages(messages, snackbar)
+    when (state.phase) {
+        HomePhase.SIGNED_OUT -> Placeholder(actions) {
+            NoticeCard(stringResource(R.string.home_signed_out_title), stringResource(R.string.home_signed_out_body), tone = Tone.Info)
+            PrimaryButton(stringResource(R.string.home_manage), actions.onOpenServers)
+        }
+        HomePhase.LOAD_FAILED -> Placeholder(actions) {
+            NoticeCard(stringResource(R.string.startup_failed_title), stringResource(R.string.startup_failed_body), tone = Tone.Danger)
+            PrimaryButton(stringResource(R.string.action_retry), actions.onRetryConnection)
+        }
+        else -> Column(Modifier.fillMaxSize()) {
+            HomeTopBar(state, actions)
+            RefreshLine(state.refreshing && !state.pulling)
+            PullToRefreshBox(isRefreshing = state.pulling, onRefresh = actions.onRefresh, modifier = Modifier.fillMaxSize()) {
+                HomeList(state, actions)
+            }
+        }
+    }
+}
+
+@Composable
+private fun Placeholder(actions: HomeActions, content: @Composable () -> Unit) {
+    Column(Modifier.fillMaxSize()) {
+        TopBarRow {
+            Text(stringResource(R.string.app_name), Modifier.weight(1f).semantics { heading() }, style = MaterialTheme.typography.titleLarge)
+            IconButton(onClick = actions.onOpenServers) { Icon(Icons.Filled.AccountCircle, stringResource(R.string.account_menu_cd)) }
+        }
+        ReadableBox {
+            Column(Modifier.padding(Gutter), verticalArrangement = Arrangement.spacedBy(16.dp)) { content() }
+        }
+    }
+}
+
+@Composable
+private fun TopBarRow(content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().statusBarsPadding().padding(start = Gutter, end = 4.dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        content = content,
+    )
+}
+
+@Composable
+private fun HomeTopBar(state: HomeUiState, actions: HomeActions) {
+    TopBarRow {
+        Text(
+            state.serverName ?: stringResource(R.string.app_name),
+            Modifier.weight(1f).semantics { heading() },
+            style = MaterialTheme.typography.titleLarge,
+            maxLines = app.shoalwatch.ui.components.titleLines(1),
+            overflow = TextOverflow.Ellipsis,
+        )
+        state.connection?.let { ConnectionChip(it, compact = true) }
+        AccountButton(state, actions)
+    }
+}
+
+/** The account button: one account goes straight to Servers and accounts; several open a small menu to switch, with that screen last. */
+@Composable
+private fun AccountButton(state: HomeUiState, actions: HomeActions) {
+    var open by rememberSaveable { mutableStateOf(false) }
+    Box {
+        IconButton(
+            onClick = { if (state.accounts.size > 1) open = true else actions.onOpenServers() },
+        ) { Icon(Icons.Filled.AccountCircle, stringResource(R.string.account_menu_cd)) }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            Text(stringResource(R.string.account_switch_title), Modifier.padding(horizontal = 16.dp, vertical = 8.dp).semantics { heading() }, style = MaterialTheme.typography.titleMedium)
+            val current = state.session?.userId
+            state.accounts.forEach { account ->
+                val name = if (account.userId == current) stringResource(R.string.account_current, account.userName) else account.userName
+                DropdownMenuItem(
+                    text = { Text(name, style = MaterialTheme.typography.bodyLarge) },
+                    onClick = { open = false; if (account.userId != current) actions.onSwitchAccount(account.userId) },
+                )
+            }
+            HorizontalDivider()
+            DropdownMenuItem(text = { Text(stringResource(R.string.home_manage), style = MaterialTheme.typography.bodyLarge) }, onClick = { open = false; actions.onOpenServers() })
+        }
+    }
+}
+
+@Composable
+private fun HomeList(state: HomeUiState, actions: HomeActions) {
+    val strings = rememberStrings()
+    val session = state.session
+    var sheetId by rememberSaveable(session) { mutableStateOf<String?>(null) }
+    var sheetFromResume by rememberSaveable(session) { mutableStateOf(false) }
+    val wide = isWideScreen()
+    val banner = BannerActions(actions.onRefresh, { state.serverId?.let(actions.onSignIn) }, { state.serverId?.let(actions.onReview) })
+    val skeleton = state.phase == HomePhase.LOADING || state.stillLoading
+
+    ReadableBox {
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+            val connection = state.connection
+            if (connection != null && connection.needsCertificateReview && state.serverId != null) {
+                item(key = "certificate") { CertificateNotice(connection, onReview = { actions.onReview(state.serverId) }) }
+            }
+            state.topBanner?.let { kind -> item(key = "banner") { FreshnessBanner(kind, banner) } }
+            if (skeleton) {
+                item(key = "skeleton-wide") { SkeletonRow(16f / 9f, if (wide) 320.dp else 264.dp) }
+                item(key = "skeleton-poster") { SkeletonRow(2f / 3f, if (wide) 152.dp else 128.dp) }
+            } else if (!state.hasContent) {
+                item(key = "empty") {
+                    EmptyState(
+                        stringResource(R.string.home_empty_title), stringResource(R.string.home_empty_body),
+                        actionLabel = stringResource(R.string.action_retry), onAction = actions.onRefresh,
+                    )
+                }
+            }
+            if (session != null && !skeleton) {
+                wideRow(R.string.home_continue, "resume", state.resume, session, strings, state, banner, actions, wide) { id -> sheetId = id; sheetFromResume = true }
+                wideRow(R.string.home_next_up, "next", state.nextUp, session, strings, state, banner, actions, wide) { id -> sheetId = id; sheetFromResume = false }
+                state.latest.forEach { latest ->
+                    posterRow(latest.view, latest.row, session, strings, state, banner, actions, wide) { id -> sheetId = id; sheetFromResume = false }
+                }
+                if (state.views.isNotEmpty()) librariesSection(state, actions, strings, wide)
+            }
+        }
+    }
+
+    val target = sheetId?.let { id -> findEntry(state, id) }?.let { entry ->
+        SheetTarget(
+            itemId = entry.item.id, title = entry.item.displayName(strings), played = entry.userData?.played == true,
+            favourite = entry.userData?.favourite == true, canRemoveFromResume = sheetFromResume,
+            seriesId = entry.item.seriesId.takeIf { entry.item.kind == ItemKind.EPISODE },
+        )
+    }
+    if (target != null) {
+        ItemActionsSheet(
+            target,
+            SheetActions(
+                onRemoveFromResume = actions.onRemoveFromResume,
+                onSetPlayed = actions.onSetPlayed,
+                onSetFavourite = actions.onSetFavourite,
+                onGoToSeries = { actions.onOpen(Destination.Series(it)) },
+                onDetails = { id -> findEntry(state, id)?.let { actions.onOpen(it.detailsDestination()) } },
+            ),
+            onDismiss = { sheetId = null },
+        )
+    }
+}
+
+private fun findEntry(state: HomeUiState, id: String): ItemWithUserData? =
+    (state.resume.items + state.nextUp.items + state.latest.flatMap { it.row.items }).firstOrNull { it.item.id == id }
+
+@Composable
+private fun CertificateNotice(connection: ConnectionView, onReview: () -> Unit) {
+    NoticeCard(
+        title = stringResource(if (connection.certificateChanged) R.string.cert_changed_title else R.string.cert_untrusted_alert_title),
+        body = stringResource(if (connection.certificateChanged) R.string.cert_changed_body else R.string.cert_untrusted_alert_body),
+        tone = Tone.Danger,
+        modifier = Modifier.padding(horizontal = Gutter),
+    ) { PrimaryButton(stringResource(R.string.cert_review), onReview) }
+}
+
+
