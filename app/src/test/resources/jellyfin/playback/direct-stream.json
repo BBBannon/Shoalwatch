@@ -16,6 +16,9 @@
         {"Codec": "eac3", "Language": "eng", "DisplayTitle": "English - Dolby Digital+ - 5.1", "Channels": 6, "IsDefault": true, "Type": "Audio", "Index": 1}
       ],
       "Bitrate": 25000000,
+      "TranscodingUrl": "/videos/0123456789abcdef0123456789abcdef/master.m3u8?DeviceId=dev-1&MediaSourceId=0123456789abcdef0123456789abcdef&VideoCodec=hevc&AudioCodec=eac3&AudioStreamIndex=1&PlaySessionId=abcdef0123456789&api_key=MOCKLEAK&SegmentContainer=mp4&MinSegments=1&BreakOnNonKeyFrames=False&TranscodeReasons=ContainerNotSupported",
+      "TranscodingSubProtocol": "hls",
+      "TranscodingContainer": "mp4",
       "DefaultAudioStreamIndex": 1,
       "DefaultSubtitleStreamIndex": -1,
       "HasSegments": false

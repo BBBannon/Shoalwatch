@@ -65,6 +65,20 @@ object MediaPaths {
     }
 
     /**
+     * True when [source] still keeps the rules [checkServerPath] made it with: a `/videos/...` path of non-empty unreserved,
+     * non-dot segments within the length limit, and no credential or control character in the query. For a [StreamSource] that
+     * did not come from [checkServerPath] (a model is a public data class), so a hand-built one cannot become a plan.
+     */
+    fun isServerSource(source: StreamSource): Boolean {
+        val path = source.path
+        if (path.length > MAX_LENGTH || !path.startsWith("/") || path.startsWith("//")) return false
+        val segments = path.removePrefix("/").split('/')
+        if (segments.size < 2 || !segments.first().equals("videos", ignoreCase = true)) return false
+        if (segments.any { !SEGMENT.matches(it) || it == "." || it == ".." }) return false
+        return source.query.none { (name, value) -> name.isEmpty() || isCredential(name) || (name + value).any { it.isISOControl() } }
+    }
+
+    /**
      * GET /Videos/{routeItemId}/{routeMediaSourceId}/Subtitles/{routeIndex}/Stream.{routeFormat}; format in srt, vtt, ass, ssa.
      * @throws IllegalArgumentException (fixed message) for an id, index or format outside those rules.
      */

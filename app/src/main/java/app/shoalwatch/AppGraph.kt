@@ -15,6 +15,8 @@ import app.shoalwatch.data.library.PlaystateRepository
 import app.shoalwatch.data.library.PrefsMaintenanceLog
 import app.shoalwatch.data.library.api.LibraryGateway
 import app.shoalwatch.data.library.api.LibraryGatewayImpl
+import app.shoalwatch.data.playback.AndroidDeviceCapabilities
+import app.shoalwatch.data.playback.PlaybackResolver
 import app.shoalwatch.data.playback.api.PlaybackGateway
 import app.shoalwatch.data.playback.api.PlaybackGatewayImpl
 import app.shoalwatch.data.servers.AddressSelector
@@ -78,6 +80,8 @@ class AppGraph(private val appContext: Context) {
     val libraryGateway: LibraryGateway by lazy { LibraryGatewayImpl(serverApi) }
     /** PlaybackInfo, playstate reports, segments and subtitle files as validated models (see "Playback endpoints" in docs/ARCHITECTURE.md). */
     internal val playbackGateway: PlaybackGateway by lazy { PlaybackGatewayImpl(serverApi) }
+    /** PlaybackInfo, then direct play, direct stream or transcode, with a route to the address verified now (see "Playback decision" in docs/ARCHITECTURE.md). */
+    val playbackResolver: PlaybackResolver by lazy { PlaybackResolver(playbackGateway, AndroidDeviceCapabilities(appContext), serverApi::mediaRoute) }
     /** What every browsing screen reads: saved rows first, refreshed behind them (see "Library repository" in docs/ARCHITECTURE.md). */
     /** The one record of local changes, shared by everything that writes server data or user changes: ordering by sequence, expiry by the monotonic clock. */
     val localChanges: LocalChangeLog by lazy { LocalChangeLog(SystemMonotonicClock) }
