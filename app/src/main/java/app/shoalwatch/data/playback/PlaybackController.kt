@@ -280,7 +280,7 @@ class PlaybackController internal constructor(
         val now = positionOf(c)
         val finishAt = finishedAt(c)
         if (phase == Phase.PLAYING && PlaybackRules.crossedByPlayback(before, now, finishAt)) c.finished = true
-        c.outro()?.let { if (now >= it.startMs) showUpNext(c) }
+        c.outro()?.let { if (now >= it.startMs) c.offerUpNext(sleep.atEndOfItem, autoplayNext) }
         if (sleep.takeDue()) sleepNow(c)
         c.upNext?.let { countdown ->
             if (phase != Phase.PAUSED) countdown.advance(TICK_MS)
@@ -299,7 +299,7 @@ class PlaybackController internal constructor(
             engine.pause()
             return
         }
-        showUpNext(c)
+        c.offerUpNext(sleep.atEndOfItem, autoplayNext)
     }
 
     private fun onFailed(c: PlayingItem, failure: EngineFailure) {
@@ -328,14 +328,7 @@ class PlaybackController internal constructor(
     private fun seeked(c: PlayingItem, toMs: Long) {
         c.knownMs = toMs
         c.reporter?.onSeeked(snapshot(c))
-        if (c.upNextShown && toMs < (c.outro()?.startMs ?: durationOf(c) ?: Long.MAX_VALUE)) { c.upNext = null; c.upNextShown = false }
-    }
-
-    private fun showUpNext(c: PlayingItem) {
-        if (c.upNextShown || sleep.atEndOfItem) return
-        val next = c.around.next ?: return
-        c.upNextShown = true
-        c.upNext = UpNextCountdown(next.id, next.name, autoplayNext())
+        c.withdrawUpNextBefore(toMs, durationOf(c))
     }
 
     /** A due sleep timer (already off) always pauses, whatever the phase (buffering, ended), and cancels an Up next countdown. */
