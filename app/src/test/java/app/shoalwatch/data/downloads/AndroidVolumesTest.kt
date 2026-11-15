@@ -44,8 +44,20 @@ class AndroidVolumesTest {
         return appDir
     }
 
+    private val allocations = mutableListOf<Pair<File, Long>>()
+
     private fun volumes(allocatable: (StorageManager, File) -> Long = { _, dir -> dir.usableSpace }) =
-        AndroidVolumes(context, { listOf(primary) + cards }, { Environment.getExternalStorageState(it) }, allocatable)
+        AndroidVolumes(context, { listOf(primary) + cards }, { Environment.getExternalStorageState(it) }, allocatable) { _, dir, bytes ->
+            allocations += dir to bytes
+        }
+
+    @Test fun reserveAsksForSpaceOnTheVolumeAndLeavesTheFilesLengthAlone() {
+        val root = volumes().root(StorageKind.INTERNAL, null)!!
+        val part = File(root, "media.mp4.part").apply { writeBytes(ByteArray(5)) }
+        volumes().reserve(part, 1_000_000)
+        assertEquals("the part file is appended to, so its length must not change", 5L, part.length())
+        assertEquals(listOf(part.parentFile!!.canonicalFile to 1_000_000L), allocations.map { it.first.canonicalFile to it.second })
+    }
 
     @Test fun internalIsAlwaysOfferedFirst() {
         val choices = volumes().choices()

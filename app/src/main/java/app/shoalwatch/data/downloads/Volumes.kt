@@ -5,7 +5,6 @@ import android.os.Environment
 import android.os.storage.StorageManager
 import java.io.File
 import java.io.IOException
-import java.io.RandomAccessFile
 
 /** Where a download may be saved, how much may be written there, and whether it is in the phone now. */
 data class StorageChoice(val kind: StorageKind, val volumeId: String?, val freeBytes: Long, val available: Boolean)
@@ -20,7 +19,7 @@ interface Volumes {
     /** Bytes that may be written: StorageManager.getAllocatableBytes for INTERNAL, File.usableSpace for REMOVABLE. */
     fun freeBytes(kind: StorageKind, volumeId: String?): Long
 
-    /** Reserve the space before an original download starts (StorageManager.allocateBytes on INTERNAL; no-op on REMOVABLE). */
+    /** Reserve the space before an original download starts (StorageManager.allocateBytes on INTERNAL, by volume; no-op on REMOVABLE). Never changes [file]'s length. */
     fun reserve(file: File, bytes: Long)
 
     /** Every mounted root, for the orphan sweep. */
@@ -33,20 +32,22 @@ interface Volumes {
  * `Context.getExternalFilesDirs` (what the deprecated `ContextCompat` wrapper calls on API 19+) after index 0 whose volume is removable, mounted and has a uuid matching
  * `[A-Za-z0-9-]{1,36}` (a volume without one is not offered: the uuid is how a download finds its card again).
  *
- * [externalDirs], [mediaState] and [allocatable] are seams for tests (Robolectric cannot list app dirs on a card or make
- * `getAllocatableBytes` fail); the defaults are the platform calls named above.
+ * [externalDirs], [mediaState], [allocatable] and [allocate] are seams for tests (Robolectric cannot list app dirs on a card,
+ * make `getAllocatableBytes` fail, or model `allocateBytes`); the defaults are the platform calls named above.
  */
 class AndroidVolumes internal constructor(
     context: Context,
     private val externalDirs: () -> List<File?>,
     private val mediaState: (File) -> String,
     private val allocatable: (StorageManager, File) -> Long,
+    private val allocate: (StorageManager, File, Long) -> Unit,
 ) : Volumes {
     constructor(context: Context) : this(
         context,
         { context.getExternalFilesDirs(null).toList() },
         { Environment.getExternalStorageState(it) },
         { storage, dir -> storage.getAllocatableBytes(storage.getUuidForPath(dir)) },
+        { storage, dir, bytes -> storage.allocateBytes(storage.getUuidForPath(dir), bytes) },
     )
 
     private val app = context.applicationContext
@@ -105,12 +106,16 @@ class AndroidVolumes internal constructor(
         StorageKind.REMOVABLE -> removable().firstOrNull { it.uuid == volumeId }?.dir?.usableSpace ?: 0L
     }
 
-    /** On INTERNAL only: asks the platform to make [bytes] really available for [file] (it may clear caches); throws IOException if it cannot. */
+    /**
+     * On INTERNAL only: asks the platform to make [bytes] really available on [file]'s volume (it may clear caches); throws
+     * IOException if it cannot. **The file's length is unchanged:** this is `allocateBytes(getUuidForPath(folder), bytes)`, by
+     * volume. The by-descriptor form would `posix_fallocate` or `ftruncate` the file to [bytes], and the fetcher appends to it.
+     */
     override fun reserve(file: File, bytes: Long) {
         val manager = storage ?: return
         val internal = internalRoot()?.canonicalPath ?: return
         if (!file.canonicalPath.startsWith(internal + File.separator)) return
-        RandomAccessFile(file, "rw").use { manager.allocateBytes(it.fd, bytes) }
+        allocate(manager, file.parentFile ?: return, bytes)
     }
 
     override fun allRoots(): List<File> = listOfNotNull(internalRoot()) + removable().mapNotNull { ensured(File(it.dir, ROOT)) }
