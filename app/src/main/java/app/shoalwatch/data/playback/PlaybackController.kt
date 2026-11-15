@@ -197,7 +197,8 @@ class PlaybackController internal constructor(
     }
 
     private fun play(itemId: String, from: StartFrom) {
-        current?.let { stopReport(it, failed = false) }
+        // The old item is stopped and silent while the next resolves; a failed resolve leaves it paused (Task 6 review M-2).
+        current?.let { stopReport(it, failed = false); if (it.resolved != null) engine.pause() }
         val c = PlayingItem(itemId)
         current = c
         phase = Phase.RESOLVING

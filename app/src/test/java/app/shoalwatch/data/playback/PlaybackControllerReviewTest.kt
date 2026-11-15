@@ -102,4 +102,17 @@ internal class PlaybackControllerReviewTest : PlaybackControllerTestBase() {
         assertTrue(c.state.value.closed)
         assertNull(c.state.value.session)
     }
+
+    // ---- M-2: the old episode is paused while the next one resolves
+
+    @Test fun nextPausesTheOldEpisodeAndAFailedResolveStaysPaused() = runTest {
+        val c = controller(); openAndPlay(c)
+        gateway.infos.clear(); gateway.failWith = AppError.of(AppError.Kind.OFFLINE)
+        val gate = CompletableDeferred<Unit>().also { gateway.infoGate = it }
+        c.next(); runCurrent()
+        assertFalse("not audible while the next one resolves", engine.isPlaying)
+        gate.complete(Unit); runCurrent()
+        assertEquals(Phase.FAILED, c.state.value.phase)
+        assertFalse(engine.isPlaying)
+    }
 }
