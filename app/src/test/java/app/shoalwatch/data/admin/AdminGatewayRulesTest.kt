@@ -111,6 +111,19 @@ class AdminGatewayRulesTest : AdminGatewayTestBase() {
         }
     }
 
+    /** The account stops being allowed while its policy is being read: the change is never posted. */
+    @Test fun setUserDisabledSendsNothingIfTheGateClosesBetweenReadAndWrite() {
+        web.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
+            override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                allowed = false // the gate closed while this answer was on its way
+                return fixture("user-policy.json")
+            }
+        }
+        assertEquals(AppError.Kind.FORBIDDEN, failure { gateway.setUserDisabled(session, AdminFixtures.KID, true) }.kind)
+        assertEquals("only the read went out", 1, web.requestCount)
+        assertEquals("GET", web.takeRequest().method)
+    }
+
     @Test fun aReadIsRetriedOnce() {
         web.enqueue(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST))
         web.enqueue(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST))

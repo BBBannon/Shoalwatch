@@ -94,6 +94,8 @@ internal class AdminGateway(
         val id = jellyfinId(userId)
         val user = api.get(s, "/Users/$id", deserializer = JsonObject.serializer(), maxBytes = UserPolicyEdit.MAX_POLICY_BYTES)
         val policy = UserPolicyEdit.withDisabled(user, id, disabled) ?: throw AppError.of(AppError.Kind.SERVER_ERROR)
+        // The gate may have closed while the policy was read: nothing is posted for a session no longer allowed.
+        if (!allows(s)) throw AppError.of(AppError.Kind.FORBIDDEN)
         api.post(s, "/Users/$id/Policy", jsonBody = policy.toString(), retry = false, sendOnce = true)
     }
 
