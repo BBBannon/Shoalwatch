@@ -7,6 +7,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import app.shoalwatch.R
 import app.shoalwatch.data.library.ItemKind
 import app.shoalwatch.data.servers.Connection
@@ -84,7 +85,7 @@ abstract class HomeRenderBase : RenderBase() {
     @Test fun everyCardIsOneLabelledElementWithItsOwnMoreButton() {
         showHome(content)
         assertTrue(tree(), describedStarting("The Example Film"))
-        assertTrue(describedStarting("Series 50, S2 E5 · The Tide"))
+        assertTrue(describedStarting("Series 50, Season 2, episode 5, The Tide"))
         assertDescribed(text(R.string.cd_more_actions, "The Example Film"))
         assertDescribed(text(R.string.cd_more_actions, "Series 50"))
     }
@@ -98,14 +99,14 @@ abstract class HomeRenderBase : RenderBase() {
 
     @Test fun tappingACardOpensItsDestination() {
         showHome(content)
-        rule.onNodeWithContentDescription("Series 50, S2 E5 · The Tide, 30% watched").performClick()
+        rule.onNodeWithContentDescription("Series 50, Season 2, episode 5, The Tide, 30% watched").performClick()
         assertEquals(listOf<Destination>(Destination.Series(id(50), id(62), id(2))), opened)
     }
 
     @Test fun theLibrariesAreLargeCardsThatOpenTheLibrary() {
         showHome(content)
         scrollTo(hasText(text(R.string.home_libraries)))
-        rule.onNodeWithContentDescription("TV Shows, ${text(R.string.library_kind_tv)}").performClick()
+        rule.onNodeWithContentDescription("TV Shows, ${text(R.string.library_kind_tv)}").performScrollTo().performClick()
         assertEquals(listOf(SHOWS.id), libraries)
     }
 

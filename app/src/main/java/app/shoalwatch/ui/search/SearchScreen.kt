@@ -1,5 +1,10 @@
 package app.shoalwatch.ui.search
 
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.foundation.layout.height
+import app.shoalwatch.ui.components.SkeletonBlock
+import app.shoalwatch.ui.components.ScrollingColumn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -92,7 +97,8 @@ fun SearchScreen(state: SearchUiState, actions: SearchActions) {
             return@Column
         }
         ReadableBox {
-            Column(Modifier.fillMaxSize()) {
+            // The keyboard's inset (less what the bottom bar already takes) is applied here, so results are never under the keyboard.
+            Column(Modifier.fillMaxSize().imePadding()) {
                 SearchField(state, actions)
                 RefreshLine(state.phase == SearchPhase.SEARCHING)
                 Results(state, actions)
@@ -144,17 +150,37 @@ private fun SearchField(state: SearchUiState, actions: SearchActions) {
 @Composable
 private fun Results(state: SearchUiState, actions: SearchActions) {
     when (state.phase) {
-        SearchPhase.IDLE, SearchPhase.SEARCHING ->
-            if (state.phase == SearchPhase.IDLE) {
-                EmptyState(stringResource(R.string.nav_search), stringResource(R.string.search_prompt), icon = Icons.Filled.Search)
-            } else {
-                Box(Modifier.fillMaxSize())
-            }
-        SearchPhase.EMPTY -> EmptyState(stringResource(R.string.search_empty_title), stringResource(R.string.search_empty_body, state.query.trim()), icon = Icons.Filled.Search)
-        SearchPhase.ERROR -> EmptyState(
-            stringResource(R.string.error_title), state.error, actionLabel = stringResource(R.string.action_retry), onAction = actions.onRetry,
-        )
+        SearchPhase.IDLE -> ScrollingColumn {
+            EmptyState(stringResource(R.string.nav_search), stringResource(R.string.search_prompt), icon = Icons.Filled.Search)
+        }
+        SearchPhase.SEARCHING -> Searching()
+        SearchPhase.EMPTY -> ScrollingColumn {
+            EmptyState(stringResource(R.string.search_empty_title), stringResource(R.string.search_empty_body, state.query.trim()), icon = Icons.Filled.Search)
+        }
+        SearchPhase.ERROR -> ScrollingColumn {
+            EmptyState(stringResource(R.string.error_title), state.error, actionLabel = stringResource(R.string.action_retry), onAction = actions.onRetry)
+        }
         else -> ResultList(state, actions)
+    }
+}
+
+/** While a search runs: a few quiet rows the shape of results, and "Searching…" announced, never a blank screen. */
+@Composable
+private fun Searching() {
+    val searching = stringResource(R.string.search_searching)
+    Column(
+        Modifier.fillMaxSize().padding(top = 8.dp).semantics(mergeDescendants = true) { contentDescription = searching; liveRegion = LiveRegionMode.Polite },
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        repeat(4) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = Gutter), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                SkeletonBlock(Modifier.width(48.dp), ratio = 2f / 3f)
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SkeletonBlock(Modifier.fillMaxWidth(0.6f).height(18.dp))
+                    SkeletonBlock(Modifier.fillMaxWidth(0.3f).height(14.dp))
+                }
+            }
+        }
     }
 }
 
@@ -162,12 +188,23 @@ private fun Results(state: SearchUiState, actions: SearchActions) {
 private fun ResultList(state: SearchUiState, actions: SearchActions) {
     val strings = rememberStrings()
     val session = state.session ?: return
+    val count = state.films.size + state.series.size + state.episodes.size
+    val countText = pluralStringResource(R.plurals.search_results_count, count, count)
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        // How many results there are: shown, and announced politely when they arrive.
+        item(key = "count") {
+            Text(
+                countText, Modifier.padding(horizontal = Gutter).semantics { liveRegion = LiveRegionMode.Polite },
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         if (state.offline) {
             item(key = "offline") {
+                // NoticeCard merges its text into one element, which is what a live region announces.
                 NoticeCard(
                     title = stringResource(R.string.search_offline), body = null, tone = Tone.Info,
-                    modifier = Modifier.padding(horizontal = Gutter, vertical = 4.dp).semantics { liveRegion = LiveRegionMode.Polite },
+                    modifier = Modifier.padding(horizontal = Gutter, vertical = 4.dp),
+                    announce = true,
                 )
             }
         }

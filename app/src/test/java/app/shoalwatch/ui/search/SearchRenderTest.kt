@@ -1,5 +1,8 @@
 package app.shoalwatch.ui.search
 
+import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
@@ -85,14 +88,14 @@ abstract class SearchRenderBase : RenderBase() {
         showSearch(results)
         assertDescribed("Tide Film, 2019")
         assertDescribed("Tidal, Series · 2019")
-        assertDescribed("The Tide, Series 50 · S1 E2")
+        assertDescribed("The Tide, Series 50, Season 1, episode 2")
     }
 
     @Test fun tappingARowOpensTheRightPlace() {
         showSearch(results)
         rule.onNodeWithContentDescription("Tide Film, 2019").performClick()
         rule.onNodeWithContentDescription("Tidal, Series · 2019").performClick()
-        rule.onNodeWithContentDescription("The Tide, Series 50 · S1 E2").performClick()
+        rule.onNodeWithContentDescription("The Tide, Series 50, Season 1, episode 2").performClick()
         assertEquals(
             listOf<Destination>(Destination.Detail(id(1)), Destination.Series(id(2)), Destination.Series(id(50), id(61), id(3))),
             opened,
@@ -138,6 +141,44 @@ abstract class SearchRenderBase : RenderBase() {
         assertShown(text(R.string.nav_home))
         assertShown(text(R.string.nav_downloads))
     }
+
+    // --- states that used to be blank, quiet or silent ---------------------------------------------------------------
+
+    @Test fun whileSearchingThereAreQuietRowsAndSearchingIsAnnouncedNotABlankScreen() {
+        showSearch(SearchUiState(SearchPhase.SEARCHING, BEN, query = "tide"))
+        assertDescribed(text(R.string.search_searching))
+        val live = rule.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.LiveRegion)).fetchSemanticsNodes()
+        assertTrue(tree(), live.isNotEmpty())
+    }
+
+    @Test fun resultsSayHowManyThereAreAndAnnounceItPolitely() {
+        showSearch(results)
+        assertShown("3 results")
+        val node = rule.onAllNodes(hasText("3 results")).onFirst().fetchSemanticsNode()
+        assertTrue(node.config.contains(SemanticsProperties.LiveRegion))
+    }
+
+    @Test fun theOfflineNoteIsOneAnnouncedElementWithNoDash() {
+        showSearch(results.copy(offline = true))
+        val note = rule.onAllNodes(hasText(text(R.string.search_offline)).and(SemanticsMatcher.keyIsDefined(SemanticsProperties.LiveRegion))).fetchSemanticsNodes()
+        assertEquals(tree(), 1, note.size)
+        assertTrue(!text(R.string.search_offline).contains("—"))
+    }
+
+    @Test fun theHintIsJustSearch() {
+        assertEquals("Search", text(R.string.search_hint))
+    }
+
+    @Test fun noResultsScrollsSoNothingIsLostAtLargeText() {
+        showSearch(SearchUiState(SearchPhase.EMPTY, BEN, query = "zzz"))
+        assertTrue(rule.onAllNodes(hasScrollAction()).fetchSemanticsNodes().isNotEmpty())
+    }
+
+    @Test fun anErrorScrollsToo() {
+        showSearch(SearchUiState(SearchPhase.ERROR, BEN, query = "tide", error = "The server had a problem."))
+        assertTrue(rule.onAllNodes(hasScrollAction()).fetchSemanticsNodes().isNotEmpty())
+    }
+
 }
 
 @Config(qualifiers = "w360dp-h640dp") class SearchPhoneRenderTest : SearchRenderBase() { override val fontScale = 1f }

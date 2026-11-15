@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Search
@@ -22,10 +22,14 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Density
 import app.shoalwatch.R
 import app.shoalwatch.ui.components.DownloadIcon
 import app.shoalwatch.ui.components.isWideScreen
@@ -53,7 +57,7 @@ fun AppShell(selected: Tab, onSelect: (Tab) -> Unit, snackbar: SnackbarHostState
                         selected = tab == selected,
                         onClick = { onSelect(tab) },
                         icon = { androidx.compose.material3.Icon(tab.icon, contentDescription = null) },
-                        label = { Text(stringResource(tab.label)) },
+                        label = { NavLabel(stringResource(tab.label)) },
                     )
                 }
             }
@@ -61,11 +65,10 @@ fun AppShell(selected: Tab, onSelect: (Tab) -> Unit, snackbar: SnackbarHostState
                 Modifier.weight(1f),
                 containerColor = MaterialTheme.colorScheme.background,
                 snackbarHost = { SnackbarHost(snackbar) },
-                contentWindowInsets = WindowInsets(0, 0, 0, 0),
+                // The navigation bar's inset belongs to the Scaffold, so the snackbar sits above the bar as well as the content.
+                contentWindowInsets = WindowInsets.navigationBars.only(WindowInsetsSides.Bottom + WindowInsetsSides.End),
             ) { padding ->
-                androidx.compose.foundation.layout.Box(Modifier.padding(padding).windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom + WindowInsetsSides.End))) {
-                    content()
-                }
+                androidx.compose.foundation.layout.Box(Modifier.padding(padding).consumeWindowInsets(padding)) { content() }
             }
         }
     } else {
@@ -80,16 +83,28 @@ fun AppShell(selected: Tab, onSelect: (Tab) -> Unit, snackbar: SnackbarHostState
                             selected = tab == selected,
                             onClick = { onSelect(tab) },
                             icon = { androidx.compose.material3.Icon(tab.icon, contentDescription = null) },
-                            label = { Text(stringResource(tab.label)) },
+                            label = { NavLabel(stringResource(tab.label)) },
                         )
                     }
                 }
             },
         ) { padding ->
-            androidx.compose.foundation.layout.Box(Modifier.padding(padding)) { content() }
+            // The bar's height is consumed, so the keyboard's inset (Search) is not counted twice.
+            androidx.compose.foundation.layout.Box(Modifier.padding(padding).consumeWindowInsets(padding)) { content() }
         }
     }
 }
+
+/** A tab's name on one line, at a size that stops growing past 1.3 times: the icon and the spoken name carry the meaning at larger text. */
+@Composable
+private fun NavLabel(text: String) {
+    val density = LocalDensity.current
+    CompositionLocalProvider(LocalDensity provides Density(density.density, density.fontScale.coerceAtMost(MaxNavLabelScale))) {
+        Text(text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+private const val MaxNavLabelScale = 1.3f
 
 @Preview(showBackground = true, name = "Shell")
 @Composable

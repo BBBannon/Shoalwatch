@@ -1,5 +1,7 @@
 package app.shoalwatch.ui.home
 
+import app.shoalwatch.ui.components.PhoneWideCardWidth
+import app.shoalwatch.ui.components.TabletWideCardWidth
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -64,7 +66,7 @@ internal fun LazyListScope.wideRow(
                     val card = remember(entry, session, strings) { wideCard(entry, session, strings) }
                     WideCard(
                         card, onClick = { actions.onOpen(entry.destination()) }, onMenu = { onMenu(entry.item.id) },
-                        width = if (wide) 320.dp else 264.dp, working = state.working.isWorking(entry.item.id),
+                        width = if (wide) TabletWideCardWidth else PhoneWideCardWidth, working = state.working.isWorking(entry.item.id),
                     )
                 }
             }
@@ -122,7 +124,8 @@ internal fun LazyListScope.librariesSection(state: HomeUiState, actions: HomeAct
 internal fun LibraryCard(view: LibraryView, strings: Strings, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val name = view.name.ifBlank { stringResource(R.string.untitled) }
     val kind = view.kind.label(strings)
-    val description = stringResource(R.string.library_card_cd, name, kind)
+    // "Films, Films" would say the same word twice: when the name is the kind, say it once.
+    val description = if (name == kind) name else stringResource(R.string.library_card_cd, name, kind)
     Surface(
         onClick = onClick,
         modifier = modifier.heightIn(min = 72.dp).semantics { contentDescription = description },

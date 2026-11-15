@@ -1,6 +1,9 @@
 package app.shoalwatch.ui.shell
 
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.SnackbarHostState
@@ -17,7 +20,12 @@ import app.shoalwatch.ui.theme.ShoalwatchTheme
 /** Downloads are a later milestone: a plain, honest placeholder with no controls that do nothing. */
 @Composable
 fun DownloadsScreen() {
-    Box(Modifier.fillMaxSize().statusBarsPadding(), contentAlignment = Alignment.Center) {
+    // Centred while it fits; scrolls when it does not (a large text size, a short window).
+    Column(
+        Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
         EmptyState(
             title = stringResource(R.string.downloads_title),
             body = stringResource(R.string.downloads_body),

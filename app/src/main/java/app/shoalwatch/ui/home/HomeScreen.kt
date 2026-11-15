@@ -1,5 +1,11 @@
 package app.shoalwatch.ui.home
 
+import app.shoalwatch.ui.present.sheetTitle
+import app.shoalwatch.ui.components.PhoneWideCardWidth
+import app.shoalwatch.ui.components.TabletWideCardWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Spacer
+import app.shoalwatch.ui.components.ScrollingColumn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -107,62 +113,11 @@ fun HomeScreen(state: HomeUiState, actions: HomeActions, messages: Flow<String>,
 
 @Composable
 private fun Placeholder(actions: HomeActions, content: @Composable () -> Unit) {
-    Column(Modifier.fillMaxSize()) {
-        TopBarRow {
-            Text(stringResource(R.string.app_name), Modifier.weight(1f).semantics { heading() }, style = MaterialTheme.typography.titleLarge)
-            IconButton(onClick = actions.onOpenServers) { Icon(Icons.Filled.AccountCircle, stringResource(R.string.account_menu_cd)) }
-        }
+    // Scrolls: the notice, its text and the button together are taller than a small screen at a large text size.
+    ScrollingColumn {
+        PlaceholderTopBar(actions)
         ReadableBox {
             Column(Modifier.padding(Gutter), verticalArrangement = Arrangement.spacedBy(16.dp)) { content() }
-        }
-    }
-}
-
-@Composable
-private fun TopBarRow(content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().statusBarsPadding().padding(start = Gutter, end = 4.dp, top = 4.dp, bottom = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        content = content,
-    )
-}
-
-@Composable
-private fun HomeTopBar(state: HomeUiState, actions: HomeActions) {
-    TopBarRow {
-        Text(
-            state.serverName ?: stringResource(R.string.app_name),
-            Modifier.weight(1f).semantics { heading() },
-            style = MaterialTheme.typography.titleLarge,
-            maxLines = app.shoalwatch.ui.components.titleLines(1),
-            overflow = TextOverflow.Ellipsis,
-        )
-        state.connection?.let { ConnectionChip(it, compact = true) }
-        AccountButton(state, actions)
-    }
-}
-
-/** The account button: one account goes straight to Servers and accounts; several open a small menu to switch, with that screen last. */
-@Composable
-private fun AccountButton(state: HomeUiState, actions: HomeActions) {
-    var open by rememberSaveable { mutableStateOf(false) }
-    Box {
-        IconButton(
-            onClick = { if (state.accounts.size > 1) open = true else actions.onOpenServers() },
-        ) { Icon(Icons.Filled.AccountCircle, stringResource(R.string.account_menu_cd)) }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            Text(stringResource(R.string.account_switch_title), Modifier.padding(horizontal = 16.dp, vertical = 8.dp).semantics { heading() }, style = MaterialTheme.typography.titleMedium)
-            val current = state.session?.userId
-            state.accounts.forEach { account ->
-                val name = if (account.userId == current) stringResource(R.string.account_current, account.userName) else account.userName
-                DropdownMenuItem(
-                    text = { Text(name, style = MaterialTheme.typography.bodyLarge) },
-                    onClick = { open = false; if (account.userId != current) actions.onSwitchAccount(account.userId) },
-                )
-            }
-            HorizontalDivider()
-            DropdownMenuItem(text = { Text(stringResource(R.string.home_manage), style = MaterialTheme.typography.bodyLarge) }, onClick = { open = false; actions.onOpenServers() })
         }
     }
 }
@@ -178,14 +133,18 @@ private fun HomeList(state: HomeUiState, actions: HomeActions) {
     val skeleton = state.phase == HomePhase.LOADING || state.stillLoading
 
     ReadableBox {
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+            // The list's first item never changes. Rows that arrive ABOVE the item the list is showing push the list down to keep that
+            // item in view, so Home opened part way down with its first heading off the top. With this anchor at the very top, new
+            // rows land below it and Home stays at the top until the user has scrolled.
+            item(key = "top") { Spacer(Modifier.height(0.dp)) }
             val connection = state.connection
             if (connection != null && connection.needsCertificateReview && state.serverId != null) {
                 item(key = "certificate") { CertificateNotice(connection, onReview = { actions.onReview(state.serverId) }) }
             }
             state.topBanner?.let { kind -> item(key = "banner") { FreshnessBanner(kind, banner) } }
             if (skeleton) {
-                item(key = "skeleton-wide") { SkeletonRow(16f / 9f, if (wide) 320.dp else 264.dp) }
+                item(key = "skeleton-wide") { SkeletonRow(16f / 9f, if (wide) TabletWideCardWidth else PhoneWideCardWidth) }
                 item(key = "skeleton-poster") { SkeletonRow(2f / 3f, if (wide) 152.dp else 128.dp) }
             } else if (!state.hasContent) {
                 item(key = "empty") {
@@ -208,7 +167,7 @@ private fun HomeList(state: HomeUiState, actions: HomeActions) {
 
     val target = sheetId?.let { id -> findEntry(state, id) }?.let { entry ->
         SheetTarget(
-            itemId = entry.item.id, title = entry.item.displayName(strings), played = entry.userData?.played == true,
+            itemId = entry.item.id, title = entry.item.sheetTitle(strings), played = entry.userData?.played == true,
             favourite = entry.userData?.favourite == true, canRemoveFromResume = sheetFromResume,
             seriesId = entry.item.seriesId.takeIf { entry.item.kind == ItemKind.EPISODE },
         )
