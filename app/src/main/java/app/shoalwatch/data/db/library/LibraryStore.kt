@@ -149,11 +149,15 @@ class LibraryStore(private val db: AppDatabase) {
     suspend fun replaceViews(s: Session, libraries: List<LibraryView>) =
         views.replaceViews(s.serverId, s.userId, libraries.mapIndexed { i, v -> v.toEntity(s.serverId, s.userId, i) })
 
-    /** Runs [ItemDao]-level eviction for every server (one transaction each) and returns the totals. See [LibraryMaintenanceDao.evict]. */
+    suspend fun serverIds(): List<String> = maintenance.serverIds()
+
+    /** Eviction for one server (one transaction). See [LibraryMaintenanceDao.evict]. */
+    suspend fun evictServer(serverId: String, now: Instant, policy: EvictionPolicy = EvictionPolicy()): EvictionCounts =
+        maintenance.evict(serverId, now.minus(policy.listMaxAge).toEpochMilli(), now.minus(policy.itemMaxAge).toEpochMilli(), policy.maxUnpinnedItems)
+
+    /** Eviction for every server, one transaction each, and the totals. */
     suspend fun evict(now: Instant, policy: EvictionPolicy = EvictionPolicy()): EvictionCounts {
-        val listCutoff = now.minus(policy.listMaxAge).toEpochMilli()
-        val itemCutoff = now.minus(policy.itemMaxAge).toEpochMilli()
-        val each = maintenance.serverIds().map { maintenance.evict(it, listCutoff, itemCutoff, policy.maxUnpinnedItems) }
+        val each = serverIds().map { evictServer(it, now, policy) }
         return EvictionCounts(each.sumOf { it.listEntries }, each.sumOf { it.listStates }, each.sumOf { it.items }, each.sumOf { it.userData }, each.sumOf { it.visibility })
     }
 }

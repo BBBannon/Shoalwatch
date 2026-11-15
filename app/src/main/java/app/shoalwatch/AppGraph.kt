@@ -38,7 +38,11 @@ class AppGraph(private val appContext: Context) {
     val database: AppDatabase by lazy { AppDatabase.open(appContext) }
     val secretBox: SecretBox by lazy { SecretBox(KeystoreKeyProvider()) }
     val serverClients: ServerClients by lazy { ServerClients(httpClientFactory) }
-    val serverStore: ServerStore by lazy { ServerStore(database, secretBox, serverClients::evict, onServerRemoved = { addressSelector.forget(it) }) }
+    val serverStore: ServerStore by lazy { ServerStore(
+        database, secretBox, serverClients::evict,
+        onServerRemoved = { addressSelector.forget(it); libraryRepository.forget(it) },
+        onAccountGone = { server, user -> libraryRepository.forget(server, user) },
+    ) }
     val httpClientFactory: HttpClientFactory by lazy { HttpClientFactory(appContext) }
     val deviceIdentity: DeviceIdentity by lazy { DeviceIdentity.load(appContext) }
     val jellyfinGateway: JellyfinGateway by lazy { JellyfinGatewayImpl(serverClients) }
@@ -49,7 +53,8 @@ class AppGraph(private val appContext: Context) {
     /** Library endpoints as safe models; only `library` uses it. */
     val libraryGateway: LibraryGateway by lazy { LibraryGatewayImpl(serverApi) }
     /** What every browsing screen reads: saved rows first, refreshed behind them (see "Library repository" in docs/ARCHITECTURE.md). */
-    val library: Library by lazy { LibraryRepository(libraryGateway, database, appScope, Dispatchers.IO, System::currentTimeMillis, PrefsMaintenanceLog(appContext)) }
+    val libraryRepository: LibraryRepository by lazy { LibraryRepository(libraryGateway, database, appScope, Dispatchers.IO, System::currentTimeMillis, PrefsMaintenanceLog(appContext)) }
+    val library: Library get() = libraryRepository
     /** Loads saved tokens into the store's live lookup. Started at app start; anything authenticated waits on `serverStore.awaitWarmed()` (or uses `awaitActive()`). */
     val tokensWarmed: Job by lazy { appScope.launch { serverStore.warmTokens() } }
     /** What the trust prompt reads; the UI never touches `HttpClientFactory` itself. */

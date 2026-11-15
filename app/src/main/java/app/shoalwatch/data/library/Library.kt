@@ -26,8 +26,8 @@ data class Listing(val items: List<ItemWithUserData>, val total: Int?, val fresh
 /** One row of the home screen: the saved items and how current they are. */
 data class HomeRow(val items: List<ItemWithUserData>, val freshness: Freshness)
 
-/** The home screen: the user's libraries, what to resume, what is next up, and the latest in each library (in library order). */
-data class Home(val views: List<LibraryView>, val resume: HomeRow, val nextUp: HomeRow, val latest: List<Pair<LibraryView, HomeRow>>)
+/** The home screen: the user's libraries (with how current that list is), what to resume, what is next up, and the latest in each library (in library order). */
+data class Home(val views: List<LibraryView>, val viewsFreshness: Freshness, val resume: HomeRow, val nextUp: HomeRow, val latest: List<Pair<LibraryView, HomeRow>>)
 
 /**
  * A series with its seasons and the episodes of the selected season. [selectedSeasonId] is the requested season, else the
@@ -42,7 +42,11 @@ data class SeriesDetail(
     val freshness: Freshness,
 )
 
-/** [item] is null until the item has been saved (never seen, or the first fetch has not finished or failed; see [freshness]). */
+/**
+ * [item] is null until the item has been saved for this user (never shown to them, or the first fetch has not finished or
+ * failed; see [freshness]). A saved item whose refresh fails as `Stale(SERVER_NOT_FOUND)` has been removed from the server
+ * (or is no longer allowed for this user): the screen should say it is no longer on the server, and keep showing the saved copy.
+ */
 data class ItemDetail(val item: ItemWithUserData?, val freshness: Freshness)
 
 /** [offline] is true when the server could not be reached and [items] are only what is saved on the phone. */
@@ -81,6 +85,15 @@ sealed interface RefreshTarget {
  * background when the list was never loaded or is older than its window; collecting never waits for the network, and a
  * refresh that has begun finishes and is saved even if the collector leaves. Flows never throw because of the network or the
  * server: a failed refresh shows as [Freshness.Stale]. Everything is for one [Session]; two users on a server never see each other's lists or watched state.
+ *
+ * A malformed id never throws: a flow for it emits one empty result that is `Stale(SERVER_NOT_FOUND)`, and [loadMore] and
+ * [refresh] do nothing. A user is only ever shown an item the server showed that user, even where a shared copy is saved.
+ *
+ * Guidance for screens: pass the `Session` into every call and restart the flow when the account changes; do not refresh on
+ * every resume (collecting already refreshes what is due, and a list that just failed is not retried for 30 seconds; only
+ * [refresh] always tries); [Listing.items] can be empty while [Listing.canLoadMore] is true, so load more rather than show
+ * "empty", and call [loadMore] again when freshness returns to `Fresh` while the end of the list is still on screen; never
+ * read the DAOs or `LibraryStore` from UI code.
  *
  * Only models from this package appear here (no DTOs, Room entities or HTTP types). The suspend functions may throw
  * [AppError] ([search] only); [loadMore] and [refresh] report failure through the flows' [Freshness] instead.

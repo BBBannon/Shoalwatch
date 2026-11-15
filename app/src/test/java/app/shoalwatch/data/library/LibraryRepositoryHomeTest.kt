@@ -68,7 +68,7 @@ class LibraryRepositoryHomeTest : LibraryRepositoryTestBase() {
 
     @Test fun neverLoadedAndOfflineIsEmptyAndStale() {
         gateway.failAll = AppError.Kind.OFFLINE
-        val home = repo.home(s1u1).await { it.resume.freshness is Freshness.Stale }
+        val home = repo.home(s1u1).await { it.resume.freshness is Freshness.Stale && it.nextUp.freshness is Freshness.Stale } // both rows, they finish independently
         assertEquals(emptyList<ItemWithUserData>(), home.resume.items)
         assertEquals(Freshness.Stale(AppError.Kind.OFFLINE), home.resume.freshness)
         assertEquals(Freshness.Stale(AppError.Kind.OFFLINE), home.nextUp.freshness)

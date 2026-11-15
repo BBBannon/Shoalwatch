@@ -1,5 +1,6 @@
 package app.shoalwatch.data.library
 
+import app.shoalwatch.core.AppError
 import app.shoalwatch.data.db.AppDatabase
 import app.shoalwatch.data.db.library.LibraryStore
 import app.shoalwatch.data.db.library.PageResult
@@ -56,7 +57,11 @@ internal class ListCache(
         maintenance.kick()
         val state = lists.getState(s.serverId, s.userId, recipe.key)
         if (state == null || clock() - state.refreshedAt >= recipe.window.toMillis()) {
-            refresher.launch(ListId(s, recipe.key), Refresher.Mode.REFRESH, recipe.run)
+            val id = ListId(s, recipe.key)
+            // A list that failed a moment ago is not asked for again by every new collector (a screen that keeps being
+            // reopened must not become a request storm); pull-to-refresh ([refreshNow]) always tries.
+            val failedLately = refresher.lastFailure(id)?.let { clock() - it.at in 0 until RETRY_COOLDOWN_MS } == true
+            if (!failedLately) refresher.launch(id, Refresher.Mode.REFRESH, recipe.run)
         }
     }
 
@@ -70,8 +75,8 @@ internal class ListCache(
                 refresher.attempt(ListId(s, recipe.key)),
             ) { rows, state, attempt ->
                 // Room reports the list and its state separately: a state that says "loaded" beside no rows is the write still arriving.
-                val loaded = state != null && !(rows.isEmpty() && state.loadedCount > 0)
-                Cached(rows.map { it.toModel() }, state, freshnessOf(attempt, loaded))
+                val arriving = state != null && rows.isEmpty() && state.loadedCount > 0
+                Cached(rows.map { it.toModel() }, state, freshnessOf(attempt, state != null, arriving))
             },
         )
     }.distinctUntilChanged().flowOn(io)
@@ -81,16 +86,27 @@ internal class ListCache(
         ensure(s, recipe)
         emitAll(
             combine(lists.observeState(s.serverId, s.userId, recipe.key), refresher.attempt(ListId(s, recipe.key))) { state, attempt ->
-                freshnessOf(attempt, state != null)
+                freshnessOf(attempt, state != null, arriving = false)
             },
         )
     }.distinctUntilChanged().flowOn(io)
 
-    /** Idle with no saved state is only seen before a refresh has started (or after the app scope was cancelled): shown as refreshing. */
-    private fun freshnessOf(attempt: Attempt, loaded: Boolean): Freshness = when (attempt) {
+    /**
+     * Idle with nothing saved means nothing is running and nothing was ever loaded (the work vanished, e.g. the app scope was
+     * cancelled): that is `Stale(UNKNOWN)`, never a spinner that no one will stop. The cold start still reads `Refreshing`
+     * because [ensure] has already started the first refresh. [arriving] is a write that has committed but whose rows Room
+     * has not yet reported.
+     */
+    private fun freshnessOf(attempt: Attempt, loaded: Boolean, arriving: Boolean): Freshness = when (attempt) {
         Attempt.Running -> Freshness.Refreshing
         is Attempt.Failed -> Freshness.Stale(attempt.kind)
-        Attempt.Idle -> if (loaded) Freshness.Fresh else Freshness.Refreshing
+        Attempt.Done -> if (loaded && !arriving) Freshness.Fresh else Freshness.Refreshing // a write that has committed but that Room has not reported yet
+        Attempt.Idle -> if (arriving) Freshness.Refreshing else if (loaded) Freshness.Fresh else Freshness.Stale(AppError.Kind.UNKNOWN)
+    }
+
+    private companion object {
+        /** After a failed refresh, collecting the list again does not retry for this long. */
+        const val RETRY_COOLDOWN_MS = 30_000L
     }
 
     /** Joins the refresh already running for this list, or starts one, and returns when it has finished (it never throws). */

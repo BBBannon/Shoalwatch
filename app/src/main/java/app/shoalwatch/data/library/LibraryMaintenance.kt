@@ -38,8 +38,9 @@ class PrefsMaintenanceLog(context: Context) : MaintenanceLog {
  * One schedule covers every server (eviction visits each in turn), so no server is evicted more often than that.
  *
  * [kick] is cheap and safe to call from any thread whenever the library is used: it launches the check in [scope], off
- * the main thread, and does nothing when a run is in progress or one happened within a day. The run holds [writeGate],
- * the same lock every list write takes, so eviction never overlaps a refresh write. A failed run is not recorded, so the
+ * the main thread, and does nothing when a run is in progress or one happened within a day (a recorded run in the
+ * future, from a clock that went back, does not count: it is due). The run holds [writeGate], the same lock every list
+ * write takes, for one server at a time, so eviction never overlaps a refresh write and never blocks them for long. A failed run is not recorded, so the
  * next [kick] tries again.
  */
 internal class LibraryMaintenance(
@@ -55,18 +56,20 @@ internal class LibraryMaintenance(
 
     @Volatile private var lastKnown: Long? = null
 
+    private fun recent(last: Long, now: Long) = now - last in 0 until every.toMillis()
+
     fun kick() {
-        lastKnown?.let { if (clock() - it < every.toMillis()) return }
+        lastKnown?.let { if (recent(it, clock())) return }
         if (!busy.compareAndSet(false, true)) return
         scope.launch(context) {
             try {
                 val last = lastKnown ?: log.lastRun()
                 val now = clock()
-                if (last != null && now - last < every.toMillis()) {
+                if (last != null && recent(last, now)) {
                     lastKnown = last
                     return@launch
                 }
-                writeGate.withLock { store.evict(Instant.ofEpochMilli(now), EvictionPolicy()) }
+                for (serverId in store.serverIds()) writeGate.withLock { store.evictServer(serverId, Instant.ofEpochMilli(now), EvictionPolicy()) }
                 log.record(now)
                 lastKnown = now
             } catch (e: CancellationException) {

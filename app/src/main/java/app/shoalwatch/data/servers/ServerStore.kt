@@ -55,6 +55,8 @@ class ServerStore(
     private val onClientsStale: (serverId: String, addresses: List<ServerAddress>) -> Unit = { _, _ -> },
     /** Called after a server is removed, or saved with no address left to probe, so per-server state elsewhere (e.g. address probing) can be dropped. */
     private val onServerRemoved: (serverId: String) -> Unit = {},
+    /** Called after an account is removed or signed out (its token rejected), so per-account state elsewhere (e.g. remembered library failures) can be dropped. */
+    private val onAccountGone: (serverId: String, userId: String) -> Unit = { _, _ -> },
     /** Where [warmTokens] reads saved accounts from (the database by default); a test passes one that fails. */
     accountSource: (suspend () -> List<AccountEntity>)? = null,
     /** Where Keystore work runs. */
@@ -261,6 +263,7 @@ class ServerStore(
             }
         } finally {
             onClientsStale(serverId, addresses)
+            onAccountGone(serverId, userId)
         }
     }
 
@@ -288,7 +291,10 @@ class ServerStore(
             bump(key)
             true
         }
-        if (done) onClientsStale(serverId, addresses)
+        if (done) {
+            onClientsStale(serverId, addresses)
+            onAccountGone(serverId, userId)
+        }
     }
 
     private fun bump(key: Pair<String, String>) { generations.merge(key, 1L, Long::plus) }

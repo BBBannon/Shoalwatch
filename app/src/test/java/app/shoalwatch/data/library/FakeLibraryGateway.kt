@@ -3,6 +3,7 @@ package app.shoalwatch.data.library
 import app.shoalwatch.core.AppError
 import app.shoalwatch.data.library.api.LibraryGateway
 import app.shoalwatch.data.servers.Session
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
@@ -20,6 +21,12 @@ class FakeLibraryGateway : LibraryGateway {
     /** Fails every call with this kind (null: none), or only the named operations. */
     @Volatile var failAll: AppError.Kind? = null
     val failOps = HashMap<String, AppError.Kind>()
+
+    /** Throws this (not an AppError) from the named operation. */
+    val throwOps = HashMap<String, Throwable>()
+
+    /** Calls that were cancelled while waiting at the gate. */
+    val cancelled = CopyOnWriteArrayList<String>()
 
     private val running = AtomicInteger()
     @Volatile var maxRunning = 0
@@ -43,7 +50,11 @@ class FakeLibraryGateway : LibraryGateway {
         synchronized(this) { maxRunning = maxOf(maxRunning, now) }
         try {
             gate?.await()
+            throwOps[op]?.let { throw it }
             (failOps[op] ?: failAll)?.let { throw AppError.of(it) }
+        } catch (e: CancellationException) {
+            cancelled += name
+            throw e
         } finally {
             running.decrementAndGet()
         }

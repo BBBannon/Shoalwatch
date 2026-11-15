@@ -31,7 +31,7 @@ abstract class LibraryRepositoryTestBase : LibraryTestBase() {
     protected val gateway = FakeLibraryGateway()
     protected val log = MemoryLog()
     protected var now: Long = t0.toEpochMilli()
-    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    protected val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     protected lateinit var repo: LibraryRepository
 
     @Before fun openRepository() {
@@ -43,6 +43,15 @@ abstract class LibraryRepositoryTestBase : LibraryTestBase() {
         gateway.gate?.complete(Unit)
         appScope.coroutineContext.job.children.forEach { it.join() }
         appScope.cancel()
+    }
+
+    /** Waits until everything the repository started in the background (refreshes, clear-outs) has finished. Gate-held work must be released first. */
+    protected suspend fun settle() {
+        while (true) {
+            val running = appScope.coroutineContext.job.children.toList()
+            if (running.isEmpty()) return
+            running.forEach { it.join() }
+        }
     }
 
     protected fun advance(duration: Duration) { now += duration.toMillis() }

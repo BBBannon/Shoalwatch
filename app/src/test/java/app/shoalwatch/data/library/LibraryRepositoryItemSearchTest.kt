@@ -4,7 +4,6 @@ import app.shoalwatch.core.AppError
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -194,7 +193,7 @@ class LibraryRepositoryItemSearchTest : LibraryRepositoryTestBase() {
         library.writePage(s1u1, "another-old", 0, films("x"), 1, t0)
         now += day - 1_000
         repo.home(s1u1).first5s()
-        delay(300)
+        settle() // every background job has finished, so "nothing ran" is a fact, not a guess
         assertEquals(1, log.records.size)
         assertEquals(1, count("list_entries", "listKey = 'another-old'"))
         now += 2_000
@@ -208,7 +207,7 @@ class LibraryRepositoryItemSearchTest : LibraryRepositoryTestBase() {
         log.last = now - day / 2
         gateway.failAll = AppError.Kind.OFFLINE
         repo.home(s1u1).first5s()
-        delay(300)
+        settle() // every background job has finished, so "nothing ran" is a fact, not a guess
         assertEquals(emptyList<Long>(), log.records)
         assertEquals(1, count("list_entries", "listKey = 'old-list'"))
         assertFalse(idsLeft().isEmpty())

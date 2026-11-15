@@ -27,7 +27,11 @@ internal data class ListId(val serverId: String, val userId: String, val key: St
 internal sealed interface Attempt {
     data object Idle : Attempt
     data object Running : Attempt
-    data class Failed(val kind: AppError.Kind) : Attempt
+
+    /** The last attempt succeeded. Kept (not forgotten) so that a screen never sees "nothing running, nothing saved" in the instant between the write committing and Room reporting it. */
+    data object Done : Attempt
+    /** [at] is when it failed (epoch ms, the repository's clock). */
+    data class Failed(val kind: AppError.Kind, val at: Long) : Attempt
 }
 
 /**
@@ -39,10 +43,13 @@ internal sealed interface Attempt {
  *  - a [MORE] is declined (null) while anything, including another [MORE], is running for the list;
  *  - a [REFRESH] asked while a [MORE] runs waits for it, then runs (a refresh replaces the list, so the two must not overlap).
  *
+ * What the last attempt did is remembered per list until a later attempt succeeds, the account is [forget]-ed (removed or
+ * signed out), or more than [MAX_ENTRIES] lists are on record (the oldest finished ones are dropped).
+ *
  * At most [maxParallel] pieces of work run at once across all lists, so a home screen with many rows is gentle on the
  * server. There are no retries here: `ServerApi` already retries a lost connection once, and retries on top would multiply.
  */
-internal class Refresher(private val scope: CoroutineScope, private val context: CoroutineContext, maxParallel: Int = 4) {
+internal class Refresher(private val scope: CoroutineScope, private val context: CoroutineContext, private val clock: () -> Long, maxParallel: Int = 4) {
     enum class Mode { REFRESH, MORE }
 
     private class Flight(val mode: Mode) {
@@ -53,6 +60,17 @@ internal class Refresher(private val scope: CoroutineScope, private val context:
     private val lock = Any()
     private val flights = HashMap<ListId, Flight>()
     private val attempts = MutableStateFlow<Map<ListId, Attempt>>(emptyMap())
+
+    /** Every list whose last attempt failed. */
+    fun failures(): Map<ListId, Attempt.Failed> = attempts.value.filterValues { it is Attempt.Failed }.mapValues { it.value as Attempt.Failed }
+
+    /** The failure on record for [id], if any (used for the retry cooldown). */
+    fun lastFailure(id: ListId): Attempt.Failed? = attempts.value[id] as? Attempt.Failed
+
+    /** Drops the failures on record for one account, or for every account of the server when [userId] is null. Work in flight is left alone. */
+    fun forget(serverId: String, userId: String?) = attempts.update { cur ->
+        cur.filterNot { (id, a) -> a != Attempt.Running && id.serverId == serverId && (userId == null || id.userId == userId) }
+    }
 
     fun attempt(id: ListId): Flow<Attempt> = attempts.map { it[id] ?: Attempt.Idle }.distinctUntilChanged()
 
@@ -70,12 +88,12 @@ internal class Refresher(private val scope: CoroutineScope, private val context:
             val outcome: Attempt = try {
                 waitFor?.join()
                 permits.withPermit { work() }
-                Attempt.Idle
+                Attempt.Done
             } catch (e: CancellationException) {
                 finish(id, flight, Attempt.Idle)
                 throw e
             } catch (e: Throwable) {
-                Attempt.Failed(AppError.from(e).kind)
+                Attempt.Failed(AppError.from(e).kind, clock())
             }
             finish(id, flight, outcome)
         }
@@ -93,5 +111,17 @@ internal class Refresher(private val scope: CoroutineScope, private val context:
         }
     }
 
-    private fun setAttempt(id: ListId, attempt: Attempt) = attempts.update { if (attempt == Attempt.Idle) it - id else it + (id to attempt) }
+    private fun setAttempt(id: ListId, attempt: Attempt) = attempts.update { cur ->
+        if (attempt == Attempt.Idle) return@update cur - id
+        val next = LinkedHashMap(cur)
+        next.remove(id) // so the entry is the newest
+        next[id] = attempt
+        val oldest = next.entries.iterator()
+        while (next.size > MAX_ENTRIES && oldest.hasNext()) if (oldest.next().value != Attempt.Running) oldest.remove()
+        next
+    }
+
+    private companion object {
+        const val MAX_ENTRIES = 500
+    }
 }

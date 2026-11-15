@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.runningFold
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.withContext
 import java.time.Duration
 
 /**
@@ -41,18 +42,22 @@ class LibraryRepository(
     private val io: CoroutineDispatcher,
     private val clock: () -> Long,
     maintenanceLog: MaintenanceLog,
+    /** The lock every write to the library takes (and eviction): one is made unless a test wants to hold it. */
+    writeGate: Mutex = Mutex(),
 ) : Library {
     private val lists = db.listDao()
     private val items = db.itemDao()
     private val views = db.viewDao()
-    private val refresher = Refresher(scope, io)
+    private val refresher = Refresher(scope, io, clock)
     private val cache: ListCache
 
     init {
         val store = LibraryStore(db)
-        val gate = Mutex()
-        cache = ListCache(db, store, refresher, LibraryMaintenance(store, maintenanceLog, clock, scope, io, gate), clock, io, gate)
+        cache = ListCache(db, store, refresher, LibraryMaintenance(store, maintenanceLog, clock, scope, io, writeGate), clock, io, writeGate)
     }
+
+    /** Forgets what the last attempts did for this account (or, with no [userId], every account of the server): it was removed or signed out. */
+    fun forget(serverId: String, userId: String? = null) = refresher.forget(serverId, userId)
 
     // ---- recipes: what to fetch and save for each list, and how long a saved copy stays current
 
@@ -92,16 +97,15 @@ class LibraryRepository(
     // ---- home
 
     override fun home(s: Session): Flow<Home> {
-        val libraries = flow {
-            cache.ensure(s, viewsRecipe(s))
-            emitAll(views.observeViews(s.serverId, s.userId).map { rows -> rows.map { it.toModel() } })
-        }.distinctUntilChanged()
-        return libraries.flatMapLatest { libs ->
+        val libraries = views.observeViews(s.serverId, s.userId).map { rows -> rows.map { it.toModel() } }.distinctUntilChanged()
+        val rowsOf = libraries.flatMapLatest { libs ->
             val rows = listOf(resumeRecipe(s), nextUpRecipe(s)) + libs.map { latestRecipe(s, it.id) }
             combine(rows.map { recipe -> cache.rows(s, recipe, MAX_ROWS).map { HomeRow(it.rows, it.freshness) } }) { all ->
-                Home(libs, all[0], all[1], libs.mapIndexed { i, lib -> lib to all[i + 2] })
+                Home(libs, Freshness.Fresh, all[0], all[1], libs.mapIndexed { i, lib -> lib to all[i + 2] })
             }
-        }.flowOn(io)
+        }
+        // The libraries' own freshness is combined outside the row flows, so it changing does not restart them.
+        return combine(rowsOf, cache.status(s, viewsRecipe(s))) { home, viewsFreshness -> home.copy(viewsFreshness = viewsFreshness) }.flowOn(io)
     }
 
     // ---- listings
@@ -119,8 +123,12 @@ class LibraryRepository(
 
     private fun canLoadMore(state: ListStateEntity?) = state != null && !state.endReached && state.pagesLoaded < MAX_PAGES
 
-    override suspend fun loadMore(s: Session, parentId: String, shape: ListShape, sort: Sort, filter: ItemFilter) {
-        if (!wellFormed(parentId)) return
+    override suspend fun loadMore(s: Session, parentId: String, shape: ListShape, sort: Sort, filter: ItemFilter) = withContext(io) {
+        if (!wellFormed(parentId)) return@withContext
+        loadMoreOnIo(s, parentId, shape, sort, filter)
+    }
+
+    private suspend fun loadMoreOnIo(s: Session, parentId: String, shape: ListShape, sort: Sort, filter: ItemFilter) {
         val key = ListKey.children(parentId, shape, sort, filter)
         if (!canLoadMore(lists.getState(s.serverId, s.userId, key))) return
         refresher.launch(ListId(s, key), Refresher.Mode.MORE) { loadNextPage(s, key, parentId, shape, sort, filter) }?.join()
@@ -174,9 +182,9 @@ class LibraryRepository(
 
     // ---- search
 
-    override suspend fun search(s: Session, term: String): SearchResult {
+    override suspend fun search(s: Session, term: String): SearchResult = withContext(io) {
         val text = term.trim()
-        if (text.isEmpty()) return SearchResult(emptyList(), offline = false)
+        if (text.isEmpty()) return@withContext SearchResult(emptyList(), offline = false)
         try {
             val found = gateway.search(s, text, SEARCH_LIMIT)
             // Saved so a detail screen opens at once. A failure to save must not lose the results the user is waiting for.
@@ -186,27 +194,27 @@ class LibraryRepository(
                 throw e
             } catch (_: Exception) {
             }
-            return SearchResult(found, offline = false)
+            SearchResult(found, offline = false)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             val error = AppError.from(e)
             if (error.kind !in OFFLINE_KINDS) throw error
             val saved = items.searchByName(s.serverId, s.userId, text, SEARCH_KINDS, SEARCH_LIMIT)
-            return SearchResult(saved.map { it.toModel() }, offline = true)
+            SearchResult(saved.map { it.toModel() }, offline = true)
         }
     }
 
     // ---- pull to refresh
 
-    override suspend fun refresh(s: Session, target: RefreshTarget) {
+    override suspend fun refresh(s: Session, target: RefreshTarget) = withContext(io) {
         val ids = when (target) {
             RefreshTarget.Home -> emptyList()
             is RefreshTarget.Children -> listOf(target.parentId)
             is RefreshTarget.Series -> listOf(target.seriesId, target.seasonId)
             is RefreshTarget.Item -> listOf(target.itemId)
         }
-        if (!wellFormed(*ids.toTypedArray())) return
+        if (!wellFormed(*ids.toTypedArray())) return@withContext
         when (target) {
             RefreshTarget.Home -> refreshHome(s)
             is RefreshTarget.Children -> cache.refreshNow(s, childrenRecipe(s, target.parentId, target.shape, target.sort, target.filter))
