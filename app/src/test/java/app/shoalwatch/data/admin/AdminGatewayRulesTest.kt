@@ -79,6 +79,20 @@ class AdminGatewayRulesTest : AdminGatewayTestBase() {
         assertEquals(0, web.requestCount)
     }
 
+    /** The screens never offer it, but a stale screen or a second caller must not either: it would sign out every account here. */
+    @Test fun thisPhonesOwnDeviceIsNeverRemoved() {
+        assertEquals(AppError.Kind.SERVER_NOT_FOUND, failure { gateway.removeDevice(session, AdminFixtures.THIS_PHONE) }.kind)
+        assertEquals(0, web.requestCount)
+    }
+
+    /** Disabling the signed-in administrator would lock them out of their own server: refused before the policy is even read. */
+    @Test fun theSignedInAdministratorsOwnAccountIsNeverDisabled() {
+        for (disabled in listOf(true, false)) {
+            assertEquals(AppError.Kind.FORBIDDEN, failure { gateway.setUserDisabled(session, session.userId, disabled) }.kind)
+        }
+        assertEquals(0, web.requestCount)
+    }
+
     /** On a fresh connection (see [anActionOnAPooledConnectionIsSentOnce] for a reused one). */
     @Test fun everyActionIsSentExactlyOnceWhenTheConnectionDrops() {
         for ((name, call) in actions) {

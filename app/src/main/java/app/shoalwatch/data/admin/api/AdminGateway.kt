@@ -92,6 +92,8 @@ internal class AdminGateway(
 
     override suspend fun setUserDisabled(s: Session, userId: String, disabled: Boolean) = gated(s, "setUserDisabled") {
         val id = jellyfinId(userId)
+        // The screens never offer it; refused here too, so a stale screen cannot lock the administrator out of their server.
+        if (id == s.userId) throw AppError.of(AppError.Kind.FORBIDDEN)
         val user = api.get(s, "/Users/$id", deserializer = JsonObject.serializer(), maxBytes = UserPolicyEdit.MAX_POLICY_BYTES)
         val policy = UserPolicyEdit.withDisabled(user, id, disabled) ?: throw AppError.of(AppError.Kind.SERVER_ERROR)
         // The gate may have closed while the policy was read: nothing is posted for a session no longer allowed.
@@ -112,6 +114,8 @@ internal class AdminGateway(
 
     override suspend fun removeDevice(s: Session, deviceId: String) = gated(s, "removeDevice") {
         if (!AdminLimits.REMOVABLE_DEVICE_ID.matches(deviceId)) throw notFound()
+        // This phone's own device: removing it would sign out every account here. Sign out in Servers and accounts does that.
+        if (deviceId == thisDeviceId) throw notFound()
         // A device id is a client-chosen string: only ever a query value, never a path segment.
         api.delete(s, "/Devices", listOf("id" to deviceId), retry = false, sendOnce = true)
     }
