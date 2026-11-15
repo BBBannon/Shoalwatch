@@ -65,7 +65,9 @@ internal class SubtitleLines(bytes: ByteArray, private val cancelled: () -> Bool
  * One cue's text as it is built: characters appended left to right, with bold, italic and underline as depth counters (an
  * opening tag adds one, its closer takes one away; nothing grows but the count), so the styled runs are recorded as they
  * end. At most [SubtitleFiles.MAX_CUE_CHARS] characters and [SubtitleFiles.MAX_CUE_LINES] lines: past either the rest of the
- * cue is dropped ([full]), never the file.
+ * cue is dropped ([full]), never the file. At most [SubtitleFiles.MAX_STYLED_RUNS] styled runs: after that a style change is
+ * ignored and the text kept (subtitle-parsers review I-2), because Android's `setSpan` and `SubtitleView`'s span removal each
+ * scan every span already there; with at most two spans per run (bold and italic share one) a cue has a few dozen.
  */
 internal class CueText {
     private val out = StringBuilder()
@@ -90,7 +92,7 @@ internal class CueText {
             return
         }
         val flags = (if (bold > 0) BOLD else 0) or (if (italic > 0) ITALIC else 0) or (if (underline > 0) UNDERLINE else 0)
-        if (flags != runFlags) { closeRun(); runFlags = flags }
+        if (flags != runFlags && runCount < SubtitleFiles.MAX_STYLED_RUNS) { closeRun(); runFlags = flags }
         out.append(c)
     }
 
@@ -137,8 +139,8 @@ internal class CueText {
     }
 
     private fun style(s: SpannableString, flags: Int, from: Int, to: Int) {
-        if (flags and BOLD != 0) s.setSpan(StyleSpan(Typeface.BOLD), from, to, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        if (flags and ITALIC != 0) s.setSpan(StyleSpan(Typeface.ITALIC), from, to, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        val typeface = when (flags and (BOLD or ITALIC)) { BOLD -> Typeface.BOLD; ITALIC -> Typeface.ITALIC; BOLD or ITALIC -> Typeface.BOLD_ITALIC; else -> null }
+        typeface?.let { s.setSpan(StyleSpan(it), from, to, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE) }
         if (flags and UNDERLINE != 0) s.setSpan(UnderlineSpan(), from, to, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
     }
 
