@@ -65,10 +65,13 @@ internal class GuardedCallFactory(
         require(prefix.lastOrNull().equals("videos", ignoreCase = true)) { "Invalid media prefix." }
     }
 
-    override fun newCall(request: Request): Call {
-        val (reason, kind) = refusalFor(request) ?: return delegate.newCall(request)
+    override fun newCall(request: Request): Call = refused(request)?.let { RefusedCall(delegate.newCall(request), it) } ?: GuardedCall(delegate.newCall(request))
+
+    /** The refusal for [request] now (logged as a fixed word), or null to send it. */
+    private fun refused(request: Request): BlockedRequestException? {
+        val (reason, kind) = refusalFor(request) ?: return null
         AppLog.d(TAG, "media request refused: $reason")
-        return RefusedCall(delegate.newCall(request), BlockedRequestException(AppError.of(kind)))
+        return BlockedRequestException(AppError.of(kind))
     }
 
     /** Why [request] may not be sent (a fixed word for the log, and the kind the caller sees), or null to send it. */
@@ -91,6 +94,27 @@ internal class GuardedCallFactory(
     }
 
     /**
+     * A call that passed when it was made, checked AGAIN when it is sent ([execute], [enqueue]): the route may have gone stale in
+     * between (a sign-out, a network change, a settings change), and then it sends nothing. A [clone] is guarded the same way.
+     * (A response already streaming is not cut off here: the player stops reading when playback ends.)
+     */
+    private inner class GuardedCall(private val inner: Call) : Call by inner {
+        override fun execute(): Response {
+            refused(inner.request())?.let { error -> return RefusedCall(inner, error).execute() }
+            return inner.execute()
+        }
+
+        override fun enqueue(responseCallback: Callback) {
+            val error = refused(inner.request()) ?: return inner.enqueue(responseCallback)
+            RefusedCall(inner, error).enqueueAs(this, responseCallback)
+        }
+
+        override fun clone(): Call = newCall(inner.request())
+
+        override fun toString() = "GuardedCall(<redacted>)"
+    }
+
+    /**
      * A call that fails without sending anything. [inner] is a real call that is never executed (it supplies the request, tags
      * and timeout); creating one opens no connection.
      */
@@ -102,9 +126,12 @@ internal class GuardedCallFactory(
             throw error
         }
 
-        override fun enqueue(responseCallback: Callback) {
+        override fun enqueue(responseCallback: Callback) = enqueueAs(this, responseCallback)
+
+        /** Fails [responseCallback] for [call] (the call the caller holds). */
+        fun enqueueAs(call: Call, responseCallback: Callback) {
             check(executed.compareAndSet(false, true)) { "Already executed." }
-            responseCallback.onFailure(this, error)
+            responseCallback.onFailure(call, error)
         }
 
         override fun isExecuted(): Boolean = executed.get()
