@@ -16,7 +16,9 @@ import app.shoalwatch.R
 import app.shoalwatch.ShoalwatchApp
 import app.shoalwatch.data.servers.Account
 import app.shoalwatch.data.servers.Server
+import app.shoalwatch.data.servers.Session
 import app.shoalwatch.net.ServerAddress
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
@@ -36,7 +38,9 @@ import java.util.Collections
  * shows kid's playing card; the window is FLAG_SECURE; Stop, then "Stop playback", sends exactly one Stop with ben's token in
  * `Authorization` and nothing token-like in the query. Then the active account becomes kid: within 5 s the admin screen is gone,
  * the window is no longer secure, Servers shows no "Server admin", and no admin path but `/Users/Me` was asked with kid's token.
- * Clean-up runs even if seeding fails part way (as BrowseSmokeTest).
+ * Clean-up runs even if seeding fails part way (as BrowseSmokeTest): it removes the seeded server and both accounts, then makes
+ * whichever account was active before the test active again. For the emulator: it is never meant for a phone with real accounts,
+ * but if it ever runs on one it leaves that phone's active profile as it found it.
  */
 @RunWith(AndroidJUnit4::class)
 class AdminSmokeTest {
@@ -48,6 +52,9 @@ class AdminSmokeTest {
     private val sessionId = "sess0kid0tv"
     private val mock = MockWebServer()
     private val seen: MutableList<RecordedRequest> = Collections.synchronizedList(mutableListOf())
+    /** The account that was active before seeding (null: none), put back by the clean-up; [captured] once it was read. */
+    private var previous: Session? = null
+    private var captured = false
 
     private fun json(body: String) = MockResponse().setResponseCode(200).setHeader("Content-Type", "application/json").setBody(body)
 
@@ -92,6 +99,8 @@ class AdminSmokeTest {
             val graph = ShoalwatchApp.graph(ApplicationProvider.getApplicationContext<Context>())
             runBlocking {
                 graph.tokensWarmed.join()
+                previous = graph.serverCatalog.activeSession().first()
+                captured = true
                 graph.serverStore.upsertServer(
                     Server(
                         id = serverId, name = "Test Den", version = "10.11.0", homeAddress = ServerAddress.parse("http://127.0.0.1:${mock.port}"),
@@ -107,10 +116,18 @@ class AdminSmokeTest {
 
         override fun after() = cleanUp()
 
+        /** Each step on its own, so one failing never skips the rest. Safe if nothing was seeded or the mock never started. */
         private fun cleanUp() {
             runCatching {
                 val graph = ShoalwatchApp.graph(ApplicationProvider.getApplicationContext<Context>())
-                runBlocking { graph.serverStore.removeServer(serverId) }
+                runBlocking { graph.serverStore.removeServer(serverId) } // the server row, with both seeded accounts and their tokens
+            }
+            runCatching {
+                val back = previous
+                if (captured && back != null && back.serverId != serverId) {
+                    val graph = ShoalwatchApp.graph(ApplicationProvider.getApplicationContext<Context>())
+                    runBlocking { graph.serverCatalog.setActive(back.serverId, back.userId) }
+                }
             }
             runCatching { mock.shutdown() }
         }
