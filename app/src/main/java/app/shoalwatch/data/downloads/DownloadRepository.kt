@@ -43,6 +43,8 @@ class DownloadRepository internal constructor(
     private val paths: DownloadPaths,
     private val scope: CoroutineScope,
     private val io: CoroutineDispatcher = Dispatchers.IO,
+    /** The queue's `forget`: a removed download's remembered conversion goes with it. */
+    private val removed: (DownloadKey) -> Unit = {},
 ) : Downloads {
     override fun library(s: Session): Flow<OfflineLibrary> = guarded(EMPTY_LIBRARY) {
         combine(offline.observeInProgress(s.serverId, s.userId), offline.observeFilms(s.serverId, s.userId), offline.observeSeries(s.serverId, s.userId)) { running, films, series ->
@@ -123,7 +125,7 @@ class DownloadRepository internal constructor(
 
     override suspend fun remove(s: Session, itemId: String): RemoveOutcome = action {
         val outcome = store.removeOwner(s, itemId)
-        if (outcome is RemoveOutcome.Deleted) deleteFiles(paths, outcome.key)
+        if (outcome is RemoveOutcome.Deleted) { removed(outcome.key); deleteFiles(paths, outcome.key) }
         outcome
     }
 

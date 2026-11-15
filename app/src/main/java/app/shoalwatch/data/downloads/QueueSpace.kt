@@ -1,6 +1,7 @@
 package app.shoalwatch.data.downloads
 
 import app.shoalwatch.data.db.downloads.DownloadEntity
+import app.shoalwatch.data.playback.MediaPaths
 import java.io.File
 
 /** The queue's space and file rules for one row (pure apart from [Volumes] and [DownloadPaths]). */
@@ -28,6 +29,10 @@ internal object QueueSpace {
         val bitrate = row.quality.quality?.maxBitrate?.toLong() ?: return null
         return bitrate / 8 * ((row.runtimeMs?.takeIf { it > 0 } ?: UNKNOWN_RUNTIME_MS) / 1_000)
     }
+
+    /** A COMPLETE row must name the file it holds (a safe media source, and a container whose entry is [entry]), or nothing could open it (review I-4). */
+    fun names(paths: DownloadPaths, row: DownloadEntity, folder: File, entry: File): Boolean =
+        row.mediaSourceId?.let(MediaPaths::isSafeId) == true && entryOf(paths, row, folder)?.canonicalPath == entry.canonicalPath
 
     /** The saved copy's entry file: `hls/local.m3u8` for a conversion, else `media.<container>`; null before it is known. */
     fun entryOf(paths: DownloadPaths, row: DownloadEntity, folder: File): File? = when (val container = row.container) {

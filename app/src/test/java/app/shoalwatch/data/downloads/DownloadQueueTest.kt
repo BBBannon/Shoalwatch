@@ -7,6 +7,9 @@ import app.shoalwatch.data.playback.TrackPreferences
 import java.io.File
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -212,6 +215,43 @@ class DownloadQueueTest : DownloadQueueTestBase() {
         assertEquals("the same session, where it was", listOf(0, 2), hls.fetches.map { it.second })
         assertEquals(1, hls.opens.size)
         assertEquals(DownloadState.COMPLETE, download(f1)!!.state)
+    }
+
+    /** Tasks 11-12 review I-4: a remembered conversion belongs to its own row (its request), never to a new row of the same item. */
+    @Test fun aConversionRemovedAndAddedAgainAtAnotherQualityUsesANewConversionAndEndsWithItsOwnQuality() {
+        queued(a, f1, quality = DownloadQuality.MEDIUM)
+        convertible()
+        hls.onSegment = { n -> if (n == 2) runBlocking { store.setPaused(a, f1.id, true) } }
+        val q = queue()
+        drain(q)
+        assertEquals(DownloadState.PAUSED, download(f1)!!.state)
+        hls.onSegment = {}
+        runBlocking { store.removeOwner(a, f1.id) }
+        assertNull(download(f1))
+        clock += 60_000 // a minute later: well inside the 30 minutes a conversion is remembered
+        queued(a, f1, quality = DownloadQuality.LOW)
+        convertible()
+        assertEquals(QueueRun.Drained, drain(q))
+        assertEquals("a new conversion", 2, hls.opens.size)
+        assertEquals(app.shoalwatch.data.playback.Quality.MBPS_1_5, hls.opens[1].plan.request.quality)
+        val row = download(f1)!!
+        assertEquals(DownloadState.COMPLETE, row.state)
+        assertEquals(DownloadQuality.LOW, row.quality)
+        assertEquals("hls", row.container)
+        assertNotNull(row.mediaSourceId)
+    }
+
+    @Test fun aRowWithNoContainerOrMediaSourceIsNeverMarkedComplete() {
+        queued(a, f1)
+        playable()
+        val q = queue()
+        files.steps += { c ->
+            val done = FakeFiles.whole()(c)
+            runBlocking { store.update(DownloadKey(a.serverId, f1.id)) { it.copy(mediaSourceId = null) } } // the record lost its source
+            done
+        }
+        drain(q)
+        assertNotEquals(DownloadState.COMPLETE, download(f1)!!.state)
     }
 
     @Test fun recheckMarksADamagedCopy() {

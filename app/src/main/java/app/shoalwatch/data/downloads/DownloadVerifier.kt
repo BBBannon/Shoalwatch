@@ -2,6 +2,7 @@ package app.shoalwatch.data.downloads
 
 import app.shoalwatch.data.playback.CodecSupport
 import app.shoalwatch.data.playback.DirectPlayVideo
+import app.shoalwatch.data.playback.MediaPaths
 import app.shoalwatch.data.playback.engine.PlayabilityProbe
 import java.io.File
 import java.io.IOException
@@ -38,6 +39,7 @@ internal class DownloadVerifier(private val probe: PlayabilityProbe, private val
 
     /** [audioListed]: the item's own tracks named audio (a film with no sound may have none). */
     override suspend fun verify(media: SavedMedia, expectedBytes: Long?, runtimeMs: Long?, hlsShape: List<Long>?, audioListed: Boolean): Verdict {
+        if (!MediaPaths.isSafeId(media.mediaSourceId)) return Verdict.Bad(RECORD) // never COMPLETE without its media source (review I-4)
         val files = withContext(io) { mediaFiles(media, expectedBytes, hlsShape) } ?: return Verdict.Bad(INCOMPLETE)
         if (!withContext(io) { signed(media, files) }) return Verdict.Bad(SIGNATURE)
         val sha = withContext(io) { sha256(files) } ?: return Verdict.Bad(INCOMPLETE)
@@ -145,6 +147,8 @@ internal class DownloadVerifier(private val probe: PlayabilityProbe, private val
         const val VIDEO_CODEC = "video-codec"
         const val AUDIO_CODEC = "audio-codec"
         const val LENGTH = "length"
+        /** The row does not name the file it holds (no container or media source): never COMPLETE (review I-4). */
+        const val RECORD = "record"
 
         const val SEGMENT_NAME = "seg-%05d.ts"
         const val MAX_PLAYLIST_BYTES = 2L * 1024 * 1024

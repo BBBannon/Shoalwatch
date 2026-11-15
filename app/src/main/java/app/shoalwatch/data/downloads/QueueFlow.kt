@@ -26,3 +26,11 @@ internal class QueueJob(val key: DownloadKey, val position: Int, val of: Int, va
 
 /** What was fetched: what the verifier needs to know about it. */
 internal class QueueFetched(val entry: File, val hls: Boolean, val shape: List<Long>?, val audioListed: Boolean)
+
+/**
+ * A remembered conversion, with the request of the row it was opened for (Tasks 11-12 review I-4): it is reused only for that
+ * same row (same `requestedAt`, same quality, its container already HLS), never for a new row of the same item.
+ */
+internal class HeldConversion(val conv: LiveConversion, private val requestedAt: Long, private val quality: DownloadQuality) {
+    fun isFor(row: app.shoalwatch.data.db.downloads.DownloadEntity) = row.requestedAt == requestedAt && row.quality == quality && row.container == QueueSpace.HLS
+}

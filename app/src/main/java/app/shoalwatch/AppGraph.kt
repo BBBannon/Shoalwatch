@@ -160,7 +160,10 @@ class AppGraph(private val appContext: Context) {
     }
     /** What screens use for downloads (see "Downloads seam" in docs/ARCHITECTURE.md). */
     val downloads: Downloads by lazy {
-        DownloadRepository(downloadStore, database.offlineLibraryDao(), database.itemDao(), downloadPlanner, downloadScheduler, downloadPrefs, downloadVolumes, downloadPaths, appScope)
+        DownloadRepository(
+            downloadStore, database.offlineLibraryDao(), database.itemDao(), downloadPlanner, downloadScheduler, downloadPrefs, downloadVolumes, downloadPaths, appScope,
+            removed = { downloadQueue.forget(it) },
+        )
     }
     /** The removal rules and the start-up tidy-up (see "Removal rules" in docs/ARCHITECTURE.md). */
     internal val downloadHousekeeping: DownloadHousekeeping by lazy {

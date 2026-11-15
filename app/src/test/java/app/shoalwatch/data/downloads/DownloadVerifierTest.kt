@@ -72,6 +72,13 @@ class DownloadVerifierTest {
         assertEquals("stable", v, verifier().verify(original(bytes), bytes.size.toLong(), 10_000, null))
     }
 
+    @Test fun aCopyWithNoMediaSourceIsNeverGood() = runTest {
+        val bytes = mp4()
+        val good = original(bytes)
+        val unnamed = SavedMedia(SERVER, ITEM, good.folder, good.entry, hls = false, quality = DownloadQuality.ORIGINAL, mediaSourceId = "")
+        assertEquals(Verdict.Bad("record"), verifier().verify(unnamed, bytes.size.toLong(), 10_000, null))
+    }
+
     @Test fun check1AShortFileIsIncomplete() = runTest {
         val bytes = mp4()
         assertEquals(Verdict.Bad("incomplete"), verifier().verify(original(bytes.copyOf(3_999)), bytes.size.toLong(), 10_000, null))

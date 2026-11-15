@@ -57,7 +57,10 @@ internal class DownloadQueue(
 ) : QueueDrain {
     private val drains = Mutex()
     private val starts = Mutex()
-    private val live = ConcurrentHashMap<DownloadKey, LiveConversion>()
+    private val live = ConcurrentHashMap<DownloadKey, HeldConversion>()
+
+    /** The download was removed: its remembered conversion goes with it. */
+    fun forget(key: DownloadKey) { live.remove(key) }
 
     /** RUNNING and VERIFYING back to QUEUED, only while no drain runs in this process (at start-up, after process death). */
     suspend fun requeueIfIdle() {
@@ -201,8 +204,10 @@ internal class DownloadQueue(
         val key = j.key
         var rerouted = false
         while (true) {
-            var conv = live[key]?.takeIf { clock.nowMs() - it.startedAtMs < liveConversionMaxAgeMs }
-            var from = current(key).segmentsDone
+            val row = current(key)
+            val held = live[key]?.takeIf { it.isFor(row) && clock.nowMs() - it.conv.startedAtMs < liveConversionMaxAgeMs }
+            var conv = held?.conv
+            var from = row.segmentsDone
             var audioListed = true
             if (conv == null) {
                 live.remove(key)
@@ -224,7 +229,7 @@ internal class DownloadQueue(
                     if (result.kind != AppError.Kind.OFFLINE || rerouted) throw QueueEnds(retry(key, result.kind))
                     rerouted = true
                     val again = server(key) { resolver.reroute(conv.resolved) }
-                    live[key] = LiveConversion(conv.itemId, again, conv.segments, conv.startedAtMs, conv.space, conv.budgetBytes, conv.bytesPerSecond)
+                    live[key] = HeldConversion(LiveConversion(conv.itemId, again, conv.segments, conv.startedAtMs, conv.space, conv.budgetBytes, conv.bytesPerSecond), row.requestedAt, row.quality)
                 }
             }
         }
@@ -259,7 +264,7 @@ internal class DownloadQueue(
             it.copy(segmentsDone = 0, segmentsTotal = opened.segments.size, mediaSourceId = plan.mediaSourceId, container = HLS,
                 doneBytes = 0, totalBytes = null, validator = null, audioIndex = own.firstOrNull()?.index ?: it.audioIndex)
         }
-        live[key] = opened
+        live[key] = HeldConversion(opened, row.requestedAt, row.quality)
         return opened to own.isNotEmpty()
     }
 
@@ -281,7 +286,7 @@ internal class DownloadQueue(
         write(j.key) { it.copy(state = DownloadState.VERIFYING) }
         val row = current(j.key)
         val media = SavedMedia(j.key.serverId, j.key.itemId, folder, fetched.entry, fetched.hls, row.quality, row.mediaSourceId.orEmpty())
-        val verdict = verifier.verify(media, if (fetched.hls) null else row.totalBytes, row.runtimeMs, fetched.shape, fetched.audioListed)
+        val verdict = if (!QueueSpace.names(paths, row, folder, fetched.entry)) Verdict.Bad(RECORD) else verifier.verify(media, if (fetched.hls) null else row.totalBytes, row.runtimeMs, fetched.shape, fetched.audioListed)
         val at = store.stamp()
         when (verdict) {
             is Verdict.Good -> {
@@ -386,6 +391,7 @@ internal class DownloadQueue(
 
     private companion object {
         const val TAG = "DownloadQueue"
+        const val RECORD = "record"
         val ACTIVE = setOf(DownloadState.RUNNING, DownloadState.VERIFYING)
         const val HLS = QueueSpace.HLS
     }

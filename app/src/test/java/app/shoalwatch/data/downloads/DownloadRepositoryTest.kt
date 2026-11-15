@@ -30,7 +30,7 @@ class DownloadRepositoryTest : DownloadHousekeepingTestBase() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         prefs = DownloadPrefs(context.getSharedPreferences("repository-test", 0).also { it.edit().clear().commit() })
         val planner = DownloadPlanner(app.shoalwatch.ui.browse.FakeLibrary(), db.itemDao(), facts, { _, _ -> fixtureInfo("direct-play.json") }, db.downloadDao(), fake.volumes, prefs, kotlinx.coroutines.Dispatchers.Unconfined)
-        repo = DownloadRepository(store, db.offlineLibraryDao(), db.itemDao(), planner, scheduler, prefs, fake.volumes, paths, scope, kotlinx.coroutines.Dispatchers.Unconfined)
+        repo = DownloadRepository(store, db.offlineLibraryDao(), db.itemDao(), planner, scheduler, prefs, fake.volumes, paths, scope, kotlinx.coroutines.Dispatchers.Unconfined) { forgotten += it }
     }
 
     private fun plan(s: app.shoalwatch.data.servers.Session, vararg items: app.shoalwatch.data.library.Item, shareOnly: Boolean = false) = DownloadPlan(
@@ -66,6 +66,8 @@ class DownloadRepositoryTest : DownloadHousekeepingTestBase() {
         assertFalse(kicked())
     }
 
+    private val forgotten = mutableListOf<DownloadKey>()
+
     @Test fun removeGivesEachOutcome() = runBlocking {
         queued(a, f1)
         seen(b, f1)
@@ -74,8 +76,10 @@ class DownloadRepositoryTest : DownloadHousekeepingTestBase() {
         assertEquals(RemoveOutcome.KeptForOthers, repo.remove(a, f1.id))
         assertTrue(files.exists())
         assertEquals(RemoveOutcome.NotYours, repo.remove(a, f1.id))
+        assertTrue("kept for others: the queue still remembers it", forgotten.isEmpty())
         assertEquals(RemoveOutcome.Deleted(DownloadKey(S1, f1.id)), repo.remove(b, f1.id))
         assertFalse(files.exists())
+        assertEquals("deleted: its remembered conversion is forgotten (review I-4)", listOf(DownloadKey(S1, f1.id)), forgotten)
     }
 
     @Test fun pauseResumeRetryAndTheirAllFormsChangeOnlyTheCallersOwn() = runBlocking {
