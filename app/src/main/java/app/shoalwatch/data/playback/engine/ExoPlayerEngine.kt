@@ -163,6 +163,7 @@ class ExoPlayerEngine(context: Context) : PlayerEngine {
             session = MediaSession.Builder(appContext, sessionPlayer).setId(SESSION_ID + "-" + sessions.incrementAndGet()).setCallback(ControllerRules)
                 .setBitmapLoader(NoArtwork).build()
         }
+        textOff() // before the new item: Media3 must never pick one of its text tracks by default (Milestone 3 carried n-1)
         player.setMediaItem(MediaItems.build(item, title, subtitle), startMs)
         player.prepare()
         player.playWhenReady = playWhenReady
@@ -228,6 +229,13 @@ class ExoPlayerEngine(context: Context) : PlayerEngine {
             wanted.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
         }
         val parameters = wanted.build()
+        if (parameters != player.trackSelectionParameters) player.trackSelectionParameters = parameters
+    }
+
+    /** Text off and no text override; [pictureOrdinal] is kept, and applied to the new item's tracks once they are known. */
+    private fun textOff() {
+        val parameters = player.trackSelectionParameters.buildUpon().clearOverridesOfType(C.TRACK_TYPE_TEXT)
+            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
         if (parameters != player.trackSelectionParameters) player.trackSelectionParameters = parameters
     }
 

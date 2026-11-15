@@ -60,6 +60,8 @@ class PlayerViewModel(
     private var infoJob: Job? = null
     private var lastSleep: SleepState = SleepState.Off
     private var pendingSeekMs: Long? = null
+    /** The host's last stop or start, kept for a controller made later (Milestone 3 carried n-2): its first load then starts paused. */
+    private var hostStopped = false
     /** Restored after the process was ended: the episode that was playing (it may not be the route's), and so where to seek. */
     private var restoredItem: String? = null
 
@@ -108,6 +110,7 @@ class PlayerViewModel(
         controller = c
         _state.update { it.copy(session = s) }
         viewModelScope.launch { c.state.collect(::onPlayback) }
+        if (hostStopped) c.onHostStopped()
         c.setQuality(quality.start()) // the saved default, or 8 Mbps on mobile data (final review I-2)
         // Restored: the episode that was playing (after Up next it is not the route's), back at its own position below.
         restoredItem?.let { c.open(it, StartFrom.RESUME) } ?: c.open(itemId, from)
@@ -222,11 +225,12 @@ class PlayerViewModel(
         c.open(c.state.value.itemId ?: itemId, StartFrom.RESUME)
     }
 
-    /** The activity stopped: pause and report (no background playback in this milestone). */
-    fun onHostStopped() { controller?.onHostStopped() }
+    /** The activity stopped: pause and report (no background playback in this milestone); remembered until it starts again. */
+    fun onHostStopped() { hostStopped = true; controller?.onHostStopped() }
 
     /** Back in front: the controls show (playback stays paused until the user plays); a headset may play again. */
     fun onHostStarted() {
+        hostStopped = false
         controller?.onHostStarted()
         showControls()
     }
