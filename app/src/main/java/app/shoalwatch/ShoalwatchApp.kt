@@ -14,6 +14,7 @@ class ShoalwatchApp : Application(), SingletonImageLoader.Factory {
     override fun onCreate() {
         super.onCreate()
         graph.tokensWarmed // start loading saved sign-ins
+        graph.activePlayback // start following the active session now: playback is refused until it is known
     }
 
     override fun newImageLoader(context: PlatformContext): ImageLoader = graph.imageLoader

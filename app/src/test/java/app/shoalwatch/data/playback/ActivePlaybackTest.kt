@@ -20,6 +20,7 @@ class ActivePlaybackTest {
     private fun runMain() { while (posted.isNotEmpty()) posted.removeFirst()() }
 
     @Test fun endForTheRegisteredAccountEndsItSynchronouslyAndExactlyOnce() {
+        active.sessionChanged(BEN)
         begin(BEN, "ben")
         active.end(BEN.serverId, BEN.userId)
         assertEquals(listOf("ben:SIGNED_OUT"), ended)
@@ -29,6 +30,7 @@ class ActivePlaybackTest {
     }
 
     @Test fun endForAnotherAccountDoesNothing() {
+        active.sessionChanged(BEN)
         begin(BEN, "ben")
         active.end(AMY.serverId, AMY.userId)
         active.end("0123456789abcdef0123456789abcdef")
@@ -36,12 +38,14 @@ class ActivePlaybackTest {
     }
 
     @Test fun removingTheServerEndsAnySessionOfIt() {
+        active.sessionChanged(AMY)
         begin(AMY, "amy")
         active.end(AMY.serverId)
         assertEquals(listOf("amy:SIGNED_OUT"), ended)
     }
 
     @Test fun releaseThenEndDoesNothing() {
+        active.sessionChanged(BEN)
         val token = begin(BEN, "ben")
         active.release(token)
         active.end(BEN.serverId, BEN.userId)
@@ -50,6 +54,7 @@ class ActivePlaybackTest {
     }
 
     @Test fun anOldTokenCannotReleaseANewerPlayback() {
+        active.sessionChanged(BEN)
         val old = begin(BEN, "first")
         begin(BEN, "second")
         active.release(old)
@@ -57,13 +62,44 @@ class ActivePlaybackTest {
         assertEquals(listOf("first:SESSION_CHANGED", "second:SIGNED_OUT"), ended)
     }
 
-    @Test fun registeringASecondSessionEndsTheFirst() {
+    @Test fun registeringASecondPlaybackEndsTheFirst() {
+        active.sessionChanged(BEN)
+        begin(BEN, "first")
+        begin(BEN, "second")
+        assertEquals(listOf("first:SESSION_CHANGED"), ended)
+    }
+
+    @Test fun aBeginForASessionThatIsNoLongerActiveEndsAtOnceAndIsNotRegistered() {
+        active.sessionChanged(AMY) // handled while nothing was playing: no further change will arrive
         begin(BEN, "ben")
-        begin(AMY, "amy")
+        assertEquals(listOf("ben:SESSION_CHANGED"), ended)
+        active.end(BEN.serverId, BEN.userId)
+        active.sessionChanged(null)
+        assertEquals("ended once, and never registered", listOf("ben:SESSION_CHANGED"), ended)
+    }
+
+    @Test fun aBeginBeforeTheActiveSessionIsKnownIsRefused() {
+        begin(BEN, "ben")
         assertEquals(listOf("ben:SESSION_CHANGED"), ended)
     }
 
+    @Test fun aBeginWhenNobodyIsActiveIsRefused() {
+        active.sessionChanged(null)
+        begin(BEN, "ben")
+        assertEquals(listOf("ben:SESSION_CHANGED"), ended)
+    }
+
+    @Test fun aRefusedBeginLeavesTheActiveSessionsPlaybackAlone() {
+        active.sessionChanged(BEN)
+        begin(BEN, "ben")
+        begin(AMY, "amy")
+        assertEquals(listOf("amy:SESSION_CHANGED"), ended)
+        active.sessionChanged(AMY)
+        assertEquals(listOf("amy:SESSION_CHANGED", "ben:SESSION_CHANGED"), ended)
+    }
+
     @Test fun anotherActiveSessionEndsPlaybackAsSessionChangedWhileTheOldAccountIsStillSignedIn() {
+        active.sessionChanged(BEN)
         begin(BEN, "ben")
         active.sessionChanged(BEN)
         assertTrue("the same session is no change", ended.isEmpty())
@@ -72,6 +108,7 @@ class ActivePlaybackTest {
     }
 
     @Test fun aSessionChangeBecauseTheAccountWentIsSignedOut() {
+        active.sessionChanged(BEN)
         begin(BEN, "ben")
         signedIn -= BEN // the token is gone before the active account changes
         active.sessionChanged(null)
@@ -79,6 +116,7 @@ class ActivePlaybackTest {
     }
 
     @Test fun endFromAnotherThreadHopsToTheMainThread() {
+        active.sessionChanged(BEN)
         begin(BEN, "ben")
         onMain = false
         active.end(BEN.serverId, BEN.userId)
@@ -88,11 +126,13 @@ class ActivePlaybackTest {
     }
 
     @Test fun aHopThatArrivesAfterANewPlaybackBeganDoesNotEndTheNewOne() {
+        active.sessionChanged(BEN)
         begin(BEN, "ben")
         onMain = false
         active.end(BEN.serverId, BEN.userId)
         onMain = true
-        val old = begin(AMY, "amy") // registered before the hop ran: Ben's playback ends as SESSION_CHANGED here
+        active.sessionChanged(AMY) // before the hop ran: Ben's playback ends as SESSION_CHANGED here
+        val old = begin(AMY, "amy")
         runMain()
         assertEquals(listOf("ben:SESSION_CHANGED"), ended)
         active.release(old)

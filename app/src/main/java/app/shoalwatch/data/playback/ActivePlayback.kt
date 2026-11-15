@@ -15,6 +15,10 @@ enum class EndReason { SESSION_CHANGED, SIGNED_OUT }
  * the media session, the queue, the position and the title at once; a final stop for the old session is sent only for
  * [EndReason.SESSION_CHANGED], and only as that session.
  *
+ * Fails closed: a [begin] for anything but the active session last given to [sessionChanged] (another profile, nobody, or
+ * before the active session is known at all) is never registered and ends at once through its own `onEnd`, before anything
+ * can play. The active-session flow says each change only once, so a screen still holding an old session must not start it.
+ *
  * [isSignedIn]: whether that account still has its sign-in on this phone, so a change of active session caused by the
  * account going is [EndReason.SIGNED_OUT], never a reason to send anything. [onMain]: runs a block on the main thread.
  */
@@ -29,9 +33,20 @@ class ActivePlayback(
     /** Main thread only. */
     private var current: Holder? = null
 
-    /** Main thread. A playback already registered is ended first (another one is taking over). */
+    /** Main thread only: the session [sessionChanged] last named; [activeKnown] false until it has been told once. */
+    private var active: Session? = null
+    private var activeKnown = false
+
+    /**
+     * Main thread. A playback already registered is ended first (another one is taking over). A [session] that is not the active
+     * one is refused: `onEnd` is called at once and the returned token is never registered.
+     */
     fun begin(session: Session, onEnd: (EndReason) -> Unit): Token {
         val token = Token(session)
+        if (!activeKnown || active != session) {
+            onEnd(reasonFor(session))
+            return token
+        }
         val old = current
         current = Holder(token, onEnd)
         old?.let { it.onEnd(reasonFor(it.token.session)) }
@@ -50,6 +65,8 @@ class ActivePlayback(
 
     /** The active session is now [active] (null: none). Playback of any other session ends. */
     fun sessionChanged(active: Session?) = onMain {
+        this.active = active
+        activeKnown = true
         val playing = current?.token?.session ?: return@onMain
         if (playing != active) endIf(reasonFor(playing)) { it == playing }
     }
