@@ -40,6 +40,8 @@ data class SourceInfo(
     val transcoding: StreamSource?, val transcodeReasons: Set<TranscodeReason>,
     val video: VideoInfo?, val audio: List<AudioTrack>, val subtitles: List<SubtitleTrack>,
     val defaultAudioIndex: Int?, val defaultSubtitleIndex: Int?, val hasSegments: Boolean,
+    /** `MediaSourceInfo.Size`: a whole number in 1..256 GiB, else null. */
+    val sizeBytes: Long? = null,
 )
 
 data class VideoInfo(val codec: String?, val range: VideoRange, val bitDepth: Int?, val width: Int?, val height: Int?, val dvProfile: Int?)

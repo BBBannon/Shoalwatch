@@ -2,6 +2,7 @@ package app.shoalwatch.data.downloads
 
 import app.shoalwatch.data.library.ItemWithUserData
 import app.shoalwatch.data.playback.Quality
+import app.shoalwatch.data.servers.Session
 
 /** ORIGINAL is the server's own file; the rest are conversions at Milestone 3's streaming qualities. */
 enum class DownloadQuality(val quality: Quality?) { ORIGINAL(null), HIGH(Quality.MBPS_8), MEDIUM(Quality.MBPS_4), LOW(Quality.MBPS_1_5) }
@@ -42,3 +43,37 @@ data class OfflineSeries(val series: ItemWithUserData?, val seasons: List<Offlin
 data class SeriesSummary(val series: ItemWithUserData, val episodeCount: Int, val bytes: Long)
 
 data class OfflineLibrary(val inProgress: List<OfflineEntry>, val films: List<OfflineEntry>, val series: List<SeriesSummary>)
+
+/** What one press downloads. */
+sealed interface DownloadTarget {
+    /** A film or one episode. */
+    data class Item(val itemId: String) : DownloadTarget
+    data class Season(val seriesId: String, val seasonId: String) : DownloadTarget
+    /** Every numbered season and episodes with no season; Specials (season 0) are left out (they have their own season action). */
+    data class Series(val seriesId: String) : DownloadTarget
+    /** Every unwatched episode of the series for this user, Specials left out. */
+    data class Unwatched(val seriesId: String) : DownloadTarget
+}
+
+/**
+ * NOT_ALLOWED: CanDownload false, or a refusal (403, NotAllowed) from the original check. CONVERSION_UNCONFIRMED: CanDownload
+ * unknown and a conversion was needed (asked for, or because the original cannot play here). NOT_FOUND: the server did not
+ * return the item (or it is not a film or an episode).
+ */
+enum class SkipReason { NOT_ALLOWED, CONVERSION_UNCONFIRMED, NOT_FOUND }
+
+data class Skipped(val itemId: String, val reason: SkipReason)
+
+/** [shareOnly]: already on this phone; confirming only adds this profile as an owner ([estimatedBytes] 0). */
+data class PlannedItem(val itemId: String, val quality: DownloadQuality, val estimatedBytes: Long, val shareOnly: Boolean)
+
+data class DownloadPlan(
+    val session: Session, val requested: DownloadQuality, val items: List<PlannedItem>, val skipped: List<Skipped>,
+    /** Originals this phone cannot play as they are: planned as HIGH instead (the user sees this before confirming). */
+    val convertedInstead: Int,
+    val totalBytes: Long, val freeBytes: Long, val enoughSpace: Boolean, val storage: StorageKind, val volumeId: String?,
+    val mobileData: Boolean,
+    /** More than the 500-item cap matched: the plan holds the first 500 in episode order ("Only the first 500 episodes are included."). */
+    val capped: Boolean = false,
+) { override fun toString() = "DownloadPlan(items=${items.size})" }
+

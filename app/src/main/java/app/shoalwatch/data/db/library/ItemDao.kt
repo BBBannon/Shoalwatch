@@ -84,6 +84,10 @@ abstract class ItemDao {
     @Query(EPISODES_SQL)
     abstract suspend fun getEpisodes(serverId: String, userId: String, seriesId: String, seasonId: String?): List<ItemRow>
 
+    /** A series' stored seasons this user was shown (a season row's own `seriesId`), in season order with Specials last. For the download planner. */
+    @Query(SEASONS_SQL)
+    abstract suspend fun getSeasons(serverId: String, userId: String, seriesId: String): List<ItemRow>
+
     @Query(SEARCH_SQL)
     protected abstract suspend fun searchByPattern(serverId: String, userId: String, pattern: String, kinds: List<String>, limit: Int): List<ItemRow>
 
@@ -231,6 +235,12 @@ abstract class ItemDao {
                 "WHERE i.serverId = :serverId AND i.seriesId = :seriesId AND i.kind = 'EPISODE' AND (:seasonId IS NULL OR i.seasonId = :seasonId) " +
                 "ORDER BY CASE WHEN i.parentIndexNumber IS NULL THEN 1 WHEN i.parentIndexNumber = 0 THEN 2 ELSE 0 END, COALESCE(i.parentIndexNumber, 0), " +
                 "i.indexNumber IS NULL, i.indexNumber, COALESCE(i.sortName, i.name), i.itemId"
+
+        private const val SEASONS_SQL =
+            "SELECT $ROW_COLUMNS $FROM_ITEMS_AND_USER_DATA" +
+                "WHERE i.serverId = :serverId AND i.seriesId = :seriesId AND i.kind = 'SEASON' " +
+                "ORDER BY CASE WHEN i.indexNumber IS NULL THEN 1 WHEN i.indexNumber = 0 THEN 2 ELSE 0 END, COALESCE(i.indexNumber, 0), " +
+                "COALESCE(i.sortName, i.name), i.itemId"
 
         private const val SEARCH_SQL =
             "SELECT $ROW_COLUMNS $FROM_ITEMS_AND_USER_DATA" +

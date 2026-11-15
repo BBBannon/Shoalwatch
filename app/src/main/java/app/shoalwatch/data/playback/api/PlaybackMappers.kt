@@ -16,6 +16,8 @@ import app.shoalwatch.data.playback.VideoRange
 import app.shoalwatch.data.servers.JellyfinId
 import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.longOrNull
 
 /*
  * The S11 boundary for playback: response DTOs become validated models here and nowhere else (see "Playback endpoints" in
@@ -29,6 +31,7 @@ private const val MAX_SEGMENTS = 200
 private const val MAX_INDEX = 10_000L
 private const val MAX_LABEL = 120
 private const val MAX_BITRATE = 1_000_000_000L
+private const val MAX_SIZE = 256L * 1024 * 1024 * 1024 // MediaSourceInfo.Size: 1..256 GiB, as the download facts
 private const val MAX_SIDE = 16_384L
 private const val MAX_REASONS = 32
 private val MAX_TICKS = Ticks.fromMs(48L * 60 * 60 * 1000)
@@ -112,6 +115,7 @@ private fun MediaSourceDto.toSourceInfo(): SourceInfo? {
         defaultAudioIndex = defaultAudioStreamIndex?.takeIf { it in 0..MAX_INDEX }?.toInt()?.takeIf { i -> audio.any { it.index == i } },
         defaultSubtitleIndex = defaultSubtitleStreamIndex?.takeIf { it in 0..MAX_INDEX }?.toInt()?.takeIf { i -> subtitles.any { it.index == i } },
         hasSegments = hasSegments == true,
+        sizeBytes = (size as? JsonPrimitive)?.takeIf { !it.isString }?.longOrNull?.takeIf { it in 1..MAX_SIZE },
     )
 }
 

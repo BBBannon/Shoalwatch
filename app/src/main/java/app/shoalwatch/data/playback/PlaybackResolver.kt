@@ -56,6 +56,29 @@ class PlaybackResolver internal constructor(
      */
     suspend fun reroute(resolved: Resolved): Resolved = Resolved(resolved.plan, route(resolved.route.session))
 
+    /**
+     * Can the original play here as it is? PlaybackInfo with this phone's profile at MAXIMUM, EnableDirectPlay true and
+     * EnableDirectStream, EnableTranscoding and both stream copies false, so the server sets up no conversion. Used by the
+     * download planner (Milestone 4); makes no route. Throws AppError (the gateway's, unchanged).
+     */
+    internal suspend fun checkOriginal(s: Session, itemId: String): PlaybackInfo {
+        val profile = withContext(io) { DeviceProfileBuilder.build(capabilities.read(), Quality.MAXIMUM, false, null) }
+        val body = PlaybackInfoBody(
+            userId = s.userId,
+            maxStreamingBitrate = Quality.MAXIMUM.maxBitrate,
+            audioStreamIndex = null,
+            subtitleStreamIndex = -1,
+            deviceProfile = profile,
+            enableDirectPlay = true,
+            enableDirectStream = false,
+            enableTranscoding = false,
+            allowVideoStreamCopy = false,
+            allowAudioStreamCopy = false,
+            alwaysBurnInSubtitleWhenTranscoding = false,
+        )
+        return gateway.playbackInfo(s, itemId, body)
+    }
+
     private suspend fun planned(s: Session, request: PlaybackRequest, info: PlaybackInfo): Resolved =
         Resolved(PlaybackDecision.decide(request, info), route(s))
 
