@@ -1,5 +1,8 @@
 package app.shoalwatch.data.playback.engine
 
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.common.util.Util
 import androidx.test.core.app.ApplicationProvider
 import app.shoalwatch.data.playback.MediaPaths
 import app.shoalwatch.data.playback.PlaybackFakes
@@ -48,6 +51,32 @@ class ExoPlayerEngineTest {
         engine.setHostStopped(true)
         engine.play()
         assertTrue("the app's own play is not a controller's", engine.playWhenReady)
+        engine.release()
+    }
+
+    /**
+     * Final-fixes review m-3: the session's play action (`Util.handlePlayButtonAction`, which every controller's play reaches)
+     * prepares an idle (failed) player and rewinds an ended one before its refused `play()`; while the host is stopped neither
+     * may happen.
+     */
+    @OptIn(UnstableApi::class)
+    @Test fun whileTheHostIsStoppedAPlayButtonNeitherPreparesAFailedPlayerNorRewindsAnEndedOne() {
+        val engine = ExoPlayerEngine(context)
+        engine.load(item(), 0, playWhenReady = false)
+        val session = engine.sessionPlayer
+        session.stop() // idle, as after a playback error
+        engine.setHostStopped(true)
+        Util.handlePlayButtonAction(session)
+        assertEquals("not prepared again", Player.STATE_IDLE, session.playbackState)
+        session.seekTo(5_000)
+        session.seekToDefaultPosition()
+        assertEquals("not sent back to the start", 5_000L, session.currentPosition)
+        assertFalse(engine.playWhenReady)
+        engine.setHostStopped(false)
+        session.seekToDefaultPosition()
+        assertEquals("allowed again once the host starts", 0L, session.currentPosition)
+        Util.handlePlayButtonAction(session)
+        assertTrue("prepared again once the host starts", session.playbackState != Player.STATE_IDLE)
         engine.release()
     }
 
