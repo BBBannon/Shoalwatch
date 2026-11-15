@@ -1,0 +1,2 @@
+# Fixtures are byte-exact (bom-crlf.srt must keep its CRLF line ends)
+* -text

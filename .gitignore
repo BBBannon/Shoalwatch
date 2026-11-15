@@ -22,3 +22,7 @@ tasks/
 
 # Agent scratch
 .superpowers/
+
+# Python
+__pycache__/
+*.pyc
