@@ -9,6 +9,8 @@ import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.test.core.app.ApplicationProvider
 import app.shoalwatch.data.playback.CaptionDefaults
 import app.shoalwatch.data.playback.PlaybackControllerTestBase
+import app.shoalwatch.data.playback.Quality
+import app.shoalwatch.data.playback.QualityDefault
 import app.shoalwatch.data.playback.PlaybackState
 import app.shoalwatch.data.playback.PlaybackState.Phase
 import app.shoalwatch.data.playback.SleepChoice
@@ -52,6 +54,9 @@ internal class PlayerViewModelTest : PlaybackControllerTestBase() {
     private val context: Context = ApplicationProvider.getApplicationContext()
     private val settings = SubtitleSettings(context.getSharedPreferences("player_vm_test", Context.MODE_PRIVATE)) { CaptionDefaults(false, null, 1f) }
     private val made = mutableListOf<Session>()
+    private val qualityPrefs = context.getSharedPreferences("player_vm_quality_test", Context.MODE_PRIVATE).also { it.edit().clear().commit() }
+    private var metered = false
+    private val quality = QualityDefault(qualityPrefs) { metered }
     private val store = ViewModelStore()
 
     @Before fun main() = Dispatchers.setMain(dispatcher)
@@ -62,7 +67,7 @@ internal class PlayerViewModelTest : PlaybackControllerTestBase() {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T =
                 // The controller runs on the test's background scope: its endless tick loops would keep a ViewModel scope from ever going idle.
-                PlayerViewModel(ep1, from, saved, catalog, { s, _ -> made += s; controllerFor(s, backgroundScope) }, settings) as T
+                PlayerViewModel(ep1, from, saved, catalog, { s, _ -> made += s; controllerFor(s, backgroundScope) }, settings, quality) as T
         }
         return ViewModelProvider.create(store, factory)[PlayerViewModel::class.java].also { runCurrent() }
     }
@@ -257,5 +262,27 @@ internal class PlayerViewModelTest : PlaybackControllerTestBase() {
         val vm = vm()
         vm.toggleLock(); assertTrue(vm.state.value.locked)
         vm.toggleLock(); assertFalse(vm.state.value.locked)
+    }
+
+    // ---- the default quality (final review I-2)
+
+    @Test fun onMobileDataWithNothingSavedTheFilmStartsAtEightMegabits() = runTest(dispatcher) {
+        metered = true
+        val vm = vm()
+        assertEquals(8_000_000, gateway.bodies.first().maxStreamingBitrate)
+        assertEquals(Quality.MBPS_8, vm.state.value.playback.quality)
+    }
+
+    @Test fun onAnUnmeteredNetworkWithNothingSavedTheFilmStartsAtTheBest() = runTest(dispatcher) {
+        vm()
+        assertEquals(Quality.MAXIMUM.maxBitrate, gateway.bodies.first().maxStreamingBitrate)
+    }
+
+    @Test fun aQualityChosenInTheSheetIsTheNextFilmsStart() = runTest(dispatcher) {
+        val vm = vm(); playing(vm)
+        vm.setQuality(Quality.MBPS_4); runCurrent()
+        assertEquals(Quality.MBPS_4, quality.start())
+        metered = true
+        assertEquals("a saved choice wins on mobile data too", Quality.MBPS_4, quality.start())
     }
 }

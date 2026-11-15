@@ -8,6 +8,7 @@ import app.shoalwatch.data.playback.PlaybackController
 import app.shoalwatch.data.playback.PlaybackState
 import app.shoalwatch.data.playback.PlaybackState.Phase
 import app.shoalwatch.data.playback.Quality
+import app.shoalwatch.data.playback.QualityDefault
 import app.shoalwatch.data.playback.SleepChoice
 import app.shoalwatch.data.playback.SleepState
 import app.shoalwatch.data.playback.StartFrom
@@ -36,6 +37,7 @@ import kotlinx.coroutines.launch
  *   [EndReason.SIGNED_OUT], as `ActivePlayback` decides) and sets [PlayerUiState.leave]. A closed controller leaves too.
  * - **Saved state** holds only the owner's ids, the playing item's id and its position, never a title. Restored for a different
  *   session: nothing plays; for the same one, that item at that position.
+ * - **Quality** starts at [QualityDefault.start]; a choice in the Quality sheet becomes the saved default.
  * - **Controls** hide 4 s after the last touch while playing, never with touch exploration on, a sheet open, or paused.
  */
 class PlayerViewModel(
@@ -45,6 +47,7 @@ class PlayerViewModel(
     private val catalog: ServerCatalog,
     private val controllerFactory: (Session, CoroutineScope) -> PlaybackController,
     private val subtitleSettings: SubtitleSettings,
+    private val quality: QualityDefault,
 ) : ViewModel() {
     private val _state = MutableStateFlow(PlayerUiState(appearance = subtitleSettings.appearance.value))
     val state: StateFlow<PlayerUiState> = _state.asStateFlow()
@@ -103,6 +106,7 @@ class PlayerViewModel(
         controller = c
         _state.update { it.copy(session = s) }
         viewModelScope.launch { c.state.collect(::onPlayback) }
+        c.setQuality(quality.start()) // the saved default, or 8 Mbps on mobile data (final review I-2)
         // Restored: the episode that was playing (after Up next it is not the route's), back at its own position below.
         restoredItem?.let { c.open(it, StartFrom.RESUME) } ?: c.open(itemId, from)
     }
@@ -189,7 +193,8 @@ class PlayerViewModel(
     fun selectAudio(index: Int) = touched { it.selectAudio(index) }
     fun selectSubtitle(index: Int?) = touched { it.selectSubtitle(index) }
     fun burnIn(index: Int) = touched { it.burnInSubtitle(index) }
-    fun setQuality(q: Quality) = touched { it.setQuality(q) }
+    /** The user's choice is also the saved default for every later film (a device setting). */
+    fun setQuality(q: Quality) = touched { quality.choose(q); it.setQuality(q) }
     fun setSpeed(speed: Float) = touched { it.setSpeed(speed) }
     fun setDelay(ms: Int) = touched { it.setSubtitleDelay(ms) }
     fun dismissSubtitleNotice() { controller?.dismissSubtitleNotice() }

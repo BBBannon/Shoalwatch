@@ -9,6 +9,7 @@ import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.test.core.app.ApplicationProvider
 import app.shoalwatch.data.playback.CaptionDefaults
 import app.shoalwatch.data.playback.PlaybackControllerTestBase
+import app.shoalwatch.data.playback.QualityDefault
 import app.shoalwatch.data.playback.PlaybackState.Phase
 import app.shoalwatch.data.playback.SleepChoice
 import app.shoalwatch.data.playback.StartFrom
@@ -57,7 +58,8 @@ internal class PlayerViewModelImmediateTest : PlaybackControllerTestBase() {
         val factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T =
-                PlayerViewModel(ep1, StartFrom.RESUME, SavedStateHandle(), catalog, { s, _ -> controllerFor(s, backgroundScope) }, settings) as T
+                PlayerViewModel(ep1, StartFrom.RESUME, SavedStateHandle(), catalog, { s, _ -> controllerFor(s, backgroundScope) }, settings,
+                    QualityDefault(context.getSharedPreferences("player_vm_immediate_test", Context.MODE_PRIVATE)) { false }) as T
         }
         return ViewModelProvider.create(store, factory)[PlayerViewModel::class.java].also { runCurrent() }
     }

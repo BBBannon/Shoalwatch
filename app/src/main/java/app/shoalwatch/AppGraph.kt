@@ -21,6 +21,7 @@ import app.shoalwatch.data.playback.ActivePlayback
 import app.shoalwatch.data.playback.AndroidDeviceCapabilities
 import app.shoalwatch.data.playback.EpisodeNavigator
 import app.shoalwatch.data.playback.PlaybackController
+import app.shoalwatch.data.playback.QualityDefault
 import app.shoalwatch.data.playback.engine.ExoPlayerEngine
 import app.shoalwatch.data.playback.engine.PlayerEngine
 import app.shoalwatch.data.servers.Session
@@ -141,6 +142,10 @@ class AppGraph(private val appContext: Context) {
     /** Subtitle size, colour, background and edge: a device setting, following the phone's caption settings until changed. */
     val subtitleSettings: SubtitleSettings by lazy {
         SubtitleSettings(appContext.getSharedPreferences("playback_prefs", Context.MODE_PRIVATE)) { systemCaptionDefaults(appContext) }
+    }
+    /** The quality a film starts at: a device setting in the same private prefs file (see "Player controller" in docs/ARCHITECTURE.md). */
+    val qualityDefault: QualityDefault by lazy {
+        QualityDefault(appContext.getSharedPreferences("playback_prefs", Context.MODE_PRIVATE)) { QualityDefault.activeNetworkMetered(appContext) }
     }
     /** Fetches and parses text subtitle files, off the main thread. */
     internal val subtitleLoader: SubtitleLoader by lazy { SubtitleLoader(playbackGateway, Dispatchers.Default) }
