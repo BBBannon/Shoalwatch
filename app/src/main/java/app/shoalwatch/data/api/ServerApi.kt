@@ -18,6 +18,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.DeserializationStrategy
 import okhttp3.Call
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
 import okhttp3.RequestBody
@@ -88,6 +89,62 @@ class ServerApi(
     ) {
         val body = jsonBody?.toRequestBody(JSON) ?: ByteArray(0).toRequestBody(null)
         execute(session, "POST", path, query, body, retry) { }
+    }
+
+    /**
+     * POST with a JSON body, decoded as JSON (PlaybackInfo). Same rules as [get] and [post]: bounded on [maxBytes], undecodable is
+     * `SERVER_ERROR`, a 401 signs the account out locally. Not retried unless the caller opts in with [retry].
+     */
+    suspend fun <T> postForJson(
+        session: Session,
+        path: String,
+        query: List<Pair<String, String>> = emptyList(),
+        jsonBody: String,
+        deserializer: DeserializationStrategy<T>,
+        maxBytes: Long = DEFAULT_MAX_BYTES,
+        retry: Boolean = false,
+    ): T = execute(session, "POST", path, query, jsonBody.toRequestBody(JSON), retry) { response ->
+        JsonBodies.decode(JsonBodies.readBounded(response, maxBytes, AppError.Kind.SERVER_ERROR), deserializer, AppError.Kind.SERVER_ERROR)
+    }
+
+    /**
+     * Where this session's media bytes come from (see "Media route" in docs/ARCHITECTURE.md). The same steps 1 to 3 as every call
+     * (warm gate, `awaitOnline`, the server read after it, the address still saved, the account's authenticated client), but no
+     * request is sent: the caller (the player) sends GET/HEAD requests through the route's guarded [MediaRoute.callFactory].
+     * Fails `OFFLINE` (nothing verified, or the verified address is no longer saved: re-checked), `SERVER_NOT_FOUND`,
+     * `NOT_SIGNED_IN` (no token for this account now), or `TLS_UNTRUSTED` (damaged pin). The route stops sending the moment the
+     * selector no longer has that address verified or the server's settings or accounts change (its client is evicted), and every
+     * request still reads the token live, so a sign-out stops it too. The player then asks for a new route.
+     */
+    internal suspend fun mediaRoute(session: Session): MediaRoute = withContext(io) {
+        store.awaitWarmed()
+        val online = selector.awaitOnline(session.serverId) ?: throw AppError.of(AppError.Kind.OFFLINE)
+        val server = store.server(session.serverId) ?: throw AppError.of(AppError.Kind.SERVER_NOT_FOUND)
+        if (online.address !in server.addresses) {
+            selector.refreshIfCurrent(session.serverId, online)
+            throw AppError.of(AppError.Kind.OFFLINE)
+        }
+        if (store.cachedToken(session.serverId, session.userId) == null) throw AppError.of(AppError.Kind.NOT_SIGNED_IN)
+        val net = ServerNet.authenticated(server.addresses, server, session.userId, device, store::cachedToken)
+        val base = online.address.value.toHttpUrl()
+        val state = selector.connection(session.serverId)
+        val client = clients.clientFor(net)
+        val guard = GuardedCallFactory(
+            client,
+            authority = online.address.authority,
+            videosPrefix = (base.pathSegments.filter { it.isNotEmpty() } + "videos").joinToString("/", prefix = "/"),
+            scheme = base.scheme,
+            // Still signed in, still the verified address, and still the client for the server's current settings (a settings or
+            // account change evicts it).
+            stale = {
+                when {
+                    store.cachedToken(session.serverId, session.userId) == null -> AppError.Kind.NOT_SIGNED_IN
+                    (state.value as? Connection.Online)?.address != online.address || !clients.isCurrent(client) -> AppError.Kind.OFFLINE
+                    else -> null
+                }
+            },
+        )
+        MediaRoute(session, base, guard, online)
     }
 
     /** DELETE; the response body is ignored. Not retried unless the caller opts in with [retry]. */

@@ -14,6 +14,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.net.Socket
 import java.security.Principal
@@ -53,6 +54,15 @@ class ServerClientsTest {
         assertEquals(config().hashCode(), config().hashCode())
         assertNotEquals(config(), config(authKey = "s1:u1"))
         assertFalse(config().toString().contains("example"))
+    }
+
+    @Test fun aClientIsCurrentUntilItsServerIsEvicted() {
+        val client = clients.clientFor(config(authKey = "s1:u1"))
+        assertTrue(clients.isCurrent(client))
+        clients.evict("s1", emptyList())
+        assertFalse(clients.isCurrent(client))
+        assertFalse("a rebuilt client is a new one", clients.isCurrent(client).also { clients.clientFor(config(authKey = "s1:u1")) })
+        assertFalse(clients.isCurrent(client))
     }
 
     @Test fun sameSettingsGiveTheSameClientAcrossSeparateConfigs() {

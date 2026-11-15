@@ -67,8 +67,11 @@ abstract class ServerApiTestBase {
         val refreshes = AtomicInteger()
         val globalRefreshes = AtomicInteger()
         val lastFailed = AtomicReference<Connection.Online?>()
-        override fun connection(serverId: String): StateFlow<Connection> = MutableStateFlow(Connection.Offline())
-        override suspend fun awaitOnline(serverId: String, timeoutMs: Long): Connection.Online? = answer(asks.incrementAndGet())
+        /** The live state: the last address [awaitOnline] verified (a test may set it, e.g. to `Checking`, to model a network change). */
+        val state = MutableStateFlow<Connection>(Connection.Offline())
+        override fun connection(serverId: String): StateFlow<Connection> = state
+        override suspend fun awaitOnline(serverId: String, timeoutMs: Long): Connection.Online? =
+            answer(asks.incrementAndGet()).also { if (it != null) state.value = it }
         override fun refresh() { globalRefreshes.incrementAndGet() }
         override fun refresh(serverId: String) = Unit
         override fun refreshIfCurrent(serverId: String, failed: Connection.Online) { refreshes.incrementAndGet(); lastFailed.set(failed) }

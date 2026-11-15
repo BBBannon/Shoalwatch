@@ -40,6 +40,12 @@ class ServerClients(private val factory: HttpClientFactory) {
         }
     }
 
+    /**
+     * Whether [client] is still the cached client for its configuration. False once [evict] (a change of the server's settings
+     * or accounts) or the LRU has dropped it: a holder of a long-lived client (a media route) must then stop using it.
+     */
+    fun isCurrent(client: OkHttpClient): Boolean = synchronized(clients) { clients.values.any { it === client } }
+
     /** How many clients are cached (for tests: proves a one-off left none behind). */
     internal fun cachedCount(): Int = synchronized(clients) { clients.size }
 
