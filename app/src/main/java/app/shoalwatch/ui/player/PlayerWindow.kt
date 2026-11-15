@@ -23,6 +23,9 @@ import androidx.lifecycle.LifecycleEventObserver
  * The window while the player shows: landscape by the sensor (the lock pins the current orientation), system bars hidden until
  * swiped in, the screen kept on while [keepOn] (playing or buffering; `View.keepScreenOn`, so no `WAKE_LOCK` permission). All
  * of it is put back when the player goes. Not set: `FLAG_SECURE` (screenshots of the player are allowed).
+ *
+ * A configuration change (the switch to landscape itself, split screen, dark mode, font size) recreates the activity: that is
+ * not leaving the player, so nothing is put back then (Task 8 review I-1); the new composition sets it all again.
  */
 @Composable
 internal fun PlayerWindow(keepOn: Boolean, locked: Boolean) {
@@ -34,6 +37,7 @@ internal fun PlayerWindow(keepOn: Boolean, locked: Boolean) {
         bars?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         bars?.hide(WindowInsetsCompat.Type.systemBars())
         onDispose {
+            if (activity?.isChangingConfigurations == true) return@onDispose
             bars?.show(WindowInsetsCompat.Type.systemBars())
             // The app's own setting (none in the manifest): whatever the sensor says, as on every other screen.
             activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
@@ -50,14 +54,17 @@ internal fun PlayerWindow(keepOn: Boolean, locked: Boolean) {
     }
 }
 
-/** The host stopping (screen off, app left) and starting again, for the ViewModel. */
+/** The host stopping (screen off, app left) and starting again, for the ViewModel; a configuration change is neither. */
 @Composable
 internal fun HostLifecycle(onStopped: () -> Unit, onStarted: () -> Unit) {
     val owner = LocalLifecycleOwner.current
+    val view = LocalView.current
+    val activity = remember(view) { view.context.findActivity() }
     val stopped by rememberUpdatedState(onStopped)
     val started by rememberUpdatedState(onStarted)
     DisposableEffect(owner) {
         val observer = LifecycleEventObserver { _, event ->
+            if (activity?.isChangingConfigurations == true) return@LifecycleEventObserver
             when (event) {
                 Lifecycle.Event.ON_STOP -> stopped()
                 Lifecycle.Event.ON_START -> started()
