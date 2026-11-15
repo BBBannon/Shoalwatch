@@ -70,6 +70,7 @@ abstract class ServerApiTestBase {
         override fun connection(serverId: String): StateFlow<Connection> = MutableStateFlow(Connection.Offline())
         override suspend fun awaitOnline(serverId: String, timeoutMs: Long): Connection.Online? = answer(asks.incrementAndGet())
         override fun refresh() { globalRefreshes.incrementAndGet() }
+        override fun refresh(serverId: String) = Unit
         override fun refreshIfCurrent(serverId: String, failed: Connection.Online) { refreshes.incrementAndGet(); lastFailed.set(failed) }
     }
 

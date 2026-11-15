@@ -189,11 +189,15 @@ class FakeConnections : ServerConnections {
     var onlineAnswer: Connection.Online? = Connection.Online(address("http://192.168.1.10:8096"), isHome = true)
     var refreshes = 0
 
+    /** What was asked, in order, by [refresh] (`probe:<server>`) and by tests (`refresh`): shows which came first. */
+    val log = mutableListOf<String>()
+
     fun stateFor(id: String) = states.getOrPut(id) { MutableStateFlow<Connection>(Connection.Checking()) }
 
     override fun connection(serverId: String): StateFlow<Connection> = stateFor(serverId)
     override suspend fun awaitOnline(serverId: String, timeoutMs: Long): Connection.Online? = onlineAnswer
     override fun refresh() { refreshes++ }
+    override fun refresh(serverId: String) { log += "probe:$serverId" }
     override fun refreshIfCurrent(serverId: String, failed: Connection.Online) = Unit
 }
 

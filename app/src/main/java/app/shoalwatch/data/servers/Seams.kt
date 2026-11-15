@@ -94,6 +94,12 @@ interface ServerConnections {
     fun refresh()
 
     /**
+     * Re-probes [serverId] alone, now: it goes to `Checking` at once, so a following [awaitOnline] waits for the result of this
+     * probe instead of answering from an `Offline` that may be out of date. This is what a user's own refresh asks for.
+     */
+    fun refresh(serverId: String)
+
+    /**
      * Re-probes [serverId] alone, but only if [failed] (the very `Online` instance a request used, as returned by
      * [awaitOnline]) is still its current state. A failure that arrives after the state has already moved on (a newer
      * probe, or `Checking`) says nothing about the new state and must not discard it.

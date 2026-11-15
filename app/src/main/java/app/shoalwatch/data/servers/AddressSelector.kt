@@ -16,9 +16,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -100,6 +104,9 @@ class AddressSelector(
         /** Conflated: any number of requests while a probe runs become one pending request. */
         val requests = Channel<Unit>(Channel.CONFLATED)
         lateinit var job: Job
+
+        /** How long the next unprompted re-probe of an `Offline` server waits; see [AddressSelector.recoverWhileWatched]. */
+        @Volatile var recoveryWaitMs = RECOVERY_MIN_MS
 
         /** The network may have changed (or a caller asks): nothing published so far can be relied on. */
         @Synchronized fun invalidate() {
@@ -202,10 +209,11 @@ class AddressSelector(
             entry.job = scope.launch {
                 launch {
                     monitor.changes
-                        .onEach { entry.invalidate() }
+                        .onEach { entry.recoveryWaitMs = RECOVERY_MIN_MS; entry.invalidate() }
                         .debounce(probeDebounceMs)
                         .collect { entry.requests.trySend(Unit) }
                 }
+                launch { recoverWhileWatched(entry) }
                 for (request in entry.requests) probeAndPublish(entry)
             }
             entry.requests.trySend(Unit)
@@ -238,6 +246,49 @@ class AddressSelector(
                 it.requests.trySend(Unit)
             }
         }
+    }
+
+    override fun refresh(serverId: String) {
+        val entry = synchronized(entries) { entries[serverId] }
+        if (entry == null) {
+            connection(serverId) // not known yet: the first probe is what was asked for
+            return
+        }
+        synchronized(entries) {
+            entry.invalidate()
+            entry.requests.trySend(Unit)
+        }
+    }
+
+    /**
+     * An `Offline` server is re-probed without the user asking, so a server that was down and came back is found again (the
+     * network did not change, so nothing else would re-check it). Only while something is collecting [connection] for it (a
+     * screen is looking: nothing is probed in the background for a server nobody is showing), and only for ordinary
+     * unreachability: a security reason (changed or untrusted certificate, cleartext blocked, client certificate needed, damaged
+     * pin) waits for the user. The wait starts at [RECOVERY_MIN_MS] and doubles up to [RECOVERY_MAX_MS]; it starts again when
+     * the server is `Online` and on a network change. Each probe is a small anonymous request or two, at most one a minute
+     * once settled, and none while the screen is closed. Time is `delay`, so tests use virtual time.
+     */
+    private suspend fun recoverWhileWatched(entry: Entry) {
+        // This function collects the state itself, so one watcher of its own is always counted.
+        val retryable = entry.state.map { c ->
+            if (c is Connection.Online) entry.recoveryWaitMs = RECOVERY_MIN_MS
+            c is Connection.Offline && c.reason !in SECURITY_KINDS
+        }
+        combine(retryable, entry.state.subscriptionCount.map { it > 1 }) { offline, watched -> offline && watched }
+            .distinctUntilChanged()
+            .collectLatest { active ->
+                // The probe below takes the state to `Checking`, which ends this block; the wait is kept in the entry so the
+                // next `Offline` carries on from where it was.
+                while (active) {
+                    delay(entry.recoveryWaitMs)
+                    entry.recoveryWaitMs = minOf(entry.recoveryWaitMs * 2, RECOVERY_MAX_MS)
+                    synchronized(entries) {
+                        entry.invalidate()
+                        entry.requests.trySend(Unit)
+                    }
+                }
+            }
     }
 
     /**
@@ -323,6 +374,8 @@ class AddressSelector(
         const val AWAIT_TIMEOUT_MS = 6_000L
         const val WATCH_BACKOFF_MIN_MS = 1_000L
         const val WATCH_BACKOFF_MAX_MS = 30_000L
+        const val RECOVERY_MIN_MS = 5_000L
+        const val RECOVERY_MAX_MS = 60_000L
 
         private val SECURITY_KINDS = setOf(
             AppError.Kind.TLS_PIN_CHANGED, AppError.Kind.TLS_UNTRUSTED,

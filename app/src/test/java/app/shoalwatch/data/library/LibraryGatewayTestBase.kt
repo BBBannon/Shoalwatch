@@ -42,6 +42,7 @@ abstract class LibraryGatewayTestBase {
         override fun connection(serverId: String): StateFlow<Connection> = MutableStateFlow(Connection.Offline())
         override suspend fun awaitOnline(serverId: String, timeoutMs: Long): Connection.Online? = online
         override fun refresh() {}
+        override fun refresh(serverId: String) {}
         override fun refreshIfCurrent(serverId: String, failed: Connection.Online) {}
     }
 
