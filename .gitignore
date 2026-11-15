@@ -20,5 +20,9 @@ keystore.properties
 TODO.md
 tasks/
 
+# Python bytecode (tools/mockjelly)
+__pycache__/
+*.pyc
+
 # Agent scratch
 .superpowers/

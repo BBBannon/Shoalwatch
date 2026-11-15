@@ -111,7 +111,9 @@ class HtmlTextTest {
         val out = plainOverview(hostile)
         val ms = (System.nanoTime() - start) / 1_000_000
         assertTrue(out.length <= OVERVIEW_MAX)
-        assertTrue("took $ms ms", ms < 300)
+        // Linear reading takes milliseconds; scanning to the end of the text for every '&' (the old behaviour) is about 24 billion
+        // steps, minutes. A bound of seconds is far from both, so a slow or busy machine cannot fail it and a regression cannot pass.
+        assertTrue("took $ms ms", ms < 5_000)
     }
 
     @Test fun anEntityAtTheLongestAllowedLengthStillDecodes() {
