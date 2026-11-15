@@ -14,7 +14,7 @@ python -I tools/mockjelly/mock_jellyfin.py 8096
 | Flag | Effect |
 |---|---|
 | `port` (first argument, default 8096) | Port to listen on |
-| `--host H` | Address to bind (default `0.0.0.0`) |
+| `--host H` | Address to bind (default `127.0.0.1`, this PC only; an emulator reaches it as `10.0.2.2`) |
 | `--latency-ms N` | Delay every response by N ms |
 | `--refuse` | Answer every `PlaybackInfo` request with `ErrorCode` `NotAllowed` (to see the app's refusal state) |
 | `--fail-rate P` | Answer a fraction P (0 to 1) of signed-in requests with a 500, to see error states. Sign-in and `/System/Info/Public` are never failed |

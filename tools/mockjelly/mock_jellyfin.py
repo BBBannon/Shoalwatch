@@ -578,7 +578,7 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     parser = argparse.ArgumentParser(description="Test stand-in for Jellyfin (not Jellyfin).")
     parser.add_argument("port", nargs="?", type=int, default=8096)
-    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--host", default="127.0.0.1")  # loopback only unless asked; the emulator reaches it as 10.0.2.2
     parser.add_argument("--latency-ms", type=int, default=0, help="delay every response by this many milliseconds")
     parser.add_argument("--fail-rate", type=float, default=0.0, help="fraction (0 to 1) of signed-in requests answered with a 500")
     parser.add_argument("--refuse", action="store_true", help="answer every PlaybackInfo request with ErrorCode NotAllowed")
