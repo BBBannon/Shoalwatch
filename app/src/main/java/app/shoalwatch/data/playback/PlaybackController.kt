@@ -10,6 +10,7 @@ import app.shoalwatch.data.playback.engine.EngineEvent
 import app.shoalwatch.data.playback.engine.EngineFailure
 import app.shoalwatch.data.playback.engine.EngineItem
 import app.shoalwatch.data.playback.engine.PlayerEngine
+import app.shoalwatch.data.playback.engine.SubtitleFrame
 import app.shoalwatch.data.servers.Session
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -33,7 +34,8 @@ enum class StartFrom { RESUME, BEGINNING }
  *
  * It owns the [PlayerEngine], resolves through [resolver] (falling back to a transcode once, re-resolving once after a network
  * or sign-in failure, asking for a new route when one goes stale), reports through a [ProgressReporter] per play session, and
- * publishes [state], which never carries a URL, route, token or Media3 type. [end] is the only way out: it releases the engine
+ * publishes [state], which never carries a URL, route, token or Media3 type, and [cues] (what subtitles to draw now, opaque).
+ * Tracks and subtitles are [TrackControl]'s (see "Tracks and subtitles"). [end] is the only way out: it releases the engine
  * (and so the media session) at once and publishes [PlaybackState.EMPTY]; [ActivePlayback] calls it when the session changes
  * or the account goes. Positions are believed only while the engine is really playing, or when the app or a seek set them, so a
  * 0 from an engine that is preparing, seeking or has lost its output is never reported.
@@ -51,6 +53,9 @@ class PlaybackController internal constructor(
     private val appScope: CoroutineScope,
     private val clock: MonotonicClock,
     private val autoplayNext: () -> Boolean,
+    tracks: TrackPreferences,
+    subtitles: SubtitleLoader,
+    captions: () -> CaptionDefaults,
 ) {
     private val _state = MutableStateFlow(PlaybackState.EMPTY)
     val state: StateFlow<PlaybackState> = _state.asStateFlow()
@@ -67,6 +72,17 @@ class PlaybackController internal constructor(
     private var speed = 1f
     private var sleep: SleepState = SleepState.Off
 
+    private val trackControl = TrackControl(session, engine, resolver, tracks, subtitles, captions, work, appScope, object : TrackControl.Host {
+        override val current get() = this@PlaybackController.current
+        override fun reload(c: PlayingItem, how: suspend () -> Resolved) = reload(c, Stop.NORMAL, how)
+        override fun tracksChanged(c: PlayingItem) { c.reporter?.onTracksChanged(snapshot(c)); publish() }
+        override fun publish() = this@PlaybackController.publish()
+        override fun cuePositionMs(c: PlayingItem) = if (phase == Phase.PLAYING) engine.positionMs.takeIf { it > 0 } ?: c.knownMs else c.knownMs
+    })
+
+    /** The subtitles to draw now (text from the app's own timeline, at the position minus the delay; pictures from the stream). */
+    val cues: StateFlow<SubtitleFrame> = trackControl.cues
+
     fun open(itemId: String, from: StartFrom) {
         if (ended) return
         if (token == null) {
@@ -75,6 +91,7 @@ class PlaybackController internal constructor(
             token = t
             work.launch(start = CoroutineStart.UNDISPATCHED) { engine.events.collect { onEvent(it) } }
             work.launch { while (true) { delay(TICK_MS); tick() } }
+            work.launch { while (true) { delay(CUE_TICK_MS); if (phase == Phase.PLAYING) trackControl.refreshCues() } }
         }
         play(itemId, from)
     }
@@ -129,8 +146,21 @@ class PlaybackController internal constructor(
         val c = current
         val plan = c?.resolved?.plan
         if (c == null || plan == null) return publish()
-        reload(c, stop = Stop.NORMAL) { resolver.resolve(session, plan.request.copy(quality = quality), burnInFormat(plan)) }
+        reload(c, stop = Stop.NORMAL) { resolver.resolve(session, plan.request.copy(quality = quality), TrackRules.burnInFormat(plan)) }
     }
+
+    /** By identity; DIRECT_PLAY switches in the player, anything else asks again at the current position. Remembered for the series. */
+    fun selectAudio(index: Int) = trackControl.selectAudio(index)
+
+    /** Null: off. A text track is fetched and drawn by the app (no new stream); a picture track needs one except in DIRECT_PLAY. */
+    fun selectSubtitle(index: Int?) = trackControl.selectSubtitle(index)
+
+    /** "Let the server draw these subtitles" (offered when [PlaybackState.subtitleEffectsNotDrawn]). */
+    fun burnInSubtitle(index: Int) = trackControl.burnInSubtitle(index)
+
+    fun setSubtitleDelay(ms: Int) = trackControl.setDelay(ms)
+
+    fun dismissSubtitleNotice() = trackControl.dismissNotice()
 
     fun setSleep(choice: SleepChoice) {
         sleep = SleepTimer.start(choice, clock.nowMs())
@@ -160,6 +190,7 @@ class PlaybackController internal constructor(
         engine.release()
         if (reason == null) token?.let(activePlayback::release)
         token = null
+        trackControl.clear()
         _state.value = PlaybackState.EMPTY
     }
 
@@ -175,6 +206,7 @@ class PlaybackController internal constructor(
             val entry = withTimeoutOrNull(ITEM_WAIT_MS) { library.item(session, itemId).first { it.item != null } }?.item
             if (entry == null) return@launch fail(c, AppError.Kind.SERVER_NOT_FOUND)
             c.entry = entry
+            trackControl.recall(c)
             engine.setMediaMetadata(entry.item.name, entry.item.seriesName)
             publish()
             if (entry.item.kind == ItemKind.EPISODE) {
@@ -195,34 +227,23 @@ class PlaybackController internal constructor(
 
     private suspend fun load(c: PlayingItem, atMs: Long, stop: Stop, how: suspend () -> Resolved) {
         if (stop != Stop.NONE) stopReport(c, failed = stop == Stop.FAILED)
+        val first = c.resolved == null
         val resolved = try {
-            how()
+            how().let { if (first) trackControl.initial(c, it) else it }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             return fail(c, AppError.from(e).kind)
         }
         if (ended || current !== c) return
-        val first = c.resolved == null
         c.resolved = resolved
         c.knownMs = atMs
         if (c.reporter == null) c.reporter = ProgressReporter(reports, session, appScope, clock, atMs)
         phase = Phase.BUFFERING
+        trackControl.prepare(c, resolved.plan)
         engine.load(EngineItem(resolved.route, resolved.plan.source, resolved.plan.itemId), atMs, playWhenReady = true)
         publish()
-        if (first && resolved.plan.hasSegments) work.launch { segmentsFor(c) }
-    }
-
-    /** Optional: a failure leaves the item without skip buttons. */
-    private suspend fun segmentsFor(c: PlayingItem) {
-        val segments = try {
-            gateway.segments(session, c.itemId)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            return
-        }
-        if (current === c) { c.segments = segments; publish() }
+        if (first && resolved.plan.hasSegments) work.launch { gateway.segmentsOrNull(session, c.itemId)?.let { if (current === c) { c.segments = it; publish() } } }
     }
 
     private fun onEvent(event: EngineEvent) {
@@ -232,6 +253,7 @@ class PlaybackController internal constructor(
             EngineEvent.Ready -> {
                 c.reroutes = 0
                 if (phase == Phase.BUFFERING || phase == Phase.RESOLVING) phase = if (engine.isPlaying) Phase.PLAYING else Phase.PAUSED
+                trackControl.onReady(c)
             }
             EngineEvent.Buffering -> phase = Phase.BUFFERING
             is EngineEvent.PlayingChanged -> when {
@@ -242,7 +264,7 @@ class PlaybackController internal constructor(
             EngineEvent.Ended -> onEnded(c)
             is EngineEvent.Failed -> return onFailed(c, event.category)
             is EngineEvent.PositionDiscontinuity -> seeked(c, event.toMs)
-            is EngineEvent.PictureCues -> Unit // drawn by Task 7
+            is EngineEvent.PictureCues -> c.pictureFrame = event.frame
         }
         publish()
     }
@@ -289,7 +311,7 @@ class PlaybackController internal constructor(
             EngineFailure.NETWORK, EngineFailure.HTTP_UNAUTHORISED ->
                 if (!c.reResolved) {
                     c.reResolved = true
-                    reload(c, Stop.NORMAL) { resolver.resolve(session, plan.request, burnInFormat(plan)) }
+                    reload(c, Stop.NORMAL) { resolver.resolve(session, plan.request, TrackRules.burnInFormat(plan)) }
                 } else fail(c, if (failure == EngineFailure.NETWORK) AppError.Kind.NETWORK else AppError.Kind.UNAUTHORISED)
             EngineFailure.ROUTE_STALE ->
                 if (c.reroutes++ < MAX_REROUTES) reload(c, Stop.NONE) { resolver.reroute(resolved) } else fail(c, AppError.Kind.OFFLINE)
@@ -348,10 +370,9 @@ class PlaybackController internal constructor(
 
     private fun snapshot(c: PlayingItem): PlaybackReport {
         val plan = checkNotNull(c.resolved).plan
-        val request = plan.request
         return PlaybackReport(
             plan.itemId, plan.mediaSourceId, plan.playSessionId, plan.method, positionOf(c), paused = phase != Phase.PLAYING,
-            audioIndex = plan.audioIndex, subtitleIndex = request.burnInSubtitleIndex ?: request.pictureSubtitleIndex,
+            audioIndex = plan.audioIndex, subtitleIndex = (c.subtitle as? SubtitleChoice.On)?.index,
         )
     }
 
@@ -359,27 +380,18 @@ class PlaybackController internal constructor(
 
     private fun finishedAt(c: PlayingItem): Long? = PlaybackRules.finishedAt(c.outro()?.startMs, durationOf(c))
 
-    private fun burnInFormat(plan: PlaybackPlan): String? =
-        plan.request.burnInSubtitleIndex?.let { i -> plan.subtitleTracks.firstOrNull { it.index == i }?.format }
-
     private fun publish() {
         if (ended) return
         val c = current
-        val plan = c?.resolved?.plan
-        _state.value = PlaybackState(
-            session = session, itemId = c?.itemId, title = c?.entry?.item?.name, episodeLine = c?.entry?.item?.seriesName,
-            phase = phase, positionMs = c?.knownMs ?: 0, durationMs = c?.let(::durationOf), bufferedMs = if (plan != null) engine.bufferedMs else 0,
-            method = plan?.method, transcodeReasons = plan?.transcodeReasons.orEmpty(), videoRange = plan?.videoRange,
-            quality = quality, speed = speed, audioTracks = plan?.audioTracks.orEmpty(), audioIndex = plan?.audioIndex,
-            subtitleTracks = plan?.subtitleTracks.orEmpty(),
-            subtitle = PlaybackRules.subtitleChoice(plan?.request),
-            segmentNow = c?.segmentAt(), upNext = c?.upNext?.state, previous = c?.around?.previous?.id, next = c?.around?.next?.id,
-            sleep = sleep, error = error, fellBackToTranscode = c?.fellBack == true,
-        )
+        val buffered = if (c?.resolved != null) engine.bufferedMs else 0
+        _state.value = stateOf(session, c, phase, c?.let(::durationOf), buffered, quality, speed, sleep, error)
+        trackControl.refreshCues()
     }
 
     private companion object {
         const val TICK_MS = 250L
+        /** How often the drawn subtitles follow the position while playing. */
+        const val CUE_TICK_MS = 50L
         const val ITEM_WAIT_MS = 5_000L
         const val RESTART_WINDOW_MS = 5_000L
         /** New routes in a row without the engine getting ready, before giving up as offline. */

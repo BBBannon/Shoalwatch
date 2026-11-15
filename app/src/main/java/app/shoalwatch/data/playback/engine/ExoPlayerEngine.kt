@@ -75,7 +75,7 @@ class ExoPlayerEngine(context: Context) : PlayerEngine {
         }
 
         override fun onCues(cueGroup: CueGroup) {
-            if (pictureOrdinal != null) emit(EngineEvent.PictureCues(cueGroup.cues))
+            if (pictureOrdinal != null) emit(EngineEvent.PictureCues(SubtitleFrame(cueGroup.cues)))
         }
 
         /** After the single callbacks above: the state first, then playing, so a rebuffer reads as Buffering, not a pause. */
@@ -102,6 +102,8 @@ class ExoPlayerEngine(context: Context) : PlayerEngine {
     override val durationMs: Long? get() = player.duration.takeIf { it != C.TIME_UNSET }
     override val bufferedMs: Long get() = player.bufferedPosition
     override val isPlaying: Boolean get() = player.isPlaying
+    override val audioLanguages: List<String?>
+        get() = player.currentTracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }.map { it.getTrackFormat(0).language }
 
     override fun load(item: EngineItem, startMs: Long, playWhenReady: Boolean) {
         check(!released) { "Engine released." }

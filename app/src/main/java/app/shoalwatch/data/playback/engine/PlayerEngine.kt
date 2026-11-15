@@ -1,6 +1,5 @@
 package app.shoalwatch.data.playback.engine
 
-import androidx.media3.common.text.Cue
 import app.shoalwatch.data.api.MediaRoute
 import app.shoalwatch.data.playback.StreamSource
 import kotlinx.coroutines.flow.Flow
@@ -17,6 +16,8 @@ interface PlayerEngine {
     /** How far ahead is loaded. */
     val bufferedMs: Long
     val isPlaying: Boolean
+    /** The languages of the stream's audio tracks in stream order, as the stream names them; empty until they are known. */
+    val audioLanguages: List<String?>
     fun load(item: EngineItem, startMs: Long, playWhenReady: Boolean)
     fun play()
     fun pause()
@@ -45,8 +46,8 @@ sealed interface EngineEvent {
     data class Failed(val category: EngineFailure) : EngineEvent
     /** A seek (by the app or a media-session controller) landed at [toMs]. */
     data class PositionDiscontinuity(val toMs: Long) : EngineEvent
-    /** Only while a PICTURE subtitle track is on (Task 7 draws them). */
-    data class PictureCues(val cues: List<Cue>) : EngineEvent
+    /** Only while a PICTURE subtitle track is on: what to draw now. */
+    data class PictureCues(val frame: SubtitleFrame) : EngineEvent
     /** Headphones out: ExoPlayer has paused; the controller reports the position. */
     data object BecameNoisy : EngineEvent
 }

@@ -26,6 +26,10 @@ import app.shoalwatch.data.playback.engine.PlayerEngine
 import app.shoalwatch.data.servers.Session
 import app.shoalwatch.data.playback.ServerPlaybackReports
 import app.shoalwatch.data.playback.PlaybackResolver
+import app.shoalwatch.data.playback.SubtitleLoader
+import app.shoalwatch.data.playback.SubtitleSettings
+import app.shoalwatch.data.playback.TrackPreferences
+import app.shoalwatch.data.playback.systemCaptionDefaults
 import app.shoalwatch.data.playback.api.PlaybackGateway
 import app.shoalwatch.data.playback.api.PlaybackGatewayImpl
 import app.shoalwatch.data.servers.AddressSelector
@@ -130,8 +134,16 @@ class AppGraph(private val appContext: Context) {
      */
     fun playbackController(session: Session, scope: CoroutineScope, autoplayNext: () -> Boolean): PlaybackController = PlaybackController(
         session, playerEngineFactory(), playbackResolver, playbackReports, playbackGateway, library, EpisodeNavigator(library),
-        activePlayback, scope, appScope, SystemMonotonicClock, autoplayNext,
+        activePlayback, scope, appScope, SystemMonotonicClock, autoplayNext, trackPreferences, subtitleLoader, { systemCaptionDefaults(appContext) },
     )
+    /** Audio and subtitle choices per (server, user, series), in Room (see "Track choices" in docs/ARCHITECTURE.md). */
+    val trackPreferences: TrackPreferences by lazy { TrackPreferences(database.trackChoiceDao(), System::currentTimeMillis) }
+    /** Subtitle size, colour, background and edge: a device setting, following the phone's caption settings until changed. */
+    val subtitleSettings: SubtitleSettings by lazy {
+        SubtitleSettings(appContext.getSharedPreferences("playback_prefs", Context.MODE_PRIVATE)) { systemCaptionDefaults(appContext) }
+    }
+    /** Fetches and parses text subtitle files, off the main thread. */
+    internal val subtitleLoader: SubtitleLoader by lazy { SubtitleLoader(playbackGateway, Dispatchers.Default) }
     /** Loads saved tokens into the store's live lookup. Started at app start; anything authenticated waits on `serverStore.awaitWarmed()` (or uses `awaitActive()`). */
     val tokensWarmed: Job by lazy { appScope.launch { serverStore.warmTokens() } }
     /** What the trust prompt reads; the UI never touches `HttpClientFactory` itself. */

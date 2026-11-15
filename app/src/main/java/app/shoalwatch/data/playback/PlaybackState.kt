@@ -18,6 +18,12 @@ data class PlaybackState(
     val quality: Quality, val speed: Float,
     val audioTracks: List<AudioTrack>, val audioIndex: Int?,
     val subtitleTracks: List<SubtitleTrack>, val subtitle: SubtitleChoice,
+    /** Per item, -10,000..+10,000 ms (later is positive); only for a FILE subtitle, which [PlaybackController.cues] draws. */
+    val subtitleDelayMs: Int,
+    /** The file subtitle in use has ASS effects the phone cannot draw: offer "Let the server draw these subtitles". */
+    val subtitleEffectsNotDrawn: Boolean,
+    /** To tell the user once, until [PlaybackController.dismissSubtitleNotice]. */
+    val subtitleNotice: SubtitleNotice?,
     /** Set while the position is inside an Intro, Outro, Recap, Preview or Commercial segment. */
     val segmentNow: MediaSegment?,
     val upNext: UpNextState?,
@@ -37,11 +43,34 @@ data class PlaybackState(
             session = null, itemId = null, title = null, episodeLine = null, phase = Phase.IDLE,
             positionMs = 0, durationMs = null, bufferedMs = 0, method = null, transcodeReasons = emptySet(), videoRange = null,
             quality = Quality.MAXIMUM, speed = 1f, audioTracks = emptyList(), audioIndex = null, subtitleTracks = emptyList(),
-            subtitle = SubtitleChoice.Off, segmentNow = null, upNext = null, previous = null, next = null, sleep = SleepState.Off,
+            subtitle = SubtitleChoice.Off, subtitleDelayMs = 0, subtitleEffectsNotDrawn = false, subtitleNotice = null, segmentNow = null, upNext = null, previous = null, next = null, sleep = SleepState.Off,
             error = null, fellBackToTranscode = false,
         )
     }
 }
+
+/** What [PlaybackController] publishes while it plays [c] (null: nothing yet). */
+internal fun stateOf(
+    session: Session, c: PlayingItem?, phase: PlaybackState.Phase, durationMs: Long?, bufferedMs: Long, quality: Quality, speed: Float,
+    sleep: SleepState, error: AppError.Kind?,
+): PlaybackState {
+    val plan = c?.resolved?.plan
+    val subtitle = c?.subtitle ?: SubtitleChoice.Off
+    return PlaybackState(
+        session = session, itemId = c?.itemId, title = c?.entry?.item?.name, episodeLine = c?.entry?.item?.seriesName,
+        phase = phase, positionMs = c?.knownMs ?: 0, durationMs = durationMs, bufferedMs = bufferedMs,
+        method = plan?.method, transcodeReasons = plan?.transcodeReasons.orEmpty(), videoRange = plan?.videoRange,
+        quality = quality, speed = speed, audioTracks = plan?.audioTracks.orEmpty(), audioIndex = plan?.audioIndex,
+        subtitleTracks = plan?.subtitleTracks.orEmpty(), subtitle = subtitle, subtitleDelayMs = c?.delayMs ?: 0,
+        subtitleEffectsNotDrawn = (subtitle as? SubtitleChoice.On)?.delivery == SubtitleDelivery.FILE && c?.timeline?.usesEffectsThePhoneCannotDraw == true,
+        subtitleNotice = c?.notice,
+        segmentNow = c?.segmentAt(), upNext = c?.upNext?.state, previous = c?.around?.previous?.id, next = c?.around?.next?.id,
+        sleep = sleep, error = error, fellBackToTranscode = c?.fellBack == true,
+    )
+}
+
+/** UNREADABLE: "These subtitles couldn't be read." (subtitles are off). EFFECTS_NOT_DRAWN: some effects are not drawn (once per item). */
+enum class SubtitleNotice { UNREADABLE, EFFECTS_NOT_DRAWN }
 
 sealed interface SubtitleChoice {
     data object Off : SubtitleChoice

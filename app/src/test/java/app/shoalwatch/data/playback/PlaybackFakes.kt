@@ -109,6 +109,7 @@ internal class FakePlayerEngine : PlayerEngine {
     override var durationMs: Long? = null
     override var bufferedMs = 0L
     override var isPlaying = false
+    override var audioLanguages: List<String?> = emptyList()
     val loads = mutableListOf<Pair<EngineItem, Long>>()
     val loadedAt: Long? get() = loads.lastOrNull()?.second
     val seeks = mutableListOf<Long>()

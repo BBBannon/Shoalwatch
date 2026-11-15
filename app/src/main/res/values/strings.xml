@@ -337,4 +337,14 @@
     <string name="search_empty_body">Nothing matched “%1$s”. Check the spelling, or try a shorter word.</string>
     <string name="search_prompt">Type at least 2 letters to search.</string>
     <string name="search_series_label">Series</string>
+
+    <!-- Player: subtitles (PlaybackState.subtitleNotice, subtitleEffectsNotDrawn, delay) -->
+    <string name="subtitle_unreadable">These subtitles couldn\'t be read.</string>
+    <string name="subtitle_effects_not_drawn">Some effects in these subtitles can\'t be shown on this phone, such as moving, fading or karaoke text. The words still show.</string>
+    <string name="subtitle_let_server_draw">Let the server draw these subtitles</string>
+    <string name="subtitle_let_server_draw_detail">The server adds the subtitles to the picture. This can take a moment to start.</string>
+    <string name="subtitle_delay_label">Subtitle delay</string>
+    <string name="subtitle_delay_value">%1$s seconds</string>
+    <string name="subtitle_delay_not_in_stream">Delay can\'t be changed for these subtitles: they come with the video.</string>
+    <string name="subtitle_delay_not_burned_in">Delay can\'t be changed for these subtitles: the server draws them into the picture.</string>
 </resources>

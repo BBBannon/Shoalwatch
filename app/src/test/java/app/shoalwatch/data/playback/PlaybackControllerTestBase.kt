@@ -2,6 +2,8 @@ package app.shoalwatch.data.playback
 
 import app.shoalwatch.TestMonotonic
 import app.shoalwatch.data.api.MediaRoute
+import app.shoalwatch.data.db.playback.TrackChoiceDao
+import app.shoalwatch.data.db.playback.TrackChoiceEntity
 import app.shoalwatch.data.library.Freshness
 import app.shoalwatch.data.library.ItemDetail
 import app.shoalwatch.data.library.ItemKind
@@ -33,6 +35,9 @@ internal abstract class PlaybackControllerTestBase {
     val signedIn = mutableSetOf(BEN, AMY)
     val activePlayback = ActivePlayback({ it in signedIn }, { it() }).also { it.sessionChanged(BEN) }
     var autoplay = true
+    val trackDao = FakeTrackChoiceDao()
+    val trackPrefs = TrackPreferences(trackDao) { 7 }
+    var captions = CaptionDefaults(false, null, 1f)
     val routesMade = mutableListOf<Session>()
     private val routes: suspend (Session) -> MediaRoute = { s -> routesMade += s; PlaybackFakes.route(s) }
     private val caps = DeviceCapabilities(
@@ -65,6 +70,7 @@ internal abstract class PlaybackControllerTestBase {
     fun TestScope.controller() = PlaybackController(
         session, engine, PlaybackResolver(gateway, { caps }, routes, StandardTestDispatcher(testScheduler)), reports, gateway, library,
         EpisodeNavigator(library), activePlayback, backgroundScope, backgroundScope, clock, { autoplay },
+        trackPrefs, SubtitleLoader(gateway, StandardTestDispatcher(testScheduler)), { captions },
     )
 
     /** Opened, loaded, and playing, with a known duration. */
@@ -81,4 +87,11 @@ internal abstract class PlaybackControllerTestBase {
 
     val playbackInfos get() = gateway.calls.count { it.startsWith("playbackInfo") }
     val stopCalls get() = reports.calls.filter { it.startsWith("stopped") }
+}
+
+/** Track choices in memory, keyed as the table is. */
+internal class FakeTrackChoiceDao : TrackChoiceDao {
+    val rows = mutableMapOf<Triple<String, String, String>, TrackChoiceEntity>()
+    override suspend fun get(serverId: String, userId: String, seriesId: String) = rows[Triple(serverId, userId, seriesId)]
+    override suspend fun upsert(choice: TrackChoiceEntity) { rows[Triple(choice.serverId, choice.userId, choice.seriesId)] = choice }
 }

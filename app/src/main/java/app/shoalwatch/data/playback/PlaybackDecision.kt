@@ -52,6 +52,8 @@ object PlaybackDecision {
             transcodeReasons = if (method == PlayMethod.DIRECT_PLAY) emptySet() else source.transcodeReasons,
             hasSegments = source.hasSegments,
             eTag = eTag,
+            defaultAudioIndex = source.defaultAudioIndex,
+            defaultSubtitleIndex = source.defaultSubtitleIndex,
         )
     }
 

@@ -6,13 +6,16 @@ import org.junit.Test
 import java.io.File
 
 /**
- * Media3 stays inside the engine: only `data/playback/engine/` may name ExoPlayer, Media3's data sources, its media session
- * or its UI (plus the one logging switch in `ShoalwatchApp.kt`), and nothing anywhere may use a Media3 data source other than
+ * Media3 stays inside the engine: only `data/playback/engine/` may name ExoPlayer, Media3's data sources, its subtitle
+ * parsers and cues, its media session or its UI (plus the one logging switch in `ShoalwatchApp.kt`), and nothing anywhere may use a Media3 data source other than
  * `OkHttpDataSource` over a route's guarded call factory (`DefaultHttpDataSource` and friends would send without the account's
  * client, pin or guard) or Media3's own `EventLogger` (it logs URIs). Failures name the file and line.
  */
 class Media3BoundaryTest {
-    private val outsideEngine = listOf("import androidx.media3.exoplayer", "import androidx.media3.datasource", "import androidx.media3.session", "import androidx.media3.ui")
+    private val outsideEngine = listOf(
+        "import androidx.media3.exoplayer", "import androidx.media3.datasource", "import androidx.media3.session", "import androidx.media3.ui",
+        "import androidx.media3.extractor", "import androidx.media3.common.text",
+    )
     private val nowhere = listOf("DefaultHttpDataSource", "DefaultDataSource", "CacheDataSource", "FileDataSource", "EventLogger", "setWakeMode")
 
     private fun sources() = listOf("src/main/java", "src/main/kotlin").map(::File).filter { it.isDirectory }

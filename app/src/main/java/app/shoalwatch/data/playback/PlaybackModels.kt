@@ -64,6 +64,9 @@ data class PlaybackPlan(
     val transcodeReasons: Set<TranscodeReason>,
     val hasSegments: Boolean,
     val eTag: String?,
+    /** The server's own defaults (its subtitle default applies the user's subtitle mode on the server). */
+    val defaultAudioIndex: Int? = null,
+    val defaultSubtitleIndex: Int? = null,
 ) {
     val itemId: String get() = request.itemId
     override fun toString() = "PlaybackPlan(method=$method, hls=${source.hls})"

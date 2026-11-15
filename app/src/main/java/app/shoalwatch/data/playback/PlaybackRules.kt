@@ -25,8 +25,4 @@ internal object PlaybackRules {
     /** Playback (not a seek) carried the position from [beforeMs] to [nowMs] across [markMs]. */
     fun crossedByPlayback(beforeMs: Long, nowMs: Long, markMs: Long?): Boolean =
         markMs != null && beforeMs < markMs && nowMs >= markMs && nowMs - beforeMs <= MAX_TICK_STEP_MS
-
-    fun subtitleChoice(request: PlaybackRequest?): SubtitleChoice =
-        request?.burnInSubtitleIndex?.let { SubtitleChoice.On(it, SubtitleDelivery.BURNED_IN) }
-            ?: request?.pictureSubtitleIndex?.let { SubtitleChoice.On(it, SubtitleDelivery.IN_STREAM) } ?: SubtitleChoice.Off
 }
