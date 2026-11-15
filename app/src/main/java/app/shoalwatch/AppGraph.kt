@@ -27,6 +27,13 @@ import app.shoalwatch.data.downloads.ExtrasFetcher
 import app.shoalwatch.data.downloads.FileFetcher
 import app.shoalwatch.data.downloads.HlsFetcher
 import app.shoalwatch.data.downloads.Volumes
+import app.shoalwatch.data.downloads.SavedCopies
+import app.shoalwatch.data.downloads.savedRows
+import app.shoalwatch.data.db.downloads.DownloadKey
+import app.shoalwatch.data.playback.LocalPlaybackReports
+import app.shoalwatch.data.playback.RoutedPlaybackReports
+import app.shoalwatch.data.playback.SavedFirstPlaybackGateway
+import app.shoalwatch.data.sync.OfflinePlays
 import app.shoalwatch.data.downloads.api.DownloadGateway
 import app.shoalwatch.data.downloads.api.DownloadGatewayImpl
 import app.shoalwatch.data.playback.engine.SavedMediaProbe
@@ -187,7 +194,23 @@ class AppGraph(private val appContext: Context) {
     /** PlaybackInfo, playstate reports, segments and subtitle files as validated models (see "Playback endpoints" in docs/ARCHITECTURE.md). */
     internal val playbackGateway: PlaybackGateway by lazy { PlaybackGatewayImpl(serverApi) }
     /** PlaybackInfo, then direct play, direct stream or transcode, with a route to the address verified now (see "Playback decision" in docs/ARCHITECTURE.md). */
-    val playbackResolver: PlaybackResolver by lazy { PlaybackResolver(playbackGateway, AndroidDeviceCapabilities(appContext), serverApi::mediaRoute) }
+    val playbackResolver: PlaybackResolver by lazy {
+        PlaybackResolver(
+            playbackGateway, AndroidDeviceCapabilities(appContext), serverApi::mediaRoute,
+            saved = savedCopies::plan,
+            savedFailed = { s, id -> appScope.launch { downloadQueue.recheck(DownloadKey(s.serverId, id)) } },
+        )
+    }
+    /** The one lookup of a saved copy a session may play (see "Offline playback" in docs/ARCHITECTURE.md). */
+    internal val savedCopies: SavedCopies by lazy { SavedCopies(database.offlineLibraryDao(), database.downloadDao().savedRows(), downloadPaths) }
+    /** What the player and its subtitle loader ask: saved subtitles and skip markers for a saved copy, else the server. */
+    internal val playerGateway: PlaybackGateway by lazy { SavedFirstPlaybackGateway(playbackGateway, savedCopies::media, database.downloadDao().savedRows(), downloadPaths) }
+    /** What a LOCAL play keeps for Milestone 5 to send (`offline_plays`). */
+    val offlinePlays: OfflinePlays by lazy { OfflinePlays(database.offlinePlayDao(), System::currentTimeMillis) }
+    /** The controller's reports: LOCAL plays stay on the phone, everything else goes to the server. */
+    internal val routedReports: RoutedPlaybackReports by lazy {
+        RoutedPlaybackReports(playbackReports, LocalPlaybackReports(offlinePlays, playstateRepository, System::currentTimeMillis))
+    }
     /** What every browsing screen reads: saved rows first, refreshed behind them (see "Library repository" in docs/ARCHITECTURE.md). */
     /** The one record of local changes, shared by everything that writes server data or user changes: ordering by sequence, expiry by the monotonic clock. */
     val localChanges: LocalChangeLog by lazy { LocalChangeLog(SystemMonotonicClock) }
@@ -197,7 +220,8 @@ class AppGraph(private val appContext: Context) {
     /** What the user chose to sort and filter each library by, for as long as the app is open (never saved to disk). */
     val browseMemory: BrowseMemory by lazy { BrowseMemory() }
     /** The tidy-up actions (remove from Continue Watching, mark watched, favourite): Room first, then the server, rolled back on failure (see "Tidy-up actions" in docs/ARCHITECTURE.md). */
-    val playstate: Playstate by lazy { PlaystateRepository(libraryGateway, libraryRepository, appScope, Dispatchers.IO, System::currentTimeMillis) }
+    val playstate: Playstate get() = playstateRepository
+    private val playstateRepository: PlaystateRepository by lazy { PlaystateRepository(libraryGateway, libraryRepository, appScope, Dispatchers.IO, System::currentTimeMillis) }
     /** Progress reports and the final stop (also saved through `playstate`), best effort; see "Progress reports and teardown" in docs/ARCHITECTURE.md. */
     val playbackReports: ServerPlaybackReports by lazy { ServerPlaybackReports(playbackGateway, playstate, addressSelector, appScope) }
     /** Who is playing: ended by the store hooks above and whenever the active session changes. */
@@ -213,7 +237,7 @@ class AppGraph(private val appContext: Context) {
      * so they never name the gateway, the resolver or a route.
      */
     fun playbackController(session: Session, scope: CoroutineScope, autoplayNext: () -> Boolean): PlaybackController = PlaybackController(
-        session, playerEngineFactory(), playbackResolver, playbackReports, playbackGateway, library, EpisodeNavigator(library),
+        session, playerEngineFactory(), playbackResolver, routedReports, playerGateway, library, EpisodeNavigator(library),
         activePlayback, scope, appScope, SystemMonotonicClock, autoplayNext, trackPreferences, subtitleLoader, { systemCaptionDefaults(appContext) },
     )
     /** Audio and subtitle choices per (server, user, series), in Room (see "Track choices" in docs/ARCHITECTURE.md). */
@@ -227,7 +251,7 @@ class AppGraph(private val appContext: Context) {
         QualityDefault(appContext.getSharedPreferences("playback_prefs", Context.MODE_PRIVATE)) { QualityDefault.activeNetworkMetered(appContext) }
     }
     /** Fetches and parses text subtitle files, off the main thread. */
-    internal val subtitleLoader: SubtitleLoader by lazy { SubtitleLoader(playbackGateway, Dispatchers.Default) }
+    internal val subtitleLoader: SubtitleLoader by lazy { SubtitleLoader(playerGateway, Dispatchers.Default) }
     /** Loads saved tokens into the store's live lookup. Started at app start; anything authenticated waits on `serverStore.awaitWarmed()` (or uses `awaitActive()`). */
     val tokensWarmed: Job by lazy { appScope.launch { serverStore.warmTokens() } }
     /** What the trust prompt reads; the UI never touches `HttpClientFactory` itself. */

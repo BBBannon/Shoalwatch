@@ -419,6 +419,11 @@
     <string name="skip_preview">Skip preview</string>
     <string name="skip_advert">Skip advert</string>
     <string name="stream_direct_play">Playing the original file.</string>
+    <string name="stream_saved_copy">Playing the copy saved on this phone.</string>
+    <string name="stream_saved_high">Saved in High quality (1080p).</string>
+    <string name="stream_saved_medium">Saved in Medium quality (720p).</string>
+    <string name="stream_saved_low">Saved in Low quality (480p).</string>
+    <string name="player_quality_saved">This is the copy saved on this phone, so its quality can\'t be changed.</string>
     <string name="stream_direct_stream">Playing the original video. Your server is repackaging it for this phone.</string>
     <string name="stream_transcode">Your server is converting this video for this phone.</string>
     <string name="stream_transcode_because">Your server is converting this video for this phone %1$s.</string>

@@ -8,7 +8,6 @@ import app.shoalwatch.data.playback.PlaybackState.Phase
 import app.shoalwatch.data.playback.api.PlaybackGateway
 import app.shoalwatch.data.playback.engine.EngineEvent
 import app.shoalwatch.data.playback.engine.EngineFailure
-import app.shoalwatch.data.playback.engine.EngineItem
 import app.shoalwatch.data.playback.engine.PlayerEngine
 import app.shoalwatch.data.playback.engine.SubtitleFrame
 import app.shoalwatch.data.playback.engine.VideoOutput
@@ -253,7 +252,7 @@ class PlaybackController internal constructor(
         phase = Phase.BUFFERING
         trackControl.prepare(c, resolved.plan)
         c.entry?.item?.let { engine.setMediaMetadata(it.name, it.seriesName) } // only now: never the next title over the old stream (m-7)
-        engine.load(EngineItem(resolved.route, resolved.plan.source), atMs, playWhenReady = !(c.startPaused.also { c.startPaused = false } || hostStopped))
+        engine.load(resolved.engineItem(), atMs, playWhenReady = !(c.startPaused.also { c.startPaused = false } || hostStopped))
         publish()
         if (first && resolved.plan.hasSegments) work.launch { gateway.segmentsOrNull(session, c.itemId)?.let { if (current === c) { c.segments = it; publish() } } }
     }

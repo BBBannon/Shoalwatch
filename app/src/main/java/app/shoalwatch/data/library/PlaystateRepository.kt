@@ -41,7 +41,7 @@ class PlaystateRepository(
     private val scope: CoroutineScope,
     private val io: CoroutineDispatcher,
     clock: () -> Long,
-) : Playstate {
+) : Playstate, LocalPlaystate {
     private val local = PlaystateLocal(library.store, clock)
 
     /** The end of each user's queue of actions: the next call waits for it. Swapped atomically, in the caller, so the order is the order of the calls. */
@@ -64,12 +64,16 @@ class PlaystateRepository(
             act(s, itemId, { item -> local.stoppedAt(s, item.item.itemId, positionMs.coerceAtLeast(0)) }, { })
         }
 
-    /** [change] makes the optimistic change (steps 1 and 2) for the item as this user may see it; [send] is step 3. */
+    /** Steps 1 and 2 only: the change keeps its marker for Milestone 5's outbox (an `offline_plays` row spares it from the sweeps). */
+    override suspend fun recordLocalStop(s: Session, itemId: String, positionMs: Long, finished: Boolean) =
+        act(s, itemId, { item -> if (finished) local.played(s, item, true) else local.stoppedAt(s, item.item.itemId, positionMs.coerceAtLeast(0)) }, null)
+
+    /** [change] makes the optimistic change (steps 1 and 2) for the item as this user may see it; [send] is step 3 (null: none, the marker stays). */
     private suspend fun act(
         s: Session,
         rawId: String,
         change: suspend (ItemRow) -> Touched,
-        send: suspend (String) -> Unit,
+        send: (suspend (String) -> Unit)?,
     ) {
         val id = JellyfinId.parseOrNull(rawId)?.value ?: throw AppError.of(AppError.Kind.SERVER_NOT_FOUND)
         val done = CompletableDeferred<Unit>()
@@ -107,7 +111,7 @@ class PlaystateRepository(
         s: Session,
         id: String,
         change: suspend (ItemRow) -> Touched,
-        send: suspend (String) -> Unit,
+        send: (suspend (String) -> Unit)?,
     ) {
         val touched = try {
             library.writeGated {
@@ -121,6 +125,7 @@ class PlaystateRepository(
         } catch (e: Exception) {
             throw AppError.from(e) // a transaction that throws leaves nothing changed, so there is nothing to clear
         }
+        if (send == null) return // a local stop: kept as it is, with its marker
         try {
             send(id)
         } catch (e: Throwable) {

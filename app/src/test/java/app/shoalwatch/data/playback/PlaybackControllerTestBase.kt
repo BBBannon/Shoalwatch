@@ -73,10 +73,16 @@ internal abstract class PlaybackControllerTestBase {
 
     /** For [s] on [scope] (a screen's scope); the reports' scope is still the test's background scope. */
     fun TestScope.controllerFor(s: Session, scope: CoroutineScope, player: PlayerEngine = engine) = PlaybackController(
-        s, player, PlaybackResolver(gateway, { caps }, routes, StandardTestDispatcher(testScheduler)), reports, gateway, library,
+        s, player, PlaybackResolver(gateway, { caps }, routes, StandardTestDispatcher(testScheduler), savedLookup, savedFailed), playerReports, playerGateway, library,
         EpisodeNavigator(library), activePlayback, scope, backgroundScope, clock, { autoplay },
-        trackPrefs, SubtitleLoader(gateway, StandardTestDispatcher(testScheduler)), { captions },
+        trackPrefs, SubtitleLoader(playerGateway, StandardTestDispatcher(testScheduler)), { captions },
     )
+
+    /** Milestone 4's seams (no saved copy by default): the resolver's saved lookup and its failure hook, and what the controller reports to and asks. */
+    open val savedLookup: suspend (Session, String) -> SavedPlan? = { _, _ -> null }
+    open val savedFailed: (Session, String) -> Unit = { _, _ -> }
+    open val playerGateway: app.shoalwatch.data.playback.api.PlaybackGateway get() = gateway
+    open val playerReports: PlaybackReports get() = reports
 
     /** Opened, loaded, and playing, with a known duration. */
     fun TestScope.openAndPlay(c: PlaybackController, itemId: String = ep1, from: StartFrom = StartFrom.RESUME) {

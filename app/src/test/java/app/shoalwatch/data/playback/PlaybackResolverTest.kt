@@ -53,7 +53,7 @@ class PlaybackResolverTest {
         assertEquals(U1, body.userId)
         assertEquals(PlayMethod.DIRECT_PLAY, resolved.plan.method)
         assertEquals(listOf(session), routesMade)
-        assertSame(session, resolved.route.session)
+        assertSame(session, resolved.route!!.session)
     }
 
     @Test fun checkOriginalAsksForDirectPlayOnlyAtMaximumAndMakesNoRoute() = runTest {

@@ -14,6 +14,7 @@ import app.shoalwatch.data.db.downloads.DownloadPermissionEntity
 import app.shoalwatch.data.db.downloads.DownloadSettingsEntity
 import app.shoalwatch.data.db.downloads.DownloadTrackEntity
 import app.shoalwatch.data.db.downloads.OfflineLibraryDao
+import app.shoalwatch.data.db.downloads.OfflinePlayDao
 import app.shoalwatch.data.db.downloads.OfflinePlayEntity
 import app.shoalwatch.data.db.downloads.PinnedArtworkEntity
 import app.shoalwatch.data.db.library.ItemDao
@@ -56,6 +57,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun trackChoiceDao(): TrackChoiceDao
     abstract fun downloadDao(): DownloadDao
     abstract fun offlineLibraryDao(): OfflineLibraryDao
+    abstract fun offlinePlayDao(): OfflinePlayDao
 
     companion object {
         const val FILE_NAME = "shoalwatch.db"

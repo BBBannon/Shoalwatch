@@ -26,6 +26,49 @@ class PlaystateSweepTest : PlaystateTestBase() {
         itemDao.setFavourite(s.serverId, s.userId, id(label), favourite, now, pending = true)
     }
 
+    /** What a LOCAL play leaves (Milestone 4): an `offline_plays` row, then the local stop with its marker. */
+    private fun offlinePlay(label: String, s: app.shoalwatch.data.servers.Session = s1u1) = runBlocking {
+        db.offlinePlayDao().stopped(s.serverId, s.userId, id(label), 30_000, finished = false, nowMs = now)
+    }
+
+    @Test fun aPendingRowWithAnOfflinePlaySurvivesTheStartUpSweep() = runBlocking {
+        leaveMarker("a")
+        offlinePlay("a")
+        leaveMarker("b") // no offline play: cleared as before
+        gateway.itemFor = { film("a", ud(favourite = false)) }
+        repo.refresh(s1u1, RefreshTarget.Item(id("a")))
+        assertNotNull("kept for Milestone 5 to send", userData("a")!!.pendingSyncAt)
+        assertTrue("a refresh cannot undo it", userData("a")!!.favourite)
+        assertNull(userData("b")!!.pendingSyncAt)
+    }
+
+    @Test fun aLocalStopKeepsItsMarkerThroughTheIdleCleanUpAndWatchedIsNotUndoneByARefresh() = runBlocking {
+        save(film("a", ud(positionMs = 0)))
+        save(film("b", ud(favourite = false)))
+        repo.refresh(s1u1, RefreshTarget.Item(id("a"))) // the start-up sweep has run
+        offlinePlay("a")
+        playstate.recordLocalStop(s1u1, id("a"), 0, finished = true)
+        assertTrue(userData("a")!!.played)
+        assertNotNull(userData("a")!!.pendingSyncAt)
+        assertEquals("no server call for a local stop", 0, gateway.count("setPlayed"))
+        playstate.setFavourite(s1u1, id("b"), true) // the queue goes idle after it: its clean-up runs
+        settle()
+        assertNotNull("the idle clean-up spares it", userData("a")!!.pendingSyncAt)
+        assertNull(userData("b")!!.pendingSyncAt)
+        gateway.itemFor = { film("a", ud(played = false)) }
+        repo.refresh(s1u1, RefreshTarget.Item(id("a")))
+        assertTrue("watched is never undone by a sync", userData("a")!!.played)
+    }
+
+    @Test fun aLocalStopWithoutAnOfflinePlayIsClearedAtIdleAsBefore() = runBlocking {
+        save(film("a", ud(positionMs = 0)))
+        repo.refresh(s1u1, RefreshTarget.Item(id("a")))
+        playstate.recordLocalStop(s1u1, id("a"), 42_000, finished = false)
+        settle()
+        assertEquals(42_000L, userData("a")!!.positionMs)
+        assertNoPending()
+    }
+
     @Test fun aMarkerLeftByADeadProcessIsClearedAndTheServersValueThenApplies() = runBlocking {
         leaveMarker("a")
         assertNotNull(userData("a")!!.pendingSyncAt)

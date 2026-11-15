@@ -122,6 +122,15 @@ class PlaybackGatewayHostileTest : PlaybackGatewayTestBase() {
         assertEquals(200, runBlocking { gateway.segments(session, ITEM) }.size)
     }
 
+    /** Milestone 4: a LOCAL play is kept on the phone; were one ever handed to the gateway, nothing goes out. */
+    @Test fun aLocalReportIsNeverSent() {
+        val local = PlaybackReport(ITEM, ITEM, null, PlayMethod.LOCAL, positionMs = 1_000, paused = false, audioIndex = 1, subtitleIndex = null)
+        assertEquals(AppError.Kind.SERVER_NOT_FOUND, failure { gateway.reportStart(session, local) }.kind)
+        assertEquals(AppError.Kind.SERVER_NOT_FOUND, failure { gateway.reportProgress(session, local) }.kind)
+        assertEquals(AppError.Kind.SERVER_NOT_FOUND, failure { gateway.reportStopped(session, local) }.kind)
+        assertEquals(0, web.requestCount)
+    }
+
     @Test fun segmentsForABadItemIdSendNothing() {
         assertEquals(AppError.Kind.SERVER_NOT_FOUND, failure { gateway.segments(session, "../x") }.kind)
         assertEquals(0, web.requestCount)

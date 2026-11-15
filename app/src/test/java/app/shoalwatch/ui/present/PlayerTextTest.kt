@@ -3,6 +3,7 @@ package app.shoalwatch.ui.present
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import app.shoalwatch.R
+import app.shoalwatch.data.downloads.DownloadQuality
 import app.shoalwatch.data.playback.PlayMethod
 import app.shoalwatch.data.playback.Quality
 import app.shoalwatch.data.playback.SegmentKind
@@ -31,6 +32,15 @@ class PlayerTextTest {
             PlayerText.streamInfo(strings, PlayMethod.DIRECT_STREAM, setOf(TranscodeReason.CONTAINER), false),
         )
         assertNull(PlayerText.streamInfo(strings, null, emptySet(), false))
+    }
+
+    @Test fun theSavedCopySaysSoAndAConversionSaysItsQuality() {
+        assertEquals("Playing the copy saved on this phone.", PlayerText.streamInfo(strings, PlayMethod.LOCAL, emptySet(), false))
+        assertEquals("Playing the copy saved on this phone.", PlayerText.streamInfo(strings, PlayMethod.LOCAL, emptySet(), false, DownloadQuality.ORIGINAL))
+        assertEquals("Playing the copy saved on this phone. Saved in High quality (1080p).", PlayerText.streamInfo(strings, PlayMethod.LOCAL, emptySet(), false, DownloadQuality.HIGH))
+        assertEquals("Playing the copy saved on this phone. Saved in Medium quality (720p).", PlayerText.streamInfo(strings, PlayMethod.LOCAL, emptySet(), false, DownloadQuality.MEDIUM))
+        assertEquals("Playing the copy saved on this phone. Saved in Low quality (480p).", PlayerText.streamInfo(strings, PlayMethod.LOCAL, emptySet(), false, DownloadQuality.LOW))
+        assertEquals("This is the copy saved on this phone, so its quality can't be changed.", strings.get(R.string.player_quality_saved))
     }
 
     @Test fun everyTranscodeReasonHasItsSentence() {

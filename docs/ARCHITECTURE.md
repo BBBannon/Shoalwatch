@@ -41,7 +41,7 @@ app.shoalwatch
 ├── data/
 │   ├── db/          AppDatabase (Room v4, `shoalwatch.db`), ServerEntity, AccountEntity, ActiveAccountEntity, DAOs (+ ServerRow, AccountRow projections), Migration1To2, Migration2To3, Migration3To4
 │   │   ├── downloads/ the download tables (Room v4): DownloadEntity, DownloadOwnerEntity, DownloadTrackEntity, DownloadSegmentEntity, PinnedArtworkEntity,
-│   │   │            DownloadSettingsEntity, OfflinePlayEntity, Converters, DownloadDao, OfflineLibraryDao (+ OfflineRow, SeriesSummaryRow),
+│   │   │            DownloadSettingsEntity, OfflinePlayEntity, Converters, DownloadDao, OfflineLibraryDao (+ OfflineRow, SeriesSummaryRow), OfflinePlayDao,
 │   │   │            DownloadStore (+ DownloadKey, RemoveOutcome, LibraryWriteLock); see "Download tables" under "Library cache"
 │   │   ├── playback/ TrackChoiceEntity, TrackChoiceDao (Room v3, see "Track choices" under "Library cache")
 │   │   └── library/ the library cache: ItemEntity, UserDataEntity, ViewEntity, ListEntryEntity, ListStateEntity, ItemKindConverter, ItemRow (joined read), LibraryMappers,
@@ -62,7 +62,8 @@ app.shoalwatch
 │   │                (+ Resolved), ServerPlaybackReports, ProgressReporter, ActivePlayback (+ EndReason), PlaybackController (+ StartFrom),
 │   │                PlayingItem, PlaybackRules, PlaybackState (+ SubtitleChoice, SubtitleNotice, UpNextState, SleepState), EpisodeNavigator, UpNext
 │   │                (UpNextCountdown), SleepTimer (+ SleepChoice), TrackChooser, Languages, TrackPreferences (+ TrackChoice), PlaybackTracks
-│   │                (TrackRules, TrackControl), SubtitleCues (SubtitleLoader), SubtitleSettings (+ SubtitleAppearance, CaptionDefaults);
+│   │                (TrackRules, TrackControl), SubtitleCues (SubtitleLoader), SubtitleSettings (+ SubtitleAppearance, CaptionDefaults),
+│   │                SavedPlans (+ SavedPlan), SavedFirstPlaybackGateway, LocalPlaybackReports (+ RoutedPlaybackReports) (see "Offline playback");
 │   │                api/ PlaybackDtos, PlaybackMappers (internal), PlaybackGateway(+Impl) (internal); engine/ PlayerEngine (+ EngineItem,
 │   │                EngineEvent, EngineFailure), ExoPlayerEngine, MediaItems, SubtitleFiles (+ CueTimeline), SubtitleFrame, SubtitleSurface
 │   │                (the only Media3 code); see "Playback endpoints", "Media route", "Device profile", "Playback decision", "Progress
@@ -70,8 +71,8 @@ app.shoalwatch
 │   ├── downloads/   DownloadModels (the download enums, DownloadInfo, OfflineEntry/Season/Series, SeriesSummary, OfflineLibrary; Milestone 4),
 │   │                DownloadPaths (+ ArtworkKey, SweepResult), Volumes (+ StorageChoice, AndroidVolumes), DownloadPrefs (+ DownloadSettings), HlsPlaylists (bounded parser
 │   │                and local writer, pure), OriginalCheck (+ OriginalChecks, pure), DownloadPlanner,
-│   │                FileFetcher (+ Progress), HlsFetcher (+ LiveConversion), FetchSupport (+ FetchResult), ExtrasFetcher; api/ DownloadDtos, DownloadGateway (+ DownloadFacts, DownloadGatewayImpl); see "Download files" and "Download call path"
-│   ├── sync/
+│   │                FileFetcher (+ Progress), HlsFetcher (+ LiveConversion), FetchSupport (+ FetchResult), ExtrasFetcher, SavedCopies (+ SavedRows); api/ DownloadDtos, DownloadGateway (+ DownloadFacts, DownloadGatewayImpl); see "Download files" and "Download call path"
+│   ├── sync/        OfflinePlays (the `offline_plays` record Milestone 5's outbox sends; see "Offline playback")
 └── ui/          theme, nav, components, one package per screen group (see "UI" below)
 ```
 
@@ -333,6 +334,21 @@ A finished download is marked COMPLETE only after `DownloadVerifier.verify` says
 
 Tests: `DownloadVerifierTest` (`FakeProbe`, a fake `CodecSupport`, temporary folders), `ItemBytesTest` and `SavedMediaProbeTest` (Robolectric; real Media3 extractors on Milestone 3's clip and its 5 segments, in `app/src/test/resources/media/`).
 
+## Offline playback (`SavedCopies`, `SavedPlans`, `SavedFirstPlaybackGateway`, `LocalPlaybackReports`, `OfflinePlays`)
+
+A download plays through the unchanged `PlaybackController` (SPEC §4 rule 1: no separate offline mode); the controller changed by one line (`engine.load(resolved.engineItem(), …)`).
+- **Which copy plays.** `SavedCopies.plan(session, itemId)` is THE lookup (the resolver's `saved` and the gateway's `saved`). It offers a copy only when `OfflineLibraryDao.getPlayable` returns it (COMPLETE, the session's own `visible_items` record, and owned or shared under the strict rule with the session's own confirmed permission), its storage is mounted (`DownloadPaths.itemFolder` not null), and a cheap check passes before every play: an original's media file is the recorded length; a conversion's `local.m3u8` and every recorded segment are there. Every path comes from `DownloadPaths`. Anything else: the item streams as before.
+- **`PlaybackResolver.resolve`:** with no forced conversion and no burn-in, the saved copy wins and nothing is asked of the server (quality ignored). `Resolved` holds a route OR a `SavedMedia`, exactly one, and a saved one is always `PlayMethod.LOCAL`. `reroute` hands a saved one back unchanged.
+- **`SavedPlans.plan`** (pure): tracks from `download_tracks` (subtitles only where a file was saved, or a PICTURE track inside an original's own file), segments known, no play session, `source` a placeholder never used for an address.
+- **Tracks (`TrackRules`):** LOCAL is switched in the player as DIRECT_PLAY is (audio, picture subtitles in the stream, text as FILE) and never asks the server: a language disagreement keeps the player's track, burn-in and "let the server draw" are not offered, and the quality sheet says "This is the copy saved on this phone, so its quality can't be changed."
+- **Failure:** a DECODER or FORMAT failure falls back once: `fallBack` tells `savedFailed` (`DownloadQueue.recheck`, in the app scope: DAMAGED if the fingerprint changed), then asks the server for a forced conversion; offline that is the gateway's `OFFLINE`. A second failure is PLAYBACK_FAILED.
+- **`SavedFirstPlaybackGateway`** is the `PlaybackGateway` the controller and `SubtitleLoader` get (`AppGraph.playerGateway`): for a saved copy of the same media source, a saved subtitle file's bytes (a regular file, not a link, real path inside the copy's folder, at most 8 MiB, then parsed by the same `SubtitleFiles` parsers), and the saved segments. Everything else is the server's. The download queue's own extras still use the server gateway.
+- **Reports:** `RoutedPlaybackReports(server, local)`: a LOCAL report goes to `LocalPlaybackReports`, everything else to `ServerPlaybackReports`; `PlaybackGatewayImpl` refuses a LOCAL report outright (nothing is sent in this milestone). `started` and `progress` write `offline_plays.positionMs` (process death keeps it); `stopped` writes `offline_plays` first (`played` set once finished and never cleared, `playedAt` set once), then `LocalPlaystate.recordLocalStop` (the tidy-up queue and write gate, the local value with its pending marker, no server call, no rollback). Milestone 5's outbox sends `offline_plays` with the phone's dates.
+- **Markers survive:** the start-up sweep's snapshot and the idle clean-up (`ItemDao.pendingRows`, `clearPendingFor`) skip any `user_data` row that has an `offline_plays` row (`ItemDao.NO_OFFLINE_PLAY`), so a refresh cannot undo an offline watch before it is sent (SPEC §3.2).
+- **Player text:** "Playing the copy saved on this phone." plus, for a conversion, "Saved in High quality (1080p)." (Medium 720p, Low 480p), from `PlaybackState.savedQuality`.
+
+Tests: `SavedPlaybackTest` (controller over `FakePlayerEngine`), `SavedCopiesTest` (Room: the sharing rule, mounts, sizes), `SavedFirstPlaybackGatewayTest`, `LocalPlaybackReportsTest`, `OfflinePlaysTest`, `PlaystateSweepTest` (offline-play cases), `PlaybackGatewayHostileTest.aLocalReportIsNeverSent`, `PlayerTextTest`.
+
 ## Device profile (`DeviceCapabilities`, `HdrPolicy`, `DeviceProfileBuilder`)
 
 What the phone can play, told to the server with every PlaybackInfo, so the server direct plays what will really show and converts the rest. All in `data/playback`; only the adapter touches Android.
@@ -530,7 +546,7 @@ The on-phone copy of what the server told us, and the only thing browsing screen
 
 **Known limits**
 - A refresh asked for before a change is ignored for the changed item's data and cannot put a removed item back into `resume` (tests: `PlaystateStalenessTest`, `PlaystateStampTest`); it still replaces the REST of the list with data from before the change, until the refresh that follows the action (queued behind it, coalesced, one request). Entries are forgotten after 10 minutes and capped at 5,000 (see the rule).
-- Process death mid-action drops the unconfirmed change at the next start (the sweep), until Milestone 5. An action's own app scope being cancelled can also leave a marker until the queue next goes idle or the next start.
+- Process death mid-action drops the unconfirmed change at the next start (the sweep), until Milestone 5 (except a row with an offline play, which keeps its marker: see "Offline playback"). An action's own app scope being cancelled can also leave a marker until the queue next goes idle or the next start.
 - Actions are one at a time per user; a queued tap shows after the first action's whole sequence (see above), until Milestone 5's outbox.
 - Only the kinds a screen offers are modelled: a box set or folder marked played changes its own row only.
 

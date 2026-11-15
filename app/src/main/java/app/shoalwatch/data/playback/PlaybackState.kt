@@ -1,6 +1,7 @@
 package app.shoalwatch.data.playback
 
 import app.shoalwatch.core.AppError
+import app.shoalwatch.data.downloads.DownloadQuality
 import app.shoalwatch.data.servers.Session
 
 /**
@@ -32,6 +33,8 @@ data class PlaybackState(
     val sleep: SleepState,
     val error: AppError.Kind?,
     val fellBackToTranscode: Boolean,
+    /** Playing the copy saved on this phone ([PlayMethod.LOCAL]) at this quality; null otherwise. */
+    val savedQuality: DownloadQuality? = null,
     /** The controller has ended (closed, refused, signed out, another profile took over): the screen leaves. Never true before. */
     val closed: Boolean = false,
 ) {
@@ -70,7 +73,7 @@ internal fun stateOf(
         subtitleEffectsNotDrawn = (subtitle as? SubtitleChoice.On)?.delivery == SubtitleDelivery.FILE && c?.timeline?.usesEffectsThePhoneCannotDraw == true,
         subtitleNotice = c?.notice,
         segmentNow = c?.segmentAt(), upNext = c?.upNext?.state, previous = c?.around?.previous?.id, next = c?.around?.next?.id,
-        sleep = sleep, error = error, fellBackToTranscode = c?.fellBack == true,
+        sleep = sleep, error = error, fellBackToTranscode = c?.fellBack == true, savedQuality = c?.resolved?.saved?.quality,
     )
 }
 

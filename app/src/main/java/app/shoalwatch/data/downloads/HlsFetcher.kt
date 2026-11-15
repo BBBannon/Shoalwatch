@@ -56,14 +56,15 @@ internal class HlsFetcher(
     override suspend fun open(resolved: Resolved, folder: File, runtimeMs: Long?, space: ConversionSpace): Pair<LiveConversion?, FetchResult> {
         val plan = resolved.plan
         val source = plan.source
-        if (plan.method != PlayMethod.TRANSCODE || !source.hls || !MediaPaths.isServerSource(source)) return null to FetchResult.Failed(DownloadFailure.SERVER_ERROR)
+        val route = resolved.route
+        if (route == null || plan.method != PlayMethod.TRANSCODE || !source.hls || !MediaPaths.isServerSource(source)) return null to FetchResult.Failed(DownloadFailure.SERVER_ERROR)
         val hls = paths.hlsFolder(folder)
         if (hls.exists() && !paths.deleteInside(hls)) return null to FetchResult.Retry(AppError.Kind.UNKNOWN)
         if (!hls.mkdirs() && !hls.isDirectory) return null to FetchResult.Retry(AppError.Kind.UNKNOWN)
-        val media = when (val first = playlist(resolved.route, source)) {
+        val media = when (val first = playlist(route, source)) {
             is Fetched.Text -> when (val parsed = HlsPlaylists.parse(first.text, source.path)) {
                 is HlsPlaylists.Parsed.Media -> parsed
-                is HlsPlaylists.Parsed.Master -> when (val second = playlist(resolved.route, parsed.variant)) {
+                is HlsPlaylists.Parsed.Master -> when (val second = playlist(route, parsed.variant)) {
                     is Fetched.Text -> HlsPlaylists.parse(second.text, parsed.variant.path) as? HlsPlaylists.Parsed.Media
                     is Fetched.Stopped -> return null to second.result
                 }
@@ -110,7 +111,7 @@ internal class HlsFetcher(
             if (limit <= 0) return FetchResult.Failed(DownloadFailure.SERVER_ERROR)
             val target = paths.segmentFile(hls, n)
             val result = try {
-                segment(live.resolved.route, live.segments[n].source, paths.segmentPartFile(hls, n), target, limit)
+                segment(checkNotNull(live.resolved.route), live.segments[n].source, paths.segmentPartFile(hls, n), target, limit)
             } catch (e: IOException) {
                 currentCoroutineContext().ensureActive()
                 FetchSupport.forIo(e)

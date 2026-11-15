@@ -69,6 +69,7 @@ internal class PlaybackGatewayImpl(private val api: ServerApi) : PlaybackGateway
     }
 
     private fun checkIds(r: PlaybackReport) {
+        if (r.method == PlayMethod.LOCAL) throw notFound() // RoutedPlaybackReports keeps these on the phone
         if (!MediaPaths.isSafeId(r.mediaSourceId) || (r.playSessionId != null && !MediaPaths.isSafeId(r.playSessionId))) throw notFound()
     }
 
@@ -79,6 +80,7 @@ internal class PlaybackGatewayImpl(private val api: ServerApi) : PlaybackGateway
         PlayMethod.DIRECT_PLAY -> "DirectPlay"
         PlayMethod.DIRECT_STREAM -> "DirectStream"
         PlayMethod.TRANSCODE -> "Transcode"
+        PlayMethod.LOCAL -> "DirectPlay" // never sent: a LOCAL report is refused by checkIds (Milestone 4 sends nothing for one)
     }
 
     /** `text/...` other than HTML, or SubRip's registered type; parameters ignored, any case. Missing is refused. */
