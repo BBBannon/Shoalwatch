@@ -19,7 +19,7 @@ class DeviceProfileBuilderTest {
     private val sdrPhone = DeviceCapabilities(
         video = setOf(VideoCodec.H264, VideoCodec.HEVC), audio = setOf("aac", "mp3", "opus", "flac"), h264MaxLevel = 42,
         hevcMain10 = true, vp9Profile2 = false, av1Main10 = false, decoderHdr = emptyMap(), dolbyVisionProfiles = emptySet(),
-        display = emptySet(), maxAudioChannels = 2,
+        display = emptySet(),
     )
     private val nothing = sdrPhone.copy(video = emptySet(), audio = emptySet(), hevcMain10 = false)
 

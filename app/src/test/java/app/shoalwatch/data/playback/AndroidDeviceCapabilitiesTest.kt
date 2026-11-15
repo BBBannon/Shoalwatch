@@ -92,19 +92,9 @@ class AndroidDeviceCapabilitiesTest {
         assertTrue(VideoCodec.H264 in caps.video)
     }
 
-    @Test fun audioDecodersAndChannels() {
-        add(codec("c2.aac", "audio/mp4a-latm"), codec("c2.opus", "audio/opus"), codec("c2.flac", "audio/flac"))
-        val stereo = read()
-        assertEquals(setOf("aac", "opus", "flac"), stereo.audio)
-        assertEquals(2, stereo.maxAudioChannels)
-    }
-
-    /** Separate from the stereo case: the platform reads its codec list once per process (per test here). */
-    @Test fun anEac3DecoderAllowsSixChannels() {
-        add(codec("c2.aac", "audio/mp4a-latm"), codec("c2.eac3", "audio/eac3"))
-        val caps = read()
-        assertEquals(setOf("aac", "eac3"), caps.audio)
-        assertEquals(6, caps.maxAudioChannels)
+    @Test fun audioDecoders() {
+        add(codec("c2.aac", "audio/mp4a-latm"), codec("c2.opus", "audio/opus"), codec("c2.flac", "audio/flac"), codec("c2.eac3", "audio/eac3"))
+        assertEquals(setOf("aac", "opus", "flac", "eac3"), read().audio)
     }
 
     @Test fun vp9AndAv1TenBitAndHdrProfiles() {
@@ -124,7 +114,6 @@ class AndroidDeviceCapabilitiesTest {
         val caps = read()
         assertEquals(emptySet<VideoCodec>(), caps.video)
         assertEquals(41, caps.h264MaxLevel)
-        assertEquals(2, caps.maxAudioChannels)
     }
 
     @Test fun aPlatformFailureYieldsTheMinimalProfileAndNeverThrows() {

@@ -21,7 +21,7 @@ class PlaybackResolverTest {
     private val gateway = FakePlaybackGateway()
     private val caps = DeviceCapabilities(
         video = setOf(VideoCodec.H264), audio = setOf("aac"), h264MaxLevel = 41, hevcMain10 = false, vp9Profile2 = false, av1Main10 = false,
-        decoderHdr = emptyMap(), dolbyVisionProfiles = emptySet(), display = emptySet(), maxAudioChannels = 2,
+        decoderHdr = emptyMap(), dolbyVisionProfiles = emptySet(), display = emptySet(),
     )
     private val routesMade = mutableListOf<Session>()
     private val routes: suspend (Session) -> MediaRoute = { s -> routesMade += s; PlaybackFakes.route(s) }

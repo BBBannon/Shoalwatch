@@ -9,7 +9,7 @@ import org.junit.Test
 class HdrPolicyTest {
     private fun caps(display: Set<HdrType>, hevcHdr: Set<HdrType> = emptySet(), dv: Set<Int> = emptySet(), hevcMain10: Boolean = true) =
         DeviceCapabilities(setOf(VideoCodec.H264, VideoCodec.HEVC), setOf("aac"), 51, hevcMain10 = hevcMain10, vp9Profile2 = false,
-            av1Main10 = false, decoderHdr = mapOf(VideoCodec.HEVC to hevcHdr), dolbyVisionProfiles = dv, display = display, maxAudioChannels = 2)
+            av1Main10 = false, decoderHdr = mapOf(VideoCodec.HEVC to hevcHdr), dolbyVisionProfiles = dv, display = display)
 
     @Test fun sdrScreenNeverDirectPlaysHdr() =
         assertEquals(setOf(VideoRange.SDR, VideoRange.DOVI_WITH_SDR), HdrPolicy.directPlayRanges(VideoCodec.HEVC, caps(display = emptySet(), hevcHdr = setOf(HdrType.HDR10))))
@@ -72,7 +72,7 @@ class HdrPolicyTest {
         val c = DeviceCapabilities(
             VideoCodec.entries.toSet(), setOf("aac"), 51, hevcMain10 = true, vp9Profile2 = true, av1Main10 = false,
             decoderHdr = mapOf(VideoCodec.VP9 to setOf(HdrType.HDR10), VideoCodec.AV1 to everything), dolbyVisionProfiles = setOf(5, 8),
-            display = everything, maxAudioChannels = 2,
+            display = everything,
         )
         assertEquals(setOf(VideoRange.SDR, VideoRange.HDR10, VideoRange.HDR10_PLUS, VideoRange.HLG), HdrPolicy.directPlayRanges(VideoCodec.VP9, c))
         assertEquals("AV1 decoder says HDR10 and HDR10+, but HLG needs Main10", setOf(VideoRange.SDR, VideoRange.HDR10, VideoRange.HDR10_PLUS), HdrPolicy.directPlayRanges(VideoCodec.AV1, c))

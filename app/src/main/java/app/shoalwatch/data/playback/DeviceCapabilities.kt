@@ -23,7 +23,6 @@ data class DeviceCapabilities(
     val decoderHdr: Map<VideoCodec, Set<HdrType>>,    // e.g. HEVCProfileMain10HDR10 -> HDR10, ...HDR10Plus -> HDR10_PLUS
     val dolbyVisionProfiles: Set<Int>,                // from video/dolby-vision decoders: 5, 8 (dvhe.05, dvhe.08), 9 (dvav.09)
     val display: Set<HdrType>,                        // what the screen can show
-    val maxAudioChannels: Int,                        // 2 on a phone speaker; 6 or 8 only if a decoder for ac3/eac3 exists
 )
 
 fun interface CodecSupport { fun read(): DeviceCapabilities }
@@ -78,11 +77,6 @@ class AndroidDeviceCapabilities(private val context: Context) : CodecSupport {
                 .filterValues { it.isNotEmpty() },
             dolbyVisionProfiles = profiles(DOLBY_VISION_MIME).mapNotNullTo(LinkedHashSet()) { DV_PROFILES[it] },
             display = emptySet(),
-            maxAudioChannels = when {
-                "truehd" in audio -> 8
-                "ac3" in audio || "eac3" in audio -> 6
-                else -> 2
-            },
         )
     }
 
@@ -106,7 +100,7 @@ class AndroidDeviceCapabilities(private val context: Context) : CodecSupport {
         val MINIMAL = DeviceCapabilities(
             video = setOf(VideoCodec.H264), audio = setOf("aac"), h264MaxLevel = DEFAULT_H264_LEVEL,
             hevcMain10 = false, vp9Profile2 = false, av1Main10 = false, decoderHdr = emptyMap(), dolbyVisionProfiles = emptySet(),
-            display = emptySet(), maxAudioChannels = 2,
+            display = emptySet(),
         )
 
         private val AUDIO_MIMES = linkedMapOf(
