@@ -59,7 +59,7 @@ internal class PlayerViewModelImmediateTest : PlaybackControllerTestBase() {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T =
                 PlayerViewModel(ep1, StartFrom.RESUME, SavedStateHandle(), catalog, { s, _ -> controllerFor(s, backgroundScope) }, settings,
-                    QualityDefault(context.getSharedPreferences("player_vm_immediate_test", Context.MODE_PRIVATE)) { false }) as T
+                    QualityDefault(context.getSharedPreferences("player_vm_immediate_test", Context.MODE_PRIVATE)) { false }, {}) as T
         }
         return ViewModelProvider.create(store, factory)[PlayerViewModel::class.java].also { runCurrent() }
     }

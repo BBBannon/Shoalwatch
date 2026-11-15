@@ -197,7 +197,7 @@ internal fun DownloadsRoute(graph: AppGraph, nav: NavHostController) {
 @Composable
 internal fun PlayerRoute(graph: AppGraph, nav: NavHostController, itemId: String, from: StartFrom) {
     val vm = graphStateViewModel(key = "$itemId|$from") { saved ->
-        PlayerViewModel(itemId, from, saved, graph.serverCatalog, { s, scope -> graph.playbackController(s, scope) { true } }, graph.subtitleSettings, graph.qualityDefault)
+        PlayerViewModel(itemId, from, saved, graph.serverCatalog, { s, scope -> graph.playbackController(s, scope) { true } }, graph.subtitleSettings, graph.qualityDefault, graph.addressSelector::refreshIfOffline)
     }
     val state by vm.state.collectAsStateWithLifecycle()
     LaunchedEffect(state.leave) { if (state.leave) nav.popBackStack(Routes.PLAYER, inclusive = true) }

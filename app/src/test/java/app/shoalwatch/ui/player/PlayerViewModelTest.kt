@@ -8,6 +8,7 @@ import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.test.core.app.ApplicationProvider
 import app.shoalwatch.data.playback.CaptionDefaults
+import app.shoalwatch.core.AppError
 import app.shoalwatch.data.playback.PlaybackControllerTestBase
 import app.shoalwatch.data.playback.Quality
 import app.shoalwatch.data.playback.QualityDefault
@@ -57,6 +58,9 @@ internal class PlayerViewModelTest : PlaybackControllerTestBase() {
     private val qualityPrefs = context.getSharedPreferences("player_vm_quality_test", Context.MODE_PRIVATE).also { it.edit().clear().commit() }
     private var metered = false
     private val quality = QualityDefault(qualityPrefs) { metered }
+    /** The connection seam: what Try again asks for, and what the probe then finds. */
+    private val reprobed = mutableListOf<String>()
+    private var onReprobe: () -> Unit = {}
     private val store = ViewModelStore()
 
     @Before fun main() = Dispatchers.setMain(dispatcher)
@@ -67,7 +71,8 @@ internal class PlayerViewModelTest : PlaybackControllerTestBase() {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T =
                 // The controller runs on the test's background scope: its endless tick loops would keep a ViewModel scope from ever going idle.
-                PlayerViewModel(ep1, from, saved, catalog, { s, _ -> made += s; controllerFor(s, backgroundScope) }, settings, quality) as T
+                PlayerViewModel(ep1, from, saved, catalog, { s, _ -> made += s; controllerFor(s, backgroundScope) }, settings, quality,
+                    { serverId -> reprobed += serverId; onReprobe() }) as T
         }
         return ViewModelProvider.create(store, factory)[PlayerViewModel::class.java].also { runCurrent() }
     }
@@ -284,5 +289,23 @@ internal class PlayerViewModelTest : PlaybackControllerTestBase() {
         assertEquals(Quality.MBPS_4, quality.start())
         metered = true
         assertEquals("a saved choice wins on mobile data too", Quality.MBPS_4, quality.start())
+    }
+
+    // ---- Try again re-probes the server first (found on the emulator)
+
+    @Test fun tryAgainAsksForAFreshProbeBeforeOpeningSoPlaybackStartsOnceTheServerIsBack() = runTest(dispatcher) {
+        gateway.failWith = AppError(AppError.Kind.OFFLINE, "offline")
+        val vm = vm()
+        assertEquals(Phase.FAILED, vm.state.value.playback.phase)
+        val asksBefore = playbackInfos
+        var asksAtProbe = -1
+        onReprobe = { asksAtProbe = playbackInfos; gateway.failWith = null } // the probe finds the server Online again
+        vm.retry(); runCurrent()
+        assertEquals(listOf(SERVER_ID), reprobed)
+        assertEquals("the probe is asked for before the item is opened again", asksBefore, asksAtProbe)
+        assertTrue(playbackInfos > asksBefore)
+        engine.durationMs = runtime
+        engine.startPlaying(); runCurrent()
+        assertEquals(Phase.PLAYING, vm.state.value.playback.phase)
     }
 }

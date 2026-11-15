@@ -48,6 +48,8 @@ class PlayerViewModel(
     private val controllerFactory: (Session, CoroutineScope) -> PlaybackController,
     private val subtitleSettings: SubtitleSettings,
     private val quality: QualityDefault,
+    /** Asks the address selector to probe this server again now if it is `Offline` (`ServerConnections.refreshIfOffline`, as every screen's user refresh does): no token, no URL. */
+    private val reprobe: (serverId: String) -> Unit,
 ) : ViewModel() {
     private val _state = MutableStateFlow(PlayerUiState(appearance = subtitleSettings.appearance.value))
     val state: StateFlow<PlayerUiState> = _state.asStateFlow()
@@ -211,8 +213,14 @@ class PlayerViewModel(
         lastSleep = c.state.value.sleep
     }
 
-    /** Opens the item again, as from the detail screen's Resume (the stop has saved the position). */
-    fun retry() = touched { c -> c.open(c.state.value.itemId ?: itemId, StartFrom.RESUME) }
+    /**
+     * Asks for a fresh probe of the server first (the user's own action never waits for the selector's backoff), then opens the
+     * item again, as from the detail screen's Resume (the stop has saved the position): the resolve waits for that probe.
+     */
+    fun retry() = touched { c ->
+        _state.value.session?.let { reprobe(it.serverId) }
+        c.open(c.state.value.itemId ?: itemId, StartFrom.RESUME)
+    }
 
     /** The activity stopped: pause and report (no background playback in this milestone). */
     fun onHostStopped() { controller?.onHostStopped() }
