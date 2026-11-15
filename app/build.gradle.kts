@@ -95,7 +95,15 @@ kotlin {
  */
 object ManifestRules {
     private const val NS = "http://schemas.android.com/apk/res/android"
-    private val bannedInitialisers = listOf("androidx.emoji2.text.EmojiCompatInitializer", "androidx.profileinstaller.ProfileInstallerInitializer")
+    private val bannedInitialisers = listOf(
+        "androidx.emoji2.text.EmojiCompatInitializer", "androidx.profileinstaller.ProfileInstallerInitializer",
+        // WorkManager is initialised on demand with the app's own worker factory (Milestone 4).
+        "androidx.work.WorkManagerInitializer",
+    )
+    /** The one library component that may be exported (Milestone 4): WorkManager's job service, which only the system can bind. */
+    private const val JOB_SERVICE = "androidx.work.impl.background.systemjob.SystemJobService"
+    private const val BIND_JOB_SERVICE = "android.permission.BIND_JOB_SERVICE"
+    private const val FOREGROUND_SERVICE = "androidx.work.impl.foreground.SystemForegroundService"
 
     /** Every rule the manifest in [file] breaks (empty = passes). */
     fun problems(file: File, launcherActivity: String, expectedPermissions: Set<String>): List<String> {
@@ -111,8 +119,20 @@ object ManifestRules {
         if (application.hasAttributeNS(NS, "networkSecurityConfig")) problems += "android:networkSecurityConfig must not be set (user CAs must never be trusted)"
 
         val components = listOf("activity", "activity-alias", "service", "receiver", "provider").flatMap(::elements)
-        val exported = components.filter { it.attr("exported") == "true" }.map { it.attr("name") }
-        if (exported != listOf(launcherActivity)) problems += "only $launcherActivity may be exported, found $exported"
+        val exportedComponents = components.filter { it.attr("exported") == "true" }
+        val exported = exportedComponents.map { it.attr("name") }
+        val allowedJobService = exportedComponents.filter { it.tagName == "service" && it.attr("name") == JOB_SERVICE && it.attr("permission") == BIND_JOB_SERVICE }
+        if ((exportedComponents - allowedJobService.toSet()).map { it.attr("name") } != listOf(launcherActivity)) {
+            problems += "only $launcherActivity (and $JOB_SERVICE with $BIND_JOB_SERVICE) may be exported, found $exported"
+        }
+
+        // Android 14+ refuses a foreground service without its declared type: the download worker's is dataSync, and only that.
+        val services = elements("service")
+        val typed = services.filter { it.hasAttributeNS(NS, "foregroundServiceType") }
+        val foreground = services.singleOrNull { it.attr("name") == FOREGROUND_SERVICE }
+        if (typed.any { it.attr("foregroundServiceType") != "dataSync" } || foreground?.attr("foregroundServiceType") != "dataSync") {
+            problems += "foregroundServiceType must be dataSync, on $FOREGROUND_SERVICE and every typed service"
+        }
 
         val permissions = elements("uses-permission").map { it.attr("name") }.toSet()
         if (permissions != expectedPermissions) problems += "permissions must be exactly ${expectedPermissions.sorted()}, found ${permissions.sorted()}"
@@ -131,7 +151,8 @@ object ManifestRules {
 /**
  * S2, S4, S7, S9 and S10 checked on what actually ships: the MERGED release manifest (libraries add components the
  * source manifest never mentions). Fails the build unless backups are off, the app is not debuggable, there is no
- * `networkSecurityConfig`, the launcher activity is the only exported component, the permissions are exactly
+ * `networkSecurityConfig`, the launcher activity is the only exported component (besides WorkManager's job service, protected
+ * by `BIND_JOB_SERVICE`), every typed foreground service (WorkManager's included) is `dataSync`, the permissions are exactly
  * [expectedPermissions], the only provider is androidx.startup's (not exported), and no initialiser that could
  * contact a third party remains. The rules are in [ManifestRules].
  */
@@ -180,6 +201,13 @@ val releaseLauncherActivity = "app.shoalwatch.ui.MainActivity"
 val releaseExpectedPermissions = setOf(
     "android.permission.INTERNET",
     "android.permission.ACCESS_NETWORK_STATE",
+    // Milestone 4 (downloads), each justified in docs/ARCHITECTURE.md ("Downloads in the background"): WorkManager's own three,
+    // and the data-sync foreground type and the progress notice from the app's manifest.
+    "android.permission.WAKE_LOCK",
+    "android.permission.RECEIVE_BOOT_COMPLETED",
+    "android.permission.FOREGROUND_SERVICE",
+    "android.permission.FOREGROUND_SERVICE_DATA_SYNC",
+    "android.permission.POST_NOTIFICATIONS",
     // Declared (signature level) by androidx.core for receivers registered as not exported.
     "app.shoalwatch.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
 )
@@ -218,6 +246,9 @@ tasks.register<VerifyManifestRuleFixtures>("verifyManifestRuleFixtures") {
             "bad-banned-initialiser.xml" to "must be removed",
             "bad-foreign-provider.xml" to "unexpected provider",
             "bad-no-launcher.xml" to "may be exported",
+            "bad-unprotected-job-service.xml" to "may be exported",
+            "bad-diagnostics-receiver.xml" to "may be exported",
+            "bad-missing-data-sync.xml" to "foregroundServiceType must be dataSync",
         ),
     )
     report.set(layout.buildDirectory.file("reports/release-manifest/fixtures.txt"))
@@ -260,6 +291,7 @@ dependencies {
     implementation(libs.media3.datasource.okhttp)
     implementation(libs.media3.ui)
     implementation(libs.media3.session)
+    implementation(libs.androidx.work.runtime)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
@@ -270,6 +302,7 @@ dependencies {
     testImplementation(libs.okhttp.mockwebserver)
     testImplementation(libs.okhttp.tls)
     testImplementation(libs.androidx.room.testing)
+    testImplementation(libs.androidx.work.testing)
 
     // On-device tests: gradlew connectedDebugAndroidTest
     androidTestImplementation(libs.junit)

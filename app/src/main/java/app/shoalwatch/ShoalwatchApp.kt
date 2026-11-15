@@ -8,9 +8,15 @@ import androidx.media3.common.util.UnstableApi
 import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
+import androidx.work.Configuration
+import app.shoalwatch.data.downloads.ShoalwatchWorkerFactory
 
-/** Also Coil's one source of the image loader: `Artwork` finds it here, so there is exactly one, built by `ArtworkLoader`. */
-class ShoalwatchApp : Application(), SingletonImageLoader.Factory {
+/**
+ * Also Coil's one source of the image loader: `Artwork` finds it here, so there is exactly one, built by `ArtworkLoader`; and
+ * WorkManager's configuration (initialised on demand: the manifest removes its default initialiser), so the download worker is
+ * built by [ShoalwatchWorkerFactory] and WorkManager logs only errors.
+ */
+class ShoalwatchApp : Application(), SingletonImageLoader.Factory, Configuration.Provider {
 
     val graph: AppGraph by lazy { AppGraph(this) }
 
@@ -20,7 +26,14 @@ class ShoalwatchApp : Application(), SingletonImageLoader.Factory {
         Log.setLogLevel(Log.LOG_LEVEL_OFF) // Media3's own log lines carry URIs
         graph.tokensWarmed // start loading saved sign-ins
         graph.activePlayback // start following the active session now: playback is refused until it is known
+        graph.watchDownloads() // WorkManager itself is reached only once something is queued (see MainActivity.onStart)
     }
+
+    override val workManagerConfiguration: Configuration
+        get() = Configuration.Builder()
+            .setWorkerFactory(ShoalwatchWorkerFactory { graph.downloadWorkerParts })
+            .setMinimumLoggingLevel(android.util.Log.ERROR)
+            .build()
 
     override fun newImageLoader(context: PlatformContext): ImageLoader = graph.imageLoader
 

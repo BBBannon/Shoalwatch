@@ -13,6 +13,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import app.shoalwatch.ui.shell.Tab
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -94,13 +95,13 @@ internal object Routes {
  * onboarding; `play/{itemId}?from=` for the player; `servers` and `server/{serverId}` for management. Signing in clears the stack and lands on `home`.
  */
 @Composable
-fun AppRoot(graph: AppGraph) {
+fun AppRoot(graph: AppGraph, openTab: String? = null, onTabOpened: () -> Unit = {}) {
     val startup = graphViewModel { StartupViewModel(graph.serverCatalog) }
     when (startup.state.collectAsStateWithLifecycle().value) {
         StartupState.Loading -> SplashScreen()
         StartupState.Failed -> StartupFailedScreen(onRetry = startup::retry)
-        StartupState.Welcome -> AppNavHost(graph, Routes.WELCOME)
-        StartupState.Home -> AppNavHost(graph, Routes.HOME)
+        StartupState.Welcome -> AppNavHost(graph, Routes.WELCOME, null, onTabOpened)
+        StartupState.Home -> AppNavHost(graph, Routes.HOME, openTab, onTabOpened)
     }
 }
 
@@ -119,8 +120,15 @@ private fun AnimatedContentTransitionScope<NavBackStackEntry>.betweenTabs() =
     initialState.destination.route in TabRoutes && targetState.destination.route in TabRoutes
 
 @Composable
-private fun AppNavHost(graph: AppGraph, start: String) {
+private fun AppNavHost(graph: AppGraph, start: String, openTab: String?, onTabOpened: () -> Unit) {
     val nav = rememberNavController()
+    // The download notice's tap: the Downloads tab, over Home as every tab is.
+    LaunchedEffect(openTab) {
+        if (openTab == Routes.DOWNLOADS) {
+            nav.switchTab(Tab.DOWNLOADS)
+            onTabOpened()
+        }
+    }
     ClearBrowsingOnSessionChange(nav, graph.serverCatalog)
     val serverArg = listOf(navArgument(Routes.ARG_SERVER) { type = NavType.StringType })
     NavHost(

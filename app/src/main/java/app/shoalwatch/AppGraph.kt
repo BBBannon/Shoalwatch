@@ -9,8 +9,24 @@ import app.shoalwatch.data.images.ArtworkDiskCaches
 import app.shoalwatch.data.images.ArtworkEviction
 import app.shoalwatch.data.images.ArtworkLoader
 import app.shoalwatch.data.images.PinnedArtwork
+import app.shoalwatch.data.db.downloads.DownloadStore
+import app.shoalwatch.data.db.downloads.LibraryWriteLock
 import app.shoalwatch.data.downloads.AndroidVolumes
+import app.shoalwatch.data.downloads.DownloadNotifications
 import app.shoalwatch.data.downloads.DownloadPaths
+import app.shoalwatch.data.downloads.DownloadPrefs
+import app.shoalwatch.data.downloads.DownloadQueue
+import app.shoalwatch.data.downloads.DownloadScheduler
+import app.shoalwatch.data.downloads.DownloadVerifier
+import app.shoalwatch.data.downloads.DownloadWorker
+import app.shoalwatch.data.downloads.ExtrasFetcher
+import app.shoalwatch.data.downloads.FileFetcher
+import app.shoalwatch.data.downloads.HlsFetcher
+import app.shoalwatch.data.downloads.Volumes
+import app.shoalwatch.data.downloads.api.DownloadGateway
+import app.shoalwatch.data.downloads.api.DownloadGatewayImpl
+import app.shoalwatch.data.playback.engine.SavedMediaProbe
+import androidx.work.WorkManager
 import app.shoalwatch.core.SystemMonotonicClock
 import app.shoalwatch.data.db.library.LocalChangeLog
 import app.shoalwatch.data.library.Library
@@ -103,7 +119,46 @@ class AppGraph(private val appContext: Context) {
         ArtworkLoader.build(appContext, serverApi, { s -> serverStore.awaitWarmed(); serverStore.cachedToken(s.serverId, s.userId) != null }, artworkCaches, pinned = pinnedArtwork)
     }
     /** Where download files go (internal storage, or an SD card by choice); the only code that names them. */
-    internal val downloadPaths: DownloadPaths by lazy { DownloadPaths(AndroidVolumes(appContext)) }
+    internal val downloadVolumes: Volumes by lazy { AndroidVolumes(appContext) }
+    internal val downloadPaths: DownloadPaths by lazy { DownloadPaths(downloadVolumes) }
+    /** The download rows, owners and pins; every pin is written under the library's write lock. */
+    internal val downloadStore: DownloadStore by lazy {
+        DownloadStore(database, System::currentTimeMillis, object : LibraryWriteLock {
+            override suspend fun <T> locked(block: suspend () -> T): T = libraryRepository.writeGated(block)
+        })
+    }
+    /** Device download settings (mobile data, storage, default quality) in the private `download_prefs` file. */
+    val downloadPrefs: DownloadPrefs by lazy { DownloadPrefs(appContext.getSharedPreferences("download_prefs", Context.MODE_PRIVATE)) }
+    internal val downloadGateway: DownloadGateway by lazy { DownloadGatewayImpl(serverApi) }
+    /** One item at a time; see "Download queue" in docs/ARCHITECTURE.md. Every byte through the account's guarded, pinned client. */
+    internal val downloadQueue: DownloadQueue by lazy {
+        DownloadQueue(
+            downloadStore, playbackResolver, { s, id -> serverApi.downloadRoute(s, id) }, downloadGateway,
+            FileFetcher(Dispatchers.IO, downloadVolumes), HlsFetcher(Dispatchers.IO, SystemMonotonicClock, downloadPaths, downloadVolumes),
+            ExtrasFetcher(playbackGateway, serverApi, database.itemDao(), database.downloadDao(), downloadPaths, pinnedArtwork),
+            DownloadVerifier(SavedMediaProbe(appContext), AndroidDeviceCapabilities(appContext), Dispatchers.IO),
+            downloadPaths, downloadVolumes, { s -> serverStore.cachedToken(s.serverId, s.userId) != null }, trackPreferences,
+            { systemCaptionDefaults(appContext) }, SystemMonotonicClock,
+        )
+    }
+    internal val downloadNotifications: DownloadNotifications by lazy { DownloadNotifications(appContext) }
+    /** WorkManager is reached only from here, on first use (initialised on demand with `ShoalwatchWorkerFactory`). */
+    val downloadScheduler: DownloadScheduler by lazy { DownloadScheduler({ WorkManager.getInstance(appContext) }, downloadPrefs) }
+
+    private val anyQueued: suspend () -> Boolean = { database.downloadDao().queuedCount() > 0 }
+
+    /** From app start: a change of "Use mobile data" replaces the work (WorkManager is reached only once something is queued). */
+    fun watchDownloads(): Job = downloadScheduler.watchSettings(appScope, anyQueued)
+
+    /** The app's activity started: kick the download worker if anything is queued (off the main thread). */
+    fun downloadsInFront() { appScope.launch { downloadScheduler.inFront(anyQueued) } }
+    /** What `ShoalwatchWorkerFactory` hands the download worker. */
+    internal val downloadWorkerParts: DownloadWorker.Parts by lazy {
+        DownloadWorker.Parts(
+            downloadQueue, downloadNotifications, { downloadScheduler.report(it) }, { since -> database.downloadDao().completedSince(since) },
+            { downloadPrefs.settings.value.mobileData }, System::currentTimeMillis,
+        )
+    }
     /** Pictures kept with downloads, consulted by the image loader after a disk-cache miss. */
     val pinnedArtwork: PinnedArtwork by lazy { PinnedArtwork(database.downloadDao(), downloadPaths) }
     /** Clears a server's pictures when the server, or its last signed-in account, goes. */

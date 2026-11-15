@@ -54,7 +54,7 @@ internal class DownloadQueue(
     private val io: CoroutineDispatcher = Dispatchers.IO,
     private val maxAttempts: Int = 8,
     private val liveConversionMaxAgeMs: Long = 30 * 60_000L,
-) {
+) : QueueDrain {
     private val drains = Mutex()
     private val starts = Mutex()
     private val live = ConcurrentHashMap<DownloadKey, LiveConversion>()
@@ -80,7 +80,7 @@ internal class DownloadQueue(
     suspend fun <T> whileNoneStarts(block: suspend () -> T): T = starts.withLock { block() }
 
     /** Called by the worker. Requeues interrupted rows, then runs QUEUED items in order until none is left or [shouldStop] says so. */
-    suspend fun drain(shouldStop: () -> Boolean, onProgress: suspend (QueueStatus) -> Unit): QueueRun = drains.withLock {
+    override suspend fun drain(shouldStop: () -> Boolean, onProgress: suspend (QueueStatus) -> Unit): QueueRun = drains.withLock {
         store.requeueInterrupted()
         var done = 0
         while (true) {

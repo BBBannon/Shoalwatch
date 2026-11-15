@@ -433,4 +433,13 @@
     <string name="stream_hdr_shown">HDR video, shown in HDR.</string>
     <string name="stream_hdr_converted">HDR video. This screen can\'t show HDR, so your server is converting the colours.</string>
     <string name="stream_dolby_vision_as_hdr10">Dolby Vision video, shown as HDR10.</string>
+    <!-- Download notification (Milestone 4 Task 11): fixed words only, never a title or a profile name. -->
+    <string name="download_channel_name">Downloads</string>
+    <string name="download_public">Shoalwatch is downloading</string>
+    <string name="download_running">Downloading %1$d of %2$d</string>
+    <string name="download_waiting_wifi">Waiting for Wi-Fi</string>
+    <string name="download_waiting_connection">Waiting for a connection</string>
+    <string name="download_paused_time_limit">Downloads paused. Open Shoalwatch to carry on.</string>
+    <string name="download_finished">Downloads finished</string>
+    <string name="download_finished_count">%1$d ready to watch offline</string>
 </resources>

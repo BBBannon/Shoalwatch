@@ -33,6 +33,9 @@ abstract class DownloadDao {
     @Query("SELECT MAX(queuePosition) FROM downloads")
     internal abstract suspend fun lastPosition(): Long?
 
+    @Query("SELECT COUNT(*) FROM downloads WHERE state = 'COMPLETE' AND completedAt >= :since")
+    internal abstract suspend fun completedSince(since: Long): Int
+
     @Query("SELECT COUNT(*) FROM downloads WHERE state = 'QUEUED'")
     internal abstract suspend fun queuedCount(): Int
 
@@ -195,4 +198,3 @@ internal data class TrackRow(
 internal data class SegmentRow(val serverId: String, val itemId: String, val kind: String, val startMs: Long, val endMs: Long) {
     override fun toString() = "SegmentRow(<redacted>)"
 }
-

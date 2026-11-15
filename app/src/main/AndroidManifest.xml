@@ -5,12 +5,14 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!--
-        Media3's ExoPlayer AAR requests WAKE_LOCK for its optional wake mode. The player never sets a wake
-        mode (the player screen keeps itself on through its window), so the permission is removed.
+        Downloads (Milestone 4) run as one WorkManager foreground worker of type dataSync, so Android 14+ needs the
+        data-sync foreground-service permission, and the progress notice needs POST_NOTIFICATIONS (downloads still run
+        without it). WAKE_LOCK, RECEIVE_BOOT_COMPLETED and FOREGROUND_SERVICE come from work-runtime's own manifest:
+        WorkManager holds a wake lock while foreground work runs and reschedules after a reboot. Milestone 3's removal of
+        WAKE_LOCK is gone for that reason; the player still sets no wake mode (Media3BoundaryTest bans setWakeMode).
     -->
-    <uses-permission
-        android:name="android.permission.WAKE_LOCK"
-        tools:node="remove" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!--
         usesCleartextTraffic="true" is deliberate. Users may opt in to a plain-HTTP LAN server, per
@@ -49,6 +51,19 @@
             android:name="androidx.profileinstaller.ProfileInstallReceiver"
             tools:node="remove" />
 
+        <!--
+            WorkManager: its foreground service runs the download worker as dataSync (without the type Android 14+
+            refuses to start it); its diagnostics receiver (exported, DUMP-protected) is not needed. SystemJobService
+            stays exported, protected by BIND_JOB_SERVICE, so only the system can bind it.
+        -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
+        <receiver
+            android:name="androidx.work.impl.diagnostics.DiagnosticsReceiver"
+            tools:node="remove" />
+
         <provider
             android:name="androidx.startup.InitializationProvider"
             android:authorities="${applicationId}.androidx-startup"
@@ -58,6 +73,10 @@
                 tools:node="remove" />
             <meta-data
                 android:name="androidx.profileinstaller.ProfileInstallerInitializer"
+                tools:node="remove" />
+            <!-- WorkManager starts on demand with the app's own worker factory (ShoalwatchApp is a Configuration.Provider). -->
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
                 tools:node="remove" />
         </provider>
     </application>

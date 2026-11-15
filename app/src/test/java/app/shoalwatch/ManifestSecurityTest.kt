@@ -24,6 +24,7 @@ import org.w3c.dom.Element
 class ManifestSecurityTest {
 
     private val androidNs = "http://schemas.android.com/apk/res/android"
+    private val toolsNs = "http://schemas.android.com/tools"
 
     private val manifest: Element by lazy {
         val file = listOf("src/main/AndroidManifest.xml", "app/src/main/AndroidManifest.xml")
@@ -61,19 +62,44 @@ class ManifestSecurityTest {
         assertEquals(null, application.attr("networkSecurityConfig"))
     }
 
+    private fun elements(tag: String): List<Element> =
+        manifest.getElementsByTagName(tag).let { nodes -> (0 until nodes.length).map { nodes.item(it) as Element } }
+
+    private fun Element.toolsNode(): String? = getAttributeNS(toolsNs, "node").takeIf { it.isNotEmpty() }
+
     @Test
-    fun onlyInternetAndNetworkStatePermissionsAreRequested() {
-        val permissions = manifest.getElementsByTagName("uses-permission").let { nodes ->
-            // A `tools:node="remove"` entry is a removal of a library's request (WAKE_LOCK from Media3), not a request.
-            (0 until nodes.length).map { nodes.item(it) as Element }
-                .filter { it.getAttributeNS("http://schemas.android.com/tools", "node") != "remove" }
-                .map { it.attr("name") }
-        }
+    fun theRequestedPermissionsAreTheMilestone4Ones() {
+        // A `tools:node="remove"` entry is a removal of a library's request, not a request. WAKE_LOCK, RECEIVE_BOOT_COMPLETED and
+        // FOREGROUND_SERVICE arrive from work-runtime's own manifest (the merged release manifest is checked by verifyReleaseManifest).
+        val permissions = elements("uses-permission").filter { it.toolsNode() != "remove" }.map { it.attr("name") }
         assertEquals(
-            setOf("android.permission.INTERNET", "android.permission.ACCESS_NETWORK_STATE"),
+            setOf(
+                "android.permission.INTERNET", "android.permission.ACCESS_NETWORK_STATE",
+                "android.permission.FOREGROUND_SERVICE_DATA_SYNC", "android.permission.POST_NOTIFICATIONS",
+            ),
             permissions.toSet(),
         )
         assertEquals(permissions.size, permissions.toSet().size)
+    }
+
+    @Test
+    fun wakeLockIsNoLongerRemovedBecauseWorkManagerHoldsOneWhileForegroundWorkRuns() {
+        assertTrue(elements("uses-permission").none { it.attr("name") == "android.permission.WAKE_LOCK" })
+    }
+
+    @Test
+    fun workManagersDiagnosticsReceiverAndDefaultInitialiserAreRemoved() {
+        val diagnostics = elements("receiver").single { it.attr("name") == "androidx.work.impl.diagnostics.DiagnosticsReceiver" }
+        assertEquals("remove", diagnostics.toolsNode())
+        val initialiser = elements("meta-data").single { it.attr("name") == "androidx.work.WorkManagerInitializer" }
+        assertEquals("remove", initialiser.toolsNode())
+    }
+
+    @Test
+    fun theForegroundServiceIsMergedAsDataSync() {
+        val service = elements("service").single { it.attr("name") == "androidx.work.impl.foreground.SystemForegroundService" }
+        assertEquals("dataSync", service.attr("foregroundServiceType"))
+        assertEquals("merge", service.toolsNode())
     }
 
     @Test
