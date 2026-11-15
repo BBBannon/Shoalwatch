@@ -9,6 +9,7 @@ import app.shoalwatch.data.library.ItemDetail
 import app.shoalwatch.data.library.ItemKind
 import app.shoalwatch.data.library.ItemWithUserData
 import app.shoalwatch.data.library.SeriesDetail
+import app.shoalwatch.data.playback.engine.PlayerEngine
 import app.shoalwatch.data.servers.Session
 import app.shoalwatch.ui.browse.AMY
 import app.shoalwatch.ui.browse.BEN
@@ -67,8 +68,8 @@ internal abstract class PlaybackControllerTestBase {
 
     fun answerOnly(vararg names: String) { gateway.infos.clear(); names.forEach { gateway.answer(fixtureInfo(it)) } }
 
-    fun TestScope.controller() = PlaybackController(
-        session, engine, PlaybackResolver(gateway, { caps }, routes, StandardTestDispatcher(testScheduler)), reports, gateway, library,
+    fun TestScope.controller(player: PlayerEngine = engine) = PlaybackController(
+        session, player, PlaybackResolver(gateway, { caps }, routes, StandardTestDispatcher(testScheduler)), reports, gateway, library,
         EpisodeNavigator(library), activePlayback, backgroundScope, backgroundScope, clock, { autoplay },
         trackPrefs, SubtitleLoader(gateway, StandardTestDispatcher(testScheduler)), { captions },
     )

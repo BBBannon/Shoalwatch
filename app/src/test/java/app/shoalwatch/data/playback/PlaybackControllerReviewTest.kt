@@ -77,4 +77,17 @@ internal class PlaybackControllerReviewTest : PlaybackControllerTestBase() {
         assertEquals(1, engine.loads.size)
         assertNull("the countdown was cancelled", c.state.value.upNext?.secondsLeft)
     }
+
+    // ---- I-1: the old player is released before the new one loads
+
+    @Test fun aSecondPlayerLoadsOnlyAfterTheFirstIsReleased() = runTest {
+        val log = mutableListOf<String>()
+        engine.log = log; engine.name = "first"
+        val first = controller(); openAndPlay(first)
+        val second = controller(FakePlayerEngine().also { it.log = log; it.name = "second" })
+        assertEquals("making a player builds no session yet", listOf("first load"), log)
+        second.open(ep2, StartFrom.BEGINNING); runCurrent()
+        assertEquals(listOf("first load", "first release", "second load"), log)
+        assertNull("the first has ended", first.state.value.session)
+    }
 }

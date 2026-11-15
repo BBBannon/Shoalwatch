@@ -112,6 +112,9 @@ internal class FakePlayerEngine : PlayerEngine {
     override var playWhenReady = false
     override var audioLanguages: List<String?> = emptyList()
     val loads = mutableListOf<Pair<EngineItem, Long>>()
+    /** Shared between engines to see their order: "<name> load", "<name> release". */
+    var log: MutableList<String>? = null
+    var name = "engine"
     val loadedAt: Long? get() = loads.lastOrNull()?.second
     val seeks = mutableListOf<Long>()
     var speedSet = 1f
@@ -128,6 +131,7 @@ internal class FakePlayerEngine : PlayerEngine {
 
     override fun load(item: EngineItem, startMs: Long, playWhenReady: Boolean) {
         check(!released) { "loaded after release" }
+        log?.add("$name load")
         loads += item to startMs
         positionMs = startMs
         isPlaying = false
@@ -140,5 +144,5 @@ internal class FakePlayerEngine : PlayerEngine {
     override fun selectAudio(ordinal: Int?) { audioOrdinal = ordinal }
     override fun selectPictureSubtitle(ordinal: Int?) { pictureOrdinal = ordinal }
     override fun setMediaMetadata(title: String?, subtitle: String?) { metadataTitle = title; metadataSubtitle = subtitle }
-    override fun release() { released = true; isPlaying = false }
+    override fun release() { if (!released) log?.add("$name release"); released = true; isPlaying = false }
 }

@@ -22,6 +22,7 @@ import app.shoalwatch.data.api.MediaRoute
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import okhttp3.Call
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * The one place ExoPlayer is touched; main thread only, as thin as it can be (the behaviour is in `PlaybackController`, the
@@ -31,7 +32,7 @@ import okhttp3.Call
  *   `OkHttpDataSource`; there is no other data source. After [release] there is no route, so nothing more can be fetched.
  * - **Audio:** usage media / content movie, ExoPlayer handles audio focus and pauses when headphones go (reported as
  *   [EngineEvent.BecameNoisy]). No wake mode (the manifest has no `WAKE_LOCK`: the player screen keeps itself on).
- * - **Media session:** activity-scoped, no service, so no notification and no exported component. Controllers (headset,
+ * - **Media session:** built at the first load (after any earlier player was ended), a unique id per engine; activity-scoped, no service, so no notification and no exported component. Controllers (headset,
  *   Bluetooth, Assistant) get play/pause, seeking and the title only: they cannot set media items, change speed or tracks.
  * - **Text renderer** off unless a picture-subtitle track is selected (text subtitles are the app's own).
  */
@@ -53,7 +54,11 @@ class ExoPlayerEngine(context: Context) : PlayerEngine {
         .setSeekForwardIncrementMs(SEEK_MS)
         .build()
 
-    private val session: MediaSession = MediaSession.Builder(appContext, player).setId(SESSION_ID).setCallback(ControllerRules).build()
+    /**
+     * Built at the first [load], so only after `ActivePlayback.begin` has ended (and so released) any earlier player; its id is
+     * unique per engine as well, because Media3 refuses a second live session with the same id (Task 6 review I-1).
+     */
+    private var session: MediaSession? = null
 
     private var audioOrdinal: Int? = null
     private var pictureOrdinal: Int? = null
@@ -109,6 +114,9 @@ class ExoPlayerEngine(context: Context) : PlayerEngine {
     override fun load(item: EngineItem, startMs: Long, playWhenReady: Boolean) {
         check(!released) { "Engine released." }
         route = item.route
+        if (session == null) {
+            session = MediaSession.Builder(appContext, player).setId(SESSION_ID + "-" + sessions.incrementAndGet()).setCallback(ControllerRules).build()
+        }
         player.setMediaItem(MediaItems.build(item, title, subtitle), startMs)
         player.prepare()
         player.playWhenReady = playWhenReady
@@ -132,7 +140,8 @@ class ExoPlayerEngine(context: Context) : PlayerEngine {
     override fun release() {
         if (released) return
         released = true
-        session.release()
+        session?.release()
+        session = null
         player.removeListener(listener)
         player.release()
         route = null
@@ -175,6 +184,7 @@ class ExoPlayerEngine(context: Context) : PlayerEngine {
 
     private companion object {
         const val SESSION_ID = "shoalwatch-player"
+        val sessions = AtomicLong()
         const val SEEK_MS = 10_000L
         val PICTURE_TYPES = setOf(MimeTypes.APPLICATION_PGS, MimeTypes.APPLICATION_VOBSUB, MimeTypes.APPLICATION_DVBSUBS)
     }
