@@ -156,7 +156,8 @@ internal class DownloadQueue(
             paths.partFile(folder, ext).takeIf { it.exists() }?.let(paths::deleteInside)
         }
         val fetched = QueueFetched(target, hls = false, shape = null, audioListed = playable.audio.isNotEmpty())
-        if (target.exists() && !part.exists()) return fetched // renamed before the process died: only the check is left
+        // Renamed before the process died: only the check is left if THIS sign-in's /Download served it, else fetch again (Tasks 11-12 review Minor 2).
+        if (target.exists() && !part.exists()) { if (store.isConfirmed(key, s.userId)) return fetched; paths.deleteInside(target); write(key) { it.copy(doneBytes = 0, totalBytes = null, validator = null) } }
         var route = server(key) { downloadRoute(s, key.itemId) }
         var rerouted = false
         while (true) {

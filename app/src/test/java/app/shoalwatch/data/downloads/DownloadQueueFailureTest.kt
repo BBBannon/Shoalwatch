@@ -82,6 +82,35 @@ class DownloadQueueFailureTest : DownloadQueueTestBase() {
         assertEquals("nothing was asked for f1", listOf(f2.id), files.calls.map { it.itemId })
     }
 
+    /**
+     * Tasks 11-12 review Minor 2: a file renamed before the process died, found by an owner whose own permission was never
+     * confirmed (another owner fetched it under its sign-in), is fetched again under this owner's sign-in, never kept as it is.
+     */
+    @Test fun aFileLeftByAnotherOwnersFetchIsFetchedAgainUnderTheFetchersOwnSignIn() {
+        queued(a, f1) // CanDownload unknown: A's permission is not confirmed
+        clock += 10
+        seen(s1u2, f1)
+        runBlocking { store.add(s1u2, listOf(shareDownload(f1))) } // B, confirmed, fetched it and died just after the rename
+        paths.mediaFile(folder(f1).also { it.mkdirs() }, "mkv").writeBytes(ByteArray(FakeFiles.SIZE.toInt()))
+        runBlocking { store.update(key(f1)) { it.copy(doneBytes = FakeFiles.SIZE, totalBytes = FakeFiles.SIZE, validator = "\"v1\"") } }
+        playable()
+        assertEquals(QueueRun.Drained, drain())
+        assertEquals("A's own /Download was asked, from the start", listOf(0L), files.calls.map { it.resumeFrom })
+        assertEquals(DownloadState.COMPLETE, download(f1)!!.state)
+        assertTrue("and A's permission is now its own", runBlocking { store.isConfirmed(key(f1), a.userId) })
+    }
+
+    @Test fun aFileRenamedByTheFetchersOwnSignInIsOnlyChecked() {
+        queued(a, f1)
+        runBlocking { store.confirm(key(f1), a.userId) }
+        paths.mediaFile(folder(f1).also { it.mkdirs() }, "mkv").writeBytes(ByteArray(FakeFiles.SIZE.toInt()))
+        runBlocking { store.update(key(f1)) { it.copy(doneBytes = FakeFiles.SIZE, totalBytes = FakeFiles.SIZE) } }
+        playable()
+        drain()
+        assertTrue("nothing fetched again", files.calls.isEmpty())
+        assertEquals(DownloadState.COMPLETE, download(f1)!!.state)
+    }
+
     @Test fun theEarliestOwnerWithATokenFetches() {
         queued(a, f1)
         clock += 10
