@@ -33,7 +33,7 @@ Each sign-in gets a fresh random token. `POST /Sessions/Logout` revokes it, afte
 ## Catalogue
 
 - **Films** (movies): 40 films with years, runtimes, overviews and ratings. Three are part-watched (Continue Watching), three are played, three are favourites.
-- **TV** (tvshows): 3 series, 2 seasons each, 6 episodes per season. Harbour Lights is part-watched: season 1 and S2E1 played, S2E2 half-way, so Continue Watching and Next Up both have TV content.
+- **TV** (tvshows): 3 series, 2 seasons each, 6 episodes per season. Harbour Lights is part-watched: season 1 and S2E1 played, S2E2 half-way, so Continue Watching has TV content. The app asks Next Up with `enableResumable=false`, as real Jellyfin honours it, so S2E2 is not repeated there until you mark it watched (then S2E3 is next up).
 - Ids are fixed 32-hex GUIDs, the same every run. Only the `Primary` image exists for each item (a plain solid colour from the item id, sized from `maxWidth`/`width`/`maxHeight`/`height`, with `ETag` and `Cache-Control`), except: three films and the series Night Shift have no image at all (empty `ImageTags`, image request 404) to exercise placeholders, and one film also has a `Backdrop` (`BackdropImageTags` set; `/Images/Backdrop[/0]` serves a 16:9 colour).
 - Mutations (played, favourite, user data) change in-memory state, so marking an episode played moves Next Up.
 
@@ -42,7 +42,7 @@ Each sign-in gets a fresh random token. `POST /Sessions/Logout` revokes it, afte
 Public: `GET /System/Info/Public`, `GET /QuickConnect/Enabled`, `POST /Users/AuthenticateByName`.
 
 Need `Authorization: MediaBrowser ..., Token="..."` with a token this server issued (otherwise 401):
-`POST /Sessions/Logout`, `GET /Users/Me`, `GET /UserViews`, `GET /Items` (`parentId`, `startIndex`, `limit`, `sortBy`, `sortOrder`, `recursive`, `includeItemTypes`, `searchTerm`, `filters=IsUnplayed|IsPlayed|IsFavorite`, `ids`), `GET /Items/{id}`, `GET /Items/Latest`, `GET /Shows/{id}/Seasons`, `GET /Shows/{id}/Episodes` (`seasonId`), `GET /UserItems/Resume`, `GET /Shows/NextUp`, `POST`/`DELETE /UserPlayedItems/{id}`, `POST`/`DELETE /UserFavoriteItems/{id}`, `GET`/`POST /UserItems/{id}/UserData`, `GET /Items/{id}/Images/Primary`.
+`POST /Sessions/Logout`, `GET /Users/Me`, `GET /UserViews`, `GET /Items` (`parentId`, `startIndex`, `limit`, `sortBy`, `sortOrder`, `recursive`, `includeItemTypes`, `searchTerm`, `filters=IsUnplayed|IsPlayed|IsFavorite`, `ids`), `GET /Items/{id}`, `GET /Items/Latest`, `GET /Shows/{id}/Seasons`, `GET /Shows/{id}/Episodes` (`seasonId`), `GET /UserItems/Resume`, `GET /Shows/NextUp` (`enableResumable`), `POST`/`DELETE /UserPlayedItems/{id}`, `POST`/`DELETE /UserFavoriteItems/{id}`, `GET`/`POST /UserItems/{id}/UserData`, `GET /Items/{id}/Images/Primary`.
 
 - Query parameter names are matched case-insensitively, as Jellyfin does.
 - Like real Jellyfin, artwork (`GET /Items/{id}/Images/...`) needs no token.

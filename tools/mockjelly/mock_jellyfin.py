@@ -235,13 +235,14 @@ def resume_items(q):
 
 def next_up(q):
     series_id, parent = norm(q.get("seriesid", [""])[0]), norm(q.get("parentid", [""])[0])
+    resumable = q.get("enableresumable", ["true"])[0].lower() != "false"  # false: leave out episodes already part way through
     rows = []
     for sid in CHILDREN.get(TV_ID, []):
         if (series_id and sid != series_id) or (parent and parent not in (sid, TV_ID)):
             continue
         eps = sorted(episodes_of(sid), key=lambda e: (ITEMS[e]["ParentIndex"], ITEMS[e]["Index"]))
         played = [n for n, e in enumerate(eps) if user_state(e)["played"]]
-        if played and played[-1] + 1 < len(eps):
+        if played and played[-1] + 1 < len(eps) and (resumable or user_state(eps[played[-1] + 1])["pos"] == 0):
             rows.append((max(when(eps[n]) for n in played), ITEMS[eps[played[-1] + 1]]))
     return page([item for _, item in sorted(rows, key=lambda r: r[0], reverse=True)], q)
 
