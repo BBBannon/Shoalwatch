@@ -250,7 +250,7 @@ abstract class HomeRenderBase : RenderBase() {
 
     @Test fun hasContentDescriptionHelperWorks() {
         showHome(content)
-        assertTrue(rule.onAllNodes(hasContentDescription(text(R.string.account_menu_cd))).fetchSemanticsNodes().isNotEmpty())
+        assertTrue(rule.onAllNodes(hasContentDescription(text(R.string.home_manage))).fetchSemanticsNodes().isNotEmpty())
     }
 }
 

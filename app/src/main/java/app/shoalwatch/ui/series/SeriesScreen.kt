@@ -55,6 +55,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -184,7 +185,8 @@ private fun SeriesContent(state: SeriesUiState, actions: SeriesActions) {
                 item(key = "hero") {
                     Column {
                         if (heroArtwork != null) HeroBackdrop(heroArtwork, title, actions.onBack) else BackBar(actions.onBack)
-                        Header(state, title, strings, actions.onRefresh)
+                        // Nothing saved and the load failed: the error state below is all there is, so no blocks that look still loading.
+                        if (!failedEmpty) Header(state, title, strings, actions.onRefresh)
                     }
                 }
                 if (!failedEmpty) state.banner?.let { kind -> item(key = "banner") { FreshnessBanner(kind, banner) } }
@@ -236,7 +238,8 @@ private fun Header(state: SeriesUiState, title: String, strings: Strings, onRefr
         if (series != null) {
             Artwork(state.session?.let { series.item.primaryArtwork(it) }, null, aspect = ArtworkAspect.POSTER, title = title, modifier = Modifier.width(96.dp))
         } else {
-            SkeletonBlock(Modifier.width(96.dp), ratio = 2f / 3f)
+            val loading = stringResource(R.string.cd_loading_content)
+            SkeletonBlock(Modifier.width(96.dp).semantics { contentDescription = loading }, ratio = 2f / 3f)
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (series != null) {

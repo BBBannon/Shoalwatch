@@ -137,32 +137,38 @@ private fun TitleAndChip(
     }
 }
 
-/** The account button always opens a small menu: switch account (when there is more than one), Refresh, and Servers and accounts. */
+/**
+ * With one account the button is simply "Servers and accounts": one tap, nothing to switch, no menu to announce (Refresh is on the
+ * title, as an action, and by pulling down). With several it opens a small menu: switch account, Refresh, and Servers and accounts;
+ * the button says "Menu open" only while it is open, so it is not wordy every time it is focused.
+ */
 @Composable
 private fun AccountButton(state: HomeUiState, actions: HomeActions) {
+    if (state.accounts.size <= 1) {
+        IconButton(onClick = actions.onOpenServers) { Icon(Icons.Filled.AccountCircle, stringResource(R.string.home_manage)) }
+        return
+    }
     var open by rememberSaveable { mutableStateOf(false) }
-    val menuState = stringResource(if (open) R.string.state_menu_open else R.string.state_menu_closed)
+    val menuOpen = stringResource(R.string.state_menu_open)
     Box {
-        IconButton(onClick = { open = true }, modifier = Modifier.semantics { stateDescription = menuState }) {
+        IconButton(onClick = { open = true }, modifier = Modifier.semantics { if (open) stateDescription = menuOpen }) {
             Icon(Icons.Filled.AccountCircle, stringResource(R.string.account_menu_cd))
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            if (state.accounts.size > 1) {
-                Text(
-                    stringResource(R.string.account_switch_title),
-                    Modifier.padding(horizontal = 16.dp, vertical = 8.dp).semantics { heading() },
-                    style = MaterialTheme.typography.titleMedium,
+            Text(
+                stringResource(R.string.account_switch_title),
+                Modifier.padding(horizontal = 16.dp, vertical = 8.dp).semantics { heading() },
+                style = MaterialTheme.typography.titleMedium,
+            )
+            val current = state.session?.userId
+            state.accounts.forEach { account ->
+                val name = if (account.userId == current) stringResource(R.string.account_current, account.userName) else account.userName
+                DropdownMenuItem(
+                    text = { Text(name, style = MaterialTheme.typography.bodyLarge) },
+                    onClick = { open = false; if (account.userId != current) actions.onSwitchAccount(account.userId) },
                 )
-                val current = state.session?.userId
-                state.accounts.forEach { account ->
-                    val name = if (account.userId == current) stringResource(R.string.account_current, account.userName) else account.userName
-                    DropdownMenuItem(
-                        text = { Text(name, style = MaterialTheme.typography.bodyLarge) },
-                        onClick = { open = false; if (account.userId != current) actions.onSwitchAccount(account.userId) },
-                    )
-                }
-                HorizontalDivider()
             }
+            HorizontalDivider()
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.action_refresh), style = MaterialTheme.typography.bodyLarge) },
                 onClick = { open = false; actions.onRefresh() },

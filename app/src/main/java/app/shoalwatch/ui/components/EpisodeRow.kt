@@ -44,7 +44,7 @@ fun EpisodeRow(
     val thumbWidth = if (wide) 176.dp else 120.dp
     val spoken = listOfNotNull(
         if (working) stringResource(R.string.cd_working) else null,
-        if (highlighted) stringResource(R.string.state_up_next) else null,
+        if (highlighted) stringResource(R.string.state_you_were_watching) else null,
     ).joinToString(", ").ifEmpty { null }
     Surface(
         modifier.fillMaxWidth(),

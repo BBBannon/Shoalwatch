@@ -70,7 +70,7 @@ abstract class BrowseFixesRenderBase : RenderBase() {
                 EpisodeRow(sampleEpisode("C").copy(label = "plain"), {}, {})
             }
         }
-        assertEquals(text(R.string.state_up_next), stateOf("lit"))
+        assertEquals("You were watching this", stateOf("lit"))
         assertEquals(text(R.string.cd_working), stateOf("busy"))
         assertEquals(null, stateOf("plain"))
     }

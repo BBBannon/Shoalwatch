@@ -120,34 +120,32 @@ abstract class HomeLayoutRenderBase : RenderBase() {
 
     // --- the account menu ----------------------------------------------------------------------------------------
 
-    @Test fun withOneAccountTheButtonStillOpensAMenuWithRefreshAndServersAndAccounts() {
-        showHome(content)
-        rule.onNodeWithContentDescription(text(R.string.account_menu_cd)).performClick()
-        rule.waitForIdle()
-        assertEquals(0, servers)
-        assertShown(text(R.string.action_refresh))
-        assertShown(text(R.string.home_manage))
-        assertNotShown(text(R.string.account_switch_title))
-    }
+    private val two = listOf(account(BEN, "ben"), account(AMY, "amy"))
 
-    @Test fun refreshInTheMenuAsksForAFreshHome() {
+    @Test fun withOneAccountTheButtonGoesStraightToServersAndAccountsInOneTap() {
         showHome(content)
-        rule.onNodeWithContentDescription(text(R.string.account_menu_cd)).performClick()
+        rule.onNodeWithContentDescription(text(R.string.home_manage)).performClick()
         rule.waitForIdle()
-        rule.onAllNodes(hasText(text(R.string.action_refresh))).onFirst().performClick()
-        assertEquals(1, refreshed)
-    }
-
-    @Test fun serversAndAccountsInTheMenuOpensThatScreen() {
-        showHome(content)
-        rule.onNodeWithContentDescription(text(R.string.account_menu_cd)).performClick()
-        rule.waitForIdle()
-        rule.onAllNodes(hasText(text(R.string.home_manage))).onFirst().performClick()
         assertEquals(1, servers)
+        assertNotShown(text(R.string.account_switch_title))
+        assertEquals(0, refreshed)
+    }
+
+    @Test fun withOneAccountTheButtonHasNoMenuStateToAnnounce() {
+        showHome(content)
+        val config = rule.onNodeWithContentDescription(text(R.string.home_manage)).fetchSemanticsNode().config
+        assertEquals(null, config.getOrNull(SemanticsProperties.StateDescription))
+        assertEquals(0, rule.onAllNodes(hasContentDescription(text(R.string.account_menu_cd))).fetchSemanticsNodes().size)
+    }
+
+    @Test fun withOneAccountRefreshIsStillReachableFromTheTitle() {
+        showHome(content)
+        val heading = rule.onAllNodes(hasText("Home server").and(SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading))).onFirst()
+        assertEquals(listOf(text(R.string.action_refresh)), heading.fetchSemanticsNode().config[SemanticsActions.CustomActions].map { it.label })
     }
 
     @Test fun withSeveralAccountsTheMenuListsThemAboveRefreshAndServers() {
-        showHome(content.copy(accounts = listOf(account(BEN, "ben"), account(AMY, "amy"))))
+        showHome(content.copy(accounts = two))
         rule.onNodeWithContentDescription(text(R.string.account_menu_cd)).performClick()
         rule.waitForIdle()
         assertShown(text(R.string.account_switch_title))
@@ -157,10 +155,26 @@ abstract class HomeLayoutRenderBase : RenderBase() {
         assertEquals(listOf(AMY.userId), switched)
     }
 
-    @Test fun theButtonSaysWhetherItsMenuIsOpen() {
-        showHome(content)
-        fun state() = rule.onNodeWithContentDescription(text(R.string.account_menu_cd)).fetchSemanticsNode().config[SemanticsProperties.StateDescription]
-        assertEquals(text(R.string.state_menu_closed), state())
+    @Test fun refreshInTheMenuAsksForAFreshHome() {
+        showHome(content.copy(accounts = two))
+        rule.onNodeWithContentDescription(text(R.string.account_menu_cd)).performClick()
+        rule.waitForIdle()
+        rule.onAllNodes(hasText(text(R.string.action_refresh))).onFirst().performClick()
+        assertEquals(1, refreshed)
+    }
+
+    @Test fun serversAndAccountsInTheMenuOpensThatScreen() {
+        showHome(content.copy(accounts = two))
+        rule.onNodeWithContentDescription(text(R.string.account_menu_cd)).performClick()
+        rule.waitForIdle()
+        rule.onAllNodes(hasText(text(R.string.home_manage))).onFirst().performClick()
+        assertEquals(1, servers)
+    }
+
+    @Test fun theMenuButtonSaysOnlyWhenItsMenuIsOpen() {
+        showHome(content.copy(accounts = two))
+        fun state() = rule.onNodeWithContentDescription(text(R.string.account_menu_cd)).fetchSemanticsNode().config.getOrNull(SemanticsProperties.StateDescription)
+        assertEquals("nothing to say while closed", null, state())
         rule.onNodeWithContentDescription(text(R.string.account_menu_cd)).performClick()
         rule.waitForIdle()
         assertEquals(text(R.string.state_menu_open), state())
@@ -179,6 +193,23 @@ abstract class HomeLayoutRenderBase : RenderBase() {
         val range: ScrollAxisRange = list.config[SemanticsProperties.VerticalScrollAxisRange]
         assertEquals("the list was left scrolled down by ${range.value()}", 0f, range.value(), 0.5f)
         assertTrue("Continue Watching is off the top\n${tree()}", rule.onAllNodes(hasText(text(R.string.home_continue))).onFirst().getBoundsInRoot().top >= 0.dp)
+    }
+
+    @Test fun theFirstRowSitsNearTheTopNotTwentyDpDownBecauseOfTheAnchor() {
+        showHome(content)
+        rule.waitForIdle()
+        val list = rule.onAllNodes(hasScrollAction()).onFirst().getBoundsInRoot()
+        val first = rule.onAllNodes(hasText(text(R.string.home_continue))).onFirst().getBoundsInRoot()
+        val gap = first.top - list.top
+        assertTrue("the first heading is $gap below the top of the list", gap < 12.dp)
+    }
+
+    @Test fun rowsAreStillSpacedApartFromEachOther() {
+        showHome(content)
+        rule.waitForIdle()
+        val resume = rule.onAllNodes(hasText(text(R.string.home_continue))).onFirst().getBoundsInRoot()
+        val next = rule.onAllNodes(hasText(text(R.string.home_next_up))).onFirst().getBoundsInRoot()
+        assertTrue("Next Up is ${next.top - resume.bottom} below the Continue Watching heading", next.top - resume.bottom > 40.dp)
     }
 
     @Test fun theSignedOutAndCouldNotLoadScreensScrollSoTheButtonIsAlwaysReachable() {

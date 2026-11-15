@@ -201,7 +201,6 @@
     <string name="state_expanded">Expanded</string>
     <string name="state_collapsed">Collapsed</string>
     <string name="state_menu_open">Menu open</string>
-    <string name="state_menu_closed">Menu closed</string>
     <string name="cd_more_actions">More actions for %1$s</string>
     <string name="cd_working">Working</string>
     <string name="cd_loading_content">Loading</string>
@@ -237,7 +236,7 @@
     <string name="library_kind_mixed">Folders and more</string>
     <string name="library_card_cd">%1$s, %2$s</string>
     <string name="unwatched_many">99+</string>
-    <string name="state_up_next">Up next for you</string>
+    <string name="state_you_were_watching">You were watching this</string>
     <string name="episode_spoken_full">Season %1$s, episode %2$s</string>
     <string name="episode_spoken_episode">Episode %1$s</string>
     <string name="episode_spoken_season">Season %1$s</string>

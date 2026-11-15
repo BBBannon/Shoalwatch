@@ -196,6 +196,16 @@ abstract class SeriesRenderBase : RenderBase() {
         assertEquals(1, refreshed)
     }
 
+    @Test fun aSeriesThatFailedToLoadDrawsNoLoadingBlocksBesideTheError() {
+        showSeries(SeriesUiState(phase = SeriesPhase.READY, session = BEN, banner = BannerKind.GENERIC))
+        assertEquals("nothing is loading, so nothing says it is", 0, rule.onAllNodes(hasContentDescription(text(R.string.cd_loading_content))).fetchSemanticsNodes().size)
+    }
+
+    @Test fun aSeriesStillLoadingShowsLoadingBlocksInItsHeader() {
+        showSeries(SeriesUiState(phase = SeriesPhase.LOADING, session = BEN, refreshing = true))
+        assertTrue(rule.onAllNodes(hasContentDescription(text(R.string.cd_loading_content))).fetchSemanticsNodes().isNotEmpty())
+    }
+
     @Test fun anExpiredSignInWithNothingSavedOffersSignInInTheOneMessage() {
         showSeries(SeriesUiState(phase = SeriesPhase.READY, session = BEN, banner = BannerKind.SIGN_IN))
         assertShown(text(R.string.error_title))
@@ -273,7 +283,7 @@ abstract class SeriesRenderBase : RenderBase() {
         val row = rule.onAllNodes(SemanticsMatcher("starts with Episode 2") { node ->
             node.config.getOrNull(SemanticsProperties.ContentDescription)?.any { it.startsWith("Episode 2, The Turning Tide") } == true
         }).onFirst().fetchSemanticsNode()
-        assertEquals(text(R.string.state_up_next), row.config[SemanticsProperties.StateDescription])
+        assertEquals(text(R.string.state_you_were_watching), row.config[SemanticsProperties.StateDescription])
         val title = rule.onAllNodesWithText("E2 · The Turning Tide", useUnmergedTree = true).onFirst().fetchSemanticsNode().boundsInRoot
         assertTrue("the highlighted row's title has no width: $title", title.width > 4f)
     }

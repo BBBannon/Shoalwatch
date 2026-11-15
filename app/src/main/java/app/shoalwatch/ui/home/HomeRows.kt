@@ -43,6 +43,13 @@ import app.shoalwatch.ui.present.label
 import app.shoalwatch.ui.present.posterCard
 import app.shoalwatch.ui.present.wideCard
 
+/** The 20 dp between rows, handed out in the order the rows are added: the first row gets none, so it sits at the top of the list. */
+internal class RowGaps {
+    private var first = true
+
+    fun next(): Modifier = if (first) { first = false; Modifier } else Modifier.padding(top = 20.dp)
+}
+
 /** A row of wide cards under [titleRes], with its own banner if this row alone failed. Nothing at all when the row is empty and fine. */
 internal fun LazyListScope.wideRow(
     titleRes: Int,
@@ -54,11 +61,13 @@ internal fun LazyListScope.wideRow(
     banner: BannerActions,
     actions: HomeActions,
     wide: Boolean,
+    gaps: RowGaps,
     onMenu: (itemId: String) -> Unit,
 ) {
     if (row.items.isEmpty() && row.banner == null) return
+    val gap = gaps.next()
     item(key = key) {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(gap, verticalArrangement = Arrangement.spacedBy(10.dp)) {
             row.banner?.let { FreshnessBanner(it, banner) }
             if (row.items.isNotEmpty()) {
                 SectionHeader(stringResource(titleRes))
@@ -84,11 +93,13 @@ internal fun LazyListScope.posterRow(
     banner: BannerActions,
     actions: HomeActions,
     wide: Boolean,
+    gaps: RowGaps,
     onMenu: (itemId: String) -> Unit,
 ) {
     if (latest.items.isEmpty() && latest.banner == null) return
+    val gap = gaps.next()
     item(key = "latest-${view.id}") {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(gap, verticalArrangement = Arrangement.spacedBy(10.dp)) {
             latest.banner?.let { FreshnessBanner(it, banner) }
             if (latest.items.isNotEmpty()) {
                 SectionHeader(stringResource(R.string.home_latest, view.name.ifBlank { stringResource(R.string.untitled) }))
@@ -105,9 +116,10 @@ internal fun LazyListScope.posterRow(
 }
 
 /** The libraries as large tappable cards: two across on a wide screen. */
-internal fun LazyListScope.librariesSection(state: HomeUiState, actions: HomeActions, strings: Strings, wide: Boolean) {
+internal fun LazyListScope.librariesSection(state: HomeUiState, actions: HomeActions, strings: Strings, wide: Boolean, gaps: RowGaps) {
+    val gap = gaps.next()
     item(key = "libraries") {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(gap, verticalArrangement = Arrangement.spacedBy(10.dp)) {
             state.viewsBanner?.let { FreshnessBanner(it, BannerActions(actions.onRefresh, { state.serverId?.let(actions.onSignIn) }, { state.serverId?.let(actions.onReview) })) }
             SectionHeader(stringResource(R.string.home_libraries))
             for (group in state.views.chunked(if (wide) 2 else 1)) {
