@@ -41,4 +41,40 @@ internal class PlaybackControllerReviewTest : PlaybackControllerTestBase() {
         assertNull(c.state.value.upNext)
         assertEquals(ep1, c.state.value.itemId)
     }
+
+    // ---- I-3: pause while buffering; a due sleep always pauses
+
+    @Test fun pauseWhileBufferingPausesAndStaysPausedWhenReady() = runTest {
+        val c = controller()
+        c.open(ep1, StartFrom.BEGINNING); runCurrent()
+        assertEquals(Phase.BUFFERING, c.state.value.phase)
+        c.playPause(); runCurrent()
+        assertFalse(engine.playWhenReady)
+        engine.emit(EngineEvent.Ready); runCurrent()
+        assertEquals(Phase.PAUSED, c.state.value.phase)
+        assertFalse(engine.isPlaying)
+        c.playPause(); runCurrent()
+        assertTrue(engine.isPlaying)
+    }
+
+    @Test fun aSleepTimerDueWhileBufferingPauses() = runTest {
+        val c = controller(); openAndPlay(c)
+        c.setSleep(SleepChoice.MIN_15)
+        engine.emit(EngineEvent.Buffering); runCurrent()
+        clock.ms += 15 * 60_000L + 1; advanceTimeBy(250); runCurrent()
+        assertFalse("nothing plays when the rebuffer ends", engine.playWhenReady)
+        assertEquals(SleepState.Off, c.state.value.sleep)
+    }
+
+    @Test fun aSleepTimerDueDuringAnUpNextCountdownPlaysNothing() = runTest {
+        val c = controller(); openAndPlay(c)
+        c.setSleep(SleepChoice.MIN_15)
+        engine.positionMs = runtime; engine.isPlaying = false; engine.emit(EngineEvent.Ended); runCurrent()
+        assertTrue(c.state.value.upNext?.secondsLeft != null)
+        clock.ms += 15 * 60_000L + 1; advanceTimeBy(250); runCurrent()
+        advanceTimeBy(20_000); runCurrent()
+        assertEquals(ep1, c.state.value.itemId)
+        assertEquals(1, engine.loads.size)
+        assertNull("the countdown was cancelled", c.state.value.upNext?.secondsLeft)
+    }
 }

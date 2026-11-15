@@ -102,6 +102,7 @@ class ExoPlayerEngine(context: Context) : PlayerEngine {
     override val durationMs: Long? get() = player.duration.takeIf { it != C.TIME_UNSET }
     override val bufferedMs: Long get() = player.bufferedPosition
     override val isPlaying: Boolean get() = player.isPlaying
+    override val playWhenReady: Boolean get() = player.playWhenReady
     override val audioLanguages: List<String?>
         get() = player.currentTracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }.map { it.getTrackFormat(0).language }
 

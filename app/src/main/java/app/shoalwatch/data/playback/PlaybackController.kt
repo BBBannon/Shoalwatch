@@ -100,7 +100,9 @@ class PlaybackController internal constructor(
         val c = current ?: return
         when (phase) {
             Phase.PLAYING -> pauseAndReport(c)
-            Phase.PAUSED, Phase.BUFFERING -> engine.play()
+            // While buffering, by the user's intent (not the engine's state): Pause must pause a start or a rebuffer.
+            Phase.BUFFERING -> if (engine.playWhenReady) engine.pause() else engine.play()
+            Phase.PAUSED -> engine.play()
             else -> Unit
         }
     }
@@ -277,11 +279,11 @@ class PlaybackController internal constructor(
         val finishAt = finishedAt(c)
         if (phase == Phase.PLAYING && PlaybackRules.crossedByPlayback(before, now, finishAt)) c.finished = true
         c.outro()?.let { if (now >= it.startMs) showUpNext(c) }
+        if (SleepTimer.isDue(sleep, clock.nowMs())) sleepNow(c)
         c.upNext?.let { countdown ->
             if (phase != Phase.PAUSED) countdown.advance(TICK_MS)
             if (countdown.due) return play(countdown.itemId, StartFrom.RESUME)
         }
-        if (SleepTimer.isDue(sleep, clock.nowMs())) { sleep = SleepState.Off; pauseAndReport(c) }
         c.reporter?.tick(snapshot(c))
         publish()
     }
@@ -333,6 +335,13 @@ class PlaybackController internal constructor(
         val next = c.around.next ?: return
         c.upNextShown = true
         c.upNext = UpNextCountdown(next.id, next.name, autoplayNext())
+    }
+
+    /** A due sleep timer always pauses, whatever the phase (buffering, ended), and cancels an Up next countdown. */
+    private fun sleepNow(c: PlayingItem) {
+        sleep = SleepState.Off
+        c.upNext?.cancel()
+        if (phase == Phase.PLAYING) pauseAndReport(c) else engine.pause()
     }
 
     private fun pauseAndReport(c: PlayingItem) {

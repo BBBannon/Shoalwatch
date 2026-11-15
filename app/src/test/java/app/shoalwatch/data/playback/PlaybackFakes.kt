@@ -109,6 +109,7 @@ internal class FakePlayerEngine : PlayerEngine {
     override var durationMs: Long? = null
     override var bufferedMs = 0L
     override var isPlaying = false
+    override var playWhenReady = false
     override var audioLanguages: List<String?> = emptyList()
     val loads = mutableListOf<Pair<EngineItem, Long>>()
     val loadedAt: Long? get() = loads.lastOrNull()?.second
@@ -123,16 +124,17 @@ internal class FakePlayerEngine : PlayerEngine {
     fun emit(event: EngineEvent) = check(flow.tryEmit(event)) { "event buffer full" }
 
     /** Ready and playing, as after a load with playWhenReady. */
-    fun startPlaying() { emit(EngineEvent.Ready); isPlaying = true; emit(EngineEvent.PlayingChanged(true)) }
+    fun startPlaying() { emit(EngineEvent.Ready); isPlaying = true; playWhenReady = true; emit(EngineEvent.PlayingChanged(true)) }
 
     override fun load(item: EngineItem, startMs: Long, playWhenReady: Boolean) {
         check(!released) { "loaded after release" }
         loads += item to startMs
         positionMs = startMs
         isPlaying = false
+        this.playWhenReady = playWhenReady
     }
-    override fun play() { if (!isPlaying) { isPlaying = true; emit(EngineEvent.PlayingChanged(true)) } }
-    override fun pause() { if (isPlaying) { isPlaying = false; emit(EngineEvent.PlayingChanged(false)) } }
+    override fun play() { playWhenReady = true; if (!isPlaying) { isPlaying = true; emit(EngineEvent.PlayingChanged(true)) } }
+    override fun pause() { playWhenReady = false; if (isPlaying) { isPlaying = false; emit(EngineEvent.PlayingChanged(false)) } }
     override fun seekTo(ms: Long) { seeks += ms; positionMs = ms; emit(EngineEvent.PositionDiscontinuity(ms)) }
     override fun setSpeed(speed: Float) { speedSet = speed }
     override fun selectAudio(ordinal: Int?) { audioOrdinal = ordinal }

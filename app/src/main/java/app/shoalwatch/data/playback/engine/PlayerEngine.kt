@@ -16,6 +16,8 @@ interface PlayerEngine {
     /** How far ahead is loaded. */
     val bufferedMs: Long
     val isPlaying: Boolean
+    /** The user's intent: play once ready (true while buffering to play), false once paused, whatever the engine is doing. */
+    val playWhenReady: Boolean
     /** The languages of the stream's audio tracks in stream order, as the stream names them; empty until they are known. */
     val audioLanguages: List<String?>
     fun load(item: EngineItem, startMs: Long, playWhenReady: Boolean)
