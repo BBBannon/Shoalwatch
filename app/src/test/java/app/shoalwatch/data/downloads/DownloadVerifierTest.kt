@@ -120,6 +120,35 @@ class DownloadVerifierTest {
         assertTrue("one decodable audio is enough", verifier().verify(original(bytes), bytes.size.toLong(), 10_000, null) is Verdict.Good)
     }
 
+    /**
+     * Tasks 9-10 review I-4. Media3 1.9.2's Matroska and MP4 extractors give a Dolby Vision track the sample type
+     * `video/dolby-vision` (checked in the 1.9.2 bytecode: `MatroskaExtractor.Track` and `BoxParser` set it when a dvcC/dvvC
+     * configuration is present). The planner lets HEVC Dolby Vision direct play (HdrPolicy), so the check must accept it too.
+     */
+    @Test fun aDolbyVisionOriginalIsDecodableWhenThePlannerWouldDirectPlayIt() = runTest {
+        val bytes = mp4()
+        probe.answer = ProbeResult(listOf("video/dolby-vision"), listOf(FakeProbe.AAC), 10_000)
+        assertEquals("no HEVC decoder: not direct played, not accepted", Verdict.Bad("video-codec"), verifier().verify(original(bytes), bytes.size.toLong(), 10_000, null))
+        device = device.copy(video = setOf(VideoCodec.H264, VideoCodec.HEVC))
+        assertTrue(verifier().verify(original(bytes), bytes.size.toLong(), 10_000, null) is Verdict.Good)
+    }
+
+    /** One list for both: the verifier accepts exactly the video types the device profile offers the server for direct play. */
+    @Test fun theVerifierAndTheDeviceProfileShareOneListOfVideoTypes() = runTest {
+        val all = listOf("video/avc", "video/hevc", "video/x-vnd.on2.vp9", "video/av01", "video/dolby-vision", "video/mpeg2", "video/x-vnd.on2.vp8")
+        for (codecs in listOf(emptySet(), setOf(VideoCodec.HEVC), setOf(VideoCodec.VP9, VideoCodec.AV1), VideoCodec.entries.toSet())) {
+            device = device.copy(video = codecs)
+            val accepted = all.filter { mime ->
+                val bytes = mp4()
+                probe.answer = ProbeResult(listOf(mime), listOf(FakeProbe.AAC), 10_000)
+                verifier().verify(original(bytes), bytes.size.toLong(), 10_000, null) is Verdict.Good
+            }.toSet()
+            assertEquals(app.shoalwatch.data.playback.DirectPlayVideo.media3Types(device), accepted)
+            val profile = app.shoalwatch.data.playback.DeviceProfileBuilder.build(device, app.shoalwatch.data.playback.Quality.MBPS_8, false)
+            assertEquals(app.shoalwatch.data.playback.DirectPlayVideo.codecs(device).joinToString(",") { it.jellyfin }, profile.directPlayProfiles.single().videoCodec)
+        }
+    }
+
     @Test fun h264CountsEvenWhenTheDeviceListsNoVideo() = runTest {
         device = device.copy(video = emptySet())
         val bytes = mp4()

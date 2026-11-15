@@ -37,7 +37,7 @@ object DeviceProfileBuilder {
 
     /** [burnInFormat]: the format of a subtitle the user asked the server to draw; it is listed as Encode only. */
     internal fun build(caps: DeviceCapabilities, quality: Quality, forceTranscode: Boolean, burnInFormat: String? = null): DeviceProfileDto {
-        val video = VideoCodec.entries.filter { it == VideoCodec.H264 || it in caps.video }
+        val video = DirectPlayVideo.codecs(caps) // shared with the download check
         val audio = AUDIO.filter { it == "aac" || it in caps.audio }
         val ceiling = sizeConditions(quality)
         return DeviceProfileDto(

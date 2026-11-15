@@ -1,7 +1,7 @@
 package app.shoalwatch.data.downloads
 
 import app.shoalwatch.data.playback.CodecSupport
-import app.shoalwatch.data.playback.VideoCodec
+import app.shoalwatch.data.playback.DirectPlayVideo
 import app.shoalwatch.data.playback.engine.PlayabilityProbe
 import java.io.File
 import java.io.IOException
@@ -27,7 +27,8 @@ internal sealed interface Verdict {
  * 2. **signature** — the first bytes match the container (`ftyp` at 4 for mp4/m4v/mov; `1A 45 DF A3` for mkv/webm; `0x47` at
  *    0, 188 and 376 for ts, on every segment of a conversion);
  * 3. **readable** — the probe finds a video track, and an audio track when the item listed audio;
- * 4. **decodable** — every video type maps to a codec this phone counts (h264 always), and an audio type is decodable;
+ * 4. **decodable** — every video type is one the device profile offers for direct play ([DirectPlayVideo]: h264 always, the
+ *    counted codecs, Dolby Vision with HEVC), and an audio type is decodable;
  * 5. **length** — the duration is within 5% of the runtime (10% for a conversion) when both are known;
  * 6. **fingerprint** — a SHA-256 of the media (the segments in order for a conversion), computed while re-reading it.
  *
@@ -44,7 +45,8 @@ internal class DownloadVerifier(private val probe: PlayabilityProbe, private val
         if (found.videoMimes.isEmpty()) return Verdict.Bad(NO_VIDEO)
         if (audioListed && found.audioMimes.isEmpty()) return Verdict.Bad(NO_AUDIO)
         val device = withContext(io) { codecs.read() }
-        if (!found.videoMimes.all { mime -> VideoCodec.entries.firstOrNull { it.mime == mime }?.let { it == VideoCodec.H264 || it in device.video } == true }) {
+        val playable = DirectPlayVideo.media3Types(device) // the same list the planner's device profile offers
+        if (!found.videoMimes.all { it in playable }) {
             return Verdict.Bad(VIDEO_CODEC)
         }
         if (found.audioMimes.isNotEmpty() && found.audioMimes.none { AUDIO[it] in device.audio }) return Verdict.Bad(AUDIO_CODEC)
