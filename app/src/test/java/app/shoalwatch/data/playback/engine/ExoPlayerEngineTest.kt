@@ -4,6 +4,7 @@ import androidx.test.core.app.ApplicationProvider
 import app.shoalwatch.data.playback.MediaPaths
 import app.shoalwatch.data.playback.PlaybackFakes
 import app.shoalwatch.ui.browse.BEN
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -46,5 +47,31 @@ class ExoPlayerEngineTest {
         second.load(item(), 0, playWhenReady = false)
         second.load(item(), 5_000, playWhenReady = false)
         second.release()
+    }
+
+    @Test fun theVideoSurfaceIsTakenAndLetGoAndIsSafeAfterRelease() {
+        val engine = ExoPlayerEngine(context)
+        val view = android.view.SurfaceView(context)
+        engine.video.attach(view.holder)
+        assertTrue(engine.video.attached)
+        engine.video.detach(android.view.SurfaceView(context).holder) // another view's holder: kept
+        assertTrue(engine.video.attached)
+        engine.video.detach(view.holder)
+        assertFalse(engine.video.attached)
+        engine.video.attach(view.holder)
+        engine.release()
+        assertFalse("released: the surface is let go", engine.video.attached)
+        engine.video.attach(view.holder) // ignored, does not throw
+        engine.video.detach(view.holder)
+        assertFalse(engine.video.attached)
+    }
+
+    @Test fun theAspectRatioIsWidthOverHeightWithThePixelShape() {
+        assertEquals(16f / 9f, MediaItems.aspectOf(1920, 1080, 1f)!!, 0.0001f)
+        assertEquals(16f / 9f, MediaItems.aspectOf(1440, 1080, 4f / 3f)!!, 0.0001f)
+        assertNull(MediaItems.aspectOf(0, 0, 1f))
+        assertNull(MediaItems.aspectOf(1920, 0, 1f))
+        assertNull(MediaItems.aspectOf(1920, 1080, 0f))
+        assertNull(ExoPlayerEngine(context).also { it.release() }.video.aspectRatio.value)
     }
 }

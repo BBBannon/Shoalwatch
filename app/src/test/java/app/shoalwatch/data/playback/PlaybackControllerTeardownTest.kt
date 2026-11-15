@@ -5,6 +5,8 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -58,5 +60,14 @@ internal class PlaybackControllerTeardownTest : PlaybackControllerTestBase() {
         val c = controller(); c.open(ep1, StartFrom.RESUME); advanceTimeBy(1_000); runCurrent()
         assertTrue(engine.loads.isEmpty()); assertEquals(0, playbackInfos)
         assertEquals(PlaybackState.CLOSED, c.state.value)
+    }
+
+    @Test fun theScreenReachesOnlyTheEnginesVideoOutputAndEndingLetsTheSurfaceGo() = runTest {
+        val c = controller(); openAndPlay(c)
+        assertSame(engine.video, c.video)
+        c.video.attach(FakeVideoOutput.holder())
+        assertTrue(engine.video.attached)
+        c.end(null)
+        assertFalse(engine.video.attached)
     }
 }

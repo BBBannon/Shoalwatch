@@ -2,7 +2,9 @@ package app.shoalwatch.data.playback.engine
 
 import app.shoalwatch.data.api.MediaRoute
 import app.shoalwatch.data.playback.StreamSource
+import android.view.SurfaceHolder
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * The only player surface the controller sees (`ExoPlayerEngine` in the app, `FakePlayerEngine` in tests). Main thread only.
@@ -20,6 +22,8 @@ interface PlayerEngine {
     val playWhenReady: Boolean
     /** The languages of the stream's audio tracks in stream order, as the stream names them; empty until they are known. */
     val audioLanguages: List<String?>
+    /** Where the picture goes; the only part of the engine a screen reaches (through `PlaybackController.video`). */
+    val video: VideoOutput
     fun load(item: EngineItem, startMs: Long, playWhenReady: Boolean)
     fun play()
     fun pause()
@@ -33,6 +37,21 @@ interface PlayerEngine {
     fun setMediaMetadata(title: String?, subtitle: String?)
     /** At once: stops every load, releases the media session. The engine is not used again. */
     fun release()
+}
+
+/**
+ * The picture's way out, in Android framework types only, so the player screen can hand over its `SurfaceView` without naming a
+ * Media3 type (`Media3BoundaryTest`). Main thread only. Releasing the engine lets the surface go; after that [attach] is ignored.
+ */
+interface VideoOutput {
+    /** Width over height as shown (the pixel shape applied); null until the video's size is known. */
+    val aspectRatio: StateFlow<Float?>
+    /** Whether a surface is attached now. */
+    val attached: Boolean
+    /** The picture goes to [holder]'s surface from now on, replacing any other. */
+    fun attach(holder: SurfaceHolder)
+    /** The view is going: lets go of [holder] if it is the one attached (another view's may already have replaced it). */
+    fun detach(holder: SurfaceHolder)
 }
 
 /** What to load: the URL is built inside the engine module from the route; it never leaves `data/playback`. Never printed. */

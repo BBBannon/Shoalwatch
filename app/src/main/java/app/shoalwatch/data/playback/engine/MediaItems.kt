@@ -24,6 +24,10 @@ internal object MediaItems {
         .setMediaMetadata(metadata(title, subtitle))
         .build()
 
+    /** Width over height as shown, or null while the size is not known (Media3 says 0 for an unknown size). */
+    fun aspectOf(width: Int, height: Int, pixelWidthHeightRatio: Float): Float? =
+        if (width <= 0 || height <= 0 || !(pixelWidthHeightRatio > 0f)) null else width * pixelWidthHeightRatio / height
+
     fun metadata(title: String?, subtitle: String?): MediaMetadata = MediaMetadata.Builder().setTitle(title).setSubtitle(subtitle).build()
 
     /**

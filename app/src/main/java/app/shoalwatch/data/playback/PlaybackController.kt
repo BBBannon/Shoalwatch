@@ -11,6 +11,7 @@ import app.shoalwatch.data.playback.engine.EngineFailure
 import app.shoalwatch.data.playback.engine.EngineItem
 import app.shoalwatch.data.playback.engine.PlayerEngine
 import app.shoalwatch.data.playback.engine.SubtitleFrame
+import app.shoalwatch.data.playback.engine.VideoOutput
 import app.shoalwatch.data.servers.Session
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -82,6 +83,9 @@ class PlaybackController internal constructor(
 
     /** The subtitles to draw now (text from the app's own timeline, at the position minus the delay; pictures from the stream). */
     val cues: StateFlow<SubtitleFrame> = trackControl.cues
+
+    /** Where the screen puts its `SurfaceView`: the engine's video output, nothing else of the engine (let go by [end]). */
+    val video: VideoOutput get() = engine.video
 
     fun open(itemId: String, from: StartFrom) {
         if (ended) return

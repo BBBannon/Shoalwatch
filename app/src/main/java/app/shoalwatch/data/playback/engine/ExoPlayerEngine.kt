@@ -3,6 +3,7 @@ package app.shoalwatch.data.playback.engine
 import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
+import android.view.SurfaceHolder
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -14,6 +15,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.common.VideoSize
 import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.BitmapLoader
 import androidx.media3.common.util.UnstableApi
@@ -27,6 +29,9 @@ import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import java.util.concurrent.atomic.AtomicLong
 import okhttp3.Call
 
@@ -40,6 +45,8 @@ import okhttp3.Call
  *   [EngineEvent.BecameNoisy]). No wake mode (the manifest has no `WAKE_LOCK`: the player screen keeps itself on).
  * - **Media session:** built at the first load (after any earlier player was ended), a unique id per engine; activity-scoped, no service, so no notification and no exported component. Controllers (headset,
  *   Bluetooth, Assistant) get play/pause, seeking and the title only: they cannot set media items, change speed or tracks.
+ * - **Picture:** to the screen's `SurfaceView` through [video] (a SurfaceView, not a TextureView, so HDR output works); let go on
+ *   [release].
  * - **Text renderer** off unless a picture-subtitle track is selected (text subtitles are the app's own).
  */
 @OptIn(UnstableApi::class)
@@ -85,6 +92,10 @@ class ExoPlayerEngine(context: Context) : PlayerEngine {
             }
         }
 
+        override fun onVideoSizeChanged(videoSize: VideoSize) {
+            aspect.value = MediaItems.aspectOf(videoSize.width, videoSize.height, videoSize.pixelWidthHeightRatio)
+        }
+
         override fun onCues(cueGroup: CueGroup) {
             if (pictureOrdinal != null) emit(EngineEvent.PictureCues(SubtitleFrame(cueGroup.cues)))
         }
@@ -101,6 +112,26 @@ class ExoPlayerEngine(context: Context) : PlayerEngine {
             }
             if (events.contains(Player.EVENT_IS_PLAYING_CHANGED)) emit(EngineEvent.PlayingChanged(player.isPlaying))
             if (events.contains(Player.EVENT_TRACKS_CHANGED)) applyTracks()
+        }
+    }
+
+    private val aspect = MutableStateFlow<Float?>(null)
+    private var surface: SurfaceHolder? = null
+
+    override val video: VideoOutput = object : VideoOutput {
+        override val aspectRatio: StateFlow<Float?> = aspect.asStateFlow()
+        override val attached: Boolean get() = surface != null
+
+        override fun attach(holder: SurfaceHolder) {
+            if (released) return
+            surface = holder
+            player.setVideoSurfaceHolder(holder)
+        }
+
+        override fun detach(holder: SurfaceHolder) {
+            if (surface !== holder) return
+            surface = null
+            if (!released) player.clearVideoSurfaceHolder(holder)
         }
     }
 
@@ -150,6 +181,8 @@ class ExoPlayerEngine(context: Context) : PlayerEngine {
         session?.release()
         session = null
         player.removeListener(listener)
+        surface?.let(player::clearVideoSurfaceHolder)
+        surface = null
         player.release()
         route = null
     }

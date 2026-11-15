@@ -14,6 +14,9 @@ import app.shoalwatch.net.ServerAddress
 import app.shoalwatch.data.playback.engine.EngineEvent
 import app.shoalwatch.data.playback.engine.EngineItem
 import app.shoalwatch.data.playback.engine.PlayerEngine
+import app.shoalwatch.data.playback.engine.VideoOutput
+import android.view.SurfaceHolder
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableSharedFlow
 import okhttp3.Call
@@ -111,6 +114,7 @@ internal class FakePlayerEngine : PlayerEngine {
     override var isPlaying = false
     override var playWhenReady = false
     override var audioLanguages: List<String?> = emptyList()
+    override val video = FakeVideoOutput()
     val loads = mutableListOf<Pair<EngineItem, Long>>()
     /** Shared between engines to see their order: "<name> load", "<name> release". */
     var log: MutableList<String>? = null
@@ -144,5 +148,22 @@ internal class FakePlayerEngine : PlayerEngine {
     override fun selectAudio(ordinal: Int?) { audioOrdinal = ordinal }
     override fun selectPictureSubtitle(ordinal: Int?) { pictureOrdinal = ordinal }
     override fun setMediaMetadata(title: String?, subtitle: String?) { metadataTitle = title; metadataSubtitle = subtitle }
-    override fun release() { if (!released) log?.add("$name release"); released = true; isPlaying = false }
+    override fun release() { if (!released) log?.add("$name release"); released = true; isPlaying = false; video.holder = null; video.released = true }
+}
+
+/** The engine's video output as the real one behaves: one surface at a time, let go on release, [attach] ignored after it. */
+internal class FakeVideoOutput : VideoOutput {
+    override val aspectRatio = MutableStateFlow<Float?>(null)
+    var holder: SurfaceHolder? = null
+    var released = false
+    override val attached: Boolean get() = holder != null
+    override fun attach(holder: SurfaceHolder) { if (!released) this.holder = holder }
+    override fun detach(holder: SurfaceHolder) { if (this.holder === holder) this.holder = null }
+
+    companion object {
+        /** A holder that does nothing, for JVM tests (no Robolectric needed). */
+        fun holder(): SurfaceHolder = java.lang.reflect.Proxy.newProxyInstance(
+            SurfaceHolder::class.java.classLoader, arrayOf(SurfaceHolder::class.java),
+        ) { _, method, _ -> if (method.returnType == java.lang.Boolean.TYPE) false else null } as SurfaceHolder
+    }
 }
