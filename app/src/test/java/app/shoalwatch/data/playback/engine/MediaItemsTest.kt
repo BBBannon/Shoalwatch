@@ -28,6 +28,19 @@ class MediaItemsTest {
 
     private fun item(source: StreamSource) = EngineItem(route, source)
 
+    @Test fun aSavedCopyIsItsEntryFilesUriAndAConversionIsMarkedHls() {
+        val folder = java.io.File(System.getProperty("java.io.tmpdir"), "shoalwatch-mediaitems")
+        fun saved(entry: String, hls: Boolean) = EngineItem(app.shoalwatch.data.downloads.SavedMedia(PlaybackFakes.ITEM, PlaybackFakes.ITEM, folder,
+            java.io.File(folder, entry), hls, app.shoalwatch.data.downloads.DownloadQuality.ORIGINAL, PlaybackFakes.ITEM))
+        val original = MediaItems.build(saved("media.mkv", hls = false), "Title", null).localConfiguration!!
+        assertEquals("file", original.uri.scheme)
+        assertEquals(java.io.File(folder, "media.mkv"), java.io.File(java.net.URI(original.uri.toString())))
+        assertNull(original.mimeType)
+        val converted = MediaItems.build(saved("hls/local.m3u8", hls = true), null, null)
+        assertEquals(MimeTypes.APPLICATION_M3U8, converted.localConfiguration!!.mimeType)
+        assertEquals(MediaItems.MEDIA_ID, converted.mediaId)
+    }
+
     @Test fun aDirectStreamIsTheVerifiedAddressPlusPathAndQueryWithNoMimeType() {
         val source = MediaPaths.directStream(PlaybackFakes.ITEM, PlaybackFakes.SOURCE, "abc123")
         val media = MediaItems.build(item(source), "Title", null)
