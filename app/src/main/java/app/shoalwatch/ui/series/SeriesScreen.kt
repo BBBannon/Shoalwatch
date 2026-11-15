@@ -1,5 +1,17 @@
 package app.shoalwatch.ui.series
 
+import app.shoalwatch.ui.components.OverlayBackButton
+import app.shoalwatch.ui.present.sheetTitle
+import app.shoalwatch.ui.components.ErrorState
+import app.shoalwatch.ui.components.refreshAction
+import app.shoalwatch.ui.components.PullRefresh
+import app.shoalwatch.ui.components.BarHeight
+import app.shoalwatch.ui.components.BackBar
+import app.shoalwatch.ui.components.ScrollingColumn
+import androidx.compose.ui.semantics.traversalIndex
+import androidx.compose.ui.semantics.isTraversalGroup
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -32,7 +44,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -68,7 +79,6 @@ import app.shoalwatch.ui.components.FreshnessBanner
 import app.shoalwatch.ui.components.Gutter
 import app.shoalwatch.ui.components.HeroBackdrop
 import app.shoalwatch.ui.components.ItemActionsSheet
-import app.shoalwatch.ui.components.OverlayBackButton
 import app.shoalwatch.ui.components.ReadableBox
 import app.shoalwatch.ui.components.RefreshLine
 import app.shoalwatch.ui.components.SheetActions
@@ -115,23 +125,25 @@ fun SeriesScreen(state: SeriesUiState, actions: SeriesActions, messages: Flow<St
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbar) },
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        // The navigation bar's inset is the Scaffold's: content ends above the bar and the snackbar sits above it. The status bar's
+        // is not, because the picture runs up under it.
+        contentWindowInsets = WindowInsets.navigationBars,
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             when (state.phase) {
-                SeriesPhase.SIGNED_OUT -> Column(Modifier.statusBarsPadding()) {
-                    OverlayBackButton(actions.onBack, Modifier.padding(8.dp))
+                SeriesPhase.SIGNED_OUT -> ScrollingColumn {
+                    BackBar(actions.onBack)
                     SignedOutNotice(actions.onOpenServers)
                 }
-                SeriesPhase.GONE -> Column(Modifier.statusBarsPadding()) {
-                    OverlayBackButton(actions.onBack, Modifier.padding(8.dp))
+                SeriesPhase.GONE -> ScrollingColumn {
+                    BackBar(actions.onBack)
                     EmptyState(stringResource(R.string.gone_title), stringResource(R.string.gone_body), actionLabel = stringResource(R.string.cd_back), onAction = actions.onBack)
                 }
-                else -> Column(Modifier.fillMaxSize()) {
-                    RefreshLine(state.refreshing && !state.pulling, Modifier.statusBarsPadding())
-                    PullToRefreshBox(isRefreshing = state.pulling, onRefresh = actions.onRefresh, modifier = Modifier.fillMaxSize()) {
+                else -> {
+                    PullRefresh(isRefreshing = state.pulling, onRefresh = actions.onRefresh, modifier = Modifier.fillMaxSize(), belowStatusBar = true) {
                         SeriesContent(state, actions)
                     }
+                    RefreshLine(state.refreshing && !state.pulling, Modifier.statusBarsPadding().align(Alignment.TopCenter))
                 }
             }
         }
@@ -148,8 +160,11 @@ private fun SeriesContent(state: SeriesUiState, actions: SeriesActions) {
     val title = series?.item?.displayName(strings).orEmpty()
     val banner = BannerActions(actions.onRefresh, { session?.let { actions.onSignIn(it.serverId) } }, { session?.let { actions.onReview(it.serverId) } })
     val showBar by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 } }
-    val overview = series?.item?.overview?.let { plainOverview(it) }.orEmpty()
-    val heroArtwork = if (series != null && session != null) series.item.backdropArtwork(session) ?: series.item.primaryArtwork(session) else null
+    val overview = remember(series?.item?.overview) { series?.item?.overview?.let { plainOverview(it) }.orEmpty() }
+    // A picture only when there is a real backdrop. Without one the page starts with a plain Back bar and the poster beside the title.
+    val heroArtwork = if (series != null && session != null) series.item.backdropArtwork(session) else null
+    // Nothing saved and the load failed: ONE message with its button, instead of a banner above an empty list.
+    val failedEmpty = series == null && state.episodes.isEmpty() && state.banner != null
     // Items ahead of the first episode: hero, banner, overview, actions, then the chips and the season header.
     val before = 1 + (if (state.banner != null) 1 else 0) + (if (overview.isNotEmpty()) 1 else 0) + (if (series != null) 1 else 0) + (if (state.seasons.isNotEmpty()) 2 else 0)
 
@@ -168,11 +183,11 @@ private fun SeriesContent(state: SeriesUiState, actions: SeriesActions) {
             LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 item(key = "hero") {
                     Column {
-                        HeroBackdrop(heroArtwork, title, actions.onBack)
-                        Header(state, title, strings)
+                        if (heroArtwork != null) HeroBackdrop(heroArtwork, title, actions.onBack) else BackBar(actions.onBack)
+                        Header(state, title, strings, actions.onRefresh)
                     }
                 }
-                state.banner?.let { kind -> item(key = "banner") { FreshnessBanner(kind, banner) } }
+                if (!failedEmpty) state.banner?.let { kind -> item(key = "banner") { FreshnessBanner(kind, banner) } }
                 if (series != null) {
                     if (overview.isNotEmpty()) item(key = "overview") { ExpandableText(overview, Modifier.padding(horizontal = Gutter)) }
                     item(key = "actions") { SeriesActionsRow(state, actions) }
@@ -181,17 +196,22 @@ private fun SeriesContent(state: SeriesUiState, actions: SeriesActions) {
                     item(key = "seasons") { SeasonChips(state, actions) }
                     item(key = "season-header") { SeasonHeader(state, actions) }
                 }
-                episodes(state, actions, session, strings) { sheetId = it }
+                episodes(state, actions, session, strings, banner) { sheetId = it }
             }
         }
         AnimatedVisibility(visible = showBar, modifier = Modifier.align(Alignment.TopStart)) {
+            // The status bar's height plus a normal bar, not more. First in a screen reader's order, so Back is reached first.
             Row(
-                Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainer).statusBarsPadding().padding(horizontal = 4.dp, vertical = 4.dp),
+                Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainer).statusBarsPadding().heightIn(min = BarHeight).padding(horizontal = 4.dp)
+                    .semantics { isTraversalGroup = true; traversalIndex = -1f },
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 OverlayBackButton(actions.onBack)
-                Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.semantics { heading() })
+                Text(
+                    title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.refreshAction(actions.onRefresh).semantics { heading() },
+                )
             }
         }
     }
@@ -200,7 +220,7 @@ private fun SeriesContent(state: SeriesUiState, actions: SeriesActions) {
     if (target != null) {
         ItemActionsSheet(
             SheetTarget(
-                itemId = target.item.id, title = target.item.displayName(strings), played = target.userData?.played == true,
+                itemId = target.item.id, title = target.item.sheetTitle(strings), played = target.userData?.played == true,
                 favourite = target.userData?.favourite == true, canRemoveFromResume = false, seriesId = null,
             ),
             SheetActions({}, actions.onSetPlayed, actions.onSetFavourite, {}, { actions.onOpen(Destination.Detail(it)) }),
@@ -209,11 +229,8 @@ private fun SeriesContent(state: SeriesUiState, actions: SeriesActions) {
     }
 }
 
-/** Items before the first episode in the list: hero, optional banner and overview, actions, chips, season header. Only used to scroll to an episode. */
-private const val EPISODES_START = 3
-
 @Composable
-private fun Header(state: SeriesUiState, title: String, strings: Strings) {
+private fun Header(state: SeriesUiState, title: String, strings: Strings, onRefresh: () -> Unit) {
     val series = state.series
     Row(Modifier.fillMaxWidth().padding(horizontal = Gutter, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         if (series != null) {
@@ -223,7 +240,7 @@ private fun Header(state: SeriesUiState, title: String, strings: Strings) {
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (series != null) {
-                Text(title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
+                Text(title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.refreshAction(onRefresh).semantics { heading() })
                 seriesFacts(strings, series.item, state.seasons.size)?.let {
                     Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -294,13 +311,14 @@ private fun LazyListScope.episodes(
     actions: SeriesActions,
     session: Session?,
     strings: Strings,
+    banner: BannerActions,
     onMenu: (String) -> Unit,
 ) {
     if (session == null) return
     if (state.episodes.isEmpty()) {
         item(key = "episodes-empty") {
             when {
-                state.banner != null && state.series == null -> EmptyState(stringResource(R.string.error_title), stringResource(R.string.error_body))
+                state.banner != null && state.series == null -> ErrorState(state.banner, banner)
                 state.refreshing || state.selectedSeasonId == null && state.banner == null -> SkeletonEpisodes()
                 state.selectedSeasonId != null -> Text(
                     stringResource(R.string.episodes_empty), Modifier.padding(horizontal = Gutter),

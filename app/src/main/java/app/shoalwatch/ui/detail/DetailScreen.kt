@@ -1,5 +1,21 @@
 package app.shoalwatch.ui.detail
 
+import androidx.compose.runtime.remember
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.ui.text.TextStyle
+import app.shoalwatch.ui.present.BannerKind
+import app.shoalwatch.ui.present.Facts
+import app.shoalwatch.ui.present.joinAll
+import app.shoalwatch.ui.components.ArtworkAspect
+import app.shoalwatch.ui.components.Artwork
+import app.shoalwatch.ui.components.refreshAction
+import app.shoalwatch.ui.components.ScrollingColumn
+import app.shoalwatch.ui.components.PullRefresh
+import app.shoalwatch.ui.components.ErrorState
+import app.shoalwatch.ui.components.BackBar
+import app.shoalwatch.data.images.primaryArtwork
+import app.shoalwatch.data.images.backdropArtwork
+import app.shoalwatch.data.images.thumbArtwork
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,7 +45,6 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -53,7 +68,6 @@ import app.shoalwatch.ui.components.FavouriteButton
 import app.shoalwatch.ui.components.FreshnessBanner
 import app.shoalwatch.ui.components.Gutter
 import app.shoalwatch.ui.components.HeroBackdrop
-import app.shoalwatch.ui.components.OverlayBackButton
 import app.shoalwatch.ui.components.ProgressBarThin
 import app.shoalwatch.ui.components.ReadableBox
 import app.shoalwatch.ui.components.RefreshLine
@@ -68,7 +82,6 @@ import app.shoalwatch.ui.present.percentWatched
 import app.shoalwatch.ui.present.plainOverview
 import app.shoalwatch.ui.present.rememberStrings
 import app.shoalwatch.ui.present.resumeLabel
-import app.shoalwatch.ui.present.wideArtwork
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 
@@ -95,31 +108,33 @@ fun DetailScreen(state: DetailUiState, actions: DetailActions, messages: Flow<St
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbar) },
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        // The navigation bar's inset is the Scaffold's: content ends above the bar and the snackbar sits above it. The status bar's
+        // is not, because a picture runs up under it.
+        contentWindowInsets = WindowInsets.navigationBars,
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             val item = state.item
             val session = state.session
             when {
-                state.phase == DetailPhase.SIGNED_OUT -> Column(Modifier.statusBarsPadding()) {
-                    OverlayBackButton(actions.onBack, Modifier.padding(8.dp))
+                state.phase == DetailPhase.SIGNED_OUT -> ScrollingColumn {
+                    BackBar(actions.onBack)
                     SignedOutNotice(actions.onOpenServers)
                 }
-                state.phase == DetailPhase.GONE -> Column(Modifier.statusBarsPadding()) {
-                    OverlayBackButton(actions.onBack, Modifier.padding(8.dp))
+                state.phase == DetailPhase.GONE -> ScrollingColumn {
+                    BackBar(actions.onBack)
                     EmptyState(stringResource(R.string.gone_title), stringResource(R.string.gone_body), actionLabel = stringResource(R.string.cd_back), onAction = actions.onBack)
                 }
-                state.phase == DetailPhase.ERROR -> Column(Modifier.statusBarsPadding()) {
-                    OverlayBackButton(actions.onBack, Modifier.padding(8.dp))
-                    state.banner?.let { FreshnessBanner(it, bannerActions(state, actions)) }
-                    EmptyState(stringResource(R.string.error_title), stringResource(R.string.error_body))
+                // One message with its button; the banner is left out so there are not two.
+                state.phase == DetailPhase.ERROR -> ScrollingColumn {
+                    BackBar(actions.onBack)
+                    ErrorState(state.banner ?: BannerKind.GENERIC, bannerActions(state, actions))
                 }
-                item == null || session == null -> Column(Modifier.fillMaxSize()) { Loading(actions.onBack) }
-                else -> Column(Modifier.fillMaxSize()) {
-                    RefreshLine(state.refreshing && !state.pulling, Modifier.statusBarsPadding())
-                    PullToRefreshBox(isRefreshing = state.pulling, onRefresh = actions.onRefresh, modifier = Modifier.fillMaxSize()) {
+                item == null || session == null -> Loading(actions.onBack)
+                else -> {
+                    PullRefresh(isRefreshing = state.pulling, onRefresh = actions.onRefresh, modifier = Modifier.fillMaxSize(), belowStatusBar = true) {
                         Content(state, item, session, actions, snackbar)
                     }
+                    RefreshLine(state.refreshing && !state.pulling, Modifier.statusBarsPadding().align(Alignment.TopCenter))
                 }
             }
         }
@@ -129,13 +144,13 @@ fun DetailScreen(state: DetailUiState, actions: DetailActions, messages: Flow<St
 private fun bannerActions(state: DetailUiState, actions: DetailActions) =
     BannerActions(actions.onRefresh, { state.session?.let { actions.onSignIn(it.serverId) } }, { state.session?.let { actions.onReview(it.serverId) } })
 
-/** The first load: the same shape as the finished page (wide picture, title bars, a button), so nothing jumps. */
+/** The first load: a Back bar and the shape of the page's text and button, so nothing jumps much. (Whether there is a picture is not known yet.) */
 @Composable
 private fun Loading(onBack: () -> Unit) {
     val loading = stringResource(R.string.cd_loading_content)
     ReadableBox {
         Column(Modifier.verticalScroll(rememberScrollState()).semantics { contentDescription = loading }) {
-            HeroBackdrop(null, "", onBack)
+            BackBar(onBack)
             Column(Modifier.padding(horizontal = Gutter), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 SkeletonBlock(Modifier.width(220.dp).height(32.dp))
                 SkeletonBlock(Modifier.width(140.dp).height(18.dp))
@@ -158,21 +173,28 @@ private fun Content(state: DetailUiState, entry: ItemWithUserData, session: Sess
     val percent = percentWatched(item, data)
     val resume = resumeLabel(strings, data?.positionMs ?: 0)
     val watched = data?.played == true
-    val overview = plainOverview(item.overview)
+    val overview = remember(item.overview) { plainOverview(item.overview) }
     val title = item.displayName(strings)
 
     ReadableBox {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            HeroBackdrop(wideArtwork(item, session), title, actions.onBack)
+            // A picture only when there is a real one: a backdrop, or an episode's own still. Otherwise a plain Back bar, and a film
+            // shows its poster beside the title (as a series does).
+            val hero = if (item.kind == ItemKind.EPISODE) item.thumbArtwork(session) ?: item.primaryArtwork(session) else item.backdropArtwork(session)
+            if (hero != null) HeroBackdrop(hero, title, actions.onBack) else BackBar(actions.onBack)
             state.banner?.let { FreshnessBanner(it, bannerActions(state, actions)) }
             Column(Modifier.padding(horizontal = Gutter), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (item.kind == ItemKind.EPISODE) {
-                    val line = listOfNotNull(item.seriesName?.takeIf { it.isNotBlank() }, episodeCode(strings, item)).joinToString(" · ")
-                    if (line.isNotEmpty()) Text(line, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+                    val line = joinAll(strings, listOfNotNull(item.seriesName?.takeIf { it.isNotBlank() }, episodeCode(strings, item)))
+                    if (line != null) Text(line, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
                 }
-                Text(title, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() })
-                facts.text?.let { shown ->
-                    Text(shown, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.semantics { contentDescription = facts.spoken ?: shown })
+                if (hero == null && item.kind != ItemKind.EPISODE) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Artwork(item.primaryArtwork(session), null, aspect = ArtworkAspect.POSTER, title = title, modifier = Modifier.width(96.dp))
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) { TitleAndFacts(title, facts, actions.onRefresh, MaterialTheme.typography.headlineSmall) }
+                    }
+                } else {
+                    TitleAndFacts(title, facts, actions.onRefresh, MaterialTheme.typography.headlineMedium)
                 }
                 WatchState(watched, resume, percent?.let { strings.get(R.string.state_percent_watched, it.toString()) }, percent)
                 Button(
@@ -206,6 +228,15 @@ private fun Content(state: DetailUiState, entry: ItemWithUserData, session: Sess
     }
 }
 
+/** The title (a screen-reader heading with a Refresh action) and the facts under it. */
+@Composable
+private fun TitleAndFacts(title: String, facts: Facts, onRefresh: () -> Unit, style: TextStyle) {
+    Text(title, style = style, modifier = Modifier.refreshAction(onRefresh).semantics { heading() })
+    facts.text?.let { shown ->
+        Text(shown, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.semantics { contentDescription = facts.spoken ?: shown })
+    }
+}
+
 /** Watched state in words and a symbol, never by colour alone: "Watched", "Resume from 23 min" (with a thin bar and the percentage), or "Not watched yet". */
 @Composable
 private fun WatchState(watched: Boolean, resume: String?, percentText: String?, percent: Int?) {
@@ -214,7 +245,7 @@ private fun WatchState(watched: Boolean, resume: String?, percentText: String?, 
             Icon(if (watched) Icons.Filled.Check else Icons.Filled.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
             val text = when {
                 watched -> stringResource(R.string.detail_watched_state)
-                resume != null -> listOfNotNull(resume, percentText).joinToString(" · ")
+                resume != null -> joinAll(rememberStrings(), listOfNotNull(resume, percentText)) ?: resume
                 else -> stringResource(R.string.detail_unwatched_state)
             }
             Text(text, style = MaterialTheme.typography.bodyLarge)

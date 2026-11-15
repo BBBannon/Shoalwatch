@@ -23,6 +23,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import app.shoalwatch.R
@@ -37,17 +41,24 @@ private fun SortBy.label(): Int = when (this) {
     SortBy.RATING -> R.string.sort_rating
 }
 
+/** The plain words for a direction: names run A to Z, dates oldest or newest first, ratings lowest or highest first. */
+internal fun SortBy.directionLabel(descending: Boolean): Int = when (this) {
+    SortBy.NAME -> if (descending) R.string.sort_name_down else R.string.sort_name_up
+    SortBy.DATE_ADDED, SortBy.RELEASE_DATE -> if (descending) R.string.sort_date_down else R.string.sort_date_up
+    SortBy.RATING -> if (descending) R.string.sort_rating_down else R.string.sort_rating_up
+}
+
 /** Names go A to Z; dates and ratings start with the newest and best. */
 private fun SortBy.defaultDescending(): Boolean = this != SortBy.NAME
 
 /**
- * The compact sort and filter bar: one chip that opens the sort menu (Name, Date added, Release date, Rating, then ascending or
- * descending) and a chip each for Unwatched and Favourites. The chips are toggles that say whether they are on.
+ * The compact sort and filter bar: one chip that opens the sort menu (Name, Date added, Release date, Rating, then the direction in plain
+ * words: A to Z, Newest first, Highest first and so on) and a chip each for Unwatched and Favourites. The chips are toggles that say whether they are on.
  */
 @Composable
 fun SortFilterChips(sort: Sort, filter: ItemFilter, onSort: (Sort) -> Unit, onFilter: (ItemFilter) -> Unit) {
     var open by rememberSaveable { mutableStateOf(false) }
-    val direction = stringResource(if (sort.descending) R.string.sort_descending else R.string.sort_ascending)
+    val direction = stringResource(sort.by.directionLabel(sort.descending))
     val current = stringResource(R.string.sort_current, stringResource(sort.by.label()), direction)
     Row(
         Modifier.horizontalScroll(rememberScrollState()),
@@ -68,8 +79,8 @@ fun SortFilterChips(sort: Sort, filter: ItemFilter, onSort: (Sort) -> Unit, onFi
                     }
                 }
                 HorizontalDivider()
-                MenuChoice(stringResource(R.string.sort_ascending), selected = !sort.descending) { open = false; onSort(sort.copy(descending = false)) }
-                MenuChoice(stringResource(R.string.sort_descending), selected = sort.descending) { open = false; onSort(sort.copy(descending = true)) }
+                MenuChoice(stringResource(sort.by.directionLabel(false)), selected = !sort.descending) { open = false; onSort(sort.copy(descending = false)) }
+                MenuChoice(stringResource(sort.by.directionLabel(true)), selected = sort.descending) { open = false; onSort(sort.copy(descending = true)) }
             }
         }
         FilterChip(
@@ -87,7 +98,9 @@ fun SortFilterChips(sort: Sort, filter: ItemFilter, onSort: (Sort) -> Unit, onFi
 
 @Composable
 private fun MenuChoice(label: String, selected: Boolean, onClick: () -> Unit) {
+    // The tick is only a picture: the choice says it is selected, as a radio button does.
     DropdownMenuItem(
+        modifier = Modifier.semantics { this.selected = selected; role = Role.RadioButton },
         text = { Text(label, style = androidx.compose.material3.MaterialTheme.typography.bodyLarge) },
         leadingIcon = { if (selected) Icon(Icons.Filled.Check, contentDescription = null) else Box(Modifier.size(24.dp)) },
         onClick = onClick,

@@ -1,6 +1,11 @@
 package app.shoalwatch.ui.library
 
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
@@ -82,8 +87,8 @@ abstract class LibraryGridRenderBase : RenderBase() {
 
     @Test fun theSortChipShowsTheCurrentSortAndTheMenuChangesIt() {
         showGrid(ready)
-        assertShown(text(R.string.sort_current, text(R.string.sort_name), text(R.string.sort_ascending)))
-        rule.onAllNodes(hasText(text(R.string.sort_current, text(R.string.sort_name), text(R.string.sort_ascending)))).onFirst().performClick()
+        assertShown(text(R.string.sort_current, text(R.string.sort_name), text(R.string.sort_name_up)))
+        rule.onAllNodes(hasText(text(R.string.sort_current, text(R.string.sort_name), text(R.string.sort_name_up)))).onFirst().performClick()
         rule.waitForIdle()
         assertShown(text(R.string.sort_release))
         assertShown(text(R.string.sort_rating))
@@ -94,10 +99,46 @@ abstract class LibraryGridRenderBase : RenderBase() {
 
     @Test fun theMenuCanFlipTheDirection() {
         showGrid(ready)
-        rule.onAllNodes(hasText(text(R.string.sort_current, text(R.string.sort_name), text(R.string.sort_ascending)))).onFirst().performClick()
+        rule.onAllNodes(hasText(text(R.string.sort_current, text(R.string.sort_name), text(R.string.sort_name_up)))).onFirst().performClick()
         rule.waitForIdle()
-        rule.onAllNodes(hasText(text(R.string.sort_descending))).onFirst().performClick()
+        rule.onAllNodes(hasText(text(R.string.sort_name_down))).onFirst().performClick()
         assertEquals(listOf(Sort(SortBy.NAME, descending = true)), sorts)
+    }
+
+    @Test fun everySortHasPlainWordsForItsDirectionNotAscendingOrDescending() {
+        val expected = mapOf(
+            (SortBy.NAME to false) to "A to Z", (SortBy.NAME to true) to "Z to A",
+            (SortBy.DATE_ADDED to false) to "Oldest first", (SortBy.DATE_ADDED to true) to "Newest first",
+            (SortBy.RELEASE_DATE to false) to "Oldest first", (SortBy.RELEASE_DATE to true) to "Newest first",
+            (SortBy.RATING to false) to "Lowest first", (SortBy.RATING to true) to "Highest first",
+        )
+        for ((key, words) in expected) assertEquals(key.toString(), words, text(key.first.directionLabel(key.second)))
+        assertEquals(SortBy.entries.size * 2, expected.size)
+    }
+
+    @Test fun theChipReadsSortThenTheNameThenThePlainDirection() {
+        showGrid(ready.copy(sort = Sort(SortBy.DATE_ADDED, descending = true)))
+        assertShown("Sort: Date added, Newest first")
+    }
+
+    @Test fun theSortMenuSaysWhichChoiceIsSelectedAsRadioButtons() {
+        showGrid(ready)
+        rule.onAllNodes(hasText("Sort: Name, A to Z")).onFirst().performClick()
+        rule.waitForIdle()
+        fun selected(label: String) = rule.onAllNodes(hasText(label).and(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton)))
+        selected(text(R.string.sort_name)).onFirst().assertIsSelected()
+        selected(text(R.string.sort_name_up)).onFirst().assertIsSelected()
+        selected(text(R.string.sort_rating)).onFirst().assertIsNotSelected()
+        selected(text(R.string.sort_name_down)).onFirst().assertIsNotSelected()
+    }
+
+    @Test fun theTitleHasARefreshActionAndStaysOnOneLine() {
+        showGrid(ready)
+        val title = rule.onAllNodes(hasText("Films").and(SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading))).onFirst()
+        val actions = title.fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsActions.CustomActions]
+        assertEquals(listOf(text(R.string.action_refresh)), actions.map { it.label })
+        actions.single().action()
+        assertEquals(1, refreshed)
     }
 
     @Test fun theFilterChipsToggleAndSayWhetherTheyAreOn() {
@@ -168,9 +209,19 @@ abstract class LibraryGridRenderBase : RenderBase() {
 
     @Test fun aFailureWithNothingSavedIsAnErrorStateWithRetryNotASpinner() {
         showGrid(ready.copy(items = emptyList(), total = null, banner = BannerKind.GENERIC, fresh = false))
-        assertShown(text(R.string.banner_generic))
+        // ONE message with its button: the banner is left out.
         assertShown(text(R.string.error_title))
+        assertNotShown(text(R.string.banner_generic))
         assertNotShown(text(R.string.library_empty_title))
+        assertEquals(1, rule.onAllNodes(hasText(text(R.string.action_retry))).fetchSemanticsNodes().size)
+        rule.onAllNodes(hasText(text(R.string.action_retry))).onFirst().performClick()
+        assertEquals(1, refreshed)
+    }
+
+    @Test fun aFailedPageLoadOnAnEmptyListStillShowsTheErrorWithItsButton() {
+        showGrid(ready.copy(items = emptyList(), total = null, banner = BannerKind.OFFLINE, fresh = false, canLoadMore = true))
+        assertShown(text(R.string.error_title))
+        assertEquals(1, rule.onAllNodes(hasText(text(R.string.action_retry))).fetchSemanticsNodes().size)
     }
 
     @Test fun anItemThatIsGoneSaysSo() {

@@ -1,5 +1,12 @@
 package app.shoalwatch.ui.detail
 
+import app.shoalwatch.data.library.ItemImages
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.getBoundsInRoot
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
@@ -142,8 +149,18 @@ abstract class DetailRenderBase : RenderBase() {
 
     @Test fun aFailureWithNothingSavedIsAnErrorStateWithRetry() {
         showDetail(DetailUiState(DetailPhase.ERROR, BEN, banner = BannerKind.GENERIC))
-        assertShown(text(R.string.banner_generic))
+        // ONE message with its button: the banner is left out.
         assertShown(text(R.string.error_title))
+        assertNotShown(text(R.string.banner_generic))
+        assertEquals(1, rule.onAllNodes(hasText(text(R.string.action_retry))).fetchSemanticsNodes().size)
+        rule.onAllNodes(hasText(text(R.string.action_retry))).onFirst().performClick()
+        assertEquals(1, refreshed)
+    }
+
+    @Test fun anExpiredSignInWithNothingSavedOffersSignInInTheOneMessage() {
+        showDetail(DetailUiState(DetailPhase.ERROR, BEN, banner = BannerKind.SIGN_IN))
+        assertShown(text(R.string.error_title))
+        assertEquals(1, rule.onAllNodes(hasText(text(R.string.action_sign_in))).fetchSemanticsNodes().size)
     }
 
     @Test fun anItemThatIsGoneSaysSo() {
@@ -170,6 +187,47 @@ abstract class DetailRenderBase : RenderBase() {
         showDetail(ready(film().let { it.copy(item = it.item.copy(name = "")) }))
         assertShown(text(R.string.untitled))
     }
+
+    // --- the hero picture, and screens that scroll ---------------------------------------------------------------
+
+    private fun titleTop() = rule.onAllNodes(hasText("The Example Film").and(SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading))).onFirst().getBoundsInRoot().top
+
+    @Test fun aFilmWithABackdropStartsWithTheWidePictureAndTheTitleComesBelowIt() {
+        showDetail(ready())
+        assertTrue("title at ${titleTop()}", titleTop() > 150.dp)
+    }
+
+    @Test fun aFilmWithNoBackdropHasNoPictureAtTheTopJustABackBarAndThePosterBesideTheTitle() {
+        showDetail(ready(film().let { it.copy(item = it.item.copy(images = ItemImages(null, null, null, null))) }))
+        assertTrue("title at ${titleTop()}", titleTop() < 130.dp)
+        rule.onNodeWithContentDescription(text(R.string.cd_back)).performClick()
+        assertEquals(1, backs)
+    }
+
+    @Test fun theTitleHasARefreshAction() {
+        showDetail(ready())
+        val title = rule.onAllNodes(hasText("The Example Film").and(SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading))).onFirst()
+        val custom = title.fetchSemanticsNode().config[SemanticsActions.CustomActions]
+        assertEquals(listOf(text(R.string.action_refresh)), custom.map { it.label })
+        rule.runOnIdle { custom.single().action() }
+        assertEquals(1, refreshed)
+    }
+
+    @Test fun theErrorScreenScrollsSoItsButtonIsReachableAtLargeText() {
+        showDetail(DetailUiState(DetailPhase.ERROR, BEN, banner = BannerKind.OFFLINE))
+        assertTrue(rule.onAllNodes(hasScrollAction()).fetchSemanticsNodes().isNotEmpty())
+    }
+
+    @Test fun anItemThatIsGoneScrollsToo() {
+        showDetail(DetailUiState(DetailPhase.GONE, BEN))
+        assertTrue(rule.onAllNodes(hasScrollAction()).fetchSemanticsNodes().isNotEmpty())
+    }
+
+    @Test fun theEpisodeLineReadsSeriesThenCodeFromTheSharedJoin() {
+        showDetail(ready(episode(7, season = 2, number = 5, name = "The Tide")))
+        assertShown(text(R.string.line_join, "Series 50", "S2 E5"))
+    }
+
 }
 
 @Config(qualifiers = "w360dp-h640dp") class DetailPhoneRenderTest : DetailRenderBase() { override val fontScale = 1f }

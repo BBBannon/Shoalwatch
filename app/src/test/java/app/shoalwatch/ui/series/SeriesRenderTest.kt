@@ -1,5 +1,14 @@
 package app.shoalwatch.ui.series
 
+import app.shoalwatch.data.library.ItemImages
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.getBoundsInRoot
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
@@ -85,17 +94,17 @@ abstract class SeriesRenderBase : RenderBase() {
 
     @Test fun eachEpisodeIsOneLabelledRowWithItsOwnMoreButton() {
         showSeries(ready)
-        scrollTo(hasContentDescription("E1 · The Beginning, 1 hr 40 min, watched"))
-        assertDescribed("E1 · The Beginning, 1 hr 40 min, watched")
+        scrollTo(hasContentDescription("Episode 1, The Beginning, 1 hr 40 min, watched"))
+        assertDescribed("Episode 1, The Beginning, 1 hr 40 min, watched")
         scrollTo(hasContentDescription(text(R.string.cd_more_actions, "The Turning Tide")))
-        assertTrue(describedStarting("E2 · The Turning Tide"))
+        assertTrue(describedStarting("Episode 2, The Turning Tide"))
         assertDescribed(text(R.string.cd_more_actions, "The Turning Tide"))
     }
 
     @Test fun tappingAnEpisodeOpensItsDetail() {
         showSeries(ready)
-        scrollTo(hasContentDescription("E1 · The Beginning, 1 hr 40 min, watched"))
-        rule.onNodeWithContentDescription("E1 · The Beginning, 1 hr 40 min, watched").performClick()
+        scrollTo(hasContentDescription("Episode 1, The Beginning, 1 hr 40 min, watched"))
+        rule.onNodeWithContentDescription("Episode 1, The Beginning, 1 hr 40 min, watched").performClick()
         assertEquals(listOf<Destination>(Destination.Detail(id(1))), opened)
     }
 
@@ -114,7 +123,7 @@ abstract class SeriesRenderBase : RenderBase() {
     @Test fun theHighlightedEpisodeIsMarkedAndTheListIsStillThere() {
         showSeries(ready.copy(highlightEpisodeId = id(2)))
         rule.waitForIdle()
-        assertTrue(tree(), describedStarting("E2 · The Turning Tide"))
+        assertTrue(tree(), describedStarting("Episode 2, The Turning Tide"))
     }
 
     @Test fun markSeriesWatchedAndFavouriteArePassedOn() {
@@ -179,8 +188,19 @@ abstract class SeriesRenderBase : RenderBase() {
 
     @Test fun anErrorWithNothingSavedIsAnErrorStateWithRetry() {
         showSeries(SeriesUiState(phase = SeriesPhase.READY, session = BEN, banner = BannerKind.GENERIC))
-        assertShown(text(R.string.banner_generic))
+        // ONE message with its button: the banner is left out.
         assertShown(text(R.string.error_title))
+        assertNotShown(text(R.string.banner_generic))
+        assertEquals(1, rule.onAllNodes(hasText(text(R.string.action_retry))).fetchSemanticsNodes().size)
+        rule.onAllNodes(hasText(text(R.string.action_retry))).onFirst().performClick()
+        assertEquals(1, refreshed)
+    }
+
+    @Test fun anExpiredSignInWithNothingSavedOffersSignInInTheOneMessage() {
+        showSeries(SeriesUiState(phase = SeriesPhase.READY, session = BEN, banner = BannerKind.SIGN_IN))
+        assertShown(text(R.string.error_title))
+        assertEquals(1, rule.onAllNodes(hasText(text(R.string.action_sign_in))).fetchSemanticsNodes().size)
+        assertEquals(1, rule.onAllNodes(hasText(text(R.string.banner_signin))).fetchSemanticsNodes().size)
     }
 
     @Test fun aSeriesThatIsGoneSaysSo() {
@@ -202,6 +222,62 @@ abstract class SeriesRenderBase : RenderBase() {
         rule.onAllNodes(hasContentDescription(text(R.string.cd_back))).onFirst().performClick()
         assertEquals(1, backs)
     }
+
+    // --- the hero picture, the slim bar, and reading order ---------------------------------------------------------
+
+    private fun titleTop() = rule.onAllNodes(hasText("Tidal").and(SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading))).onFirst().getBoundsInRoot().top
+
+    @Test fun aSeriesWithABackdropStartsWithTheWidePictureAndTheTitleComesBelowIt() {
+        showSeries(ready)
+        assertTrue("title at ${titleTop()}", titleTop() > 150.dp)
+    }
+
+    @Test fun aSeriesWithNoBackdropHasNoPictureAtTheTopJustABackBarThenThePosterBesideTheTitle() {
+        showSeries(ready.copy(series = tidal.copy(item = tidal.item.copy(images = ItemImages("p50", null, null, null)))))
+        assertTrue("title at ${titleTop()}", titleTop() < 130.dp)
+        rule.onNodeWithContentDescription(text(R.string.cd_back)).performClick()
+        assertEquals(1, backs)
+    }
+
+    @Test fun theSlimBarIsANormalBarAndComesFirstInReadingOrder() {
+        // Enough episodes that the list can scroll the whole top block (picture, title) away, which is when the slim bar appears.
+        showSeries(ready.copy(episodes = (1..14).map { episode(it, 1, it, name = "Ep $it") }))
+        scrollTo(hasContentDescription(text(R.string.cd_more_actions, "Ep 14")))
+        rule.waitForIdle()
+        rule.mainClock.advanceTimeBy(1_000)
+        val bar = rule.onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.TraversalIndex, -1f))
+        assertEquals("no slim bar (or two)\n${tree()}", 1, bar.fetchSemanticsNodes().size)
+        val bounds = bar.onFirst().getBoundsInRoot()
+        // The status bar's height plus 56dp, no taller (Robolectric has no status bar, so here it is 56dp).
+        assertTrue("the slim bar is ${bounds.bottom - bounds.top} tall", bounds.bottom - bounds.top <= 64.dp)
+        assertEquals(true, bar.fetchSemanticsNodes().single().config[SemanticsProperties.IsTraversalGroup])
+    }
+
+    @Test fun theTitleHasARefreshAction() {
+        showSeries(ready)
+        val title = rule.onAllNodes(hasText("Tidal").and(SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading))).onFirst()
+        val custom = title.fetchSemanticsNode().config[SemanticsActions.CustomActions]
+        assertEquals(listOf(text(R.string.action_refresh)), custom.map { it.label })
+        rule.runOnIdle { custom.single().action() }
+        assertEquals(1, refreshed)
+    }
+
+    @Test fun aSeriesThatIsGoneScrollsToo() {
+        showSeries(SeriesUiState(phase = SeriesPhase.GONE, session = BEN))
+        assertTrue(rule.onAllNodes(hasScrollAction()).fetchSemanticsNodes().isNotEmpty())
+    }
+
+    @Test fun theHighlightedEpisodeSaysUpNextInWordsAndKeepsItsTextWidth() {
+        showSeries(ready.copy(highlightEpisodeId = id(2)))
+        rule.waitForIdle()
+        val row = rule.onAllNodes(SemanticsMatcher("starts with Episode 2") { node ->
+            node.config.getOrNull(SemanticsProperties.ContentDescription)?.any { it.startsWith("Episode 2, The Turning Tide") } == true
+        }).onFirst().fetchSemanticsNode()
+        assertEquals(text(R.string.state_up_next), row.config[SemanticsProperties.StateDescription])
+        val title = rule.onAllNodesWithText("E2 · The Turning Tide", useUnmergedTree = true).onFirst().fetchSemanticsNode().boundsInRoot
+        assertTrue("the highlighted row's title has no width: $title", title.width > 4f)
+    }
+
 }
 
 @Config(qualifiers = "w360dp-h640dp") class SeriesPhoneRenderTest : SeriesRenderBase() { override val fontScale = 1f }

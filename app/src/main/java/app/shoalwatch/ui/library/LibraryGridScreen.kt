@@ -1,5 +1,9 @@
 package app.shoalwatch.ui.library
 
+import app.shoalwatch.ui.present.sheetTitle
+import app.shoalwatch.ui.components.refreshAction
+import app.shoalwatch.ui.components.ErrorState
+import app.shoalwatch.ui.components.ScrollingColumn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -100,7 +104,8 @@ fun LibraryGridScreen(state: LibraryGridUiState, actions: LibraryGridActions, me
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
-                title = { Text(state.title, Modifier.semantics { heading() }, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+                // One line with an ellipsis: a fixed-height bar cannot hold two lines at a large text size. The whole name is in the sheet and the item's page.
+                title = { Text(state.title, Modifier.refreshAction(actions.onRefresh).semantics { heading() }, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = { IconButton(onClick = actions.onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.cd_back)) } },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )
@@ -108,11 +113,13 @@ fun LibraryGridScreen(state: LibraryGridUiState, actions: LibraryGridActions, me
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             when (state.phase) {
-                GridPhase.SIGNED_OUT -> SignedOutNotice(actions.onOpenServers)
-                GridPhase.GONE -> EmptyState(
-                    stringResource(R.string.gone_title), stringResource(R.string.gone_body),
-                    actionLabel = stringResource(R.string.cd_back), onAction = actions.onBack,
-                )
+                GridPhase.SIGNED_OUT -> ScrollingColumn { SignedOutNotice(actions.onOpenServers) }
+                GridPhase.GONE -> ScrollingColumn {
+                    EmptyState(
+                        stringResource(R.string.gone_title), stringResource(R.string.gone_body),
+                        actionLabel = stringResource(R.string.cd_back), onAction = actions.onBack,
+                    )
+                }
                 else -> {
                     RefreshLine(state.refreshing && !state.pulling)
                     PullToRefreshBox(isRefreshing = state.pulling, onRefresh = actions.onRefresh, modifier = Modifier.fillMaxSize()) {
@@ -152,7 +159,8 @@ private fun Grid(state: LibraryGridUiState, actions: LibraryGridActions) {
     ) {
         item(key = "controls", span = { GridItemSpan(maxLineSpan) }) {
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                state.banner?.let { FreshnessBanner(it, banner, padded = false) }
+                // With nothing to show and a failed load, the error state below is the one message (with its button), so no banner too.
+                if (!state.showError) state.banner?.let { FreshnessBanner(it, banner, padded = false) }
                 SortFilterBar(state, actions)
             }
         }
@@ -187,7 +195,7 @@ private fun Grid(state: LibraryGridUiState, actions: LibraryGridActions) {
         if (state.showEmpty || state.showError) {
             item(key = "empty", span = { GridItemSpan(maxLineSpan) }) {
                 when {
-                    state.showError -> EmptyState(stringResource(R.string.error_title), stringResource(R.string.error_body))
+                    state.showError -> state.banner?.let { ErrorState(it, banner) }
                     state.filtered -> EmptyState(
                         stringResource(R.string.library_empty_title), stringResource(R.string.library_empty_filtered),
                         actionLabel = stringResource(R.string.action_clear_filters), onAction = actions.onClearFilters,
@@ -203,7 +211,7 @@ private fun Grid(state: LibraryGridUiState, actions: LibraryGridActions) {
         val kind = entry.item.kind
         ItemActionsSheet(
             SheetTarget(
-                itemId = entry.item.id, title = entry.item.displayName(strings), played = entry.userData?.played == true,
+                itemId = entry.item.id, title = entry.item.sheetTitle(strings), played = entry.userData?.played == true,
                 favourite = entry.userData?.favourite == true, canRemoveFromResume = false, seriesId = null,
                 canMarkPlayed = kind == ItemKind.MOVIE || kind == ItemKind.SERIES || kind == ItemKind.EPISODE,
             ),
