@@ -41,7 +41,10 @@ private val PICTURE_CODECS = setOf("pgs", "pgssub", "hdmv_pgs_subtitle", "dvdsub
 private val STYLED_CODECS = setOf("ass", "ssa")
 private val TEXT_CODECS = setOf("srt", "subrip", "vtt", "webvtt")
 
-/** Jellyfin's codec name to the format the subtitle route takes (`MediaPaths.subtitleFile`); any other codec is not fetched as text. */
+/**
+ * Jellyfin's codec name to the format the subtitle route takes (`MediaPaths.subtitleFile`). Any other TEXT codec (`mov_text`,
+ * `text`, `ttml`...) is asked for as `srt`, which the server converts it to; picture codecs are never fetched as text.
+ */
 private val FILE_FORMATS = mapOf("srt" to "srt", "subrip" to "srt", "vtt" to "vtt", "webvtt" to "vtt", "ass" to "ass", "ssa" to "ssa")
 
 private val REFUSALS = mapOf(
@@ -160,7 +163,7 @@ private fun MediaStreamDto.toSubtitle(): SubtitleTrack? {
     return SubtitleTrack(
         index!!.toInt(), label(), languageTag(), format, kind,
         forced = isForced == true, hearingImpaired = isHearingImpaired == true, isDefault = isDefault == true, external = isExternal == true,
-        fileFormat = FILE_FORMATS[format],
+        fileFormat = FILE_FORMATS[format] ?: "srt".takeIf { kind == SubtitleKind.TEXT },
     )
 }
 

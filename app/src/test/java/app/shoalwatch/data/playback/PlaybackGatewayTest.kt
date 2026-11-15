@@ -272,13 +272,18 @@ class PlaybackGatewayTest : PlaybackGatewayTestBase() {
         for (type in listOf("application/x-subrip", "text/vtt", "TEXT/X-SSA", "text/plain")) assertTrue(type, subtitle(type).isNotEmpty())
     }
 
-    /** Jellyfin names SRT `subrip` and VTT `webvtt`; each text track's file format is one the subtitle route takes, and the path is exact. */
+    /**
+     * Jellyfin names SRT `subrip` and VTT `webvtt`; each text track's file format is one the subtitle route takes, and the path is
+     * exact. A text codec with no route format of its own (`mov_text`, `text`, `ttml`, one this app has never heard of) is asked
+     * for as `srt`, which the server converts it to; picture formats are never fetched as text.
+     */
     @Test fun everyTextTrackFromPlaybackInfoFetchesItsFile() {
         val tracks = info("subtitles.json").sources.single().subtitles
         assertEquals(
-            listOf(2 to "srt", 3 to "vtt", 4 to "ass", 5 to "ssa", 6 to null, 7 to null),
+            listOf(2 to "srt", 3 to "vtt", 4 to "ass", 5 to "ssa", 6 to null, 7 to "srt", 8 to "srt", 9 to "srt", 10 to "srt", 11 to null),
             tracks.map { it.index to it.fileFormat },
         )
+        assertEquals(SubtitleKind.PICTURE, tracks.single { it.index == 11 }.kind)
         for (track in tracks.filter { it.fileFormat != null }) {
             web.enqueue(MockResponse().setHeader("Content-Type", "text/plain").setBody("x"))
             runBlocking { gateway.subtitleFile(session, ITEM, SOURCE, track.index, track.fileFormat!!) }

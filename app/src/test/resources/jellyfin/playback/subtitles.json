@@ -12,7 +12,11 @@
         {"Codec": "ass", "Language": "jpn", "Type": "Subtitle", "Index": 4, "IsTextSubtitleStream": true, "SupportsExternalStream": true},
         {"Codec": "SSA", "Language": "jpn", "Type": "Subtitle", "Index": 5, "IsTextSubtitleStream": true, "SupportsExternalStream": true},
         {"Codec": "pgssub", "Language": "eng", "Type": "Subtitle", "Index": 6, "IsTextSubtitleStream": false, "SupportsExternalStream": false},
-        {"Codec": "mov_text", "Language": "eng", "Type": "Subtitle", "Index": 7, "IsTextSubtitleStream": true, "SupportsExternalStream": true}
+        {"Codec": "mov_text", "Language": "eng", "Type": "Subtitle", "Index": 7, "IsTextSubtitleStream": true, "SupportsExternalStream": true},
+        {"Codec": "text", "Language": "eng", "Type": "Subtitle", "Index": 8, "IsTextSubtitleStream": true, "SupportsExternalStream": true},
+        {"Codec": "ttml", "Language": "eng", "Type": "Subtitle", "Index": 9, "IsTextSubtitleStream": true, "SupportsExternalStream": true},
+        {"Codec": "somethingnew", "Language": "eng", "Type": "Subtitle", "Index": 10, "IsTextSubtitleStream": true, "SupportsExternalStream": true},
+        {"Codec": "xsub", "Language": "eng", "Type": "Subtitle", "Index": 11, "IsTextSubtitleStream": false, "SupportsExternalStream": false}
       ]
     }
   ],
