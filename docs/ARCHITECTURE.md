@@ -68,7 +68,8 @@ app.shoalwatch
 │   │                reports and teardown", "Player engine and controller" and "Tracks and subtitles"
 │   ├── downloads/   DownloadModels (the download enums, DownloadInfo, OfflineEntry/Season/Series, SeriesSummary, OfflineLibrary; Milestone 4),
 │   │                DownloadPaths (+ ArtworkKey, SweepResult), Volumes (+ StorageChoice, AndroidVolumes), DownloadPrefs (+ DownloadSettings), HlsPlaylists (bounded parser
-│   │                and local writer, pure), OriginalCheck (+ OriginalChecks, pure), DownloadPlanner; api/ DownloadDtos, DownloadGateway (+ DownloadFacts, DownloadGatewayImpl); see "Download files" and "Download call path"
+│   │                and local writer, pure), OriginalCheck (+ OriginalChecks, pure), DownloadPlanner,
+│   │                FileFetcher (+ Progress), HlsFetcher (+ LiveConversion), FetchSupport (+ FetchResult); api/ DownloadDtos, DownloadGateway (+ DownloadFacts, DownloadGatewayImpl); see "Download files" and "Download call path"
 │   ├── sync/
 └── ui/          theme, nav, components, one package per screen group (see "UI" below)
 ```
@@ -217,6 +218,26 @@ What one press will download, before anything is queued. Online only: OFFLINE an
 - **Space:** `freeBytes` from `Volumes.freeBytes` for the device setting's storage; `enoughSpace = total + reserve <= free`, reserve 1 GiB internal, 256 MiB on a card. `mobileData`, `storage` and `volumeId` come from `DownloadPrefs`.
 
 Tests: `OriginalCheckTest` (M3 fixtures through the real mappers), `DownloadPlannerTest` (fake library writing into real Room, `FakeDownloadGateway`, fake check with an in-flight counter, `FakeVolumes`, virtual time), `PlaybackResolverTest` (the check's body).
+
+## Resumable fetching (`FileFetcher`, `HlsFetcher`, `FetchSupport`)
+
+Every byte comes through a route `ServerApi` handed out (`downloadRoute` for the original, the plan's own route for a conversion), so the pin, client certificate, custom headers and cleartext rule apply; no client is built here and no redirect is followed. Results are `FetchResult` (`Done`, `Failed(failure)`, `Retry(kind)`, `Unauthorised`, `RestartConversion`); nothing from the server reaches a result, a log or a message.
+
+**`FileFetcher.fetch`** (correct whatever the server does with `Range`, Task 1):
+- **Request:** `GET /Items/<id>/Download`, `Accept-Encoding: identity`. Resuming from Room's fsync'd count: the part file is cut to it first (a torn tail; a part shorter than the count starts again from zero), then `Range: bytes=<n>-`, plus `If-Range` with the stored validator. The stored validator is only ever one an earlier response for this file sent (`ETag` as sent, else `Last-Modified`, 1..128 characters of 0x20..0x7E, so HTTP dates pass); the media source's `ETag` is never sent, and with none, no `If-Range` is sent.
+- **Refused before writing:** a surely-not-media type (`text/*`, any `html`, `application/json`, `application/xml`) or a `Content-Encoding` other than identity: `Failed(SERVER_ERROR)`.
+- **200:** `Content-Length` must equal `Size` when both are known (else `CHANGED_ON_SERVER`); chunked only when `Size` is known, read to one byte past it at most (then `CHANGED_ON_SERVER`). When resuming, a 200 means Range was ignored or If-Range did not match: the file is cut to zero and written whole. That restart counts only when the response's validator differs from the stored one; three in a row is `CHANGED_ON_SERVER`, and a same-validator restart resets the count. A first start on INTERNAL reserves the space (`Volumes.reserve`, by volume; a refusal is `NO_SPACE`).
+- **206:** only to a ranged request, with `Content-Range: bytes <n>-<total-1>/<total>` exactly, total in 1..256 GiB and equal to `Size` when known (else `CHANGED_ON_SERVER`), and a matching `Content-Length`. Anything else, or a 206 to an unranged request, cuts to zero and is `Retry(SERVER_ERROR)` (an attempt, not a validator restart).
+- **416:** a part already the whole file (by `Size`, else `bytes */N`) is Done; otherwise cut to zero and retried.
+- **Statuses:** 401 `Unauthorised`; 400 and 403 `NOT_ALLOWED` (400 is Jellyfin's answer for an item with no file; the server's answer wins over `CanDownload`); 404 `GONE_FROM_SERVER`; 3xx `Retry(SERVER_NOT_FOUND)`; 5xx `Retry(SERVER_ERROR)`; other 4xx `SERVER_ERROR`.
+- **Errors:** a route refusing as stale is `Retry(OFFLINE)` (the queue asks for a new route), signed out `Failed(SIGN_IN_NEEDED)`; `ENOSPC` anywhere in the cause chain (`ErrnoException`) is `NO_SPACE`; any other IOException is a retry, keeping what was fsync'd (the count on disk is forced and saved first). Cancelling cancels the call and saves nothing more.
+- **Writing:** a `FileChannel` opened for append; `force` before each progress save (every 2 s or 8 MiB, on a failure, and at the end), so Room never claims bytes that are not on disk; never more than the total. Then the part is renamed to `media.<ext>` in one step.
+
+**`HlsFetcher`** (correct whether or not a server cuts the same segments twice):
+- `open(resolved, folder, runtimeMs)`: a TRANSCODE plan with a validated HLS source only; deletes `hls/` first (so after process death a conversion always starts from segment 0 and two sessions' segments are never mixed); fetches the master and media playlists through the plan's route (at most 2 MiB each, parsed by `HlsPlaylists`, so a playlist naming anything outside `/videos/` is refused before any segment request); the duration sum must be within 10% of the runtime when known; writes `hls/local.m3u8` (fsync'd). A 404 on a playlist is `RestartConversion`. The `LiveConversion` lives only in memory (the queue's).
+- `fetch(live, folder, from)`: each segment at most 64 MiB (declared or read), not surely-not-media, not compressed, first byte `0x47`, the declared length if any; written to `seg-<n>.ts.part` (`DownloadPaths.segmentPartFile`), fsync'd, renamed to `seg-<n>.ts`, and only then reported. A 404 or 5xx is `RestartConversion` (the server reaped the session); an IOException is a retry within the same session; 401 is `Unauthorised`; nothing is retried in a loop here.
+
+Tests: `FileFetcherTest` and `FileFetcherHostileTest` (real route, MockWebServer with a range-aware dispatcher for each stand-in flag: `--no-range`, `--etag-changes`, `--no-etag`, `--drop-after`, `--octet-stream`; a recording `FileChannel`), `HlsFetcherTest` (a play-session server: drop and resume in one session, a fresh open after process death with a stable and a recutting server, an idle-killed session).
 
 ## Device profile (`DeviceCapabilities`, `HdrPolicy`, `DeviceProfileBuilder`)
 
