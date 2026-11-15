@@ -75,6 +75,8 @@ internal class FakeHls(private val clock: TestMonotonic) : ConversionFetch {
     val openSteps = ArrayDeque<FetchResult>()
     /** Each fetch: segments to write (from the start index), then the result. */
     val steps = ArrayDeque<Pair<Int, FetchResult>>()
+    /** Called after each segment is written, before its progress is saved. */
+    var onSegment: (Int) -> Unit = {}
 
     override suspend fun open(resolved: Resolved, folder: File, runtimeMs: Long?, space: ConversionSpace): Pair<LiveConversion?, FetchResult> {
         opens += resolved
@@ -90,6 +92,7 @@ internal class FakeHls(private val clock: TestMonotonic) : ConversionFetch {
         val hls = File(folder, "hls")
         for (n in fromSegment until minOf(fromSegment + count, live.segments.size)) {
             File(hls, "seg-%05d.ts".format(n)).writeBytes(ByteArray(376) { 0x47 })
+            onSegment(n)
             progress(n + 1, live.segments.size)
         }
         return result

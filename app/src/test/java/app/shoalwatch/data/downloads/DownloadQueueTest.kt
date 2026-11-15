@@ -171,6 +171,48 @@ class DownloadQueueTest : DownloadQueueTestBase() {
         assertEquals(1, hls.opens.size)
     }
 
+    /** Tasks 9-10 review I-1: a pause while the item runs stops it at its next step, and the queue never undoes the pause. */
+    @Test fun pausingARunningOriginalStopsItAtTheNextSaveAndItStaysPaused() {
+        queued(a, f1, f2)
+        playable(2)
+        files.steps += { c ->
+            c.part.parentFile!!.mkdirs()
+            c.part.writeBytes(ByteArray(1_000))
+            runBlocking { store.setPaused(a, f1.id, true) } // the user presses Pause meanwhile
+            c.progress.saved(1_000, FakeFiles.SIZE, "\"v1\"", 0)
+            error("the fetch must not go on after a pause")
+        }
+        assertEquals(QueueRun.Drained, drain())
+        assertEquals(DownloadState.PAUSED, download(f1)!!.state)
+        assertTrue("the part is kept for a resume", File(folder(f1), "media.mkv.part").exists())
+        assertTrue("never checked", verifier.verified.none { it.itemId == f1.id })
+        assertEquals("the next item ran", DownloadState.COMPLETE, download(f2)!!.state)
+    }
+
+    @Test fun aPauseDuringARetryIsNotUndone() {
+        queued(a, f1)
+        playable()
+        files.steps += { c -> runBlocking { store.setPaused(a, f1.id, true) }; FetchResult.Retry(AppError.Kind.NETWORK) }
+        drain()
+        assertEquals(DownloadState.PAUSED, download(f1)!!.state)
+    }
+
+    @Test fun aPausedConversionKeepsItsSessionAndResumesWhereItWas() {
+        queued(a, f1, quality = DownloadQuality.MEDIUM)
+        convertible()
+        hls.onSegment = { n -> if (n == 2) runBlocking { store.setPaused(a, f1.id, true) } }
+        val q = queue()
+        assertEquals(QueueRun.Drained, drain(q))
+        assertEquals(DownloadState.PAUSED, download(f1)!!.state)
+        assertEquals(2, download(f1)!!.segmentsDone)
+        hls.onSegment = {}
+        runBlocking { store.setPaused(a, f1.id, false) }
+        assertEquals(QueueRun.Drained, drain(q))
+        assertEquals("the same session, where it was", listOf(0, 2), hls.fetches.map { it.second })
+        assertEquals(1, hls.opens.size)
+        assertEquals(DownloadState.COMPLETE, download(f1)!!.state)
+    }
+
     @Test fun recheckMarksADamagedCopy() {
         queued(a, f1)
         playable()

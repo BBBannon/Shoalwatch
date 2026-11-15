@@ -164,6 +164,23 @@ internal class DownloadStore(private val db: AppDatabase, private val now: () ->
         true
     }
 
+    /** What a conditional write found: written, the row in another state (paused, say), or no row. */
+    enum class Written { DONE, MOVED, GONE }
+
+    /**
+     * [update] only while the row's state is one of [expected], in one transaction, so a pause or a removal made meanwhile is
+     * never overwritten (Tasks 9-10 review I-1).
+     */
+    suspend fun updateIf(key: DownloadKey, expected: Set<DownloadState>, change: (DownloadEntity) -> DownloadEntity): Written = db.withTransaction {
+        val row = dao.get(key.serverId, key.itemId) ?: return@withTransaction Written.GONE
+        if (row.state !in expected) return@withTransaction Written.MOVED
+        update(key, change)
+        Written.DONE
+    }
+
+    /** The queue takes a QUEUED row: true only if it was still QUEUED. */
+    suspend fun claim(key: DownloadKey): Boolean = dao.claim(key.serverId, key.itemId) == 1
+
     /** The row, or null (deleted: cancelled, or its account or server removed). */
     suspend fun get(key: DownloadKey): DownloadEntity? = dao.get(key.serverId, key.itemId)
 

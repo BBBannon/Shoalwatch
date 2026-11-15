@@ -63,6 +63,10 @@ abstract class DownloadDao {
     @Query("SELECT COUNT(*) FROM downloads WHERE state = 'QUEUED'")
     internal abstract suspend fun queuedCount(): Int
 
+    /** QUEUED to RUNNING only if it is still QUEUED (a pause or a removal in between wins): 1, else 0. */
+    @Query("UPDATE downloads SET state = 'RUNNING' WHERE serverId = :serverId AND itemId = :itemId AND state = 'QUEUED'")
+    internal abstract suspend fun claim(serverId: String, itemId: String): Int
+
     @Query("SELECT * FROM downloads WHERE state = 'QUEUED' ORDER BY queuePosition LIMIT 1")
     internal abstract suspend fun next(): DownloadEntity?
 

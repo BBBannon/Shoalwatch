@@ -68,6 +68,8 @@ internal class DownloadQueue(
     /** Ends an item's run from anywhere in it (a fetcher only catches IOException, so these pass through). */
     private class Ends(val step: Step) : RuntimeException(null, null, false, false)
     private class RowGone : RuntimeException(null, null, false, false)
+    /** The row left RUNNING meanwhile (paused): it is left as it is, with its part file and live conversion. */
+    private class Moved : RuntimeException(null, null, false, false)
 
     private class Job(val key: DownloadKey, val position: Int, val of: Int, val report: suspend (QueueStatus) -> Unit, val stop: () -> Boolean) {
         suspend fun status(progress: Float?) = report(QueueStatus.Running(position, of, progress))
@@ -90,11 +92,13 @@ internal class DownloadQueue(
         var done = 0
         while (true) {
             if (shouldStop()) return@withLock QueueRun.Stopped
-            val row = starts.withLock { store.next()?.also { r -> store.update(r.key) { it.copy(state = DownloadState.RUNNING) } } }
-            if (row == null) {
+            val taken = starts.withLock { store.next()?.let { r -> r to store.claim(r.key) } }
+            if (taken == null) {
                 onProgress(QueueStatus.Idle)
                 return@withLock QueueRun.Drained
             }
+            val (row, claimed) = taken
+            if (!claimed) continue // paused or removed between the read and the claim
             when (val step = run(Job(row.key, done + 1, done + 1 + store.queuedCount(), onProgress, shouldStop))) {
                 Step.Next -> done++
                 is Step.Halt -> return@withLock step.run
@@ -108,9 +112,9 @@ internal class DownloadQueue(
         val row = store.get(key)?.takeIf { it.state == DownloadState.COMPLETE } ?: return
         val sha = row.sha256 ?: return
         val folder = paths.itemFolder(key, row.storage, row.volumeId) ?: return // the card is out: nothing to say yet
-        val media = SavedMedia(key.serverId, key.itemId, folder, entryOf(row, folder) ?: return, row.container == HLS, row.quality, row.mediaSourceId ?: return)
+        val media = SavedMedia(key.serverId, key.itemId, folder, QueueSpace.entryOf(paths, row, folder) ?: return, row.container == HLS, row.quality, row.mediaSourceId ?: return)
         if (!verifier.recheck(media, sha)) {
-            store.update(key) { it.copy(state = DownloadState.FAILED, failure = DownloadFailure.DAMAGED) }
+            store.updateIf(key, setOf(DownloadState.COMPLETE)) { it.copy(state = DownloadState.FAILED, failure = DownloadFailure.DAMAGED) }
             AppLog.w(TAG, "download damaged")
         }
     }
@@ -122,7 +126,7 @@ internal class DownloadQueue(
             val s = fetcherOf(j.key) ?: return failed(j.key, DownloadFailure.SIGN_IN_NEEDED)
             val dir = paths.itemFolder(j.key, row.storage, row.volumeId)?.also { it.mkdirs() } ?: return failed(j.key, DownloadFailure.STORAGE_MISSING)
             folder = dir
-            if (!fits(row, remaining(row))) return failed(j.key, DownloadFailure.NO_SPACE)
+            if (!QueueSpace.fits(volumes, row, QueueSpace.remaining(row))) return failed(j.key, DownloadFailure.NO_SPACE)
             j.status(null)
             val fetched = if (row.quality == DownloadQuality.ORIGINAL) original(j, s, dir) else conversion(j, s, dir)
             bestEffort { extras.segments(s, j.key) }
@@ -133,6 +137,8 @@ internal class DownloadQueue(
         } catch (e: RowGone) {
             live.remove(j.key)
             folder?.let(paths::deleteInside)
+            Step.Next
+        } catch (e: Moved) {
             Step.Next
         }
     }
@@ -148,7 +154,7 @@ internal class DownloadQueue(
         // The user chose the original: a server change since planning is NOT_PLAYABLE, never a silent conversion.
         val playable = check as? OriginalCheck.Playable ?: throw Ends(failed(key, DownloadFailure.NOT_PLAYABLE))
         val before = current(key)
-        playable.sizeBytes?.let { if (!fits(before, it - before.doneBytes)) throw Ends(failed(key, DownloadFailure.NO_SPACE)) }
+        playable.sizeBytes?.let { if (!QueueSpace.fits(volumes, before, it - before.doneBytes)) throw Ends(failed(key, DownloadFailure.NO_SPACE)) }
         write(key) { it.copy(mediaSourceId = playable.sourceId, container = playable.container) }
         extras.tracks(s, key, folder, playable.sourceId, playable.audio, playable.subtitles, DownloadQuality.ORIGINAL)
         val part = paths.partFile(folder, playable.container)
@@ -237,7 +243,7 @@ internal class DownloadQueue(
         if (plan.method != PlayMethod.TRANSCODE || !plan.source.hls) throw Ends(failed(key, DownloadFailure.SERVER_ERROR))
         val own: List<AudioTrack> = plan.audioTracks.filter { it.index == (plan.audioIndex ?: audio) }.ifEmpty { plan.audioTracks.take(1) }
         extras.tracks(s, key, folder, plan.mediaSourceId, own, plan.subtitleTracks, row.quality)
-        val (opened, result) = hls.open(resolved, folder, row.runtimeMs, ConversionSpace(row.storage, row.volumeId, estimate(row)))
+        val (opened, result) = hls.open(resolved, folder, row.runtimeMs, ConversionSpace(row.storage, row.volumeId, QueueSpace.estimate(row)))
         if (opened == null) {
             when (result) {
                 is FetchResult.Failed -> throw Ends(failed(key, result.failure))
@@ -330,27 +336,36 @@ internal class DownloadQueue(
 
     private suspend fun failed(key: DownloadKey, failure: DownloadFailure): Step {
         live.remove(key)
-        store.update(key) { it.copy(state = DownloadState.FAILED, failure = failure) }
-        AppLog.w(TAG, "download failed: ${failure.name}")
+        if (store.updateIf(key, ACTIVE) { it.copy(state = DownloadState.FAILED, failure = failure) } == DownloadStore.Written.DONE) {
+            AppLog.w(TAG, "download failed: ${failure.name}")
+        }
         return Step.Next
     }
 
     /** One more attempt used: back in the queue and this drain stops (the worker backs off), or SERVER_ERROR at [maxAttempts]. */
     private suspend fun retry(key: DownloadKey, kind: AppError.Kind): Step {
         var attempts = 0
-        store.update(key) { it.copy(state = DownloadState.QUEUED, attempts = (it.attempts + 1).also { a -> attempts = a }) }
+        if (store.updateIf(key, ACTIVE) { it.copy(attempts = (it.attempts + 1).also { a -> attempts = a }) } != DownloadStore.Written.DONE) return Step.Next
         if (attempts >= maxAttempts) return failed(key, DownloadFailure.SERVER_ERROR)
+        store.updateIf(key, ACTIVE) { it.copy(state = DownloadState.QUEUED) }
         return Step.Halt(QueueRun.Retry(kind))
     }
 
     private suspend fun stopped(key: DownloadKey): Step {
-        store.update(key) { it.copy(state = DownloadState.QUEUED) }
+        store.updateIf(key, ACTIVE) { it.copy(state = DownloadState.QUEUED) }
         return Step.Halt(QueueRun.Stopped)
     }
 
     private suspend fun current(key: DownloadKey): DownloadEntity = store.get(key) ?: throw RowGone()
 
-    private suspend fun write(key: DownloadKey, change: (DownloadEntity) -> DownloadEntity) { if (!store.update(key, change)) throw RowGone() }
+    /** Writes only while the item is still this queue's (RUNNING or VERIFYING); a pause stops it, a removal cleans it up. */
+    private suspend fun write(key: DownloadKey, change: (DownloadEntity) -> DownloadEntity) {
+        when (store.updateIf(key, ACTIVE, change)) {
+            DownloadStore.Written.DONE -> Unit
+            DownloadStore.Written.MOVED -> throw Moved()
+            DownloadStore.Written.GONE -> throw RowGone()
+        }
+    }
 
     private suspend fun bestEffort(block: suspend () -> Unit) = try {
         block()
@@ -360,37 +375,11 @@ internal class DownloadQueue(
         AppLog.w(TAG, "download extras skipped: ${e.javaClass.simpleName}")
     }
 
-    /** Free space for [bytes] more, above the plan's reserve (1 GiB internal, 256 MiB on a card). */
-    private fun fits(row: DownloadEntity, bytes: Long): Boolean {
-        val reserve = if (row.storage == StorageKind.INTERNAL) INTERNAL_RESERVE else REMOVABLE_RESERVE
-        return volumes.freeBytes(row.storage, row.volumeId) >= bytes.coerceAtLeast(0) + reserve
-    }
-
-    /** What is still to come, as far as is known before asking the server: an original's known total, a conversion's estimate. */
-    private fun remaining(row: DownloadEntity): Long = when (val estimate = estimate(row)) {
-        null -> (row.totalBytes ?: 0L) - row.doneBytes
-        else -> row.segmentsTotal?.takeIf { it > 0 }?.let { estimate / it * (it - row.segmentsDone) } ?: estimate
-    }
-
-    /** A conversion's size at its bitrate over the runtime (unknown or 0: 45 minutes); null for an original. */
-    private fun estimate(row: DownloadEntity): Long? {
-        val bitrate = row.quality.quality?.maxBitrate?.toLong() ?: return null
-        return bitrate / 8 * ((row.runtimeMs?.takeIf { it > 0 } ?: UNKNOWN_RUNTIME_MS) / 1_000)
-    }
-
-    private fun entryOf(row: DownloadEntity, folder: File): File? = when (val container = row.container) {
-        null -> null
-        HLS -> paths.localPlaylist(paths.hlsFolder(folder))
-        else -> paths.mediaFile(folder, container)
-    }
-
     private val DownloadEntity.key get() = DownloadKey(serverId, itemId)
 
     private companion object {
         const val TAG = "DownloadQueue"
-        const val HLS = "hls"
-        const val INTERNAL_RESERVE = 1L shl 30
-        const val REMOVABLE_RESERVE = 256L shl 20
-        const val UNKNOWN_RUNTIME_MS = 45L * 60 * 1_000
+        val ACTIVE = setOf(DownloadState.RUNNING, DownloadState.VERIFYING)
+        const val HLS = QueueSpace.HLS
     }
 }
