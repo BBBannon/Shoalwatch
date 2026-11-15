@@ -131,10 +131,57 @@ class SharingTest : DownloadHousekeepingTestBase() {
         housekeeping.reconfirm(b)
         assertEquals(setOf("films", "filmStatus"), seenBy(b))
         facts.allow(film.id, canDownload = false)
-        clock += 8L * 24 * 60 * 60 * 1_000 // asked again once its confirmation is a week old
-        housekeeping.reconfirm(b)
+        repeat(8) { // the child browses every day, so its visibility record never ages (Tasks 11-12 review I-1 c)
+            clock += DAY
+            db.itemDao().markVisible(S1, b.userId, listOf(film.id, series.id, season1.id, e1.id), clock)
+        }
+        housekeeping.reconfirm(b) // asked again because its CONFIRMATION is a week old
         assertEquals("a later no hides it again", emptySet<String>(), seenBy(b))
         assertEquals("the owner always sees its own", everything, seenBy(a))
+    }
+
+    @Test fun aConfirmationIsAskedAgainOnlyOnceItIsAWeekOldAndAReconfirmationRestartsItsAge() = runBlocking {
+        aDownloads()
+        repo.setSharing(a, true)
+        seen(b, film, series, season1, e1)
+        confirm(b, film, e1)
+        clock += 3 * DAY
+        db.itemDao().markVisible(S1, b.userId, listOf(film.id, e1.id), clock)
+        housekeeping.reconfirm(b)
+        assertTrue("three days old: not asked", facts.calls.isEmpty())
+        clock += 5 * DAY
+        db.itemDao().markVisible(S1, b.userId, listOf(film.id, e1.id), clock)
+        facts.allow(film.id, canDownload = true); facts.allow(e1.id, canDownload = true)
+        housekeeping.reconfirm(b)
+        assertEquals("eight days old: asked", 1, facts.calls.size)
+        clock += 3 * DAY
+        db.itemDao().markVisible(S1, b.userId, listOf(film.id, e1.id), clock)
+        housekeeping.reconfirm(b)
+        assertEquals("confirmed again three days ago: not asked", 1, facts.calls.size)
+    }
+
+    @Test fun aPlanWhoseFactsSayNoRemovesTheChildsPermissionAtOnce() = runBlocking {
+        aDownloads()
+        repo.setSharing(a, true)
+        seen(b, film, series, season1, e1)
+        confirm(b, film)
+        assertTrue("films" in seenBy(b))
+        facts.allow(film.id, canDownload = false)
+        val plan = repo.prepare(b, DownloadTarget.Item(film.id), DownloadQuality.ORIGINAL)
+        assertEquals(listOf(SkipReason.NOT_ALLOWED), plan.skipped.map { it.reason })
+        assertFalse(store.isConfirmed(key(film), b.userId))
+        assertFalse("hidden from the child at once", "films" in seenBy(b))
+    }
+
+    @Test fun aConfirmationThatCannotBeReAskedOfflineStillCounts() = runBlocking {
+        aDownloads()
+        repo.setSharing(a, true)
+        seen(b, film, series, season1, e1)
+        confirm(b, film)
+        clock += 30 * DAY
+        facts.failWith = app.shoalwatch.core.AppError.of(app.shoalwatch.core.AppError.Kind.OFFLINE)
+        housekeeping.reconfirm(b)
+        assertTrue("on a plane, the child still watches", "films" in seenBy(b))
     }
 
     @Test fun setSharingEmits() = runBlocking {
@@ -169,4 +216,6 @@ class SharingTest : DownloadHousekeepingTestBase() {
         housekeeping.reconfirm(a)
         assertTrue("the owner's own downloads are not shared to it", refreshedIds.isEmpty())
     }
+
+    private companion object { const val DAY = 24L * 60 * 60 * 1_000 }
 }

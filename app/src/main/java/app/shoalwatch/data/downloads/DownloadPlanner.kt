@@ -108,7 +108,11 @@ internal class DownloadPlanner(
     private suspend fun decide(s: Session, item: Item, facts: DownloadFacts?, here: DownloadQuality?, quality: DownloadQuality, gate: Semaphore): Outcome {
         fun skip(reason: SkipReason) = Outcome.Skip(Skipped(item.id, reason))
         if (facts == null) return skip(SkipReason.NOT_FOUND)
-        if (facts.canDownload == false) return skip(SkipReason.NOT_ALLOWED)
+        if (facts.canDownload == false) {
+            // An explicit no for THIS profile removes its confirmed permission at once: no shared copy, no inheritance (review I-1).
+            downloads.deletePermission(s.serverId, s.userId, item.id)
+            return skip(SkipReason.NOT_ALLOWED)
+        }
         // Unknown allows the original only: /Download enforces the server's own permission, /videos/ does not (Task 1).
         val conversionsAllowed = facts.canDownload == true
         if (here != null) {

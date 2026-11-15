@@ -43,17 +43,18 @@ abstract class DownloadDao {
     internal abstract suspend fun ownedItems(serverId: String, userId: String): List<String>
 
     /**
-     * Shared COMPLETE downloads [userId] does not own but was shown, whose visibility record is older than [cutoff] or whose
-     * download permission is not confirmed (oldest first): what `reconfirm` asks the server about.
+     * Shared COMPLETE downloads [userId] does not own but was shown, whose visibility record is older than [cutoff], or whose
+     * download permission is missing or was confirmed before [cutoff] (its own age, read from `confirmedAt`, whatever browsing
+     * keeps the visibility record fresh: Tasks 11-12 review I-1). Oldest confirmation first: what `reconfirm` asks about.
      */
     @Query(
         "SELECT d.itemId AS itemId, d.seriesId AS seriesId FROM downloads d " +
             "JOIN visible_items v ON v.serverId = d.serverId AND v.userId = :userId AND v.itemId = d.itemId " +
-            "WHERE d.serverId = :serverId AND d.state = 'COMPLETE' AND (v.seenAt < :cutoff OR NOT EXISTS " +
-            "(SELECT 1 FROM download_permissions p WHERE p.serverId = d.serverId AND p.userId = :userId AND p.itemId = d.itemId)) " +
+            "LEFT JOIN download_permissions p ON p.serverId = d.serverId AND p.userId = :userId AND p.itemId = d.itemId " +
+            "WHERE d.serverId = :serverId AND d.state = 'COMPLETE' AND (v.seenAt < :cutoff OR p.confirmedAt IS NULL OR p.confirmedAt < :cutoff) " +
             "AND EXISTS (SELECT 1 FROM download_settings x WHERE x.serverId = d.serverId AND x.shareBetweenProfiles = 1) " +
             "AND NOT EXISTS (SELECT 1 FROM download_owners o WHERE o.serverId = d.serverId AND o.itemId = d.itemId AND o.userId = :userId) " +
-            "ORDER BY v.seenAt LIMIT :limit",
+            "ORDER BY COALESCE(p.confirmedAt, 0), v.seenAt LIMIT :limit",
     )
     internal abstract suspend fun unconfirmedShared(serverId: String, userId: String, cutoff: Long, limit: Int): List<SharedRow>
 
@@ -66,6 +67,9 @@ abstract class DownloadDao {
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     internal abstract suspend fun insertPermission(row: DownloadPermissionEntity): Long
+
+    @Query("UPDATE download_permissions SET confirmedAt = :nowMs WHERE serverId = :serverId AND userId = :userId AND itemId = :itemId")
+    internal abstract suspend fun touchPermission(serverId: String, userId: String, itemId: String, nowMs: Long): Int
 
     @Query("DELETE FROM download_permissions WHERE serverId = :serverId AND userId = :userId AND itemId = :itemId")
     internal abstract suspend fun deletePermission(serverId: String, userId: String, itemId: String): Int

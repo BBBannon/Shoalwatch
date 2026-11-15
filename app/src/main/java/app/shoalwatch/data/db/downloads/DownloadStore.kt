@@ -187,8 +187,15 @@ internal class DownloadStore(private val db: AppDatabase, private val now: () ->
         Written.DONE
     }
 
-    /** The server confirmed [userId] may download the item (its CanDownload was true, or `/Download` served it to that sign-in). */
-    suspend fun confirm(key: DownloadKey, userId: String) { dao.insertPermission(DownloadPermissionEntity(key.serverId, userId, key.itemId, now())) }
+    /**
+     * The server confirmed [userId] may download the item (its CanDownload was true, or `/Download` served it to that sign-in).
+     * An upsert: a confirmation again moves `confirmedAt` to now, which is the age `reconfirm` reads.
+     */
+    suspend fun confirm(key: DownloadKey, userId: String) = db.withTransaction {
+        val now = now()
+        if (dao.insertPermission(DownloadPermissionEntity(key.serverId, userId, key.itemId, now)) == -1L) dao.touchPermission(key.serverId, userId, key.itemId, now)
+        Unit
+    }
 
     /** The server said [userId] may not (or did not say): no shared copy, no inheritance. */
     suspend fun unconfirm(key: DownloadKey, userId: String) { dao.deletePermission(key.serverId, userId, key.itemId) }
@@ -204,11 +211,14 @@ internal class DownloadStore(private val db: AppDatabase, private val now: () ->
         dao.unconfirmedOwners(key.serverId, key.itemId).filter { it != fetcher }.sumOf { dao.deleteOwner(key.serverId, it, key.itemId) }
     }
 
-    /** [userId]'s own fetch was refused: it stops owning the copy (another owner may fetch it). False if it was the last owner. */
+    /**
+     * [userId]'s own fetch was refused (a 403 on `/Download`): its permission goes at once, last owner or not (Tasks 11-12 review
+     * I-1), and it stops owning the copy (another owner may fetch it). False if it was the last owner (it stays, FAILED).
+     */
     suspend fun dropRefusedOwner(key: DownloadKey, userId: String): Boolean = db.withTransaction {
+        dao.deletePermission(key.serverId, userId, key.itemId)
         if (dao.owners(key.serverId, key.itemId).size <= 1) return@withTransaction false
         dao.deleteOwner(key.serverId, userId, key.itemId)
-        dao.deletePermission(key.serverId, userId, key.itemId)
         true
     }
 

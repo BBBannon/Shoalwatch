@@ -52,6 +52,16 @@ class DownloadQueueFailureTest : DownloadQueueTestBase() {
         assertEquals(2, files.calls.size)
     }
 
+    @Test fun aRefusalOfTheLastOwnerRemovesItsPermissionAtOnce() {
+        queued(a, f1)
+        runBlocking { store.confirm(DownloadKey(S1, f1.id), a.userId) }
+        playable()
+        files.steps += FakeFiles.answer(FetchResult.Failed(DownloadFailure.NOT_ALLOWED))
+        drain()
+        assertEquals(DownloadFailure.NOT_ALLOWED, download(f1)!!.failure)
+        assertFalse(runBlocking { store.isConfirmed(DownloadKey(S1, f1.id), a.userId) })
+    }
+
     @Test fun anOriginalServedToTheOwnersOwnSignInConfirmsItsPermission() {
         val c = s1u2
         queued(c, f1)
