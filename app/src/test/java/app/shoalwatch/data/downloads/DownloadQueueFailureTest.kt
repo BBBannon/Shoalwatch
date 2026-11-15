@@ -123,6 +123,25 @@ class DownloadQueueFailureTest : DownloadQueueTestBase() {
         assertTrue(playback.calls.isEmpty())
     }
 
+    /** Tasks 9-10 review Minor 5: a card pulled mid-download is STORAGE_MISSING, never "no space" or a network retry. */
+    @Test fun aCardPulledMidDownloadIsStorageMissingNotNoSpaceOrANetworkRetry() {
+        val card = tmp.newFolder("card")
+        fake.card("CARD-1", card)
+        fake.free["CARD-1"] = 1L shl 40
+        fun onCard(item: app.shoalwatch.data.library.Item) = newDownload(item).let { n ->
+            app.shoalwatch.data.db.downloads.DownloadStore.NewDownload(n.itemId, n.kind, n.seriesId, n.seasonId, n.quality, StorageKind.REMOVABLE, "CARD-1", n.runtimeMs, null)
+        }
+        seen(a, f1, f2)
+        runBlocking { store.add(a, listOf(onCard(f1), onCard(f2))) }
+        playable(2)
+        files.steps += { fake.unmount("CARD-1"); FetchResult.Failed(DownloadFailure.NO_SPACE) }
+        files.steps += { FetchResult.Retry(AppError.Kind.NETWORK) }
+        drain()
+        assertEquals(DownloadState.FAILED to DownloadFailure.STORAGE_MISSING, failure(f1))
+        assertEquals(DownloadState.FAILED to DownloadFailure.STORAGE_MISSING, failure(f2))
+        assertEquals("no attempt used", 0, download(f2)!!.attempts)
+    }
+
     @Test fun tooLittleSpaceIsNoSpaceBeforeAnyRequest() {
         queued(a, f1)
         fake.free[null] = (1L shl 30) - 1 // under the internal reserve

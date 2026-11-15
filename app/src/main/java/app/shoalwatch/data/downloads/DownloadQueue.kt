@@ -334,8 +334,9 @@ internal class DownloadQueue(
         )
     }
 
-    private suspend fun failed(key: DownloadKey, failure: DownloadFailure): QueueStep {
+    private suspend fun failed(key: DownloadKey, given: DownloadFailure): QueueStep {
         live.remove(key)
+        val failure = if (given == DownloadFailure.NO_SPACE && cardGone(key)) DownloadFailure.STORAGE_MISSING else given
         if (store.updateIf(key, ACTIVE) { it.copy(state = DownloadState.FAILED, failure = failure) } == DownloadStore.Written.DONE) {
             AppLog.w(TAG, "download failed: ${failure.name}")
         }
@@ -344,6 +345,7 @@ internal class DownloadQueue(
 
     /** One more attempt used: back in the queue and this drain stops (the worker backs off), or SERVER_ERROR at [maxAttempts]. */
     private suspend fun retry(key: DownloadKey, kind: AppError.Kind): QueueStep {
+        if (cardGone(key)) return failed(key, DownloadFailure.STORAGE_MISSING) // a pulled card is not a network fault (review Minor 5)
         var attempts = 0
         if (store.updateIf(key, ACTIVE) { it.copy(attempts = (it.attempts + 1).also { a -> attempts = a }) } != DownloadStore.Written.DONE) return QueueStep.Next
         if (attempts >= maxAttempts) return failed(key, DownloadFailure.SERVER_ERROR)
@@ -355,6 +357,10 @@ internal class DownloadQueue(
         store.updateIf(key, ACTIVE) { it.copy(state = DownloadState.QUEUED) }
         return QueueStep.Halt(QueueRun.Stopped)
     }
+
+    /** The row's card is no longer mounted (a pulled card reads as no space or an I/O error). */
+    private suspend fun cardGone(key: DownloadKey): Boolean =
+        store.get(key)?.let { it.storage == StorageKind.REMOVABLE && paths.itemFolder(key, it.storage, it.volumeId) == null } == true
 
     private suspend fun current(key: DownloadKey): DownloadEntity = store.get(key) ?: throw QueueRowGone()
 
