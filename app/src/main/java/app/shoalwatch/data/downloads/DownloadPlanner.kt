@@ -112,8 +112,9 @@ internal class DownloadPlanner(
         // Unknown allows the original only: /Download enforces the server's own permission, /videos/ does not (Task 1).
         val conversionsAllowed = facts.canDownload == true
         if (here != null) {
-            // Already on this phone: confirming only adds this profile as an owner; its own permission was just asked.
-            if (here != DownloadQuality.ORIGINAL && !conversionsAllowed) return skip(SkipReason.CONVERSION_UNCONFIRMED)
+            // Already on this phone: confirming only adds this profile as an owner, and nothing asks /Download, so only an
+            // explicit yes for THIS profile counts (Tasks 5-8 review I-1): unknown is not a confirmation.
+            if (!conversionsAllowed) return skip(SkipReason.PERMISSION_UNCONFIRMED)
             return Outcome.Planned(PlannedItem(item.id, here, 0, shareOnly = true))
         }
         if (quality != DownloadQuality.ORIGINAL) {
@@ -144,8 +145,9 @@ internal class DownloadPlanner(
 
     private fun originalEstimate(runtimeMs: Long?): Long = bytesAt(ORIGINAL_BITRATE, runtimeMs)
 
-    /** [bitsPerSecond] / 8 × the runtime in seconds; an unknown runtime counts as 45 minutes. */
-    private fun bytesAt(bitsPerSecond: Long, runtimeMs: Long?): Long = bitsPerSecond / 8 * ((runtimeMs ?: UNKNOWN_RUNTIME_MS) / 1_000)
+    /** [bitsPerSecond] / 8 × the runtime in seconds; an unknown runtime (none, or 0) counts as 45 minutes (review Minor 7). */
+    private fun bytesAt(bitsPerSecond: Long, runtimeMs: Long?): Long =
+        bitsPerSecond / 8 * ((runtimeMs?.takeIf { it > 0 } ?: UNKNOWN_RUNTIME_MS) / 1_000)
 
     private fun saturatingAdd(a: Long, b: Long): Long = if (b > 0 && a > Long.MAX_VALUE - b) Long.MAX_VALUE else a + b
 

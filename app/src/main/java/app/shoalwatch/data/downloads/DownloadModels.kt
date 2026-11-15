@@ -60,7 +60,14 @@ sealed interface DownloadTarget {
  * unknown and a conversion was needed (asked for, or because the original cannot play here). NOT_FOUND: the server did not
  * return the item (or it is not a film or an episode).
  */
-enum class SkipReason { NOT_ALLOWED, CONVERSION_UNCONFIRMED, NOT_FOUND }
+enum class SkipReason {
+    NOT_ALLOWED, CONVERSION_UNCONFIRMED, NOT_FOUND,
+    /**
+     * A copy is already on this phone, but the server did not say whether THIS profile may download (CanDownload unknown):
+     * it is not shared, because sharing never asks `/Download`, so the server could not refuse it (Tasks 5-8 review I-1).
+     */
+    PERMISSION_UNCONFIRMED,
+}
 
 data class Skipped(val itemId: String, val reason: SkipReason)
 

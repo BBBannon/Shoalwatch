@@ -200,6 +200,38 @@ class DownloadPlannerTest : DownloadTestBase() {
             planner().plan(a, DownloadTarget.Season(series.id, season1.id), DownloadQuality.ORIGINAL).skipped)
     }
 
+    /**
+     * Tasks 5-8 review I-1 (the shared-tablet rule): a parent's copy is shared with another profile only once the server has
+     * confirmed THAT profile's own CanDownload. Unknown is not a confirmation: sharing never calls /Download, so the server
+     * never gets to refuse it. The child here has the server's download permission off, and the server leaves the field out.
+     */
+    @Test fun aCopyAlreadyHereIsNotSharedWithAProfileWhosePermissionTheServerDidNotConfirm() = runTest {
+        val parent = s1u2
+        val child = a
+        val eps = (1..2).map { ep("e$it", 1, it) }
+        serverSeries(eps)
+        seen(parent, series, season1, *eps.toTypedArray())
+        store.add(parent, listOf(newDownload(eps[0])))
+        gateway.allow(eps[0].id, canDownload = null)
+        val plan = planner().plan(child, DownloadTarget.Season(series.id, season1.id), DownloadQuality.ORIGINAL)
+        assertTrue("no share without a confirmed yes", plan.items.none { it.shareOnly })
+        assertEquals(listOf(Skipped(eps[0].id, SkipReason.PERMISSION_UNCONFIRMED)), plan.skipped)
+        assertFalse("nothing is checked or planned for it", eps[0].id in checked || plan.items.any { it.itemId == eps[0].id })
+        gateway.allow(eps[0].id, canDownload = true)
+        assertEquals("a confirmed yes shares it", listOf(eps[0].id),
+            planner().plan(child, DownloadTarget.Season(series.id, season1.id), DownloadQuality.ORIGINAL).items.filter { it.shareOnly }.map { it.itemId })
+    }
+
+    /** Tasks 5-8 review Minor 7: a runtime of 0 is unknown (45 minutes), never a 0-byte estimate that passes the space check. */
+    @Test fun aZeroRuntimeIsAnUnknownRuntime() = runTest {
+        val film = item("zero").copy(runtimeMs = 0)
+        server[RefreshTarget.Item(film.id)] = listOf(row(film))
+        gateway.allow(film.id)
+        assertEquals(1_500_000L / 8 * 2_700, planner().plan(a, DownloadTarget.Item(film.id), DownloadQuality.LOW).items.single().estimatedBytes)
+        originals[film.id] = fixtureInfo("direct-play.json").let { info -> { info.copy(sources = info.sources.map { it.copy(sizeBytes = null) }) } }
+        assertEquals(25_000_000L / 8 * 2_700, planner().plan(a, DownloadTarget.Item(film.id), DownloadQuality.ORIGINAL).items.single().estimatedBytes)
+    }
+
     @Test fun sixHundredEpisodesPlansTheFirstFiveHundred() = runTest {
         val eps = (1..600).map { ep("e$it", 1, it) }
         serverSeries(eps, seasons = listOf(season1))
