@@ -16,7 +16,13 @@ class Media3BoundaryTest {
         "import androidx.media3.exoplayer", "import androidx.media3.datasource", "import androidx.media3.session", "import androidx.media3.ui",
         "import androidx.media3.extractor", "import androidx.media3.common.text",
     )
-    private val nowhere = listOf("DefaultHttpDataSource", "DefaultDataSource", "CacheDataSource", "FileDataSource", "EventLogger", "setWakeMode")
+    private val nowhere = listOf(
+        "DefaultHttpDataSource", "DefaultDataSource", "CacheDataSource", "FileDataSource", "EventLogger", "setWakeMode",
+        // Ways a default HTTP source comes back in (Task 6 review M-8): a media source factory over the context, the stock
+        // per-format factories, and the stock bitmap loader (built over a default data source).
+        "DefaultMediaSourceFactory(appContext", "DefaultMediaSourceFactory(context", "HlsMediaSource.Factory", "ProgressiveMediaSource.Factory",
+        "DataSourceBitmapLoader",
+    )
 
     private fun sources() = listOf("src/main/java", "src/main/kotlin").map(::File).filter { it.isDirectory }
         .flatMap { dir -> dir.walkTopDown().filter { it.isFile && it.extension == "kt" }.toList() }
@@ -33,6 +39,22 @@ class Media3BoundaryTest {
         assertTrue("the engine is where it should be", files.any { it.path.replace('\\', '/').endsWith("/data/playback/engine/ExoPlayerEngine.kt") })
         val found = violations(files.map { it.path to it.readLines() })
         assertTrue("Media3 outside the engine, or a forbidden data source:\n" + found.joinToString("\n"), found.isEmpty())
+    }
+
+    /** What is built must say where its bytes come from: the player's media sources and the session's artwork (M-5, M-8). */
+    @Test fun everyPlayerAndSessionNamesItsOwnSources() {
+        val text = sources().joinToString("\n") { it.readText() }
+        fun built(start: String): List<String> = Regex(Regex.escape(start)).findAll(text).map { m ->
+            val end = text.indexOf(".build()", m.range.first)
+            text.substring(m.range.first, if (end < 0) text.length else end)
+        }.toList()
+        val players = built("ExoPlayer.Builder(")
+        val sessions = built("MediaSession.Builder(")
+        assertTrue("the engine builds a player and a session", players.isNotEmpty() && sessions.isNotEmpty())
+        for (b in players) assertTrue("a player without the guarded media source factory: $b", ".setMediaSourceFactory(DefaultMediaSourceFactory(OkHttpDataSource.Factory(" in b)
+        for (b in sessions) assertTrue("a media session without the loader that loads nothing: $b", ".setBitmapLoader(" in b)
+        fun count(word: String) = Regex(Regex.escape(word)).findAll(text).count()
+        assertEquals("every media source factory is over OkHttpDataSource", count("DefaultMediaSourceFactory("), count("DefaultMediaSourceFactory(OkHttpDataSource.Factory("))
     }
 
     @Test fun theScannerCatchesEachWordAndNamesTheLine() {

@@ -1,17 +1,21 @@
 package app.shoalwatch.data.playback.engine
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.net.Uri
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.text.CueGroup
+import androidx.media3.common.util.BitmapLoader
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
@@ -19,10 +23,12 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.SessionCommands
 import app.shoalwatch.data.api.MediaRoute
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
-import okhttp3.Call
 import java.util.concurrent.atomic.AtomicLong
+import okhttp3.Call
 
 /**
  * The one place ExoPlayer is touched; main thread only, as thin as it can be (the behaviour is in `PlaybackController`, the
@@ -115,7 +121,8 @@ class ExoPlayerEngine(context: Context) : PlayerEngine {
         check(!released) { "Engine released." }
         route = item.route
         if (session == null) {
-            session = MediaSession.Builder(appContext, player).setId(SESSION_ID + "-" + sessions.incrementAndGet()).setCallback(ControllerRules).build()
+            session = MediaSession.Builder(appContext, player).setId(SESSION_ID + "-" + sessions.incrementAndGet()).setCallback(ControllerRules)
+                .setBitmapLoader(NoArtwork).build()
         }
         player.setMediaItem(MediaItems.build(item, title, subtitle), startMs)
         player.prepare()
@@ -170,6 +177,18 @@ class ExoPlayerEngine(context: Context) : PlayerEngine {
     private fun isPicture(format: Format) = format.sampleMimeType in PICTURE_TYPES || format.codecs in PICTURE_TYPES
 
     private fun emit(event: EngineEvent) { flow.tryEmit(event) }
+
+    /**
+     * The media session's artwork loader: it loads nothing (Task 6 review M-5). Media3's own one fetches artwork URIs over a
+     * default data source, outside the account's guarded client; no artwork is set today, and any added later must come as data.
+     */
+    internal object NoArtwork : BitmapLoader {
+        override fun supportsMimeType(mimeType: String) = false
+        override fun decodeBitmap(data: ByteArray): ListenableFuture<Bitmap> = refused()
+        override fun loadBitmap(uri: Uri): ListenableFuture<Bitmap> = refused()
+        override fun loadBitmapFromMetadata(metadata: MediaMetadata): ListenableFuture<Bitmap>? = null
+        private fun refused(): ListenableFuture<Bitmap> = Futures.immediateFailedFuture(UnsupportedOperationException("No artwork."))
+    }
 
     /** What a media-session controller may do: play, pause and seek, and read the title. Nothing that changes what is played. */
     private object ControllerRules : MediaSession.Callback {

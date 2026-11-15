@@ -4,6 +4,9 @@ import androidx.test.core.app.ApplicationProvider
 import app.shoalwatch.data.playback.MediaPaths
 import app.shoalwatch.data.playback.PlaybackFakes
 import app.shoalwatch.ui.browse.BEN
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -24,6 +27,14 @@ class ExoPlayerEngineTest {
         second.load(item(), 0, playWhenReady = false)
         first.release()
         second.release()
+    }
+
+    @Test fun theMediaSessionLoadsNoArtwork() {
+        val loader = ExoPlayerEngine.NoArtwork
+        assertFalse(loader.supportsMimeType("image/png"))
+        assertTrue(runCatching { loader.loadBitmap(android.net.Uri.parse("https://evil.example/a.png")).get() }.isFailure)
+        assertTrue(runCatching { loader.decodeBitmap(ByteArray(4)).get() }.isFailure)
+        assertNull(loader.loadBitmapFromMetadata(androidx.media3.common.MediaMetadata.Builder().setArtworkUri(android.net.Uri.parse("https://evil.example/b.png")).build()))
     }
 
     @Test fun aNewEngineAfterAReleasedOneLoadsAndReleaseIsSafeTwice() {
