@@ -335,4 +335,91 @@ class HomeViewModelTest {
         show(home(resume = row(episode(5))))
         assertEquals(ItemKind.EPISODE, vm().state.value.resume.items.single().item.kind)
     }
+
+    // --- one session never sees another's work -------------------------------------------------------------------
+
+    @Test fun aSlowActionOfOneAccountIsNeitherShownToTheNextNorBlocksTheNextOnesOwnTap() {
+        val gate = CompletableDeferred<Unit>()
+        playstate.gate = gate
+        val v = vm()
+        v.setPlayed(id(1), true)
+        assertEquals(setOf(Work(id(1), ActionKind.PLAYED)), v.state.value.working)
+        catalog.activeFlow.value = account(AMY, "amy")
+        assertTrue(v.state.value.working.isEmpty())
+        v.setPlayed(id(1), true)
+        assertEquals(listOf("played:ben:${id(1)}:true", "played:amy:${id(1)}:true"), playstate.calls)
+        assertEquals(setOf(Work(id(1), ActionKind.PLAYED)), v.state.value.working)
+        gate.complete(Unit)
+        assertTrue(v.state.value.working.isEmpty())
+    }
+
+    @Test fun aFailureOfTheOldAccountsActionIsNeverShownToTheNextAccount() = kotlinx.coroutines.test.runTest {
+        val gate = CompletableDeferred<Unit>()
+        playstate.gate = gate
+        val v = vm()
+        v.messages.test {
+            v.setFavourite(id(1), true)
+            catalog.activeFlow.value = account(AMY, "amy")
+            playstate.failWith = AppError.of(AppError.Kind.OFFLINE)
+            gate.complete(Unit)
+            expectNoEvents()
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test fun thePullIndicatorOfTheOldAccountIsNotShownToTheNext() {
+        val gate = CompletableDeferred<Unit>()
+        library.onRefresh = { _, _ -> gate.await() }
+        val v = vm()
+        v.refresh()
+        assertTrue(v.state.value.pulling)
+        catalog.activeFlow.value = account(AMY, "amy")
+        assertFalse(v.state.value.pulling)
+        gate.complete(Unit)
+        assertFalse(v.state.value.pulling)
+    }
+
+    // --- a failing local call is reported, never fatal -------------------------------------------------------------
+
+    @Test fun aFailingPullIsReportedAndStopsPulling() = kotlinx.coroutines.test.runTest {
+        library.onRefresh = { _, _ -> throw AppError.of(AppError.Kind.UNKNOWN) }
+        val v = vm()
+        v.messages.test {
+            v.refresh()
+            assertEquals(AppError.of(AppError.Kind.UNKNOWN).userMessage, awaitItem())
+            cancelAndIgnoreRemainingEvents()
+        }
+        assertFalse(v.state.value.pulling)
+    }
+
+    @Test fun aFailingRefreshWhenTheConnectionComesBackIsReported() = kotlinx.coroutines.test.runTest {
+        connections.stateFor(SERVER_ID).value = online
+        library.onRefresh = { _, _ -> error("disk full") }
+        val v = vm()
+        v.messages.test {
+            connections.stateFor(SERVER_ID).value = Connection.Offline()
+            connections.stateFor(SERVER_ID).value = online
+            assertEquals(AppError.of(AppError.Kind.UNKNOWN).userMessage, awaitItem())
+            cancelAndIgnoreRemainingEvents()
+        }
+        assertEquals(HomePhase.READY, v.state.value.phase)
+    }
+
+    @Test fun aFailingRefreshOnOpeningAfterSignInIsReported() = kotlinx.coroutines.test.runTest {
+        library.onRefresh = { _, _ -> throw AppError.of(AppError.Kind.UNKNOWN) }
+        val v = vm(refreshOnOpen = true)
+        v.messages.test {
+            assertEquals(AppError.of(AppError.Kind.UNKNOWN).userMessage, awaitItem())
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test fun switchingToAnAccountThatIsGoneIsReported() = kotlinx.coroutines.test.runTest {
+        val v = vm()
+        v.messages.test {
+            v.switchAccount("nobody")
+            assertEquals(AppError.of(AppError.Kind.UNKNOWN).userMessage, awaitItem())
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
 }

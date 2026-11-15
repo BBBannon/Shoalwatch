@@ -164,4 +164,72 @@ class DetailViewModelTest {
         assertEquals(id(50), item.seriesId)
         assertEquals(id(62), item.seasonId)
     }
+
+    // --- one session never sees another's work -------------------------------------------------------------------
+
+    @Test fun aSlowActionOfOneAccountIsNeitherShownToTheNextNorBlocksTheNextOnesOwnTap() {
+        val gate = CompletableDeferred<Unit>()
+        playstate.gate = gate
+        val v = vm()
+        v.setPlayed(true)
+        assertEquals(1, v.state.value.working.size)
+        catalog.activeFlow.value = account(AMY, "amy")
+        assertTrue(v.state.value.working.isEmpty())
+        v.setPlayed(true)
+        assertEquals(listOf("ben", "amy"), playstate.calls.map { it.split(":")[1] })
+        assertEquals(1, v.state.value.working.size)
+        gate.complete(Unit)
+        assertTrue(v.state.value.working.isEmpty())
+    }
+
+    @Test fun aFailureOfTheOldAccountsActionIsNeverShownToTheNextAccount() = kotlinx.coroutines.test.runTest {
+        val gate = CompletableDeferred<Unit>()
+        playstate.gate = gate
+        val v = vm()
+        v.messages.test {
+            v.setFavourite(true)
+            catalog.activeFlow.value = account(AMY, "amy")
+            playstate.failWith = AppError.of(AppError.Kind.OFFLINE)
+            gate.complete(Unit)
+            expectNoEvents()
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test fun thePullIndicatorOfTheOldAccountIsNotShownToTheNext() {
+        val gate = CompletableDeferred<Unit>()
+        library.onRefresh = { _, _ -> gate.await() }
+        val v = vm()
+        v.refresh()
+        assertTrue(v.state.value.pulling)
+        catalog.activeFlow.value = account(AMY, "amy")
+        assertFalse(v.state.value.pulling)
+        gate.complete(Unit)
+        assertFalse(v.state.value.pulling)
+    }
+
+    // --- a failing local call is reported, never fatal -------------------------------------------------------------
+
+    @Test fun aFailingPullIsReportedAndStopsPulling() = kotlinx.coroutines.test.runTest {
+        library.onRefresh = { _, _ -> throw AppError.of(AppError.Kind.UNKNOWN) }
+        val v = vm()
+        v.messages.test {
+            v.refresh()
+            assertEquals(AppError.of(AppError.Kind.UNKNOWN).userMessage, awaitItem())
+            cancelAndIgnoreRemainingEvents()
+        }
+        assertFalse(v.state.value.pulling)
+    }
+
+    @Test fun aFailingRefreshWhenTheConnectionComesBackIsReported() = kotlinx.coroutines.test.runTest {
+        connections.stateFor(SERVER_ID).value = online
+        library.onRefresh = { _, _ -> error("disk full") }
+        val v = vm()
+        v.messages.test {
+            connections.stateFor(SERVER_ID).value = Connection.Offline()
+            connections.stateFor(SERVER_ID).value = online
+            assertEquals(AppError.of(AppError.Kind.UNKNOWN).userMessage, awaitItem())
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
 }

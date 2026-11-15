@@ -89,7 +89,9 @@ class SearchViewModel(private val catalog: ServerCatalog, private val library: L
 
     val state: StateFlow<SearchUiState> =
         combine(
-            catalog.activeSession().flatMapLatest { s ->
+            catalog.activeSession().distinctUntilChanged().flatMapLatest { s ->
+                // Whatever one session typed is gone for the next: the box starts empty and nothing is searched until they type.
+                query.value = ""
                 if (s == null) flowOf<Pair<Session?, Outcome>>(null to Outcome.Idle) else flow<Pair<Session?, Outcome>> {
                     emit(s to Outcome.Idle)
                     emitAll(outcomes(s).map { s to it })

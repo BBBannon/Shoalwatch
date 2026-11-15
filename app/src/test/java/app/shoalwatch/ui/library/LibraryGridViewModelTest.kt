@@ -361,4 +361,102 @@ class LibraryGridViewModelTest {
         assertTrue(library.refreshes.isEmpty())
         assertTrue(v.state.value.working.isEmpty())
     }
+
+    // --- one session never sees another's work -------------------------------------------------------------------
+
+    @Test fun aSlowActionOfOneAccountIsNeitherShownToTheNextNorBlocksTheNextOnesOwnTap() {
+        val gate = CompletableDeferred<Unit>()
+        playstate.gate = gate
+        val v = vm()
+        v.setPlayed(id(1), true)
+        assertEquals(1, v.state.value.working.size)
+        catalog.activeFlow.value = account(AMY, "amy")
+        assertTrue(v.state.value.working.isEmpty())
+        v.setPlayed(id(1), true)
+        assertEquals(listOf("ben", "amy"), playstate.calls.map { it.split(":")[1] })
+        assertEquals(1, v.state.value.working.size)
+        gate.complete(Unit)
+        assertTrue(v.state.value.working.isEmpty())
+    }
+
+    @Test fun aFailureOfTheOldAccountsActionIsNeverShownToTheNextAccount() = kotlinx.coroutines.test.runTest {
+        val gate = CompletableDeferred<Unit>()
+        playstate.gate = gate
+        val v = vm()
+        v.messages.test {
+            v.setFavourite(id(1), true)
+            catalog.activeFlow.value = account(AMY, "amy")
+            playstate.failWith = AppError.of(AppError.Kind.OFFLINE)
+            gate.complete(Unit)
+            expectNoEvents()
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test fun thePullIndicatorOfTheOldAccountIsNotShownToTheNext() {
+        val gate = CompletableDeferred<Unit>()
+        library.onRefresh = { _, _ -> gate.await() }
+        val v = vm()
+        v.refresh()
+        assertTrue(v.state.value.pulling)
+        catalog.activeFlow.value = account(AMY, "amy")
+        assertFalse(v.state.value.pulling)
+        gate.complete(Unit)
+        assertFalse(v.state.value.pulling)
+    }
+
+    // --- a failing local call is reported, never fatal -------------------------------------------------------------
+
+    @Test fun aFailingPullIsReportedAndStopsPulling() = kotlinx.coroutines.test.runTest {
+        library.onRefresh = { _, _ -> throw AppError.of(AppError.Kind.UNKNOWN) }
+        val v = vm()
+        v.messages.test {
+            v.refresh()
+            assertEquals(AppError.of(AppError.Kind.UNKNOWN).userMessage, awaitItem())
+            cancelAndIgnoreRemainingEvents()
+        }
+        assertFalse(v.state.value.pulling)
+    }
+
+    @Test fun aFailingRefreshWhenTheConnectionComesBackIsReported() = kotlinx.coroutines.test.runTest {
+        connections.stateFor(SERVER_ID).value = online
+        library.onRefresh = { _, _ -> error("disk full") }
+        val v = vm()
+        v.messages.test {
+            connections.stateFor(SERVER_ID).value = Connection.Offline()
+            connections.stateFor(SERVER_ID).value = online
+            assertEquals(AppError.of(AppError.Kind.UNKNOWN).userMessage, awaitItem())
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test fun anInFlightPageLoadOfOneAccountDoesNotBlockTheNextAccountsFirstPage() {
+        val gate = CompletableDeferred<Unit>()
+        library.loadMoreGate = gate
+        list(more = true)
+        list(more = true, k = key(AMY))
+        vm()
+        assertEquals(listOf(key()), library.loadMores)
+        catalog.activeFlow.value = account(AMY, "amy")
+        assertEquals(listOf(key(), key(AMY)), library.loadMores)
+        gate.complete(Unit)
+    }
+
+    @Test fun aFailingPageLoadIsReportedAndLaterLoadsStillWork() = kotlinx.coroutines.test.runTest {
+        library.onLoadMore = { throw AppError.of(AppError.Kind.UNKNOWN) }
+        list(more = true)
+        val v = vm()
+        v.messages.test {
+            assertEquals(AppError.of(AppError.Kind.UNKNOWN).userMessage, awaitItem())
+            cancelAndIgnoreRemainingEvents()
+        }
+        v.refresh()
+        assertEquals(1, library.refreshes.size)
+    }
+
+    @Test fun aListThatCouldNotLoadMoreAndHasNothingShowsTheErrorNotJustABanner() {
+        val s = LibraryGridUiState(phase = GridPhase.READY, banner = BannerKind.GENERIC, canLoadMore = true)
+        assertTrue(s.showError)
+        assertFalse(s.showSkeleton)
+    }
 }

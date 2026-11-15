@@ -40,7 +40,7 @@ data class LibraryGridUiState(
     val showEmpty: Boolean get() = phase == GridPhase.READY && items.isEmpty() && !canLoadMore && !refreshing && banner == null
 
     /** Nothing saved and the last attempt failed: an error state with Retry (the banner carries the button). */
-    val showError: Boolean get() = phase == GridPhase.READY && items.isEmpty() && banner != null && !canLoadMore
+    val showError: Boolean get() = phase == GridPhase.READY && items.isEmpty() && banner != null
 
     /** First load: skeleton cards rather than an empty grid. */
     val showSkeleton: Boolean get() = phase == GridPhase.LOADING || (items.isEmpty() && (refreshing || canLoadMore) && banner == null)

@@ -156,7 +156,7 @@ class SearchViewModelTest {
         assertEquals(AppError.of(AppError.Kind.UNKNOWN).userMessage, v.state.value.error)
     }
 
-    @Test fun switchingAccountClearsTheResultsAndSearchesAgainAsTheNewUser() {
+    @Test fun switchingAccountClearsTheTypedTextAndTheResultsAndSearchesNothingAsTheNewUser() {
         library.onSearch = { s, _ -> SearchResult(listOf(entry(if (s == BEN) 1 else 2, name = if (s == BEN) "Ben hit" else "Amy hit")), false) }
         val v = vm()
         v.onQueryChange("hit")
@@ -165,10 +165,33 @@ class SearchViewModelTest {
         catalog.activeFlow.value = account(AMY, "amy")
         scheduler.runCurrent()
         assertEquals(AMY, v.state.value.session)
-        assertTrue(v.state.value.films.none { it.item.name == "Ben hit" })
+        assertEquals("", v.state.value.query)
+        assertEquals(SearchPhase.IDLE, v.state.value.phase)
+        assertTrue(v.state.value.films.isEmpty())
+        advance(1_000)
+        assertEquals(listOf(BEN to "hit"), library.searches)
+    }
+
+    @Test fun afterASwitchTheNewUserSearchesAsThemselves() {
+        library.onSearch = { s, _ -> SearchResult(listOf(entry(if (s == BEN) 1 else 2, name = if (s == BEN) "Ben hit" else "Amy hit")), false) }
+        val v = vm()
+        v.onQueryChange("hit")
+        advance(300)
+        catalog.activeFlow.value = account(AMY, "amy")
+        scheduler.runCurrent()
+        v.onQueryChange("hit")
         advance(300)
         assertEquals(listOf("Amy hit"), v.state.value.films.map { it.item.name })
         assertEquals(listOf(BEN to "hit", AMY to "hit"), library.searches)
+    }
+
+    @Test fun signingOutClearsTheTypedTextToo() {
+        val v = vm()
+        v.onQueryChange("secret")
+        advance(300)
+        catalog.activeFlow.value = null
+        scheduler.runCurrent()
+        assertEquals("", v.state.value.query)
     }
 
     @Test fun nothingIsRememberedBetweenInstances() {

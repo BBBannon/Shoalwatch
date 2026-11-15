@@ -16,6 +16,7 @@ import app.shoalwatch.data.servers.Session
 import app.shoalwatch.ui.browse.ItemActions
 import app.shoalwatch.ui.browse.Work
 import app.shoalwatch.ui.browse.connectionRegained
+import app.shoalwatch.ui.browse.forSession
 import app.shoalwatch.ui.present.BannerKind
 import app.shoalwatch.ui.present.banner
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -60,6 +61,9 @@ data class SeriesUiState(
 
 private const val KEY_SEASON = "season"
 
+/** Whose pick [KEY_SEASON] is ("server/user"), so a season chosen by one account is never applied to another. */
+private const val KEY_OWNER = "owner"
+
 /**
  * The series screen. The season the user picks is kept in [saved] (an id, nothing else), so it survives rotation and the app
  * being recreated; it beats the library's own default for as long as the screen lives, so marking an episode watched never
@@ -76,12 +80,20 @@ class SeriesViewModel(
     private val library: Library,
     playstate: Playstate,
 ) : ViewModel() {
-    private val actions = ItemActions(playstate, viewModelScope)
-    private val pulling = MutableStateFlow(false)
+    private val actions = ItemActions(playstate, viewModelScope) { state.value.session }
     private val picked: StateFlow<String?> = saved.getStateFlow<String?>(KEY_SEASON, null)
 
     /** Failure messages for a snackbar, each once. */
     val messages: Flow<String> = actions.failures
+
+    /** A season picked under another account (in this run, or before the app was recreated) is forgotten. */
+    private fun claim(s: Session) {
+        val owner = "${s.serverId}/${s.userId}"
+        if (saved.get<String>(KEY_OWNER) != owner) {
+            saved[KEY_SEASON] = null
+            saved[KEY_OWNER] = owner
+        }
+    }
 
     private fun forSession(s: Session): Flow<SeriesUiState> =
         picked.map { it ?: routeSeasonId }.distinctUntilChanged().flatMapLatest { season ->
@@ -102,17 +114,22 @@ class SeriesViewModel(
         combine(
             catalog.activeSession().flatMapLatest { s ->
                 if (s == null) flowOf(SeriesUiState(SeriesPhase.SIGNED_OUT)) else flow {
+                    claim(s)
                     emit(SeriesUiState(SeriesPhase.LOADING, s, highlightEpisodeId = highlightEpisodeId))
                     emitAll(forSession(s))
                 }
             },
             actions.working,
-            pulling,
-        ) { st, working, pull -> st.copy(working = working, pulling = pull) }
+            actions.pulling,
+        ) { st, working, pulling ->
+            st.copy(working = working.forSession(st.session), pulling = pulling != null && pulling == st.session)
+        }
             .stateIn(viewModelScope, SharingStarted.Eagerly, SeriesUiState())
 
     init {
-        viewModelScope.launch { connectionRegained(catalog, connections).collect { library.refresh(it, refreshTarget()) } }
+        viewModelScope.launch {
+            connectionRegained(catalog, connections).collect { s -> actions.attempt(s) { library.refresh(s, refreshTarget()) } }
+        }
     }
 
     private fun refreshTarget() = RefreshTarget.Series(seriesId, picked.value ?: routeSeasonId)
@@ -125,14 +142,7 @@ class SeriesViewModel(
     /** Pull-to-refresh and a banner's Retry: always tries, for the season on screen. */
     fun refresh() {
         val s = state.value.session ?: return
-        viewModelScope.launch {
-            pulling.value = true
-            try {
-                library.refresh(s, refreshTarget())
-            } finally {
-                pulling.value = false
-            }
-        }
+        actions.pull(s) { library.refresh(s, refreshTarget()) }
     }
 
     fun setSeriesPlayed(played: Boolean) = setPlayed(seriesId, played)

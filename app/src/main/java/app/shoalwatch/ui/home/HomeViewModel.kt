@@ -17,6 +17,7 @@ import app.shoalwatch.ui.ConnectionView
 import app.shoalwatch.ui.browse.ItemActions
 import app.shoalwatch.ui.browse.Work
 import app.shoalwatch.ui.browse.connectionRegained
+import app.shoalwatch.ui.browse.forSession
 import app.shoalwatch.ui.present.banner
 import app.shoalwatch.ui.toView
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -56,9 +57,8 @@ class HomeViewModel(
     playstate: Playstate,
     refreshOnOpen: Boolean = false,
 ) : ViewModel() {
-    private val actions = ItemActions(playstate, viewModelScope)
+    private val actions = ItemActions(playstate, viewModelScope) { state.value.session }
     private val warmFailed = MutableStateFlow(false)
-    private val pulling = MutableStateFlow(false)
 
     /** Failure messages for a snackbar, each once. */
     val messages: Flow<String> = actions.failures
@@ -98,15 +98,21 @@ class HomeViewModel(
     }
 
     val state: StateFlow<HomeUiState> =
-        combine(shell, content, actions.working, warmFailed, pulling) { shell, content, working, failed, pull ->
-            build(shell, content?.takeIf { it.first == shell?.session }?.second, working, failed, pull)
+        combine(shell, content, actions.working, warmFailed, actions.pulling) { shell, content, working, failed, pulling ->
+            val session = shell?.session
+            build(shell, content?.takeIf { it.first == session }?.second, working.forSession(session), failed, pulling != null && pulling == session)
         }.stateIn(viewModelScope, SharingStarted.Eagerly, HomeUiState())
 
     init {
         retryWarm()
-        viewModelScope.launch { connectionRegained(catalog, connections).collect { library.refresh(it, RefreshTarget.Home) } }
+        viewModelScope.launch {
+            connectionRegained(catalog, connections).collect { s -> actions.attempt(s) { library.refresh(s, RefreshTarget.Home) } }
+        }
         if (refreshOnOpen) {
-            viewModelScope.launch { library.refresh(catalog.activeSession().filterNotNull().first(), RefreshTarget.Home) }
+            viewModelScope.launch {
+                val s = catalog.activeSession().filterNotNull().first()
+                actions.attempt(s) { library.refresh(s, RefreshTarget.Home) }
+            }
         }
     }
 
@@ -119,14 +125,7 @@ class HomeViewModel(
     /** Pull-to-refresh and a banner's Retry: asks for Home again, always (it bypasses the failure cooldown). */
     fun refresh() {
         val s = state.value.session ?: return
-        viewModelScope.launch {
-            pulling.value = true
-            try {
-                library.refresh(s, RefreshTarget.Home)
-            } finally {
-                pulling.value = false
-            }
-        }
+        actions.pull(s) { library.refresh(s, RefreshTarget.Home) }
     }
 
     fun setPlayed(itemId: String, played: Boolean) {
@@ -144,7 +143,7 @@ class HomeViewModel(
     /** Makes [userId] (one of [HomeUiState.accounts]) the active account; every screen then restarts as that user. */
     fun switchAccount(userId: String) {
         val serverId = state.value.serverId ?: return
-        viewModelScope.launch { catalog.setActive(serverId, userId) }
+        viewModelScope.launch { actions.attempt(state.value.session) { catalog.setActive(serverId, userId) } }
     }
 
     private fun retryWarm() {

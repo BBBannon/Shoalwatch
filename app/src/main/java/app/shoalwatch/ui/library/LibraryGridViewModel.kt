@@ -17,6 +17,7 @@ import app.shoalwatch.data.servers.ServerConnections
 import app.shoalwatch.data.servers.Session
 import app.shoalwatch.ui.browse.ItemActions
 import app.shoalwatch.ui.browse.connectionRegained
+import app.shoalwatch.ui.browse.forSession
 import app.shoalwatch.ui.present.BannerKind
 import app.shoalwatch.ui.present.banner
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -55,10 +56,11 @@ class LibraryGridViewModel(
     playstate: Playstate,
     private val memory: BrowseMemory,
 ) : ViewModel() {
-    private val actions = ItemActions(playstate, viewModelScope)
-    private val pulling = MutableStateFlow(false)
+    private val actions = ItemActions(playstate, viewModelScope) { state.value.session }
     private val endVisible = MutableStateFlow(false)
-    private var loadingMore = false
+
+    /** The session whose page load is running: another session's load never holds up this one's. */
+    private var loadingMoreFor: Session? = null
 
     /** Failure messages for a snackbar, each once. */
     val messages: Flow<String> = actions.failures
@@ -113,8 +115,10 @@ class LibraryGridViewModel(
                 }
             },
             actions.working,
-            pulling,
-        ) { st, working, pull -> st.copy(working = working, pulling = pull) }
+            actions.pulling,
+        ) { st, working, pulling ->
+            st.copy(working = working.forSession(st.session), pulling = pulling != null && pulling == st.session)
+        }
             .stateIn(viewModelScope, SharingStarted.Eagerly, LibraryGridUiState())
 
     private data class PagingInput(
@@ -140,13 +144,13 @@ class LibraryGridViewModel(
         val st = state.value
         val s = st.session ?: return
         val shape = st.shape ?: return
-        if (loadingMore) return
-        loadingMore = true
+        if (loadingMoreFor == s) return
+        loadingMoreFor = s
         viewModelScope.launch {
             try {
-                library.loadMore(s, parentId, shape, st.sort, st.filter)
+                actions.attempt(s) { library.loadMore(s, parentId, shape, st.sort, st.filter) }
             } finally {
-                loadingMore = false
+                if (loadingMoreFor == s) loadingMoreFor = null
             }
         }
     }
@@ -157,7 +161,7 @@ class LibraryGridViewModel(
     private suspend fun refreshQuietly() {
         val st = state.value
         val s = st.session ?: return
-        target(st)?.let { library.refresh(s, it) }
+        target(st)?.let { actions.attempt(s) { library.refresh(s, it) } }
     }
 
     /** Pull-to-refresh and a banner's Retry: always tries (it bypasses the failure cooldown). */
@@ -165,14 +169,7 @@ class LibraryGridViewModel(
         val st = state.value
         val s = st.session ?: return
         val t = target(st) ?: return
-        viewModelScope.launch {
-            pulling.value = true
-            try {
-                library.refresh(s, t)
-            } finally {
-                pulling.value = false
-            }
-        }
+        actions.pull(s) { library.refresh(s, t) }
     }
 
     fun setSort(sort: Sort) = change { it.copy(sort = sort) }

@@ -15,6 +15,7 @@ import app.shoalwatch.data.servers.Session
 import app.shoalwatch.ui.browse.ItemActions
 import app.shoalwatch.ui.browse.Work
 import app.shoalwatch.ui.browse.connectionRegained
+import app.shoalwatch.ui.browse.forSession
 import app.shoalwatch.ui.present.BannerKind
 import app.shoalwatch.ui.present.banner
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -56,8 +57,7 @@ class DetailViewModel(
     private val library: Library,
     playstate: Playstate,
 ) : ViewModel() {
-    private val actions = ItemActions(playstate, viewModelScope)
-    private val pulling = MutableStateFlow(false)
+    private val actions = ItemActions(playstate, viewModelScope) { state.value.session }
 
     /** Failure messages for a snackbar, each once. */
     val messages: Flow<String> = actions.failures
@@ -82,25 +82,22 @@ class DetailViewModel(
                 }
             },
             actions.working,
-            pulling,
-        ) { st, working, pull -> st.copy(working = working, pulling = pull) }
+            actions.pulling,
+        ) { st, working, pulling ->
+            st.copy(working = working.forSession(st.session), pulling = pulling != null && pulling == st.session)
+        }
             .stateIn(viewModelScope, SharingStarted.Eagerly, DetailUiState())
 
     init {
-        viewModelScope.launch { connectionRegained(catalog, connections).collect { library.refresh(it, RefreshTarget.Item(itemId)) } }
+        viewModelScope.launch {
+            connectionRegained(catalog, connections).collect { s -> actions.attempt(s) { library.refresh(s, RefreshTarget.Item(itemId)) } }
+        }
     }
 
     /** Pull-to-refresh and a banner's Retry: always tries. */
     fun refresh() {
         val s = state.value.session ?: return
-        viewModelScope.launch {
-            pulling.value = true
-            try {
-                library.refresh(s, RefreshTarget.Item(itemId))
-            } finally {
-                pulling.value = false
-            }
-        }
+        actions.pull(s) { library.refresh(s, RefreshTarget.Item(itemId)) }
     }
 
     fun setPlayed(played: Boolean) {
