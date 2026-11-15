@@ -1,5 +1,7 @@
 package app.shoalwatch.ui.servers
 
+import app.shoalwatch.data.admin.AdminAccess
+import app.shoalwatch.data.admin.AdminMe
 import app.shoalwatch.data.admin.AdminState
 import app.shoalwatch.data.admin.AdminStatus
 import app.shoalwatch.data.servers.AccountSummary
@@ -71,5 +73,23 @@ class ServersAdminEntryTest {
         assertEquals("s1", vm.state.value.adminServerId)
         rights.held.value = AdminState(Session("s1", "u1"), AdminStatus.NOT_ADMIN)
         assertNull(vm.state.value.adminServerId)
+    }
+
+    /**
+     * The real AdminAccess hears of a switch from its own collector, which may run after the Servers screen's. A check that
+     * arrives first must wait for it, not answer "not an administrator" for good.
+     */
+    @Test fun withTheRealRightsAnAdministratorSeesItAfterASwitchHeardLate() {
+        val access = AdminAccess { s -> AdminMe(s.userId, isAdministrator = s.userId == "u1", isDisabled = false) }
+        access.sessionChanged(Session("s1", "u2"))
+        catalog.activeFlow.value = kid
+        val vm = ServersViewModel(catalog, FakeAuthenticator(), access)
+        assertNull("kid is not an administrator", vm.state.value.adminServerId)
+        catalog.activeFlow.value = ben // the screen hears first
+        access.sessionChanged(Session("s1", "u1")) // the graph's collector, later
+        assertEquals("s1", vm.state.value.adminServerId)
+        catalog.activeFlow.value = kid
+        access.sessionChanged(Session("s1", "u2"))
+        assertNull("still never for kid", vm.state.value.adminServerId)
     }
 }

@@ -4,8 +4,8 @@ import app.shoalwatch.core.AppError
 import app.shoalwatch.core.AppLog
 import app.shoalwatch.data.servers.Session
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withTimeoutOrNull
@@ -53,9 +53,10 @@ class AdminAccess internal constructor(private val me: suspend (Session) -> Admi
 
     private val lock = Any()
     private var active: Session? = null
+    /** [active] as a flow, so a check can wait for the session it asks about to be heard. */
+    private val activeFlow = MutableStateFlow<Session?>(null)
     /** Bumped by every [sessionChanged]: an answer may be stored only if it is unchanged since the check began. */
     private var generation = 0L
-    private val firstActive = CompletableDeferred<Unit>()
 
     /** Fed by `ServerCatalog.activeSession()`; every change (to anyone or nobody) clears [state] at once. */
     fun sessionChanged(active: Session?) {
@@ -63,13 +64,14 @@ class AdminAccess internal constructor(private val me: suspend (Session) -> Admi
             this.active = active
             generation++
             held.value = null
+            activeFlow.value = active
         }
-        firstActive.complete(Unit)
     }
 
     override suspend fun check(session: Session): AdminStatus {
-        // The graph's collector may not have run yet just after start-up: wait for it rather than refuse.
-        withTimeoutOrNull(FIRST_SESSION_WAIT_MS) { firstActive.await() } ?: return AdminStatus.NOT_ADMIN
+        // The graph's collector hears of a switch on its own, perhaps after the screen asking (start-up, or a switch on the
+        // Servers screen): wait, bounded, for [session] to be the active one rather than refuse. The generation is taken after.
+        withTimeoutOrNull(ACTIVE_WAIT_MS) { activeFlow.first { it == session } } ?: return AdminStatus.NOT_ADMIN
         val asked = synchronized(lock) { if (active != session) return AdminStatus.NOT_ADMIN else generation }
         val answer: AdminStatus? = try {
             val m = me(session)
@@ -99,7 +101,7 @@ class AdminAccess internal constructor(private val me: suspend (Session) -> Admi
 
     private companion object {
         const val TAG = "Admin"
-        const val FIRST_SESSION_WAIT_MS = 5_000L
+        const val ACTIVE_WAIT_MS = 5_000L
         /** Could not ask: an earlier answer for the same session stands. Anything else is an answer, and only ADMIN opens. */
         val UNREACHABLE = setOf(
             AppError.Kind.OFFLINE, AppError.Kind.NETWORK, AppError.Kind.TIMEOUT, AppError.Kind.SERVER_ERROR,

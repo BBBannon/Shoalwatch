@@ -49,7 +49,27 @@ class AdminAccessTest {
         assertNull(access.state.value)
     }
 
-    @Test fun anAdministrator() = runTest {
+    @Test fun aCheckForTheNextSessionWaitsForTheSwitchToBeHeard() = runTest {
+        access.sessionChanged(other)
+        val check = async { access.check(ben) }
+        runCurrent()
+        assertFalse("waits rather than refusing", check.isCompleted)
+        assertEquals(0, calls)
+        access.sessionChanged(ben)
+        assertEquals(AdminStatus.ADMIN, check.await())
+        assertEquals(AdminState(ben, AdminStatus.ADMIN), access.state.value)
+    }
+
+    @Test fun aSessionThatNeverBecomesActiveIsRefusedAfterFiveSeconds() = runTest {
+        access.sessionChanged(other)
+        val check = async { access.check(ben) }
+        advanceTimeBy(5_001)
+        assertEquals(AdminStatus.NOT_ADMIN, check.await())
+        assertEquals(0, calls)
+        assertNull(access.state.value)
+    }
+
+        @Test fun anAdministrator() = runTest {
         access.sessionChanged(ben)
         assertEquals(AdminStatus.ADMIN, access.check(ben))
         assertEquals(AdminState(ben, AdminStatus.ADMIN), access.state.value)
