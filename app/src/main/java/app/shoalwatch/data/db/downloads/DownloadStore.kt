@@ -153,16 +153,25 @@ internal class DownloadStore(private val db: AppDatabase, private val now: () ->
     /**
      * Read, change and write back in one transaction; a throw in [change] leaves the row as it was. The key cannot change, nor
      * can the kind, series or season: the pins follow those, and only [add] and the deletes recompute pins (a moved row would
-     * leave the old season pinned for ever and the new one evictable).
+     * leave the old season pinned for ever and the new one evictable). False when there is no row (it was deleted).
      */
-    suspend fun update(key: DownloadKey, change: (DownloadEntity) -> DownloadEntity) = db.withTransaction {
-        val row = dao.get(key.serverId, key.itemId) ?: return@withTransaction
+    suspend fun update(key: DownloadKey, change: (DownloadEntity) -> DownloadEntity): Boolean = db.withTransaction {
+        val row = dao.get(key.serverId, key.itemId) ?: return@withTransaction false
         val changed = change(row)
         require(changed.serverId == row.serverId && changed.itemId == row.itemId) { "A download's key cannot change." }
         require(changed.kind == row.kind && changed.seriesId == row.seriesId && changed.seasonId == row.seasonId) { "A download's item cannot change." }
         dao.update(changed)
-        Unit
+        true
     }
+
+    /** The row, or null (deleted: cancelled, or its account or server removed). */
+    suspend fun get(key: DownloadKey): DownloadEntity? = dao.get(key.serverId, key.itemId)
+
+    /** How many downloads wait in the queue (QUEUED), on every server. */
+    suspend fun queuedCount(): Int = dao.queuedCount()
+
+    /** The store's clock (epoch ms), for the times the queue writes. */
+    fun stamp(): Long = now()
 
     /** Owners only: QUEUED or RUNNING to PAUSED, or PAUSED back to QUEUED. False when not an owner or nothing changed. */
     suspend fun setPaused(s: Session, itemId: String, paused: Boolean): Boolean = ownerChange(s, itemId) { row ->
@@ -173,9 +182,9 @@ internal class DownloadStore(private val db: AppDatabase, private val now: () ->
         }
     }
 
-    /** Owners only: FAILED back to QUEUED, with no failure and its attempts reset. */
+    /** Owners only: FAILED back to QUEUED, with no failure, its attempts reset and no failed check remembered. */
     suspend fun retry(s: Session, itemId: String): Boolean = ownerChange(s, itemId) { row ->
-        if (row.state == DownloadState.FAILED) row.copy(state = DownloadState.QUEUED, failure = null, attempts = 0) else null
+        if (row.state == DownloadState.FAILED) row.copy(state = DownloadState.QUEUED, failure = null, attempts = 0, verifiedAt = null) else null
     }
 
     private suspend fun ownerChange(s: Session, itemId: String, change: (DownloadEntity) -> DownloadEntity?): Boolean = db.withTransaction {

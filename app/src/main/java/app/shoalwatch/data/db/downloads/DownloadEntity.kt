@@ -19,7 +19,8 @@ import app.shoalwatch.data.library.ItemKind
  * Value rules (checked by the writers, Tasks 3 to 10): [kind] MOVIE or EPISODE only; [volumeId] the StorageVolume uuid
  * `[A-Za-z0-9-]{1,36}` for REMOVABLE, null for INTERNAL; [mediaSourceId] `[A-Za-z0-9]{1,64}`; [container] one of
  * `DownloadPaths.MEDIA_EXTENSIONS` or "hls"; [validator] the ETag or Last-Modified for If-Range, 1..128 printable ASCII;
- * [sha256] 64 lower-case hex, set on COMPLETE. Times are epoch milliseconds.
+ * [sha256] 64 lower-case hex, set on COMPLETE. Times are epoch milliseconds. [verifiedAt] on a row that is not COMPLETE is
+ * the time of its one failed check (Task 10: a second failed check is CHECK_FAILED); a retry from the UI clears it.
  */
 @Entity(
     tableName = "downloads",

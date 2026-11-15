@@ -33,6 +33,9 @@ abstract class DownloadDao {
     @Query("SELECT MAX(queuePosition) FROM downloads")
     internal abstract suspend fun lastPosition(): Long?
 
+    @Query("SELECT COUNT(*) FROM downloads WHERE state = 'QUEUED'")
+    internal abstract suspend fun queuedCount(): Int
+
     @Query("SELECT * FROM downloads WHERE state = 'QUEUED' ORDER BY queuePosition LIMIT 1")
     internal abstract suspend fun next(): DownloadEntity?
 

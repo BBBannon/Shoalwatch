@@ -45,7 +45,7 @@ internal class HlsFetcher(
     private val maxSegmentBytes: Long = MAX_SEGMENT_BYTES,
     private val stall: StallRule = StallRule(),
     private val playlistMs: Long = PLAYLIST_MS,
-) {
+) : ConversionFetch {
     /**
      * A fresh conversion for [resolved] (a TRANSCODE plan with a validated HLS source): deletes `hls/`, fetches the master and
      * media playlists through the plan's route, checks the duration sum (within 10% of [runtimeMs] when known), and writes
@@ -53,7 +53,7 @@ internal class HlsFetcher(
      * above the planned size x 3 + 8 MiB; on INTERNAL it is reserved (a refusal is NO_SPACE). Returns the live conversion with
      * Done, or null with a result that is not Done.
      */
-    suspend fun open(resolved: Resolved, folder: File, runtimeMs: Long?, space: ConversionSpace): Pair<LiveConversion?, FetchResult> {
+    override suspend fun open(resolved: Resolved, folder: File, runtimeMs: Long?, space: ConversionSpace): Pair<LiveConversion?, FetchResult> {
         val plan = resolved.plan
         val source = plan.source
         if (plan.method != PlayMethod.TRANSCODE || !source.hls || !MediaPaths.isServerSource(source)) return null to FetchResult.Failed(DownloadFailure.SERVER_ERROR)
@@ -98,7 +98,7 @@ internal class HlsFetcher(
      * RestartConversion (the server dropped the session); an IOException is a retry (the queue keeps [live] and resumes the same
      * session); 401 is Unauthorised. A segment is never retried here.
      */
-    suspend fun fetch(live: LiveConversion, folder: File, fromSegment: Int, progress: suspend (done: Int, total: Int) -> Unit): FetchResult {
+    override suspend fun fetch(live: LiveConversion, folder: File, fromSegment: Int, progress: suspend (done: Int, total: Int) -> Unit): FetchResult {
         val hls = paths.hlsFolder(folder)
         val total = live.segments.size
         var used = (0 until fromSegment.coerceAtMost(total)).sumOf { paths.segmentFile(hls, it).length() }

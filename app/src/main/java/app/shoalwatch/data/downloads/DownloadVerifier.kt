@@ -33,10 +33,10 @@ internal sealed interface Verdict {
  *
  * Files are read without following links; a link anywhere is "complete" failing. Nothing is logged here.
  */
-internal class DownloadVerifier(private val probe: PlayabilityProbe, private val codecs: CodecSupport, private val io: CoroutineDispatcher) {
+internal class DownloadVerifier(private val probe: PlayabilityProbe, private val codecs: CodecSupport, private val io: CoroutineDispatcher) : PlayableCheck {
 
     /** [audioListed]: the item's own tracks named audio (a film with no sound may have none). */
-    suspend fun verify(media: SavedMedia, expectedBytes: Long?, runtimeMs: Long?, hlsShape: List<Long>?, audioListed: Boolean = true): Verdict {
+    override suspend fun verify(media: SavedMedia, expectedBytes: Long?, runtimeMs: Long?, hlsShape: List<Long>?, audioListed: Boolean): Verdict {
         val files = withContext(io) { mediaFiles(media, expectedBytes, hlsShape) } ?: return Verdict.Bad(INCOMPLETE)
         if (!withContext(io) { signed(media, files) }) return Verdict.Bad(SIGNATURE)
         val sha = withContext(io) { sha256(files) } ?: return Verdict.Bad(INCOMPLETE)
@@ -57,7 +57,7 @@ internal class DownloadVerifier(private val probe: PlayabilityProbe, private val
     }
 
     /** Re-reads the media and compares it with the stored hash (after a playback failure, or "Check again"). */
-    suspend fun recheck(media: SavedMedia, sha256: String): Boolean = withContext(io) {
+    override suspend fun recheck(media: SavedMedia, sha256: String): Boolean = withContext(io) {
         val files = mediaFiles(media, expectedBytes = null, hlsShape = null, lengthKnown = false) ?: return@withContext false
         sha256(files)?.let { MessageDigest.isEqual(it.toByteArray(), sha256.lowercase().toByteArray()) } == true
     }

@@ -41,14 +41,14 @@ internal class ExtrasFetcher(
     private val pinned: PinnedArtwork,
     private val io: CoroutineDispatcher = Dispatchers.IO,
     private val maxSubtitles: Int = 30,
-) {
+) : DownloadExtras {
     /**
      * Saves the track list: every audio track of an ORIGINAL (a conversion keeps one, the one it was made with: the caller passes
      * it first); every subtitle track up to [maxSubtitles], with TEXT and STYLED_TEXT files saved as `sub-<index>.<fileFormat>`;
      * PICTURE tracks only for ORIGINAL (in the stream, no file; the server's HLS carries none, and a burn-in would fix one choice
      * for ever). Each file goes to a `.part`, is fsync'd and renamed. Replaces any earlier list for [key].
      */
-    suspend fun tracks(
+    override suspend fun tracks(
         s: Session, key: DownloadKey, folder: File, mediaSourceId: String, audio: List<AudioTrack>, subtitles: List<SubtitleTrack>, quality: DownloadQuality,
     ) {
         val original = quality == DownloadQuality.ORIGINAL
@@ -88,7 +88,7 @@ internal class ExtrasFetcher(
     }
 
     /** The skip markers (at most 200, as the gateway already bounds them). Best effort: on failure the saved ones stay as they were. */
-    suspend fun segments(s: Session, key: DownloadKey) {
+    override suspend fun segments(s: Session, key: DownloadKey) {
         val found = try {
             gateway.segments(s, key.itemId)
         } catch (e: AppError) {
@@ -103,7 +103,7 @@ internal class ExtrasFetcher(
      * 720 px wide (BACKDROP 1280), through the loader's own request and checks, kept on INTERNAL storage only. A picture already
      * pinned with the same tag is skipped, so a season's pictures are fetched once for all its episodes.
      */
-    suspend fun artwork(s: Session, itemIds: List<String>) {
+    override suspend fun artwork(s: Session, itemIds: List<String>) {
         val targets = LinkedHashMap<String, Item>()
         for (id in itemIds.distinct()) {
             val item = visible(s, id) ?: continue

@@ -29,7 +29,7 @@ internal class FileFetcher(
     private val clock: MonotonicClock = SystemMonotonicClock,
     private val channels: (File) -> FileChannel = FetchSupport::appendChannel,
     private val stall: StallRule = StallRule(),
-) {
+) : OriginalFetch {
     /** One request's facts, carried through the handling. */
     private class Job(
         val part: File, val target: File, val from: Long, val validator: String?, val expected: Long?, val storedTotal: Long?,
@@ -44,7 +44,7 @@ internal class FileFetcher(
      * [storedTotal]: the total Room holds from an earlier response for this file (with [expectedBytes] unknown, a resume must
      * find the same total). [restarts]: validator-change restarts so far.
      */
-    suspend fun fetch(
+    override suspend fun fetch(
         route: MediaRoute, itemId: String, part: File, target: File, resumeFrom: Long, validator: String?,
         expectedBytes: Long?, storedTotal: Long?, restarts: Int, progress: Progress,
     ): FetchResult {

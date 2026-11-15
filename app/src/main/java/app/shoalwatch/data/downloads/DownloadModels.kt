@@ -84,3 +84,12 @@ data class DownloadPlan(
     val capped: Boolean = false,
 ) { override fun toString() = "DownloadPlan(items=${items.size})" }
 
+
+/** What the queue is doing, for the notification (Task 11). [position] of [of] counts this run's items; [progress] 0..1 when known. */
+sealed interface QueueStatus {
+    data object Idle : QueueStatus
+    data class Running(val position: Int, val of: Int, val progress: Float?) : QueueStatus
+    data object WaitingForWifi : QueueStatus
+    data object WaitingForConnection : QueueStatus
+    data object PausedByTimeLimit : QueueStatus
+}
