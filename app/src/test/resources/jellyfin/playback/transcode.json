@@ -1,0 +1,25 @@
+{
+  "MediaSources": [
+    {
+      "Protocol": "File",
+      "Id": "0123456789abcdef0123456789abcdef",
+      "Type": "Default",
+      "Container": "mkv",
+      "RunTimeTicks": 54000000000,
+      "SupportsTranscoding": true,
+      "SupportsDirectStream": false,
+      "SupportsDirectPlay": false,
+      "MediaStreams": [
+        {"Codec": "hevc", "VideoRange": "HDR", "VideoRangeType": "DOVIWithHDR10", "DvProfile": 8, "BitDepth": 10, "Height": 2160, "Width": 3840, "Type": "Video", "Index": 0},
+        {"Codec": "truehd", "Language": "eng", "DisplayTitle": "English - TrueHD - 7.1", "Channels": 8, "IsDefault": true, "Type": "Audio", "Index": 1}
+      ],
+      "Bitrate": 60000000,
+      "TranscodingUrl": "/videos/0123456789abcdef0123456789abcdef/master.m3u8?DeviceId=dev-1&MediaSourceId=0123456789abcdef0123456789abcdef&VideoCodec=h264&AudioCodec=aac&AudioStreamIndex=1&VideoBitrate=7808000&AudioBitrate=192000&PlaySessionId=5e55105e55105e55105e55105e551051&api_key=MOCKLEAK&SegmentContainer=ts&MinSegments=1&BreakOnNonKeyFrames=False&TranscodeReasons=ContainerNotSupported,VideoRangeTypeNotSupported,AudioChannelsNotSupported,SecondaryAudioNotSupported",
+      "TranscodingSubProtocol": "hls",
+      "TranscodingContainer": "ts",
+      "DefaultAudioStreamIndex": 1,
+      "HasSegments": true
+    }
+  ],
+  "PlaySessionId": "5e55105e55105e55105e55105e551051"
+}

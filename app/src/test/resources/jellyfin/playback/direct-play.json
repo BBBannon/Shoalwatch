@@ -1,0 +1,48 @@
+{
+  "MediaSources": [
+    {
+      "Protocol": "File",
+      "Id": "0123456789abcdef0123456789abcdef",
+      "Path": "/media/films/Example (2020)/Example.mkv",
+      "Type": "Default",
+      "Container": "mkv",
+      "Size": 1234567890,
+      "Name": "Example",
+      "IsRemote": false,
+      "ETag": "9f0e1d2c3b4a59687766554433221100",
+      "RunTimeTicks": 72000000000,
+      "SupportsTranscoding": true,
+      "SupportsDirectStream": true,
+      "SupportsDirectPlay": true,
+      "IsInfiniteStream": false,
+      "RequiresOpening": false,
+      "RequiresClosing": false,
+      "SupportsProbing": true,
+      "VideoType": "VideoFile",
+      "MediaStreams": [
+        {"Codec": "h264", "Language": null, "VideoRange": "SDR", "VideoRangeType": "SDR", "DisplayTitle": "1080p H264 SDR", "IsInterlaced": false,
+         "BitRate": 8000000, "BitDepth": 8, "RefFrames": 1, "IsDefault": true, "IsForced": false, "IsHearingImpaired": false, "Height": 1080, "Width": 1920,
+         "Profile": "High", "Type": "Video", "Index": 0, "IsExternal": false, "IsTextSubtitleStream": false, "SupportsExternalStream": false, "Level": 41},
+        {"Codec": "aac", "Language": "eng", "DisplayTitle": "English - AAC - Stereo - Default", "ChannelLayout": "stereo", "Channels": 2, "SampleRate": 48000,
+         "IsDefault": true, "IsForced": false, "IsHearingImpaired": false, "Type": "Audio", "Index": 1, "IsExternal": false, "IsTextSubtitleStream": false},
+        {"Codec": "ac3", "Language": "fre", "Title": "Commentaire", "Channels": 6, "IsDefault": false, "Type": "Audio", "Index": 2, "IsExternal": false},
+        {"Codec": "subrip", "Language": "eng", "DisplayTitle": "English - SUBRIP - External", "IsDefault": false, "IsForced": false, "IsHearingImpaired": true,
+         "Type": "Subtitle", "Index": 3, "IsExternal": true, "IsTextSubtitleStream": true, "SupportsExternalStream": true, "DeliveryMethod": "External",
+         "DeliveryUrl": "/Videos/0123456789abcdef0123456789abcdef/0123456789abcdef0123456789abcdef/Subtitles/3/0/Stream.srt"},
+        {"Codec": "ass", "Language": "jpn", "DisplayTitle": "Japanese - ASS", "IsDefault": true, "IsForced": false, "Type": "Subtitle", "Index": 4,
+         "IsExternal": false, "IsTextSubtitleStream": true, "SupportsExternalStream": true},
+        {"Codec": "PGSSUB", "Language": "eng", "DisplayTitle": "English - PGSSUB - Forced", "IsDefault": false, "IsForced": true, "Type": "Subtitle", "Index": 5,
+         "IsExternal": false, "IsTextSubtitleStream": false, "SupportsExternalStream": false},
+        {"Codec": "mjpeg", "Type": "EmbeddedImage", "Index": 6}
+      ],
+      "MediaAttachments": [],
+      "Formats": [],
+      "Bitrate": 8200000,
+      "RequiredHttpHeaders": {},
+      "DefaultAudioStreamIndex": 1,
+      "DefaultSubtitleStreamIndex": 4,
+      "HasSegments": true
+    }
+  ],
+  "PlaySessionId": "5e55105e55105e55105e55105e551051"
+}

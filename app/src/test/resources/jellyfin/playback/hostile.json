@@ -1,0 +1,37 @@
+{
+  "MediaSources": [
+    {
+      "Id": "0123456789abcdef0123456789abcdef",
+      "Container": "<b>mkv</b>",
+      "ETag": "tag&api_key=1",
+      "RunTimeTicks": 99999999999999999,
+      "Bitrate": -5,
+      "SupportsDirectPlay": false,
+      "SupportsTranscoding": true,
+      "TranscodingUrl": "https://evil.example/videos/0123456789abcdef0123456789abcdef/master.m3u8?TranscodeReasons=ContainerNotSupported",
+      "TranscodingSubProtocol": "hls",
+      "MediaStreams": [
+        {"Codec": "H264", "VideoRangeType": "SomethingNew", "BitDepth": 99, "Width": 99999, "Height": 0, "DvProfile": 500, "Type": "Video", "Index": 0},
+        {"Codec": "aac", "Language": "english!", "DisplayTitle": "‮evil​ title\u0007", "Channels": 900, "Type": "Audio", "Index": 1},
+        {"Codec": "mp3", "Language": "fra", "DisplayTitle": "duplicate of index 1", "Type": "Audio", "Index": 1},
+        {"Codec": "<script>", "Language": "en-GB", "Title": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "Type": "Audio", "Index": 2},
+        {"Codec": "subrip", "Type": "Subtitle", "Index": 10001},
+        {"Codec": "subrip", "Type": "Subtitle", "Index": -1},
+        {"Codec": "subrip", "Type": "Subtitle", "Index": "three"},
+        {"Codec": "subrip", "Type": "Subtitle"},
+        "not a stream",
+        {"Codec": "webvtt", "Language": "eng", "Type": "Subtitle", "Index": 7, "IsExternal": true, "DeliveryUrl": "//evil.example/x.vtt"},
+        {"Type": "Subtitle", "Index": 8}
+      ],
+      "DefaultAudioStreamIndex": 99,
+      "DefaultSubtitleStreamIndex": 1
+    },
+    {"Id": "typeerror1", "SupportsDirectPlay": "yes"},
+    {"Id": "../evil", "Container": "mkv", "SupportsDirectPlay": true},
+    {"Id": "abc-123", "Container": "mkv", "SupportsDirectPlay": true},
+    {"Id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0", "SupportsDirectPlay": true},
+    "a string where a source should be",
+    {"Id": "secondsource1", "Container": "MP4", "SupportsDirectPlay": true, "TranscodingUrl": "/videos/x/../../System/Info"}
+  ],
+  "PlaySessionId": "../../x"
+}

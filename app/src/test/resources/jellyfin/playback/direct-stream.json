@@ -1,0 +1,25 @@
+{
+  "MediaSources": [
+    {
+      "Protocol": "File",
+      "Id": "0123456789abcdef0123456789abcdef",
+      "Type": "Default",
+      "Container": "mov,mp4,m4a,3gp,3g2,mj2",
+      "ETag": "aa11bb22",
+      "RunTimeTicks": 36000000000,
+      "SupportsTranscoding": true,
+      "SupportsDirectStream": true,
+      "SupportsDirectPlay": false,
+      "MediaStreams": [
+        {"Codec": "hevc", "VideoRange": "HDR", "VideoRangeType": "HDR10", "DisplayTitle": "4K HEVC HDR10", "BitDepth": 10, "Height": 2160, "Width": 3840,
+         "Type": "Video", "Index": 0, "IsDefault": true},
+        {"Codec": "eac3", "Language": "eng", "DisplayTitle": "English - Dolby Digital+ - 5.1", "Channels": 6, "IsDefault": true, "Type": "Audio", "Index": 1}
+      ],
+      "Bitrate": 25000000,
+      "DefaultAudioStreamIndex": 1,
+      "DefaultSubtitleStreamIndex": -1,
+      "HasSegments": false
+    }
+  ],
+  "PlaySessionId": "abcdef0123456789"
+}
