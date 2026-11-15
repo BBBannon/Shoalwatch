@@ -18,7 +18,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Previous and next episode from what the Library shows this user: across seasons, in the app's season order (Specials last). */
+/** Previous and next episode from what the Library shows this user: across numbered seasons, in the app's season order; Specials stay apart. */
 class EpisodeNavigatorTest {
     private val library = FakeLibrary()
     private val navigator = EpisodeNavigator(library)
@@ -34,6 +34,7 @@ class EpisodeNavigatorTest {
     private val s2e1 = episode(201, season = 2, number = 1)
     private val s2e2 = episode(202, season = 2, number = 2)
     private val sp1 = episode(301, season = 0, number = 1)
+    private val sp2 = episode(302, season = 0, number = 2)
 
     private fun saved(season: ItemWithUserData, vararg episodes: ItemWithUserData, freshness: Freshness = Freshness.Fresh) {
         library.seriesFlow(BEN, series, season.item.id).value = SeriesDetail(null, seasons, episodes.toList(), season.item.id, freshness)
@@ -55,13 +56,14 @@ class EpisodeNavigatorTest {
         assertEquals(s1e2.item, navigator.around(BEN, s2e1.item).previous)
     }
 
-    @Test fun specialsAreLastSoTheyFollowTheLastNumberedSeason() = runTest {
-        assertEquals(s2e1.item, navigator.around(BEN, s1e2.item).next)
-        assertEquals(sp1.item, navigator.around(BEN, s2e2.item).next)
+    @Test fun theLastEpisodeOfTheLastNumberedSeasonHasNoNextEvenWithSpecials() = runTest {
+        assertEquals(EpisodeNavigator.Around(s2e1.item, null), navigator.around(BEN, s2e2.item))
     }
 
-    @Test fun theLastEpisodeOfTheLastSeasonHasNoNext() = runTest {
-        assertEquals(EpisodeNavigator.Around(s2e2.item, null), navigator.around(BEN, sp1.item))
+    @Test fun withinSpecialsNextAndPreviousStayInSpecials() = runTest {
+        saved(specials, sp1, sp2)
+        assertEquals(EpisodeNavigator.Around(null, sp2.item), navigator.around(BEN, sp1.item))
+        assertEquals(EpisodeNavigator.Around(sp1.item, null), navigator.around(BEN, sp2.item))
     }
 
     @Test fun aRefreshingEmissionIsWaitedPastAndTheSavedAnswerUsed() = runTest {
