@@ -124,4 +124,27 @@ internal class PlaybackControllerReviewTest : PlaybackControllerTestBase() {
         engine.emit(EngineEvent.Failed(EngineFailure.NOT_SIGNED_IN)); runCurrent()
         assertFalse(activePlayback.registered)
     }
+
+    // ---- M-9: the reroute cap
+
+    @Test fun aRouteThatKeepsGoingStaleIsReroutedThreeTimesThenFailsAsOffline() = runTest {
+        val c = controller(); openAndPlay(c)
+        repeat(3) { engine.emit(EngineEvent.Failed(EngineFailure.ROUTE_STALE)); runCurrent() }
+        assertEquals(Phase.BUFFERING, c.state.value.phase)
+        assertEquals("one route for the start and one per reroute", 4, routesMade.size)
+        engine.emit(EngineEvent.Failed(EngineFailure.ROUTE_STALE)); runCurrent()
+        assertEquals(Phase.FAILED, c.state.value.phase)
+        assertEquals(AppError.Kind.OFFLINE, c.state.value.error)
+        assertEquals(4, routesMade.size)
+        assertEquals("no server call for a reroute", 1, playbackInfos)
+    }
+
+    @Test fun aReadyBetweenRerouteResetsTheCount() = runTest {
+        val c = controller(); openAndPlay(c)
+        repeat(3) { engine.emit(EngineEvent.Failed(EngineFailure.ROUTE_STALE)); runCurrent() }
+        engine.emit(EngineEvent.Ready); runCurrent()
+        engine.emit(EngineEvent.Failed(EngineFailure.ROUTE_STALE)); runCurrent()
+        assertEquals(Phase.BUFFERING, c.state.value.phase)
+        assertEquals(5, routesMade.size)
+    }
 }
