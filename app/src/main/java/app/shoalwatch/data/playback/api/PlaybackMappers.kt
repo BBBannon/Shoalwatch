@@ -106,8 +106,8 @@ private fun MediaSourceDto.toSourceInfo(): SourceInfo? {
         video = streams.firstOrNull { it.type == "Video" }?.toVideo(),
         audio = audio,
         subtitles = subtitles,
-        defaultAudioIndex = defaultAudioStreamIndex?.toInt()?.takeIf { i -> audio.any { it.index == i } },
-        defaultSubtitleIndex = defaultSubtitleStreamIndex?.toInt()?.takeIf { i -> subtitles.any { it.index == i } },
+        defaultAudioIndex = defaultAudioStreamIndex?.takeIf { it in 0..MAX_INDEX }?.toInt()?.takeIf { i -> audio.any { it.index == i } },
+        defaultSubtitleIndex = defaultSubtitleStreamIndex?.takeIf { it in 0..MAX_INDEX }?.toInt()?.takeIf { i -> subtitles.any { it.index == i } },
         hasSegments = hasSegments == true,
     )
 }

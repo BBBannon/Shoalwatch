@@ -126,4 +126,14 @@ class PlaybackGatewayHostileTest : PlaybackGatewayTestBase() {
         assertEquals(AppError.Kind.SERVER_NOT_FOUND, failure { gateway.segments(session, "../x") }.kind)
         assertEquals(0, web.requestCount)
     }
+
+    /** 4,294,967,297 is 1 once narrowed to Int: the range is checked on the wire value first, so it names no track. */
+    @Test fun aDefaultIndexBeyondIntIsDroppedNotWrapped() {
+        val source = infoOf(
+            """{"MediaSources":[{"Id":"abc","DefaultAudioStreamIndex":4294967297,"DefaultSubtitleStreamIndex":4294967298,"MediaStreams":[
+              {"Codec":"aac","Type":"Audio","Index":1},{"Codec":"subrip","Type":"Subtitle","Index":2}]}]}""",
+        ).sources.single()
+        assertNull(source.defaultAudioIndex)
+        assertNull(source.defaultSubtitleIndex)
+    }
 }
