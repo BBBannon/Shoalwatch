@@ -2,6 +2,7 @@ package app.shoalwatch.data.playback
 
 import android.content.Context
 import android.hardware.display.DisplayManager
+import android.media.MediaCodecInfo
 import android.media.MediaCodecInfo.CodecProfileLevel
 import android.media.MediaCodecList
 import android.os.Build
@@ -23,6 +24,8 @@ data class DeviceCapabilities(
     val decoderHdr: Map<VideoCodec, Set<HdrType>>,    // e.g. HEVCProfileMain10HDR10 -> HDR10, ...HDR10Plus -> HDR10_PLUS
     val dolbyVisionProfiles: Set<Int>,                // from video/dolby-vision decoders: 5, 8 (dvhe.05, dvhe.08), 9 (dvav.09)
     val display: Set<HdrType>,                        // what the screen can show
+    /** Per codec with a counted decoder: its largest picture, frame rate and (HEVC) level. A codec missing here is limited conservatively. */
+    val videoLimits: Map<VideoCodec, VideoLimits> = emptyMap(),
 )
 
 fun interface CodecSupport { fun read(): DeviceCapabilities }
@@ -51,12 +54,29 @@ class AndroidDeviceCapabilities(private val context: Context) : CodecSupport {
                 } catch (_: IllegalArgumentException) {
                     null
                 }
+                val size = caps?.let(::largestPicture)
                 DecoderInfo(
                     name = info.name, mime = type.lowercase(), softwareOnly = info.isSoftwareOnly, alias = info.isAlias,
                     profileLevels = caps?.profileLevels?.map { it.profile to it.level }.orEmpty(),
+                    maxWidth = size?.first, maxHeight = size?.second, maxFrameRate = size?.third,
                 )
             }
         }
+
+    /** The widest picture a video decoder takes, its tallest height at that width, and its top frame rate there; null if not said. */
+    private fun largestPicture(caps: MediaCodecInfo.CodecCapabilities): Triple<Int, Int, Int?>? = try {
+        val video = caps.videoCapabilities ?: return null
+        val width = video.supportedWidths.upper
+        val height = video.getSupportedHeightsFor(width).upper
+        val fps = try {
+            video.getSupportedFrameRatesFor(width, height).upper.toInt()
+        } catch (_: IllegalArgumentException) {
+            null
+        }
+        Triple(width, height, fps)
+    } catch (_: IllegalArgumentException) {
+        null
+    }
 
     private fun readDecoders(): DeviceCapabilities {
         val all = decoders()
@@ -80,6 +100,9 @@ class AndroidDeviceCapabilities(private val context: Context) : CodecSupport {
                 .filterValues { it.isNotEmpty() },
             dolbyVisionProfiles = profiles(DOLBY_VISION_MIME).mapNotNullTo(LinkedHashSet()) { DV_PROFILES[it] },
             display = emptySet(),
+            videoLimits = VideoCodec.entries.mapNotNull { c ->
+                DecoderRules.limits(counted(c.mime)) { level -> if (c == VideoCodec.HEVC) HEVC_LEVELS[level] else null }?.let { c to it }
+            }.toMap(),
         )
     }
 
@@ -119,6 +142,23 @@ class AndroidDeviceCapabilities(private val context: Context) : CodecSupport {
             CodecProfileLevel.AVCLevel41 to 41, CodecProfileLevel.AVCLevel42 to 42, CodecProfileLevel.AVCLevel5 to 50,
             CodecProfileLevel.AVCLevel51 to 51, CodecProfileLevel.AVCLevel52 to 52, CodecProfileLevel.AVCLevel6 to 60,
             CodecProfileLevel.AVCLevel61 to 61, CodecProfileLevel.AVCLevel62 to 62,
+        )
+
+        /** HEVC level constants (either tier) to Jellyfin's number, which is ffprobe's `level`: 30 times the level (5.1 is 153). */
+        private val HEVC_LEVELS = mapOf(
+            CodecProfileLevel.HEVCMainTierLevel1 to 30, CodecProfileLevel.HEVCHighTierLevel1 to 30,
+            CodecProfileLevel.HEVCMainTierLevel2 to 60, CodecProfileLevel.HEVCHighTierLevel2 to 60,
+            CodecProfileLevel.HEVCMainTierLevel21 to 63, CodecProfileLevel.HEVCHighTierLevel21 to 63,
+            CodecProfileLevel.HEVCMainTierLevel3 to 90, CodecProfileLevel.HEVCHighTierLevel3 to 90,
+            CodecProfileLevel.HEVCMainTierLevel31 to 93, CodecProfileLevel.HEVCHighTierLevel31 to 93,
+            CodecProfileLevel.HEVCMainTierLevel4 to 120, CodecProfileLevel.HEVCHighTierLevel4 to 120,
+            CodecProfileLevel.HEVCMainTierLevel41 to 123, CodecProfileLevel.HEVCHighTierLevel41 to 123,
+            CodecProfileLevel.HEVCMainTierLevel5 to 150, CodecProfileLevel.HEVCHighTierLevel5 to 150,
+            CodecProfileLevel.HEVCMainTierLevel51 to 153, CodecProfileLevel.HEVCHighTierLevel51 to 153,
+            CodecProfileLevel.HEVCMainTierLevel52 to 156, CodecProfileLevel.HEVCHighTierLevel52 to 156,
+            CodecProfileLevel.HEVCMainTierLevel6 to 180, CodecProfileLevel.HEVCHighTierLevel6 to 180,
+            CodecProfileLevel.HEVCMainTierLevel61 to 183, CodecProfileLevel.HEVCHighTierLevel61 to 183,
+            CodecProfileLevel.HEVCMainTierLevel62 to 186, CodecProfileLevel.HEVCHighTierLevel62 to 186,
         )
 
         private val HEVC_10_BIT = setOf(CodecProfileLevel.HEVCProfileMain10, CodecProfileLevel.HEVCProfileMain10HDR10, CodecProfileLevel.HEVCProfileMain10HDR10Plus)

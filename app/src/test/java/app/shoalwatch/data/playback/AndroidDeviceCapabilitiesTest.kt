@@ -103,6 +103,7 @@ class AndroidDeviceCapabilitiesTest {
         val caps = read()
         assertFalse(VideoCodec.HEVC in caps.video)
         assertFalse(caps.hevcMain10)
+        assertTrue(VideoCodec.HEVC !in caps.videoLimits)
     }
 
     @Test fun aSecureOnlyDecoderIsIgnored() {
@@ -135,6 +136,7 @@ class AndroidDeviceCapabilitiesTest {
         val caps = read()
         assertTrue(VideoCodec.HEVC in caps.video)
         assertFalse(caps.hevcMain10)
+        assertEquals(123, caps.videoLimits[VideoCodec.HEVC]?.level)
     }
 
     @Test fun vp9AndAv1TenBitAndHdrProfiles() {

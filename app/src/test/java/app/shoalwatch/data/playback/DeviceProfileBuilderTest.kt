@@ -56,7 +56,7 @@ class DeviceProfileBuilderTest {
         assertTrue(p.codecProfiles.all { it.type == "Video" })
         val conditions = p.codecProfiles.flatMap { it.conditions } + t.conditions
         assertTrue(conditions.all { it.condition in setOf("LessThanEqual", "EqualsAny") && !it.isRequired })
-        assertTrue(conditions.all { it.property in setOf("VideoBitDepth", "VideoLevel", "VideoRangeType", "Width", "Height") })
+        assertTrue(conditions.all { it.property in setOf("VideoBitDepth", "VideoLevel", "VideoRangeType", "Width", "Height", "VideoFramerate") })
         assertTrue(p.subtitleProfiles.all { it.method in setOf("External", "Embed", "Encode") })
     }
 
@@ -104,6 +104,32 @@ class DeviceProfileBuilderTest {
         val all = sdrPhone.copy(video = VideoCodec.entries.toSet(), vp9Profile2 = true, av1Main10 = false)
         assertEquals("10", condition(codec(build(all), "vp9"), "VideoBitDepth")!!.value)
         assertEquals("8", condition(codec(build(all), "av1"), "VideoBitDepth")!!.value)
+    }
+
+    private fun limits(p: DeviceProfileDto, codec: String) =
+        listOf("Width", "Height", "VideoFramerate", "VideoLevel").associateWith { condition(codec(p, codec), it)?.value }
+
+    @Test fun a1080pHevcDecoderLimitsHevcTo1080p() {
+        val p = build(sdrPhone.copy(videoLimits = mapOf(VideoCodec.HEVC to VideoLimits(1920, 1080, 60))))
+        assertEquals(mapOf("Width" to "1920", "Height" to "1080", "VideoFramerate" to "60", "VideoLevel" to null), limits(p, "hevc"))
+        assertTrue(codec(p, "hevc")!!.conditions.filter { it.property in setOf("Width", "Height", "VideoFramerate") }.all { it.condition == "LessThanEqual" })
+    }
+
+    @Test fun a4k60DecoderGivesTheFourKLimitsAndItsLevel() {
+        val p = build(sdrPhone.copy(videoLimits = mapOf(VideoCodec.HEVC to VideoLimits(3840, 2160, 60, level = 153))))
+        assertEquals(mapOf("Width" to "3840", "Height" to "2160", "VideoFramerate" to "60", "VideoLevel" to "153"), limits(p, "hevc"))
+    }
+
+    @Test fun missingCapabilityDataIsAConservative1080p30NotNoLimit() {
+        val all = sdrPhone.copy(video = VideoCodec.entries.toSet())
+        for (c in listOf("hevc", "vp9", "av1")) {
+            assertEquals(c, mapOf("Width" to "1920", "Height" to "1080", "VideoFramerate" to "30", "VideoLevel" to null), limits(build(all), c))
+        }
+    }
+
+    @Test fun h264KeepsItsLevelConditionAndGetsNoSizeCondition() {
+        val p = build(sdrPhone.copy(videoLimits = mapOf(VideoCodec.H264 to VideoLimits(1920, 1080, 30))))
+        assertEquals(mapOf("Width" to null, "Height" to null, "VideoFramerate" to null, "VideoLevel" to "42"), limits(p, "h264"))
     }
 
     @Test fun mbps4PutsAWidthAndHeightCeilingOnTheTranscodingProfile() {

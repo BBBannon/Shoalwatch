@@ -66,11 +66,21 @@ object DeviceProfileBuilder {
         val rangeWire = VideoRange.entries.filter { it in ranges }.joinToString("|") { it.wire }
         val conditions = when (codec) {
             VideoCodec.H264 -> listOf(atMost("VideoBitDepth", 8), atMost("VideoLevel", caps.h264MaxLevel))
-            VideoCodec.HEVC -> listOf(atMost("VideoBitDepth", if (caps.hevcMain10) 10 else 8))
-            VideoCodec.VP9 -> listOf(atMost("VideoBitDepth", if (caps.vp9Profile2) 10 else 8))
-            VideoCodec.AV1 -> listOf(atMost("VideoBitDepth", if (caps.av1Main10) 10 else 8))
+            VideoCodec.HEVC -> listOf(atMost("VideoBitDepth", if (caps.hevcMain10) 10 else 8)) + limits(codec, caps)
+            VideoCodec.VP9 -> listOf(atMost("VideoBitDepth", if (caps.vp9Profile2) 10 else 8)) + limits(codec, caps)
+            VideoCodec.AV1 -> listOf(atMost("VideoBitDepth", if (caps.av1Main10) 10 else 8)) + limits(codec, caps)
         } + ProfileConditionDto("EqualsAny", "VideoRangeType", rangeWire, isRequired = false)
         return CodecProfileDto(VIDEO, codec.jellyfin, conditions)
+    }
+
+    /**
+     * What the codec's decoder can keep up with: `Width`, `Height` and `VideoFramerate` at most its largest picture and rate there,
+     * and for HEVC its `VideoLevel` when known. No data is [VideoLimits.CONSERVATIVE] (1080p30), never no limit.
+     */
+    private fun limits(codec: VideoCodec, caps: DeviceCapabilities): List<ProfileConditionDto> {
+        val l = caps.videoLimits[codec] ?: VideoLimits.CONSERVATIVE
+        return listOf(atMost("Width", l.maxWidth), atMost("Height", l.maxHeight), atMost("VideoFramerate", l.maxFrameRate)) +
+            listOfNotNull(l.level?.takeIf { codec == VideoCodec.HEVC }?.let { atMost("VideoLevel", it) })
     }
 
     /** Width from the quality, height as 16:9 of it (1920 x 1080, 1280 x 720, 854 x 480); none at MAXIMUM. */
