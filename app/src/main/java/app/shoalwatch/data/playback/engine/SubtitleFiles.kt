@@ -25,10 +25,11 @@ import java.util.TreeSet
  * italic, underline, strike-through, colours, sizes, alignment, position, ASS layer order), and nothing else: links, images
  * and any other span are removed, each line is cut to [MAX_LINE_CHARS] characters and each cue to [MAX_LINES] lines.
  *
- * Bounded in work as well as in bytes (Task 7 review I-2): an ASS/SSA file is pre-scanned ([AssBudget]) and refused before
- * Media3 sees it when its overlapping lines would make Media3's parser build quadratic lists; only the cues that can be drawn
- * at once are cleaned; running out of memory is "unreadable", not a crash; and a parse that has been given up ([cancelled])
- * stops at the next cue.
+ * Bounded in work as well as in bytes (Task 7 review I-2, final review I-1): an ASS/SSA file is decoded and re-written by the
+ * app ([AssScript]) so that Media3 parses only the cue lines the work budget counted, and is refused before Media3 sees it when
+ * those lines would make Media3's parser build quadratic lists; a SubRip file is re-written with its lines cut and its braces
+ * closed ([SubtitleText.subRip]); only the cues that can be drawn at once are cleaned; running out of memory is "unreadable",
+ * not a crash (a last line of defence); and a parse that has been given up ([cancelled]) stops at the next cue.
  */
 @OptIn(UnstableApi::class)
 internal object SubtitleFiles {
@@ -43,7 +44,6 @@ internal object SubtitleFiles {
 
     private val MIME = mapOf("srt" to MimeTypes.APPLICATION_SUBRIP, "vtt" to MimeTypes.TEXT_VTT, "ass" to MimeTypes.TEXT_SSA, "ssa" to MimeTypes.TEXT_SSA)
 
-    /** Throws [IllegalArgumentException] (a fixed message) for anything unreadable, including a parser failure. */
     /** For tests: called once for every cue cleaned. */
     @Volatile internal var cleanHook: (() -> Unit)? = null
 
@@ -57,18 +57,22 @@ internal object SubtitleFiles {
         val media = Format.Builder().setSampleMimeType(mime).build()
         if (!factory.supportsFormat(media)) throw IllegalArgumentException("Unsupported subtitle format.")
         val ass = format == "ass" || format == "ssa"
-        if (ass) AssBudget.check(bytes)
+        val input = when {
+            ass -> AssScript.normalise(bytes, cancelled)
+            format == "srt" -> SubtitleText.subRip(bytes)
+            else -> bytes
+        }
         val groups = ArrayList<Group>()
-        factory.create(media).parse(bytes, SubtitleParser.OutputOptions.allCues()) { c ->
+        factory.create(media).parse(input, SubtitleParser.OutputOptions.allCues()) { c ->
             if (cancelled()) throw IllegalArgumentException("Stopped.")
             groups.add(groupOf(c, groups.size) ?: return@parse)
         }
-        CueTimeline.of(groups, ass && AssEffects.found(bytes), cancelled)
+        CueTimeline.of(groups, ass && AssEffects.found(input), cancelled)
     }
 
     /**
      * [block], with every failure as the fixed [IllegalArgumentException]: Media3's runtime exceptions, a stack overflow, and
-     * running out of memory (a last line of defence: [AssBudget] is the bound).
+     * running out of memory (a last line of defence: [AssScript] is the bound).
      */
     internal inline fun <T> guarded(block: () -> T): T = try {
         block()
@@ -190,102 +194,7 @@ class CueTimeline internal constructor(
     }
 }
 
-/**
- * The work Media3's `SsaParser` would do, worked out on the raw bytes before it runs: it keeps one list of cues per distinct
- * start or end time and adds each line to every list its time spans, so K lines that all overlap cost about K squared / 2
- * references (a 1 MB file can need gigabytes). Refuses more than [SubtitleFiles.MAX_GROUPS] `Dialogue:` lines, or more than
- * [MAX_PLACEMENTS] placements in all. Start and End are found from the `[Events]` `Format:` line (Layer, Start, End by default).
- * Times are read exactly as Media3 1.9.2 reads them (`SsaParser.SSA_TIMECODE_PATTERN`, `(?:(\d+):)?(\d+):(\d+)[:.](\d+)` on the
- * trimmed field, the last group in hundredths whatever its length). Fails closed (Task 8 review I-4): every `Dialogue:` line
- * counts towards the line cap, and a line whose times this cannot read is counted as spanning every slot.
- */
-internal object AssBudget {
-    const val MAX_PLACEMENTS = 2_000_000L
-    private val DIALOGUE = "dialogue:".toByteArray()
-    private val FORMAT = "format:".toByteArray()
-    private val EVENTS = "[events]".toByteArray()
-
-    fun check(bytes: ByteArray) {
-        var startField = 1
-        var endField = 2
-        var inEvents = false
-        val starts = ArrayList<Long>()
-        val ends = ArrayList<Long>()
-        var lines = 0
-        var unread = 0L
-        var i = 0
-        while (i < bytes.size) {
-            var end = i
-            while (end < bytes.size && bytes[end] != '\n'.code.toByte()) end++
-            var at = i
-            while (at < end && (bytes[at] == ' '.code.toByte() || bytes[at] == '\t'.code.toByte() || bytes[at] == 0xEF.toByte() || bytes[at] == 0xBB.toByte() || bytes[at] == 0xBF.toByte())) at++
-            when {
-                bytes.getOrNull(at) == '['.code.toByte() -> inEvents = startsWithIgnoringCase(bytes, at, EVENTS)
-                inEvents && startsWithIgnoringCase(bytes, at, FORMAT) -> {
-                    val names = fields(bytes, at + FORMAT.size, end).map { (a, b) -> String(bytes, a, b - a, Charsets.US_ASCII).trim().lowercase() }
-                    names.indexOf("start").takeIf { it >= 0 }?.let { startField = it }
-                    names.indexOf("end").takeIf { it >= 0 }?.let { endField = it }
-                }
-                startsWithIgnoringCase(bytes, at, DIALOGUE) -> {
-                    if (++lines > SubtitleFiles.MAX_GROUPS) throw IllegalArgumentException("Too many subtitles.")
-                    val f = fields(bytes, at + DIALOGUE.size, end, limit = maxOf(startField, endField) + 1)
-                    val s = f.getOrNull(startField)?.let { (a, b) -> timeOf(bytes, a, b) }
-                    val e = f.getOrNull(endField)?.let { (a, b) -> timeOf(bytes, a, b) }
-                    when {
-                        s == null || e == null -> unread++
-                        e > s -> { starts += s; ends += e }
-                    }
-                }
-            }
-            i = end + 1
-        }
-        if (starts.isEmpty()) return
-        val times = (starts + ends).distinct().sorted().toLongArray()
-        var placements = unread * times.size
-        if (placements > MAX_PLACEMENTS) throw IllegalArgumentException("Too many subtitles.")
-        for (n in starts.indices) {
-            placements += times.binarySearch(ends[n]) - times.binarySearch(starts[n])
-            if (placements > MAX_PLACEMENTS) throw IllegalArgumentException("Too many subtitles.")
-        }
-    }
-
-    /** The comma-separated fields of bytes [from, to), at most [limit] (the rest of the line is not needed). */
-    private fun fields(bytes: ByteArray, from: Int, to: Int, limit: Int = Int.MAX_VALUE): List<Pair<Int, Int>> {
-        val out = ArrayList<Pair<Int, Int>>()
-        var a = from
-        for (j in from..to) {
-            if (out.size >= limit) break
-            if (j == to || bytes[j] == ','.code.toByte()) { out += a to j; a = j + 1 }
-        }
-        return out
-    }
-
-    private val TIMECODE = Regex("""(?:(\d+):)?(\d+):(\d+)[:.](\d+)""")
-
-    /** In microseconds as Media3 works them out, or null when it is not a time Media3 reads, or this cannot be sure (too long). */
-    private fun timeOf(bytes: ByteArray, from: Int, to: Int): Long? {
-        if (to - from > MAX_TIME_CHARS) return null
-        val m = TIMECODE.matchEntire(String(bytes, from, to - from, Charsets.US_ASCII).trim()) ?: return null
-        return try {
-            val (h, mi, se, fraction) = m.destructured
-            var us = Math.multiplyExact(if (h.isEmpty()) 0L else h.toLong(), 3_600_000_000L)
-            us = Math.addExact(us, Math.multiplyExact(mi.toLong(), 60_000_000L))
-            us = Math.addExact(us, Math.multiplyExact(se.toLong(), 1_000_000L))
-            Math.addExact(us, Math.multiplyExact(fraction.toLong(), 10_000L))
-        } catch (e: ArithmeticException) {
-            null
-        } catch (e: NumberFormatException) {
-            null
-        }
-    }
-
-    private const val MAX_TIME_CHARS = 64
-
-    private fun startsWithIgnoringCase(bytes: ByteArray, at: Int, word: ByteArray): Boolean =
-        word.indices.all { j -> bytes.getOrNull(at + j)?.toInt()?.toChar()?.lowercaseChar() == word[j].toInt().toChar() }
-}
-
-/** Finds the ASS override tags Media3 cannot draw, in `Dialogue:` lines' `{...}` blocks, on the raw bytes (no second copy). */
+/** Finds the ASS override tags Media3 cannot draw, in `Dialogue:` lines' `{...}` blocks, on the re-written bytes (no second copy). */
 internal object AssEffects {
     private val TAGS = listOf("t(", "move(", "fad(", "fade(", "clip(", "iclip(", "fn").map { it.toByteArray() }
     private val DIALOGUE = "dialogue:".toByteArray()
