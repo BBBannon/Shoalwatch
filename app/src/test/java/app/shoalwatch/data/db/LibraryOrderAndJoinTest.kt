@@ -34,9 +34,9 @@ class LibraryOrderAndJoinTest : LibraryTestBase() {
             val expected = rows.inEpisodeOrder().map { it.item.id }
             assertEquals("seed $seed", expected, items.getEpisodes(S1, U1, id("show"), null).map { it.item.itemId })
         }
-        // spelled out: numbered seasons, then Specials (season 0), then no season number
+        // spelled out: numbered seasons, then no season number, then Specials (season 0) genuinely last
         val order = items.getEpisodes(S1, U1, id("show"), null).map { it.item.parentIndexNumber }.distinct()
-        assertEquals(listOf(1, 2, 3, 0, null), order)
+        assertEquals(listOf(1, 2, 3, null, 0), order)
     }
 
     @Test fun oneSeasonKeepsTheSameOrder() = runBlocking {

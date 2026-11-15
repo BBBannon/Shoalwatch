@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.Flow
  */
 @Dao
 interface ListDao {
-    /** The list in position order, at most [limit] rows. An entry whose item row is missing is not returned. */
+    /** The list in position order, at most [limit] rows. An entry whose item row is missing, or that the server never showed this user (`visible_items`), is not returned. */
     @Query(LIST_SQL)
     fun observeList(serverId: String, userId: String, listKey: String, limit: Int): Flow<List<ItemRow>>
 
@@ -55,6 +55,7 @@ interface ListDao {
     companion object {
         const val LIST_SQL =
             "SELECT $ROW_COLUMNS FROM list_entries e JOIN items i ON i.serverId = e.serverId AND i.itemId = e.itemId " +
+                "JOIN visible_items v ON v.serverId = e.serverId AND v.userId = e.userId AND v.itemId = e.itemId " +
                 "LEFT JOIN user_data u ON u.serverId = e.serverId AND u.userId = e.userId AND u.itemId = e.itemId " +
                 "WHERE e.serverId = :serverId AND e.userId = :userId AND e.listKey = :listKey ORDER BY e.position LIMIT :limit"
     }

@@ -42,6 +42,13 @@ abstract class ItemDao {
         )
     }
 
+    @Upsert
+    protected abstract suspend fun upsertVisible(rows: List<VisibleItemEntity>)
+
+    /** Records that the server showed these items to this user (see [VisibleItemEntity]). Only [LibraryStore] calls this, in the transaction that writes the items. */
+    internal suspend fun markVisible(serverId: String, userId: String, itemIds: List<String>, seenAt: Long) =
+        upsertVisible(itemIds.distinct().map { VisibleItemEntity(serverId, userId, it, seenAt) })
+
     @Query("SELECT * FROM items WHERE serverId = :serverId AND itemId = :itemId")
     abstract suspend fun getItemEntity(serverId: String, itemId: String): ItemEntity?
 
@@ -57,8 +64,10 @@ abstract class ItemDao {
     abstract suspend fun getItem(serverId: String, userId: String, itemId: String): ItemRow?
 
     /**
+     * Every read here and in [ListDao] shows a user only items the server returned to that user ([VisibleItemEntity]); any other is treated as absent.
+     *
      * A series' stored episodes (all of them when [seasonId] is null) in the app's one episode order (`data/library/api/Ordering.kt`; a test keeps the two identical):
-     * numbered seasons, then season 0 (Specials), then no season number; then episode number (missing last), sort name (or name), id. Reads the items directly, so it shows whatever is stored whether or not a list names it.
+     * numbered seasons, then no season number, then season 0 (Specials) last of all; then episode number (missing last), sort name (or name), id. Reads the items directly, so it shows whatever is stored whether or not a list names it.
      */
     @Query(EPISODES_SQL)
     abstract fun observeEpisodes(serverId: String, userId: String, seriesId: String, seasonId: String?): Flow<List<ItemRow>>
@@ -181,7 +190,8 @@ abstract class ItemDao {
         private const val ID_CHUNK = 500
 
         private const val FROM_ITEMS_AND_USER_DATA =
-            "FROM items i LEFT JOIN user_data u ON u.serverId = i.serverId AND u.userId = :userId AND u.itemId = i.itemId "
+            "FROM items i JOIN visible_items v ON v.serverId = i.serverId AND v.userId = :userId AND v.itemId = i.itemId " +
+                "LEFT JOIN user_data u ON u.serverId = i.serverId AND u.userId = :userId AND u.itemId = i.itemId "
 
         private const val ONE_SQL = "SELECT $ROW_COLUMNS $FROM_ITEMS_AND_USER_DATA WHERE i.serverId = :serverId AND i.itemId = :itemId"
 
@@ -189,7 +199,7 @@ abstract class ItemDao {
         const val EPISODES_SQL =
             "SELECT $ROW_COLUMNS $FROM_ITEMS_AND_USER_DATA" +
                 "WHERE i.serverId = :serverId AND i.seriesId = :seriesId AND i.kind = 'EPISODE' AND (:seasonId IS NULL OR i.seasonId = :seasonId) " +
-                "ORDER BY CASE WHEN i.parentIndexNumber IS NULL THEN 2 WHEN i.parentIndexNumber = 0 THEN 1 ELSE 0 END, COALESCE(i.parentIndexNumber, 0), " +
+                "ORDER BY CASE WHEN i.parentIndexNumber IS NULL THEN 1 WHEN i.parentIndexNumber = 0 THEN 2 ELSE 0 END, COALESCE(i.parentIndexNumber, 0), " +
                 "i.indexNumber IS NULL, i.indexNumber, COALESCE(i.sortName, i.name), i.itemId"
 
         private const val SEARCH_SQL =

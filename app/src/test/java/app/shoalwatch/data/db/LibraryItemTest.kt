@@ -64,7 +64,8 @@ class LibraryItemTest : LibraryTestBase() {
     }
 
     @Test fun anItemWithNoUserDataForTheUserHasNull() = runBlocking {
-        library.writeItems(s1u1, listOf(row(item("a"))), t0)
+        library.writeItems(s1u1, listOf(row(item("a"), watched(played = true))), t0)
+        library.writeItems(s1u2, listOf(row(item("a"))), t0) // the server showed Bob the item, with nothing of his own
         assertNull(items.getItem(S1, U2, id("a"))!!.userData)
     }
 
@@ -291,6 +292,7 @@ class LibraryItemTest : LibraryTestBase() {
 
     @Test fun searchIsPerServerAndJoinsTheGivenUsersData() = runBlocking {
         library.writeItems(s1u1, listOf(row(item("a", name = "Match"), watched(played = true))), t0)
+        library.writeItems(s1u2, listOf(row(item("a", name = "Match"))), t0)
         library.writeItems(s2u1, listOf(row(item("b", name = "Match elsewhere"))), t0)
         assertEquals(listOf("Match"), search("match"))
         val ann = items.searchByName(S1, U1, "match", emptySet(), 10).single()

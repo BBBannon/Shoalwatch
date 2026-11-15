@@ -6,11 +6,11 @@ import app.shoalwatch.data.library.ItemWithUserData
 
 /**
  * The one rule for where a season number goes, used by both comparators: numbered seasons (1, 2, 3...) first, then
- * season 0 (Specials), then anything without a season number.
+ * anything without a season number, then season 0 (Specials) genuinely last.
  */
 private fun seasonGroup(seasonNumber: Int?): Int = when (seasonNumber) {
-    null -> 2
-    0 -> 1
+    null -> 1
+    0 -> 2
     else -> 0
 }
 

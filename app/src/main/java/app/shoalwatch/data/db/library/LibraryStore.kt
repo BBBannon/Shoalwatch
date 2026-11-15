@@ -125,11 +125,13 @@ class LibraryStore(private val db: AppDatabase) {
      * Stores items (and the user data that came with them) without touching any list, e.g. a detail fetch. Same rules as
      * [writePage]: [ItemDao.upsertItems] for the items (a list write keeps a stored `overview` and `childCount` when the
      * incoming value is null; an [authoritative] write, i.e. a detail fetch, does not), and for user data the server
-     * provided, [ItemDao.writeServerUserData]: a row with an unconfirmed local change (`pendingSyncAt`) is ignored.
+     * provided, [ItemDao.writeServerUserData]: a row with an unconfirmed local change (`pendingSyncAt`) is ignored. In the same
+     * transaction every item written is recorded as shown to this user by the server ([VisibleItemEntity]).
      */
     suspend fun writeItems(s: Session, rows: List<ItemWithUserData>, now: Instant, authoritative: Boolean = false) {
         db.withTransaction {
             items.upsertItems(s.serverId, rows.map { it.item.toEntity(s.serverId, now) }, authoritative)
+            items.markVisible(s.serverId, s.userId, rows.map { it.item.id }, now.toEpochMilli())
             items.writeServerUserData(rows.mapNotNull { r -> r.userData?.toEntity(s.serverId, s.userId, r.item.id, now) })
         }
     }
@@ -152,6 +154,6 @@ class LibraryStore(private val db: AppDatabase) {
         val listCutoff = now.minus(policy.listMaxAge).toEpochMilli()
         val itemCutoff = now.minus(policy.itemMaxAge).toEpochMilli()
         val each = maintenance.serverIds().map { maintenance.evict(it, listCutoff, itemCutoff, policy.maxUnpinnedItems) }
-        return EvictionCounts(each.sumOf { it.listEntries }, each.sumOf { it.listStates }, each.sumOf { it.items }, each.sumOf { it.userData })
+        return EvictionCounts(each.sumOf { it.listEntries }, each.sumOf { it.listStates }, each.sumOf { it.items }, each.sumOf { it.userData }, each.sumOf { it.visibility })
     }
 }

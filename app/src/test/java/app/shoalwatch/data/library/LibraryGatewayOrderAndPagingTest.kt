@@ -48,22 +48,22 @@ class LibraryGatewayOrderAndPagingTest : LibraryGatewayTestBase() {
         return runBlocking { gateway.seasons(session, SERIES) }.map { num(it.item.id) }
     }
 
-    @Test fun seasonsPutSpecialsAfterTheNumberedOnesThenAnyUnnumberedOne() {
+    @Test fun seasonsPutTheNumberedOnesFirstThenAnyUnnumberedOneAndSpecialsLast() {
         val ids = seasonIds(season(1, 0, "Specials"), season(2, 2, "Season 2"), season(3, null, "Extras"), season(4, 1, "Season 1"), season(5, 3, "Season 3"))
-        assertEquals(listOf(4, 2, 5, 1, 3), ids) // 1, 2, 3, then Specials (season 0), then the unnumbered one
+        assertEquals(listOf(4, 2, 5, 3, 1), ids) // 1, 2, 3, then the unnumbered one, then Specials (season 0) last of all
     }
 
     @Test fun theSameSeasonsComeOutInTheSameOrderWhateverOrderTheServerUses() {
         val rows = listOf(season(1, 1, "S1"), season(2, 2, "S2"), season(3, 3, "S3"), season(4, 0, "Specials"), season(5, null, "Extras"))
-        repeat(8) { seed -> assertEquals(listOf(1, 2, 3, 4, 5), seasonIds(*rows.shuffled(java.util.Random(seed.toLong())).toTypedArray())) }
+        repeat(8) { seed -> assertEquals(listOf(1, 2, 3, 5, 4), seasonIds(*rows.shuffled(java.util.Random(seed.toLong())).toTypedArray())) }
     }
 
-    @Test fun aWholeSeriesListPutsSeasonZeroAfterTheNumberedSeasonsAndNoSeasonAfterThat() {
+    @Test fun aWholeSeriesListPutsSpecialsLastAfterTheNumberedSeasonsAndTheOnesWithNoSeason() {
         val rows = listOf(
             episode(1, 1, 1), episode(2, 1, 2), episode(3, 2, 1), episode(4, 3, 1),
             episode(5, 0, 1), episode(6, 0, 2), episode(7, null, 1), episode(8, null, null, "zz"),
         )
-        repeat(8) { seed -> assertEquals(listOf(1, 2, 3, 4, 5, 6, 7, 8), episodes(*rows.shuffled(java.util.Random(seed.toLong())).toTypedArray())) }
+        repeat(8) { seed -> assertEquals(listOf(1, 2, 3, 4, 7, 8, 5, 6), episodes(*rows.shuffled(java.util.Random(seed.toLong())).toTypedArray())) }
     }
 
     private class Serving(val total: Int, val limitCap: Int = Int.MAX_VALUE) : Dispatcher() {

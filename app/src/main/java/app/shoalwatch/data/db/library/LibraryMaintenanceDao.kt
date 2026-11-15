@@ -5,7 +5,7 @@ import androidx.room.Query
 import androidx.room.Transaction
 
 /** How many rows one [LibraryMaintenanceDao.evict] removed. */
-data class EvictionCounts(val listEntries: Int, val listStates: Int, val items: Int, val userData: Int)
+data class EvictionCounts(val listEntries: Int, val listStates: Int, val items: Int, val userData: Int, val visibility: Int = 0)
 
 /**
  * Keeps the cache bounded. Everything here is per server, and [evict] is one transaction.
@@ -44,13 +44,18 @@ abstract class LibraryMaintenanceDao {
     )
     protected abstract suspend fun deleteOrphanedUserData(serverId: String): Int
 
+    /** The record of what the server showed each user, for items that no longer exist (pinned items still exist, so theirs stays). */
+    @Query("DELETE FROM visible_items WHERE serverId = :serverId AND NOT EXISTS (SELECT 1 FROM items i WHERE i.serverId = visible_items.serverId AND i.itemId = visible_items.itemId)")
+    protected abstract suspend fun deleteOrphanedVisibility(serverId: String): Int
+
     /**
      * One transaction, in this order:
      *  1. delete list entries and states for lists not refreshed since [listCutoffMs];
      *  2. delete unprotected items fetched before [itemCutoffMs];
      *  3. if the server still has more than [maxUnpinnedItems] unpinned items, delete the oldest-fetched unprotected ones
      *     until it does not (protected rows are never deleted, so the cap can be exceeded only by protected rows);
-     *  4. delete user data whose item is gone, except rows that are watched, favourite, have a resume position or are pending sync.
+     *  4. delete user data whose item is gone, except rows that are watched, favourite, have a resume position or are pending sync;
+     *  5. delete the `visible_items` record of items that are gone.
      */
     @Transaction
     open suspend fun evict(serverId: String, listCutoffMs: Long, itemCutoffMs: Long, maxUnpinnedItems: Int): EvictionCounts {
@@ -59,7 +64,8 @@ abstract class LibraryMaintenanceDao {
         var items = deleteOldItems(serverId, itemCutoffMs)
         val excess = countUnpinned(serverId) - maxUnpinnedItems.coerceAtLeast(0)
         if (excess > 0) items += deleteOldest(serverId, excess)
-        return EvictionCounts(entries, states, items, deleteOrphanedUserData(serverId))
+        val userData = deleteOrphanedUserData(serverId)
+        return EvictionCounts(entries, states, items, userData, deleteOrphanedVisibility(serverId))
     }
 
     private companion object {

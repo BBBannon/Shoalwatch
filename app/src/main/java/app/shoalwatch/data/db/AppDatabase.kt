@@ -15,6 +15,7 @@ import app.shoalwatch.data.db.library.ListStateEntity
 import app.shoalwatch.data.db.library.UserDataEntity
 import app.shoalwatch.data.db.library.ViewDao
 import app.shoalwatch.data.db.library.ViewEntity
+import app.shoalwatch.data.db.library.VisibleItemEntity
 
 /**
  * Schema is exported to `app/schemas/` and checked in. There is deliberately no destructive
@@ -23,7 +24,7 @@ import app.shoalwatch.data.db.library.ViewEntity
 @Database(
     entities = [
         ServerEntity::class, AccountEntity::class, ActiveAccountEntity::class,
-        ItemEntity::class, UserDataEntity::class, ViewEntity::class, ListEntryEntity::class, ListStateEntity::class,
+        ItemEntity::class, UserDataEntity::class, ViewEntity::class, ListEntryEntity::class, ListStateEntity::class, VisibleItemEntity::class,
     ],
     version = 2,
     exportSchema = true,

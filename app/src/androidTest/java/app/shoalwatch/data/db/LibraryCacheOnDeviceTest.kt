@@ -122,4 +122,15 @@ class LibraryCacheOnDeviceTest {
         assertEquals(1, counts.userData)
         assertNotNull(db.serverDao().get(server))
     }
+
+    @Test fun anItemOnlyOneUserWasShownIsAbsentForTheOther() = runBlocking {
+        val other = "33333333333333333333333333333333"
+        db.accountDao().upsert(AccountEntity(server, other, "bob", ByteArray(1)))
+        store.writePage(session, "resume", 0, listOf(ItemWithUserData(item("a"), null)), 1, t0)
+        assertNotNull(db.itemDao().getItem(server, user, id("a")))
+        assertNull(db.itemDao().getItem(server, other, id("a")))
+        assertTrue(db.itemDao().searchByName(server, other, "film", emptySet(), 10).isEmpty())
+        store.writeItems(Session(server, other), listOf(ItemWithUserData(item("a"), null)), t0)
+        assertNotNull(db.itemDao().getItem(server, other, id("a")))
+    }
 }

@@ -158,7 +158,7 @@ class MigrationTest {
 
     @Test fun theVersion2SchemaIsExportedAndNamesTheNewTables() {
         val tables = schema(2)["entities"]!!.jsonArray.map { it.jsonObject["tableName"]!!.jsonPrimitive.content }.toSet()
-        assertEquals(setOf("servers", "accounts", "active_account", "items", "user_data", "views", "list_entries", "list_state"), tables)
+        assertEquals(setOf("servers", "accounts", "active_account", "items", "user_data", "views", "list_entries", "list_state", "visible_items"), tables)
     }
 }
 

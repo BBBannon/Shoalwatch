@@ -85,13 +85,32 @@ class LibraryRepositoryItemSearchTest : LibraryRepositoryTestBase() {
         assertEquals(1, gateway.count("item"))
     }
 
-    @Test fun anotherUserOnTheServerSeesTheSharedRowAtOnceWithTheirOwnWatchedState() {
-        gateway.itemFor = { full("a") }
+    @Test fun anotherUserIsNeverShownARowOnlyTheFirstUserWasShown() {
         runBlocking { library.writeItems(s1u1, listOf(row(item("a", overview = "x"), watched(played = true))), t0) }
         gateway.failAll = AppError.Kind.OFFLINE
+        val bob = repo.item(s1u2, id("a")).await { it.freshness is Freshness.Stale }
+        assertNull(bob.item) // the row is on the phone, but the server never showed it to Bob
+        assertEquals(Freshness.Stale(AppError.Kind.OFFLINE), bob.freshness)
+    }
+
+    @Test fun onceTheServerReturnsTheItemToTheOtherUserTheySeeItWithTheirOwnWatchedState() {
+        runBlocking { library.writeItems(s1u1, listOf(row(item("a", overview = "x"), watched(played = true))), t0) }
+        gateway.itemFor = { row(item("a", overview = "x")) }
         val bob = repo.item(s1u2, id("a")).await { it.item != null }
-        assertEquals("x", bob.item!!.item.overview) // the shared row, from the phone
+        assertEquals("x", bob.item!!.item.overview)
         assertNull(bob.item!!.userData) // none of Ann's watched state
+    }
+
+    @Test fun offlineSearchAndSeriesNeverRevealWhatTheOtherUserCached() = runBlocking {
+        library.writeItems(s1u1, listOf(row(item("m", name = "Secret Film")), row(episode("e1", 1, 1))), t0)
+        library.writePage(s1u1, ListKey.seasons(id("show")), 0, listOf(row(item("season1", ItemKind.SEASON, "Season 1", seriesId = "show", indexNumber = 1))), 1, t0)
+        gateway.failAll = AppError.Kind.OFFLINE
+        assertEquals(emptyList<String>(), names(repo.search(s1u2, "secret").items))
+        assertEquals(1, repo.search(s1u1, "secret").items.size)
+        val bob = repo.series(s1u2, id("show")).first5s { it.freshness is Freshness.Stale }
+        assertEquals(emptyList<ItemWithUserData>(), bob.seasons)
+        assertEquals(emptyList<ItemWithUserData>(), bob.episodes)
+        assertNull(bob.series)
     }
 
     // ---- search
@@ -125,6 +144,7 @@ class LibraryRepositoryItemSearchTest : LibraryRepositoryTestBase() {
 
     @Test fun offlineSearchShowsThisUsersWatchedState() = runBlocking {
         library.writeItems(s1u1, listOf(row(item("a", name = "Matrix"), watched(played = true))), t0)
+        library.writeItems(s1u2, listOf(row(item("a", name = "Matrix"))), t0) // shown to Bob too, with nothing of his own
         gateway.failAll = AppError.Kind.OFFLINE
         assertTrue(repo.search(s1u1, "matrix").items.single().userData!!.played)
         assertNull(repo.search(s1u2, "matrix").items.single().userData)

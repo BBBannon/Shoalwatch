@@ -1,3 +1,4 @@
+v1.60 — 15/11/2026 — Behind the scenes for browsing: on a shared server, each profile now only ever sees films and series the server has actually shown to that profile (important for children's profiles), and Specials always appear last.
 v1.59 — 15/11/2026 — Behind the scenes for browsing: a damaged link to a film, series or folder now shows as "not found" instead of crashing the app.
 v1.58 — 14/11/2026 — Behind the scenes for browsing: a watched or favourite mark you have just made on the phone can no longer be undone by the server before it has been told, searches now ignore accents, and a film's description can now be removed if the server no longer has one.
 v1.57 — 14/11/2026 — Behind the scenes for browsing: a single film can now be taken out of (or put back into) a saved list without upsetting the order, and a long list that is refreshed while more of it is loading no longer ends up mixed up.
