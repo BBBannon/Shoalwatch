@@ -63,6 +63,12 @@ class DownloadSmokeTest {
     private val cut = 64 * 1024
     private val mock = MockWebServer()
     private val requests: MutableList<RecordedRequest> = Collections.synchronizedList(mutableListOf())
+    /**
+     * Once set, the server is "gone": every request is answered 503 (so the app sees it as unreachable) and recorded here, so
+     * the offline-play step can prove nothing asked it for the film (Tasks 13-16 review M-1: a stopped server records nothing).
+     */
+    @Volatile private var serverGone = false
+    private val afterGone: MutableList<String> = Collections.synchronizedList(mutableListOf())
     private lateinit var clip: ByteArray
     private val context get() = ApplicationProvider.getApplicationContext<Context>()
     private val graph get() = ShoalwatchApp.graph(context)
@@ -109,6 +115,10 @@ class DownloadSmokeTest {
             val empty = """{"Items":[],"TotalRecordCount":0,"StartIndex":0}"""
             mock.dispatcher = object : Dispatcher() {
                 override fun dispatch(request: RecordedRequest): MockResponse {
+                    if (serverGone) {
+                        afterGone += request.path.orEmpty().substringBefore('?')
+                        return MockResponse().setResponseCode(503)
+                    }
                     requests += request
                     val path = request.path.orEmpty().substringBefore('?')
                     return when {
@@ -233,8 +243,7 @@ class DownloadSmokeTest {
         assertTrue("the poster is pinned", runBlocking { graph.pinnedArtwork.has(serverId, clipId, ArtworkSlot.PRIMARY, "tag1") })
 
         // The server goes away. Downloads lists the film from the phone, its poster from the pinned copy.
-        mock.shutdown()
-        val served = requests.size
+        serverGone = true
         back() // the detail page -> Home
         waitFor { shown(string(R.string.nav_downloads)) }
         compose.onAllNodes(hasText(string(R.string.nav_downloads))).onFirst().performClick()
@@ -258,7 +267,11 @@ class DownloadSmokeTest {
         // Back out: the offline play is kept for this profile; nothing reached the (stopped) server.
         back()
         waitFor(timeoutMs = 10_000) { (runBlocking { graph.database.offlinePlayDao().get(serverId, userId, clipId) }?.positionMs ?: 0) > 0 }
-        assertEquals("no request reached the stopped server", served, requests.size)
+        val asked = synchronized(afterGone) { afterGone.toList() }
+        assertTrue(
+            "nothing asked the gone server for the film, a playback session or a report: $asked",
+            asked.none { p -> p.contains("/Download", true) || p.startsWith("/Videos/", true) || p.contains("PlaybackInfo", true) || p.startsWith("/Sessions/Playing", true) },
+        )
 
         // Removing the account deletes its download and the folder with it.
         runBlocking { graph.serverStore.removeAccount(serverId, userId) }
