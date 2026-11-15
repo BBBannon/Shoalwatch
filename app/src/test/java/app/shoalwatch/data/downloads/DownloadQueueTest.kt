@@ -121,6 +121,7 @@ class DownloadQueueTest : DownloadQueueTestBase() {
         playable()
         drain()
         val before = files.calls.size
+        clock += 1 // A is the earlier owner, so A fetches first
         seen(s1u2, f1)
         runBlocking { store.add(s1u2, listOf(shareDownload(f1))) } // another profile adds the copy that is already here
         assertEquals(QueueRun.Drained, drain())
@@ -239,6 +240,29 @@ class DownloadQueueTest : DownloadQueueTestBase() {
         assertEquals(DownloadQuality.LOW, row.quality)
         assertEquals("hls", row.container)
         assertNotNull(row.mediaSourceId)
+    }
+
+    @Test fun aConversionOpenedUnderOneProfileIsNeverReusedUnderAnothers() {
+        queued(a, f1, quality = DownloadQuality.MEDIUM)
+        clock += 1 // A is the earlier owner, so A fetches first
+        seen(s1u2, f1)
+        runBlocking { store.add(s1u2, listOf(shareDownload(f1))) } // B shares the same row: same request, same quality
+        convertible()
+        hls.onSegment = { n -> if (n == 2) runBlocking { store.setPaused(a, f1.id, true) } }
+        val q = queue()
+        drain(q)
+        assertEquals(DownloadState.PAUSED, download(f1)!!.state)
+        assertEquals("A opened it", 1, hls.opens.size)
+        hls.onSegment = {}
+        runBlocking { store.removeOwner(a, f1.id) }
+        assertNotNull("the row stays for B", download(f1))
+        runBlocking { store.setPaused(s1u2, f1.id, false) }
+        clock += 60_000 // well inside the 30 minutes a conversion is remembered
+        convertible()
+        assertEquals(QueueRun.Drained, drain(q))
+        assertEquals("B's drain opens its own conversion, under its own sign-in", 2, hls.opens.size)
+        assertEquals("from the first segment", 0, hls.fetches.last().second)
+        assertEquals(DownloadState.COMPLETE, download(f1)!!.state)
     }
 
     @Test fun aRowWithNoContainerOrMediaSourceIsNeverMarkedComplete() {

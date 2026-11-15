@@ -28,9 +28,18 @@ internal class QueueJob(val key: DownloadKey, val position: Int, val of: Int, va
 internal class QueueFetched(val entry: File, val hls: Boolean, val shape: List<Long>?, val audioListed: Boolean)
 
 /**
- * A remembered conversion, with the request of the row it was opened for (Tasks 11-12 review I-4): it is reused only for that
- * same row (same `requestedAt`, same quality, its container already HLS), never for a new row of the same item.
+ * A remembered conversion, with the request of the row it was opened for (Tasks 11-12 review I-4) and the account that opened
+ * it (Tasks 13-16 review M-3): it is reused only for that same row (same `requestedAt`, same quality, its container already HLS)
+ * fetched by that same account, never for a new row of the same item and never under another profile's sign-in.
  */
-internal class HeldConversion(val conv: LiveConversion, private val requestedAt: Long, private val quality: DownloadQuality) {
-    fun isFor(row: app.shoalwatch.data.db.downloads.DownloadEntity) = row.requestedAt == requestedAt && row.quality == quality && row.container == QueueSpace.HLS
+internal class HeldConversion(
+    val conv: LiveConversion,
+    private val requestedAt: Long,
+    private val quality: DownloadQuality,
+    private val fetcher: app.shoalwatch.data.servers.Session,
+) {
+    fun isFor(row: app.shoalwatch.data.db.downloads.DownloadEntity, s: app.shoalwatch.data.servers.Session) =
+        s == fetcher && row.requestedAt == requestedAt && row.quality == quality && row.container == QueueSpace.HLS
+
+    override fun toString() = "HeldConversion(<redacted>)"
 }

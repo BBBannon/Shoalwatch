@@ -205,7 +205,7 @@ internal class DownloadQueue(
         var rerouted = false
         while (true) {
             val row = current(key)
-            val held = live[key]?.takeIf { it.isFor(row) && clock.nowMs() - it.conv.startedAtMs < liveConversionMaxAgeMs }
+            val held = live[key]?.takeIf { it.isFor(row, s) && clock.nowMs() - it.conv.startedAtMs < liveConversionMaxAgeMs }
             var conv = held?.conv
             var from = row.segmentsDone
             var audioListed = true
@@ -229,7 +229,7 @@ internal class DownloadQueue(
                     if (result.kind != AppError.Kind.OFFLINE || rerouted) throw QueueEnds(retry(key, result.kind))
                     rerouted = true
                     val again = server(key) { resolver.reroute(conv.resolved) }
-                    live[key] = HeldConversion(LiveConversion(conv.itemId, again, conv.segments, conv.startedAtMs, conv.space, conv.budgetBytes, conv.bytesPerSecond), row.requestedAt, row.quality)
+                    live[key] = HeldConversion(LiveConversion(conv.itemId, again, conv.segments, conv.startedAtMs, conv.space, conv.budgetBytes, conv.bytesPerSecond), row.requestedAt, row.quality, s)
                 }
             }
         }
@@ -264,7 +264,7 @@ internal class DownloadQueue(
             it.copy(segmentsDone = 0, segmentsTotal = opened.segments.size, mediaSourceId = plan.mediaSourceId, container = HLS,
                 doneBytes = 0, totalBytes = null, validator = null, audioIndex = own.firstOrNull()?.index ?: it.audioIndex)
         }
-        live[key] = HeldConversion(opened, row.requestedAt, row.quality)
+        live[key] = HeldConversion(opened, row.requestedAt, row.quality, s)
         return opened to own.isNotEmpty()
     }
 
