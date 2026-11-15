@@ -122,7 +122,7 @@ internal class DownloadPlanner(
             else skip(SkipReason.CONVERSION_UNCONFIRMED)
         }
         val check = try {
-            OriginalChecks.of(gate.withPermit { checkOriginal(s, item.id) })
+            OriginalChecks.of(gate.withPermit { checkOriginal(s, item.id) }, item.id)
         } catch (e: AppError) {
             when (e.kind) {
                 AppError.Kind.FORBIDDEN, AppError.Kind.PLAYBACK_NOT_ALLOWED -> return skip(SkipReason.NOT_ALLOWED)

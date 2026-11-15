@@ -44,6 +44,16 @@ class DownloadGatewayTest : DownloadGatewayTestBase() {
         )
     }
 
+    /** Tasks 5-8 review I-4: the source whose Id is the item's (the file /Download sends) wins over a wider one listed first. */
+    @Test fun theSourceWhoseIdIsTheItemsIsChosenOverOneListedFirst() {
+        val wide = """{"Id":"${id(9, 'b')}","Container":"mkv","Size":9000000000,"ETag":"wide"}"""
+        val own = """{"Id":"${id(1)}","Container":"mov,mp4","Size":1000,"ETag":"own"}"""
+        val got = facts("""{"Items":[{"Id":"${id(1)}","CanDownload":true,"MediaSources":[$wide,$own]},
+            {"Id":"${id(2)}","CanDownload":true,"MediaSources":[$wide]}]}""", listOf(id(1), id(2)))
+        assertEquals(DownloadFacts(id(1), true, sourceId = id(1), container = "mov", sizeBytes = 1000, eTag = "own"), got[0])
+        assertEquals("none of the item's id: the first", id(9, 'b'), got[1].sourceId)
+    }
+
     @Test fun anIdTheServerDidNotReturnIsAbsent() {
         val got = facts("""{"Items":[{"Id":"${id(1)}","CanDownload":true}]}""", listOf(id(1), id(9)))
         assertEquals(listOf(id(1)), got.map { it.itemId })

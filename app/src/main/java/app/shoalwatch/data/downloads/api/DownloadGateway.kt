@@ -15,7 +15,7 @@ import kotlinx.serialization.json.longOrNull
 
 /**
  * What the server says about downloading an item, validated. [canDownload]: true, false, or null when the server did not say
- * (Task 1's rule: null allows the original only). [sourceId], [eTag]: `MediaSources[0]`'s, `[A-Za-z0-9]{1,64}` else null.
+ * (Task 1's rule: null allows the original only). [sourceId], [eTag]: the item's own source's (its `Id` is the item's), else the first's; `[A-Za-z0-9]{1,64}` else null.
  * [container]: its first comma-separated name, lower-cased, `[a-z0-9]{1,16}` else null. [sizeBytes]: 1..256 GiB else null.
  * [eTag] is a change hint only; it is never sent as `If-Range` (only a validator from an earlier response for the same file is).
  */
@@ -63,7 +63,9 @@ internal class DownloadGatewayImpl(private val api: ServerApi) : DownloadGateway
 /** Null when the item's own id is not a GUID (it is dropped). */
 private fun DownloadItemDto.toFacts(): DownloadFacts? {
     val itemId = JellyfinId.parseOrNull(id)?.value ?: return null
-    val source = (mediaSources as? JsonArray)?.firstOrNull()?.decodeOrNull(DownloadSourceDto.serializer())
+    // The item's own source (its Id is the item's: the file /Items/{id}/Download sends), else the first (review I-4).
+    val sources = (mediaSources as? JsonArray)?.take(MAX_SOURCES)?.map { it.decodeOrNull(DownloadSourceDto.serializer()) }.orEmpty()
+    val source = sources.firstOrNull { it != null && JellyfinId.parseOrNull(it.id.orEmpty())?.value == itemId } ?: sources.firstOrNull()
     return DownloadFacts(
         itemId = itemId,
         canDownload = (canDownload as? JsonPrimitive)?.takeIf { !it.isString }?.booleanOrNull,
@@ -81,4 +83,5 @@ private fun <T : Any> JsonElement.decodeOrNull(deserializer: DeserializationStra
 }
 
 private val CONTAINER = Regex("[a-z0-9]{1,16}")
+private const val MAX_SOURCES = 64
 private const val MAX_SIZE = 256L * 1024 * 1024 * 1024

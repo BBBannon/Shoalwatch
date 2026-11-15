@@ -5,6 +5,7 @@ import app.shoalwatch.data.playback.AudioTrack
 import app.shoalwatch.data.playback.MediaPaths
 import app.shoalwatch.data.playback.SubtitleTrack
 import app.shoalwatch.data.playback.api.PlaybackInfo
+import app.shoalwatch.data.servers.JellyfinId
 
 /** Can the original file play on this phone as it is (pure, over a `checkOriginal` answer)? */
 internal sealed interface OriginalCheck {
@@ -19,14 +20,16 @@ internal sealed interface OriginalCheck {
 
 internal object OriginalChecks {
     /**
-     * The server's first source: Playable when it `SupportsDirectPlay` (with this phone's profile) and its container is one the
+     * The item's own source (the one whose id is [itemId]: the file `/Items/{id}/Download` sends; Jellyfin may list a wider
+     * alternate version first, Tasks 5-8 review I-4), else the first: Playable when it `SupportsDirectPlay` (with this phone's profile) and its container is one the
      * app saves; otherwise (or with no source) NotPlayableHere. A refusal (`NotAllowed`, `NoCompatibleStream`, `RateLimitExceeded`)
      * is thrown as its AppError. Jellyfin reports MP4 as the list `mov,mp4,m4a,...`: `mp4` is chosen when listed, else the
      * first listed name the app saves.
      */
-    fun of(info: PlaybackInfo): OriginalCheck {
+    fun of(info: PlaybackInfo, itemId: String): OriginalCheck {
         info.refusal?.let { throw AppError.of(it) }
-        val source = info.sources.firstOrNull() ?: return OriginalCheck.NotPlayableHere
+        val source = info.sources.firstOrNull { JellyfinId.parseOrNull(it.id)?.value == itemId } ?: info.sources.firstOrNull()
+            ?: return OriginalCheck.NotPlayableHere
         if (!source.supportsDirectPlay || !MediaPaths.isSafeId(source.id)) return OriginalCheck.NotPlayableHere
         val names = source.container?.split(',')?.map { it.trim() }.orEmpty()
         val container = (if ("mp4" in names) "mp4" else names.firstOrNull { it in DownloadPaths.MEDIA_EXTENSIONS })
