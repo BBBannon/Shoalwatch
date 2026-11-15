@@ -17,6 +17,7 @@ import threading
 import time
 import struct
 import zlib
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlsplit
@@ -26,6 +27,8 @@ USER_ID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 USER_NAME, PASSWORD = "ben", "test-password"
 TICKS = 10_000_000  # Jellyfin ticks per second
 NOW = datetime.now(timezone.utc).replace(microsecond=0)
+MEDIA_DIR = Path(__file__).resolve().parent / "media"
+REPORTS = []  # playback reports received, newest last (read back at /mock/reports)
 TOKEN_RE = re.compile(r'Token="([^"]*)"')
 
 
@@ -92,6 +95,87 @@ def build_catalogue():
                 add({"Id": guid(f"episode-{s}-{sn}-{ep}"), "Type": "Episode", "Name": f"Episode {ep}", "ParentId": season["Id"], "Index": ep,
                      "ParentIndex": sn, "SeriesId": series["Id"], "SeriesName": title, "SeasonId": season["Id"], "SeasonName": season["Name"],
                      "Runtime": 45 * 60 * TICKS, "Overview": f"Episode {ep} of season {sn} of {title}.", "Aspect": 1.778, "Year": 2015 + s * 3 + sn})
+
+
+# ----------------------------------------------------------------- playback
+PLAYED_AT = 0.9  # a stop past this share of the runtime marks the item played
+CLIP_TICKS = 10 * TICKS  # the committed clip is ten seconds long
+SUBTITLES = {2: ("sample.srt", "text/plain; charset=utf-8"), 3: ("styled.ass", "text/x-ssa; charset=utf-8")}
+ID_RE = re.compile(r"[0-9a-fA-F-]{32,36}")
+RANGE_RE = re.compile(r"bytes=(\d*)-(\d*)")
+SUBTITLE_FILE_RE = re.compile(r"stream\.\w+")
+HLS_SEGMENT_RE = re.compile(r"hls/(seg\d+\.ts)")
+
+
+def playable(item):
+    return item["Type"] in ("Movie", "Episode")
+
+
+def flag(body, q, name):
+    """EnableDirectPlay and friends: the 12.4.0 reference has them in the body (PlaybackInfoDto) and also lists them as query values."""
+    if isinstance(body.get(name), bool):
+        return body[name]
+    return q.get(name.lower(), ["true"])[0].lower() != "false"
+
+
+def media_source(item_id, direct_play, direct_stream, play_session_id):
+    streams = [
+        {"Index": 0, "Type": "Video", "Codec": "h264", "Profile": "Constrained Baseline", "Width": 320, "Height": 180, "BitDepth": 8, "VideoRange": "SDR",
+         "VideoRangeType": "SDR", "AverageFrameRate": 24.0, "RealFrameRate": 24.0, "IsDefault": True, "IsExternal": False, "DisplayTitle": "180p H264 SDR"},
+        {"Index": 1, "Type": "Audio", "Codec": "aac", "Language": "eng", "Channels": 1, "SampleRate": 48000, "IsDefault": True, "IsExternal": False,
+         "DisplayTitle": "English - AAC - Mono - Default"},
+        {"Index": 2, "Type": "Subtitle", "Codec": "subrip", "Language": "eng", "IsExternal": True, "IsTextSubtitleStream": True,
+         "SupportsExternalStream": True, "DeliveryMethod": "External", "IsDefault": False, "DisplayTitle": "English - SubRip - External"},
+        {"Index": 3, "Type": "Subtitle", "Codec": "ass", "Language": "jpn", "IsExternal": True, "IsTextSubtitleStream": True,
+         "SupportsExternalStream": True, "DeliveryMethod": "External", "IsDefault": False, "DisplayTitle": "Japanese - ASS - External"},
+    ]
+    source = {"Protocol": "File", "Id": item_id, "Type": "Default", "Container": "mp4", "Name": ITEMS[item_id]["Name"], "RunTimeTicks": CLIP_TICKS,
+              "Size": (MEDIA_DIR / "clip.mp4").stat().st_size, "Bitrate": 1_000_000, "IsRemote": False, "SupportsTranscoding": True,
+              "SupportsDirectPlay": direct_play, "SupportsDirectStream": direct_stream, "MediaStreams": streams, "HasSegments": True,
+              "DefaultAudioStreamIndex": 1}
+    if not direct_play:
+        source["TranscodingUrl"] = (f"/videos/{item_id}/master.m3u8?MediaSourceId={item_id}&PlaySessionId={play_session_id}"
+                                    "&TranscodeReasons=ContainerBitrateExceedsLimit&api_key=MOCKLEAK")  # api_key is deliberate: the app must strip it
+        source["TranscodingSubProtocol"] = "hls"
+        source["TranscodingContainer"] = "ts"
+    return source
+
+
+def json_body(raw):
+    try:
+        body = json.loads(raw or b"{}")
+    except ValueError:
+        raise BadRequest("body")
+    if not isinstance(body, dict):
+        raise BadRequest("body")
+    return body
+
+
+def record_report(kind, body):
+    """Keep the report for /mock/reports; a real stop also moves the item's played flag or resume position."""
+    row = {"Kind": kind, **{k: body.get(k) for k in ("ItemId", "PositionTicks", "IsPaused", "PlayMethod", "Failed", "PlaySessionId")}}
+    with LOCK:
+        REPORTS.append(row)
+        item = ITEMS.get(norm(str(body.get("ItemId") or "")))
+        ticks = body.get("PositionTicks")
+        if kind == "stopped" and item and isinstance(ticks, int) and not body.get("Failed"):
+            # Measured against the clip that is actually served (PlaybackInfo says CLIP_TICKS), not the catalogue runtime.
+            if ticks > CLIP_TICKS * PLAYED_AT:
+                mark(item["Id"], played=True, pos=0, count=user_state(item["Id"])["count"] + 1, stamp=True)
+            else:
+                mark(item["Id"], played=False, pos=max(ticks, 0), stamp=True)
+
+
+def byte_range(header, size):
+    """(start, end) inclusive for one 'bytes=' range; None when there is no usable header; 'bad' when it cannot be met."""
+    found = RANGE_RE.fullmatch(header.strip()) if header else None
+    if not found or not (found[1] or found[2]):
+        return None
+    if not found[1]:  # suffix: the last N bytes
+        return (max(size - int(found[2]), 0), size - 1) if int(found[2]) else "bad"
+    start = int(found[1])
+    end = min(int(found[2]), size - 1) if found[2] else size - 1
+    return "bad" if start >= size or end < start else (start, end)
 
 
 STATE, LOCK = {}, threading.RLock()
@@ -282,7 +366,7 @@ def png(item, width, height):
 
 
 # ------------------------------------------------------------------- server
-CONFIG = {"latency": 0.0, "fail_rate": 0.0}
+CONFIG = {"latency": 0.0, "fail_rate": 0.0, "refuse": False}
 TOKENS = set()
 
 
@@ -357,10 +441,81 @@ class Handler(BaseHTTPRequestHandler):
         if not self.authenticated(method, path, q, raw):
             return self.reply(404)
 
+    def playback(self, method, path, q, raw):
+        """Playback routes. Returns None when the path is not one of them."""
+        segs = path.strip("/").split("/")
+        low = [x.lower() for x in segs]
+        item = lambda i: ITEMS.get(norm(i)) if ID_RE.fullmatch(i) else None
+        if method == "GET" and low == ["mock", "reports"]:
+            return self.reply(200, list(REPORTS))
+        if method == "POST" and low[:2] == ["sessions", "playing"] and len(segs) <= 3:
+            kind = {"": "start", "progress": "progress", "stopped": "stopped", "ping": "ping"}.get(low[2] if len(segs) == 3 else "")
+            if kind is None:
+                return None
+            body = {"PlaySessionId": q.get("playsessionid", [None])[0]} if kind == "ping" else json_body(raw)
+            record_report(kind, body)
+            return self.reply(204)
+        if method == "GET" and low[0] == "mediasegments" and len(segs) == 2:
+            target = item(segs[1])
+            if not target or not playable(target):
+                return self.reply(404)
+            spans = (("Intro", 1, 3), ("Outro", 8, 10))
+            return self.reply(200, {"Items": [{"Id": guid(f"segment-{kind}-{target['Id']}"), "ItemId": target["Id"], "Type": kind,
+                                               "StartTicks": a * TICKS, "EndTicks": b * TICKS} for kind, a, b in spans],
+                                    "TotalRecordCount": len(spans), "StartIndex": 0})
+        if method == "POST" and low[0] == "items" and len(segs) == 3 and low[2] == "playbackinfo":
+            target = item(segs[1])
+            if not target or not playable(target):
+                return self.reply(404)
+            body = json_body(raw)
+            if CONFIG["refuse"]:
+                return self.reply(200, {"MediaSources": [], "ErrorCode": "NotAllowed"})
+            session = secrets.token_hex(16)
+            source = media_source(target["Id"], flag(body, q, "EnableDirectPlay"), flag(body, q, "EnableDirectStream"), session)
+            return self.reply(200, {"MediaSources": [source], "PlaySessionId": session})
+        target = item(segs[1]) if method == "GET" and low[0] == "videos" and len(segs) > 1 else None
+        if target and playable(target):
+            if len(segs) == 3 and low[2] == "stream":
+                if any(name in ("api_key", "apikey") for name in q):  # q names are already lower-cased
+                    return self.reply(400)  # the app must never put a key in a URL
+                return self.clip(self.headers.get("Range", ""))
+            if len(segs) == 6 and low[3] == "subtitles" and SUBTITLE_FILE_RE.fullmatch(low[5]) and segs[4].isdigit() and int(segs[4]) in SUBTITLES:
+                name, content_type = SUBTITLES[int(segs[4])]
+                return self.reply(200, raw=(MEDIA_DIR / name).read_bytes(), content_type=content_type)
+            if segs[0] == "videos":  # the lower-case path the mock puts in its own TranscodingUrl
+                return self.hls("/".join(segs[2:]))
+        return None
+
+    def hls(self, rest):
+        if rest == "master.m3u8":
+            playlist = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=300000,RESOLUTION=320x180\nhls/main.m3u8\n"
+            return self.reply(200, raw=playlist.encode(), content_type="application/vnd.apple.mpegurl")
+        if rest == "hls/main.m3u8":
+            return self.reply(200, raw=(MEDIA_DIR / "hls" / "main.m3u8").read_bytes(), content_type="application/vnd.apple.mpegurl")
+        found = HLS_SEGMENT_RE.fullmatch(rest)
+        if found and (MEDIA_DIR / "hls" / found[1]).is_file():
+            return self.reply(200, raw=(MEDIA_DIR / "hls" / found[1]).read_bytes(), content_type="video/mp2t")
+        return self.reply(404)
+
+    def clip(self, range_header):
+        data = (MEDIA_DIR / "clip.mp4").read_bytes()
+        span = byte_range(range_header, len(data))
+        headers = {"Accept-Ranges": "bytes"}
+        if span == "bad":
+            return self.reply(416, headers={**headers, "Content-Range": f"bytes */{len(data)}"})
+        if span is None:
+            return self.reply(200, raw=data, headers=headers, content_type="video/mp4")
+        start, end = span
+        headers["Content-Range"] = f"bytes {start}-{end}/{len(data)}"
+        return self.reply(206, raw=data[start:end + 1], headers=headers, content_type="video/mp4")
+
     def authenticated(self, method, path, q, raw):
         segs = [x.lower() if n in (0, 2) else x for n, x in enumerate(path.strip("/").split("/"))]
         low = path.lower()
         item = lambda i: ITEMS.get(norm(i))
+        handled = self.playback(method, path, q, raw)
+        if handled:
+            return handled
         if method == "GET":
             if low == "/users/me":
                 return self.reply(200, {"Name": USER_NAME, "ServerId": SERVER_ID, "Id": USER_ID, "HasPassword": True})
@@ -424,11 +579,12 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     parser = argparse.ArgumentParser(description="Test stand-in for Jellyfin (not Jellyfin).")
     parser.add_argument("port", nargs="?", type=int, default=8096)
-    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--host", default="127.0.0.1")  # loopback only unless asked; the emulator reaches it as 10.0.2.2
     parser.add_argument("--latency-ms", type=int, default=0, help="delay every response by this many milliseconds")
     parser.add_argument("--fail-rate", type=float, default=0.0, help="fraction (0 to 1) of signed-in requests answered with a 500")
+    parser.add_argument("--refuse", action="store_true", help="answer every PlaybackInfo request with ErrorCode NotAllowed")
     args = parser.parse_args()
-    CONFIG.update(latency=args.latency_ms / 1000, fail_rate=args.fail_rate)
+    CONFIG.update(latency=args.latency_ms / 1000, fail_rate=args.fail_rate, refuse=args.refuse)
     build_catalogue()
     seed_state()
     print(f"Mock Jellyfin (test stand-in) on {args.host}:{args.port}; user {USER_NAME}", flush=True)

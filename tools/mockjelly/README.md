@@ -1,6 +1,6 @@
 # mockjelly: a Jellyfin stand-in for testing Shoalwatch
 
-**This is a test stand-in, not Jellyfin.** It answers just enough of the Jellyfin API (shapes from the official 12.4.0 OpenAPI reference in `docs/reference/`) for emulator walkthroughs of browsing. It has no TLS and no real security. Never expose it beyond your own machine or LAN.
+**This is a test stand-in, not Jellyfin.** It answers just enough of the Jellyfin API (shapes from the official 12.4.0 OpenAPI reference in `docs/reference/`) for emulator walkthroughs of browsing and playback. It has no TLS and no real security. Never expose it beyond your own machine or LAN.
 
 ## Run
 
@@ -14,8 +14,9 @@ python -I tools/mockjelly/mock_jellyfin.py 8096
 | Flag | Effect |
 |---|---|
 | `port` (first argument, default 8096) | Port to listen on |
-| `--host H` | Address to bind (default `0.0.0.0`) |
+| `--host H` | Address to bind (default `127.0.0.1`, this PC only; an emulator reaches it as `10.0.2.2`) |
 | `--latency-ms N` | Delay every response by N ms |
+| `--refuse` | Answer every `PlaybackInfo` request with `ErrorCode` `NotAllowed` (to see the app's refusal state) |
 | `--fail-rate P` | Answer a fraction P (0 to 1) of signed-in requests with a 500, to see error states. Sign-in and `/System/Info/Public` are never failed |
 
 ## Connect from the app
@@ -49,6 +50,22 @@ Need `Authorization: MediaBrowser ..., Token="..."` with a token this server iss
 - Query parameter names, path segments and the values of `sortBy`, `sortOrder`, `filters` and `includeItemTypes` are matched case-insensitively, and ids may have dashes. An invalid `limit`, `startIndex` or image size is a 400.
 - Each request logs one line: method, path (no query), `auth=yes|no`, `token=yes|no`, `status=N`. Tokens and passwords are never printed.
 
+## Playback routes
+
+All need a token (401 otherwise). Playable items are every film and every episode; anything else is 404. The committed test clip is a 10-second, 320x180 H.264/AAC file made by `media/make_media.ps1` (ffmpeg built-in test sources only; checksums in `media/CHECKSUMS.txt`). Note the catalogue still reports film and episode runtimes in minutes, while the clip is 10 s long: playback ends at 10 s.
+
+| Route | Behaviour |
+|---|---|
+| `POST /Items/{id}/PlaybackInfo` | One `MediaSourceInfo` (`Id` = item id, mp4, `RunTimeTicks` 100000000, h264 SDR video, aac `eng` audio at index 1, external SubRip `eng` at index 2, external ASS `jpn` at index 3, `HasSegments`). `SupportsDirectPlay`/`SupportsDirectStream` follow `EnableDirectPlay`/`EnableDirectStream` from the body (the 12.4.0 reference also lists them as query values, so those are read too; default true). With direct play off, `TranscodingUrl` is `/videos/{id}/master.m3u8?...&api_key=MOCKLEAK` (the `api_key` is **deliberate**: the app must strip it) and `TranscodingSubProtocol` is `hls`. `PlaySessionId` is fresh 32-hex each time. |
+| `GET /Videos/{id}/stream?static=true&mediaSourceId=&tag=` | The clip with `Accept-Ranges: bytes`; `Range` gets `206` with `Content-Range` (open-ended and suffix ranges work, an unsatisfiable one is 416). **400** if any `api_key` or `ApiKey` query name is present, which proves the app never sends one. |
+| `GET /videos/{id}/master.m3u8`, `/videos/{id}/hls/main.m3u8`, `/videos/{id}/hls/seg{n}.ts` | Pre-cut HLS (five 2-second segments). These paths are the mock's own, not a documented Jellyfin route. |
+| `GET /Videos/{id}/{mediaSourceId}/Subtitles/{index}/Stream.{format}` | Index 2 is `sample.srt` (`text/plain`), index 3 is `styled.ass`; any other index is 404. |
+| `POST /Sessions/Playing`, `/Sessions/Playing/Progress`, `/Sessions/Playing/Stopped`, `/Sessions/Playing/Ping?playSessionId=` | 204. Each report is kept in memory. A `Stopped` with `PositionTicks` past 90% of the item's runtime marks it played; otherwise it sets the resume position (so Continue Watching shows it). `Failed: true` records the report but moves nothing. A body that is not a JSON object is 400. |
+| `GET /MediaSegments/{id}` | An `Intro` (1 s to 3 s) and an `Outro` (8 s to 10 s), in ticks. |
+| `GET /mock/reports` | **Not a Jellyfin route; test only.** The recorded reports as JSON (`Kind`, `ItemId`, `PositionTicks`, `IsPaused`, `PlayMethod`, `Failed`, `PlaySessionId`). No tokens are stored. Needs a token. |
+
+Run the tests with `python -I tools/mockjelly/test_mock_jellyfin.py`. They start the server in-process on a free local port (127.0.0.1).
+
 ## Try it by hand
 
 ```
@@ -60,4 +77,22 @@ curl -H "Authorization: MediaBrowser Token=\"<AccessToken>\"" "http://127.0.0.1:
 curl -H "Authorization: MediaBrowser Token=\"<AccessToken>\"" http://127.0.0.1:8096/UserItems/Resume
 curl -H "Authorization: MediaBrowser Token=\"<AccessToken>\"" http://127.0.0.1:8096/Shows/NextUp
 curl -H "Authorization: MediaBrowser Token=\"<AccessToken>\"" -o poster.png "http://127.0.0.1:8096/Items/<item id>/Images/Primary?maxWidth=300"
+```
+
+Playback (set `T` to the token, `ID` to a film id from `/Items`):
+
+```
+H="Authorization: MediaBrowser Token=\"$T\""
+curl -H "$H" -X POST -H "Content-Type: application/json" -d "{\"EnableDirectPlay\":false}" http://127.0.0.1:8096/Items/$ID/PlaybackInfo
+curl -H "$H" -H "Range: bytes=100-199" -o part.bin "http://127.0.0.1:8096/Videos/$ID/stream?static=true&mediaSourceId=$ID&tag=x"
+curl -H "$H" http://127.0.0.1:8096/videos/$ID/master.m3u8
+curl -H "$H" http://127.0.0.1:8096/videos/$ID/hls/main.m3u8
+curl -H "$H" -o seg0.ts http://127.0.0.1:8096/videos/$ID/hls/seg0.ts
+curl -H "$H" http://127.0.0.1:8096/Videos/$ID/$ID/Subtitles/2/Stream.srt
+curl -H "$H" -X POST -H "Content-Type: application/json" -d "{\"ItemId\":\"$ID\",\"PositionTicks\":30000000}" http://127.0.0.1:8096/Sessions/Playing/Stopped
+curl -H "$H" -X POST -H "Content-Type: application/json" -d "{\"ItemId\":\"$ID\",\"PositionTicks\":10000000}" http://127.0.0.1:8096/Sessions/Playing/Progress
+curl -H "$H" -X POST -H "Content-Type: application/json" -d "{\"ItemId\":\"$ID\"}" http://127.0.0.1:8096/Sessions/Playing
+curl -H "$H" -X POST "http://127.0.0.1:8096/Sessions/Playing/Ping?playSessionId=abc"
+curl -H "$H" http://127.0.0.1:8096/MediaSegments/$ID
+curl -H "$H" http://127.0.0.1:8096/mock/reports
 ```
