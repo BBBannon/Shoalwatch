@@ -42,6 +42,7 @@ class BrowseNavigationTest {
                     series = { id, s, e -> arrived += "series:$id|$s|$e" },
                     item = { id -> arrived += "item:$id" },
                     player = { id, from -> arrived += "play:$id|$from" },
+                    downloadedSeries = { id -> arrived += "downloaded:$id" },
                 )
             }
         }
@@ -72,6 +73,17 @@ class BrowseNavigationTest {
 
     @Test fun emptyStringsAreTreatedAsAbsent() {
         assertEquals("series:$series|null|null", open(Destination.Series(series, "", "")))
+    }
+
+    @Test fun aDownloadedSeriesArrivesWithItsIdAndAMalformedOneArrivesAsItIs() {
+        arrived.clear()
+        rule.runOnUiThread { nav.navigate(Routes.downloadedSeries(series)) }
+        rule.waitForIdle()
+        assertEquals("downloaded:$series", arrived.last())
+        arrived.clear()
+        rule.runOnUiThread { nav.navigate(Routes.downloadedSeries("../not an id")) }
+        rule.waitForIdle()
+        assertEquals("the screen gets it and the seam answers it as empty (no longer available)", "downloaded:../not an id", arrived.last())
     }
 
     @Test fun anItemArrivesWithItsId() {

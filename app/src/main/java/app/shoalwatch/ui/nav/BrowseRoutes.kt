@@ -9,7 +9,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import app.shoalwatch.AppGraph
 import app.shoalwatch.data.playback.PlaybackState
-import app.shoalwatch.data.playback.StartFrom
 import app.shoalwatch.ui.player.HostLifecycle
 import app.shoalwatch.ui.player.PlayerActions
 import app.shoalwatch.ui.player.PlayerScreen
@@ -36,7 +35,13 @@ import app.shoalwatch.ui.series.SeriesActions
 import app.shoalwatch.ui.series.SeriesScreen
 import app.shoalwatch.ui.series.SeriesViewModel
 import app.shoalwatch.ui.shell.AppShell
-import app.shoalwatch.ui.shell.DownloadsScreen
+import app.shoalwatch.ui.downloads.DownloadsActions
+import app.shoalwatch.ui.downloads.DownloadsScreen
+import app.shoalwatch.ui.downloads.DownloadsViewModel
+import app.shoalwatch.ui.downloads.OfflineSeriesActions
+import app.shoalwatch.ui.downloads.OfflineSeriesScreen
+import app.shoalwatch.ui.downloads.OfflineSeriesViewModel
+import app.shoalwatch.data.playback.StartFrom
 import app.shoalwatch.ui.shell.Tab
 
 /*
@@ -184,8 +189,30 @@ internal fun SearchRoute(graph: AppGraph, nav: NavHostController) {
 
 @Composable
 internal fun DownloadsRoute(graph: AppGraph, nav: NavHostController) {
+    val vm = graphViewModel { DownloadsViewModel(graph.serverCatalog, graph.addressSelector, graph.downloads) { s -> graph.downloadHousekeeping.reconfirm(s) } }
+    val state by vm.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
-    AppShell(Tab.DOWNLOADS, nav::switchTab, snackbar) { DownloadsScreen() }
+    val actions = remember(vm, nav) {
+        DownloadsActions(
+            onOpenItem = { nav.navigate(Routes.item(it)) },
+            onOpenSeries = { nav.navigate(Routes.downloadedSeries(it)) },
+            onSignIn = { nav.navigate(Routes.signIn(it)) },
+            onPause = vm::pause, onResume = vm::resume, onRetry = vm::retry,
+            onAskRemove = vm::askRemove, onConfirmRemove = vm::confirmRemove, onCancelRemove = vm::cancelRemove,
+            onPauseAll = vm::pauseAll, onResumeAll = vm::resumeAll, onTryAgain = vm::tryAgain,
+        )
+    }
+    AppShell(Tab.DOWNLOADS, nav::switchTab, snackbar) { DownloadsScreen(state, actions, vm.messages, snackbar) }
+}
+
+@Composable
+internal fun OfflineSeriesRoute(graph: AppGraph, nav: NavHostController, seriesId: String) {
+    val vm = graphViewModel(key = "downloads:$seriesId") { OfflineSeriesViewModel(seriesId, graph.serverCatalog, graph.downloads) }
+    val state by vm.state.collectAsStateWithLifecycle()
+    val actions = remember(nav) {
+        OfflineSeriesActions(onBack = { nav.popBackStack() }, onOpenItem = { nav.navigate(Routes.item(it)) }, onPlay = { nav.navigate(Routes.player(it, StartFrom.RESUME)) })
+    }
+    OfflineSeriesScreen(state, actions)
 }
 
 /**

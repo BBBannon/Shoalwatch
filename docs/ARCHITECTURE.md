@@ -337,6 +337,17 @@ A finished download is marked COMPLETE only after `DownloadVerifier.verify` says
 
 Tests: `DownloadVerifierTest` (`FakeProbe`, a fake `CodecSupport`, temporary folders), `ItemBytesTest` and `SavedMediaProbeTest` (Robolectric; real Media3 extractors on Milestone 3's clip and its 5 segments, in `app/src/test/resources/media/`).
 
+## Downloads tab (`ui/downloads`, `Routes.DOWNLOADS`, `Routes.DOWNLOADED_SERIES`)
+
+- **One rule: the session.** `DownloadsViewModel` and `OfflineSeriesViewModel` read only through the `Downloads` seam (so the visibility and strict sharing rules apply) for the ACTIVE session; a new session's first state is empty and loading, and anything read for another session is dropped by comparing sessions (as `HomeViewModel`). Actions run as the session on screen; a delete confirm left from another session does nothing; a message belongs to its session (`SessionMessage`). A read that fails is `localFailure` with Try again. The screen makes no network call of its own.
+- **Re-check of shared copies:** each time the active session's server is `Online` while the tab is open (on opening too), `DownloadHousekeeping.reconfirm(session)` runs (the strict rule needs it: other profiles see a shared copy only once their own permission is confirmed, and a later "no" hides it).
+- **Layout:** title "Downloads" (heading) with "Download settings" (48dp, labelled; shown once Task 15's screen exists); **Downloading** (owners only, queue order): each row is ONE element with its whole meaning ("Title, Downloading, 45 percent", with `ProgressBarRangeInfo`), then its own 48dp buttons (Pause / Resume / Retry / Sign in, "Cancel download"), each labelled with its title; the queue line ("Waiting for Wi-Fi", "Waiting for a connection", Android's six-hour pause) and Pause all / Resume all; **Films** (poster grid, A to Z; a ready copy's "more" menu has "Delete download" for owners only; "Downloaded by another profile" and "Insert the SD card…" lines); **TV** (one card per series, "12 episodes · 9.8 GB"); the empty line. One `LazyColumn`, so everything scrolls at font scale 2.0.
+- **Delete:** "Delete this download? This frees 1.8 GB on this phone." (Delete / Cancel); `KeptForOthers` says "Removed from your downloads. It stays on this phone for another profile."
+- **`OfflineSeriesScreen`** (`downloads/series/{seriesId}`): the series' artwork and plain overview, then each season as a heading in order (numbered, unnumbered, Specials, then episodes with no season), its downloaded episodes in order: "S1 E3 · Title", runtime, watched or "23 min left", and a 48dp Play ("Play Season 1, episode 3, Title") to the player, which picks the saved copy. A row opens the detail screen (Room, so it works offline). A malformed or unknown id is "This is no longer available".
+- **`DownloadText`** (`ui/present`, pure): every state and failure line, the conversions' " · High (1080p)", sizes in decimal units with digits 0-9 ("1.8 GB", "640 MB").
+
+Tests: `DownloadsViewModelTest`, `DownloadsRenderTest` and `OfflineSeriesRenderTest` (360x640 and 840x1200, font scale 1.0 and 2.0), `DownloadTextTest` (+ an Arabic-locale run), `BrowseNavigationTest`.
+
 ## Offline playback (`SavedCopies`, `SavedPlans`, `SavedFirstPlaybackGateway`, `LocalPlaybackReports`, `OfflinePlays`)
 
 A download plays through the unchanged `PlaybackController` (SPEC §4 rule 1: no separate offline mode); the controller changed by one line (`engine.load(resolved.engineItem(), …)`).
@@ -672,7 +683,9 @@ The screens the owner uses: Home, library grid, series, film or episode detail a
 
 ```
 ui/
-├── shell/      AppShell (bottom bar, or a rail from 600dp), Tab, DownloadsScreen (a plain placeholder)
+├── shell/      AppShell (bottom bar, or a rail from 600dp), Tab
+├── downloads/  DownloadsViewModel (+ OfflineSeriesViewModel), DownloadsUiState (+ SessionMessage, OfflineSeriesUiState, DownloadsActions),
+│               DownloadsScreen, DownloadRows, OfflineSeriesScreen, DownloadsPreviews (see "Downloads tab")
 ├── home/       HomeViewModel, HomeUiState, HomeScreen (top bar, rows, account menu), HomeRows, HomePreviews
 ├── library/    LibraryGridViewModel, LibraryGridUiState, LibraryGridScreen, SortFilterChips, BrowseMemory
 ├── series/     SeriesViewModel (+ SavedStateHandle for the picked season), SeriesScreen

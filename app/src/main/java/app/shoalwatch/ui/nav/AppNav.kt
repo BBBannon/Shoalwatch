@@ -65,6 +65,8 @@ internal object Routes {
     const val ARG_SERVER = "serverId"
     const val SIGN_IN = "sign_in/{$ARG_SERVER}"
     const val SERVER_EDIT = "server/{$ARG_SERVER}"
+    /** One downloaded series, offline (Milestone 4). A malformed id reads as "This is no longer available". */
+    const val DOWNLOADED_SERIES = "downloads/series/{$ARG_SERIES}"
 
     fun home(fresh: Boolean = false) = "home?$ARG_FRESH=$fresh"
     fun library(viewId: String) = "library/${Uri.encode(viewId)}"
@@ -80,6 +82,7 @@ internal object Routes {
     }
 
     fun item(itemId: String) = "item/${Uri.encode(itemId)}"
+    fun downloadedSeries(seriesId: String) = "downloads/series/${Uri.encode(seriesId)}"
     fun player(itemId: String, from: StartFrom) = "play/${Uri.encode(itemId)}?$ARG_FROM=${if (from == StartFrom.RESUME) FROM_RESUME else FROM_START}"
     const val FROM_RESUME = "resume"
     const val FROM_START = "start"
@@ -153,6 +156,7 @@ private fun AppNavHost(graph: AppGraph, start: String, openTab: String?, onTabOp
             series = { id, season, episode -> SeriesRoute(graph, nav, id, season, episode) },
             item = { id -> DetailRoute(graph, nav, id) },
             player = { id, from -> PlayerRoute(graph, nav, id, from) },
+            downloadedSeries = { id -> OfflineSeriesRoute(graph, nav, id) },
         )
         composable(Routes.SERVERS) { ServersRoute(graph, nav) }
         composable(Routes.SERVER_EDIT, serverArg) { ServerEditRoute(graph, nav, it.arguments?.getString(Routes.ARG_SERVER).orEmpty()) }
@@ -222,7 +226,11 @@ internal fun NavGraphBuilder.browsingDestinations(
     series: @Composable (seriesId: String, seasonId: String?, episodeId: String?) -> Unit,
     item: @Composable (itemId: String) -> Unit,
     player: @Composable (itemId: String, from: StartFrom) -> Unit,
+    downloadedSeries: @Composable (seriesId: String) -> Unit,
 ) {
+    composable(Routes.DOWNLOADED_SERIES, listOf(navArgument(Routes.ARG_SERIES) { type = NavType.StringType })) {
+        downloadedSeries(it.arguments?.getString(Routes.ARG_SERIES).orEmpty())
+    }
     composable(Routes.LIBRARY, listOf(navArgument(Routes.ARG_VIEW) { type = NavType.StringType })) {
         library(it.arguments?.getString(Routes.ARG_VIEW).orEmpty())
     }

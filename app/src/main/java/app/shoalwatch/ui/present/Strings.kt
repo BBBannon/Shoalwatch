@@ -12,4 +12,7 @@ class Strings(private val resources: Resources) {
     fun get(@StringRes id: Int, vararg args: Any): String = resources.getString(id, *args)
 
     fun plural(@PluralsRes id: Int, count: Int): String = resources.getQuantityString(id, count, count.toString())
+
+    /** [count] as the first argument (as text), then [more]. */
+    fun plural(@PluralsRes id: Int, count: Int, vararg more: Any): String = resources.getQuantityString(id, count, count.toString(), *more)
 }

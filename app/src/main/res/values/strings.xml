@@ -218,7 +218,6 @@
     <string name="nav_search">Search</string>
     <string name="nav_downloads">Downloads</string>
     <string name="downloads_title">Downloads</string>
-    <string name="downloads_body">Downloads arrive in a later update. You’ll be able to save whole seasons to watch offline.</string>
 
     <!-- Browsing: home -->
     <string name="home_continue">Continue Watching</string>
@@ -447,4 +446,66 @@
     <string name="download_paused_time_limit">Downloads paused. Open Shoalwatch to carry on.</string>
     <string name="download_finished">Downloads finished</string>
     <string name="download_finished_count">%1$d ready to watch offline</string>
+    <!-- Downloads tab (Milestone 4 Task 14) -->
+    <string name="dl_settings_action">Download settings</string>
+    <string name="dl_section_downloading">Downloading</string>
+    <string name="dl_section_films">Films</string>
+    <string name="dl_section_tv">TV</string>
+    <string name="dl_empty">Nothing downloaded yet. Open a film or series and press Download to watch it without a connection.</string>
+    <string name="dl_pause">Pause</string>
+    <string name="dl_resume">Resume</string>
+    <string name="dl_retry">Retry</string>
+    <string name="dl_cancel_download">Cancel download</string>
+    <string name="dl_pause_all">Pause all</string>
+    <string name="dl_resume_all">Resume all</string>
+    <string name="dl_pause_cd">Pause %1$s</string>
+    <string name="dl_resume_cd">Resume %1$s</string>
+    <string name="dl_retry_cd">Retry %1$s</string>
+    <string name="dl_cancel_cd">Cancel download of %1$s</string>
+    <string name="dl_sign_in_cd">Sign in to carry on downloading %1$s</string>
+    <string name="dl_waiting_wifi">Waiting for Wi-Fi</string>
+    <string name="dl_waiting_connection">Waiting for a connection</string>
+    <string name="dl_paused_by_android">Paused by Android after six hours. It carries on now that Shoalwatch is open.</string>
+    <string name="dl_state_queued">Waiting</string>
+    <string name="dl_state_running">Downloading</string>
+    <string name="dl_state_running_percent">Downloading · %1$s%%</string>
+    <string name="dl_state_running_spoken">Downloading, %1$s percent</string>
+    <string name="dl_state_verifying">Checking it plays</string>
+    <string name="dl_state_paused">Paused</string>
+    <string name="dl_state_complete">Ready to watch</string>
+    <string name="dl_with_quality">%1$s · %2$s</string>
+    <string name="dl_quality_original">Original file</string>
+    <string name="dl_quality_high">High (1080p)</string>
+    <string name="dl_quality_medium">Medium (720p)</string>
+    <string name="dl_quality_low">Low (480p)</string>
+    <string name="dl_failure_not_allowed">Your server doesn\'t allow this account to download this.</string>
+    <string name="dl_failure_not_playable">This phone can\'t play the original file. Download it in High, Medium or Low quality instead.</string>
+    <string name="dl_failure_no_space">There isn\'t enough free space. Delete some downloads or choose a smaller quality.</string>
+    <string name="dl_failure_storage_missing">The SD card this was saving to isn\'t in the phone.</string>
+    <string name="dl_failure_changed">The file kept changing on your server. Try again later.</string>
+    <string name="dl_failure_server_error">Your server had a problem sending this. Press Retry to try again.</string>
+    <string name="dl_failure_auth_refused">Your server wouldn\'t accept this app\'s sign-in for downloads. Check its setting for older apps, then press Retry.</string>
+    <string name="dl_failure_sign_in">Sign in again to carry on with this download.</string>
+    <string name="dl_failure_check_failed">This download didn\'t pass its check, so it was removed. Press Retry to download it again.</string>
+    <string name="dl_failure_damaged">This download is damaged. Press Retry to download it again.</string>
+    <string name="dl_failure_gone">This is no longer on your server.</string>
+    <string name="dl_failure_unknown">Something went wrong with this download. Press Retry to try again.</string>
+    <string name="dl_unavailable">Insert the SD card this was saved to, to watch it.</string>
+    <string name="dl_shared">Downloaded by another profile</string>
+    <string name="dl_delete">Delete download</string>
+    <string name="dl_delete_confirm">Delete this download? This frees %1$s on this phone.</string>
+    <string name="dl_delete_size_unknown">Delete this download?</string>
+    <string name="dl_delete_action">Delete</string>
+    <string name="dl_kept_for_others">Removed from your downloads. It stays on this phone for another profile.</string>
+    <string name="dl_not_yours">Only the profile that downloaded this can delete it.</string>
+    <plurals name="dl_series_summary">
+        <item quantity="one">%1$s episode · %2$s</item>
+        <item quantity="other">%1$s episodes · %2$s</item>
+    </plurals>
+    <string name="dl_play_episode">Play Season %1$s, episode %2$s, %3$s</string>
+    <string name="dl_play">Play %1$s</string>
+    <string name="dl_failed_locally">Your downloads couldn\'t be read on this phone.</string>
+    <string name="dl_size_gb">%1$s GB</string>
+    <string name="dl_size_mb">%1$s MB</string>
+    <string name="dl_size_kb">%1$s KB</string>
 </resources>
