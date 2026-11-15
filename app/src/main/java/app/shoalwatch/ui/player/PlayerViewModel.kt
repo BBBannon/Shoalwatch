@@ -186,8 +186,15 @@ class PlayerViewModel(
     fun dismissSleepFired() = _state.update { it.copy(sleepFired = false) }
     fun setAppearance(a: SubtitleAppearance) = subtitleSettings.update(a)
 
-    /** The user's own choice (turning it off included) is never "paused by the sleep timer". */
-    fun setSleep(choice: SleepChoice) = touched { c -> c.setSleep(choice); lastSleep = c.state.value.sleep }
+    /**
+     * The user's own choice (turning it off included) is never "paused by the sleep timer". [lastSleep] is set BEFORE the
+     * controller is told: with `Main.immediate` its new state reaches [onPlayback] inside that call (Task 8 review I-2).
+     */
+    fun setSleep(choice: SleepChoice) = touched { c ->
+        if (choice == SleepChoice.OFF) lastSleep = SleepState.Off
+        c.setSleep(choice)
+        lastSleep = c.state.value.sleep
+    }
 
     /** Opens the item again, as from the detail screen's Resume (the stop has saved the position). */
     fun retry() = touched { c -> c.open(c.state.value.itemId ?: itemId, StartFrom.RESUME) }
