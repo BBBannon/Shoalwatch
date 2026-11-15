@@ -3,7 +3,6 @@ package app.shoalwatch.data.downloads
 import android.content.Context
 import android.os.Environment
 import android.os.storage.StorageManager
-import androidx.core.content.ContextCompat
 import java.io.File
 import java.io.IOException
 import java.io.RandomAccessFile
@@ -31,7 +30,7 @@ interface Volumes {
 /**
  * App-private storage only, so no permission is needed and everything goes on uninstall. INTERNAL is `filesDir/downloads`
  * (sandboxed, file-based encryption). REMOVABLE is `<app-specific dir>/downloads` on each entry of
- * `ContextCompat.getExternalFilesDirs` after index 0 whose volume is removable, mounted and has a uuid matching
+ * `Context.getExternalFilesDirs` (what the deprecated `ContextCompat` wrapper calls on API 19+) after index 0 whose volume is removable, mounted and has a uuid matching
  * `[A-Za-z0-9-]{1,36}` (a volume without one is not offered: the uuid is how a download finds its card again).
  *
  * [externalDirs], [mediaState] and [allocatable] are seams for tests (Robolectric cannot list app dirs on a card or make
@@ -45,7 +44,7 @@ class AndroidVolumes internal constructor(
 ) : Volumes {
     constructor(context: Context) : this(
         context,
-        { ContextCompat.getExternalFilesDirs(context, null).toList() },
+        { context.getExternalFilesDirs(null).toList() },
         { Environment.getExternalStorageState(it) },
         { storage, dir -> storage.getAllocatableBytes(storage.getUuidForPath(dir)) },
     )
