@@ -39,6 +39,14 @@ internal class PlayingItem(val itemId: String) {
     var effectsNoticeGiven = false
     /** A conversion was asked for because the stream's audio tracks did not match the server's (once per item). */
     var audioForced = false
+    /**
+     * The request the user's latest choices want (tracks, quality, a fallback's conversion), which may be ahead of the plan still
+     * playing while the server is being asked; every change and every re-ask is built from it (Task 7 review I-1). Null until the
+     * first answer.
+     */
+    var wanted: PlaybackRequest? = null
+    /** A sleep timer fell due while the next load was pending: load it paused (Task 7 review m-3). */
+    var startPaused = false
 
     fun outro(): MediaSegment? = segments.firstOrNull { it.kind == SegmentKind.OUTRO }
 

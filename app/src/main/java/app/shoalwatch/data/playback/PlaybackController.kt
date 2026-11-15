@@ -79,6 +79,7 @@ class PlaybackController internal constructor(
         override fun tracksChanged(c: PlayingItem) { c.reporter?.onTracksChanged(snapshot(c)); publish() }
         override fun publish() = this@PlaybackController.publish()
         override fun cuePositionMs(c: PlayingItem) = if (phase == Phase.PLAYING) engine.positionMs.takeIf { it > 0 } ?: c.knownMs else c.knownMs
+        override val reloading get() = loading?.isActive == true
     })
 
     /** The subtitles to draw now (text from the app's own timeline, at the position minus the delay; pictures from the stream). */
@@ -152,7 +153,8 @@ class PlaybackController internal constructor(
         val c = current
         val plan = c?.resolved?.plan
         if (c == null || plan == null) return publish()
-        reload(c, stop = Stop.NORMAL) { resolver.resolve(session, plan.request.copy(quality = quality), TrackRules.burnInFormat(plan)) }
+        val wanted = trackControl.want(c) { it.copy(quality = quality) }
+        reload(c, stop = Stop.NORMAL) { resolver.resolve(session, wanted, TrackRules.burnInFormat(plan.copy(request = wanted))) }
     }
 
     /** By identity; DIRECT_PLAY switches in the player, anything else asks again at the current position. Remembered for the series. */
@@ -211,7 +213,6 @@ class PlaybackController internal constructor(
             if (entry == null) return@launch fail(c, AppError.Kind.SERVER_NOT_FOUND)
             c.entry = entry
             trackControl.recall(c)
-            engine.setMediaMetadata(entry.item.name, entry.item.seriesName)
             publish()
             if (entry.item.kind == ItemKind.EPISODE) {
                 work.launch { c.around = navigator.around(session, entry.item); if (current === c) publish() }
@@ -245,7 +246,8 @@ class PlaybackController internal constructor(
         if (c.reporter == null) c.reporter = ProgressReporter(reports, session, appScope, clock, atMs)
         phase = Phase.BUFFERING
         trackControl.prepare(c, resolved.plan)
-        engine.load(EngineItem(resolved.route, resolved.plan.source, resolved.plan.itemId), atMs, playWhenReady = true)
+        c.entry?.item?.let { engine.setMediaMetadata(it.name, it.seriesName) } // only now: never the next title over the old stream (m-7)
+        engine.load(EngineItem(resolved.route, resolved.plan.source, resolved.plan.itemId), atMs, playWhenReady = !c.startPaused.also { c.startPaused = false })
         publish()
         if (first && resolved.plan.hasSegments) work.launch { gateway.segmentsOrNull(session, c.itemId)?.let { if (current === c) { c.segments = it; publish() } } }
     }
@@ -275,7 +277,10 @@ class PlaybackController internal constructor(
 
     private fun tick() {
         val c = current ?: return
-        if (c.resolved == null || phase == Phase.FAILED || phase == Phase.RESOLVING) return
+        if (c.resolved == null || phase == Phase.FAILED || phase == Phase.RESOLVING) {
+            if (phase == Phase.RESOLVING && sleep.takeDue()) { c.startPaused = true; publish() } // honoured: it loads paused (m-3)
+            return
+        }
         val before = c.knownMs
         val now = positionOf(c)
         val finishAt = finishedAt(c)
@@ -307,8 +312,9 @@ class PlaybackController internal constructor(
         val plan = resolved.plan
         positionOf(c)
         when (val r = PlaybackRules.recovery(failure, plan.method, c.fellBack, c.reResolved, c.reroutes)) {
-            Recovery.FallBack -> { c.fellBack = true; reload(c, Stop.FAILED) { resolver.fallBack(session, plan) } }
-            Recovery.ReResolve -> { c.reResolved = true; reload(c, Stop.NORMAL) { resolver.resolve(session, plan.request, TrackRules.burnInFormat(plan)) } }
+            // Both from the latest wanted request, so a track change still being asked for is not undone (Task 7 review I-1).
+            Recovery.FallBack -> { c.fellBack = true; val p = plan.copy(request = trackControl.want(c) { it.copy(forceTranscode = true) }); reload(c, Stop.FAILED) { resolver.fallBack(session, p) } }
+            Recovery.ReResolve -> { c.reResolved = true; val p = plan.copy(request = trackControl.wanted(c)); reload(c, Stop.NORMAL) { resolver.resolve(session, p.request, TrackRules.burnInFormat(p)) } }
             Recovery.Reroute -> { c.reroutes++; reload(c, Stop.NONE) { resolver.reroute(resolved) } }
             Recovery.SignedOut -> return end(EndReason.SIGNED_OUT)
             is Recovery.Fail -> fail(c, r.kind)
@@ -334,6 +340,7 @@ class PlaybackController internal constructor(
     /** A due sleep timer (already off) always pauses, whatever the phase (buffering, ended), and cancels an Up next countdown. */
     private fun sleepNow(c: PlayingItem) {
         c.upNext?.cancel()
+        if (loading?.isActive == true) c.startPaused = true // a reload in flight would otherwise start it playing again
         if (phase == Phase.PLAYING) pauseAndReport(c) else engine.pause()
     }
 

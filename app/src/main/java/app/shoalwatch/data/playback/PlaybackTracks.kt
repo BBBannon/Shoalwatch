@@ -27,9 +27,11 @@ internal object TrackRules {
      * in, an external picture track (always burned in), a burn-in, and leaving a burn-in ([keepConversion]: the item had to be
      * converted anyway, after a decoder failure or an audio mismatch).
      */
-    fun step(plan: PlaybackPlan, audioIndex: Int?, subtitle: SubtitleTrack?, burnIn: Boolean, engineLanguages: List<String?>, keepConversion: Boolean): TrackStep {
-        val r = plan.request
-        val audio = audioIndex ?: plan.audioIndex
+    fun step(
+        plan: PlaybackPlan, audioIndex: Int?, subtitle: SubtitleTrack?, burnIn: Boolean, engineLanguages: List<String?>, keepConversion: Boolean,
+        r: PlaybackRequest = plan.request, pending: Boolean = false,
+    ): TrackStep {
+        val audio = audioIndex ?: r.audioIndex ?: plan.audioIndex
         val direct = plan.method == PlayMethod.DIRECT_PLAY
         val burned = subtitle?.takeIf { burnIn || (it.kind == SubtitleKind.PICTURE && it.external) }
         val picture = subtitle?.takeIf { it.kind == SubtitleKind.PICTURE && burned == null }
@@ -40,10 +42,15 @@ internal object TrackRules {
             else -> r.forceTranscode
         }
         val wanted = r.copy(audioIndex = audio, pictureSubtitleIndex = picture?.index, burnInSubtitleIndex = burned?.index, forceTranscode = forced)
-        val reask = !audioInPlayer || wanted.forceTranscode != r.forceTranscode || wanted.burnInSubtitleIndex != r.burnInSubtitleIndex ||
+        // While the server is still being asked ([pending]), the plan playing is not the one that will: ask again with everything.
+        val reask = pending || !audioInPlayer || wanted.forceTranscode != r.forceTranscode || wanted.burnInSubtitleIndex != r.burnInSubtitleIndex ||
             (!direct && wanted.pictureSubtitleIndex != r.pictureSubtitleIndex)
         return TrackStep(wanted, reask, burned?.format)
     }
+
+    /** Whether [plan]'s own request asks for picture track [index] (in the stream or burned in), so [plan] can show it. */
+    fun carries(plan: PlaybackPlan, index: Int): Boolean =
+        plan.request.pictureSubtitleIndex == index || plan.request.burnInSubtitleIndex == index
 
     /** The format of the subtitle [plan] burns in, for asking again with the same burn-in. */
     fun burnInFormat(plan: PlaybackPlan): String? =
@@ -102,6 +109,8 @@ internal class TrackControl(
         fun publish()
         /** The position to draw subtitles at, before the delay. */
         fun cuePositionMs(c: PlayingItem): Long
+        /** The server is being asked again for the current item (a track change, quality, fallback, re-resolve): not yet loaded. */
+        val reloading: Boolean
     }
 
     private val _cues = MutableStateFlow(SubtitleFrame.NONE)
@@ -123,14 +132,29 @@ internal class TrackControl(
         val track = plan.subtitleTracks.firstOrNull { it.index == pick.subtitleIndex }
         c.subtitle = track?.let { On(it.index, TrackRules.deliveryOf(plan, it, burnIn = false)) } ?: Off
         val step = TrackRules.step(plan, pick.audioIndex, track, burnIn = false, emptyList(), keepConversion = false)
+        c.wanted = step.request
         return if (step.reask) resolver.resolve(session, step.request, step.burnInFormat) else Resolved(TrackRules.withRequest(plan, step.request), resolved.route)
     }
 
+    /** What the user's latest choices want ([PlayingItem.wanted]), or the playing plan's request before any. */
+    fun wanted(c: PlayingItem): PlaybackRequest = c.wanted ?: checkNotNull(c.resolved).plan.request
+
+    /** Changes [wanted] (a quality, a fallback's conversion) and returns it, so a change made before the answer keeps it. */
+    fun want(c: PlayingItem, change: (PlaybackRequest) -> PlaybackRequest): PlaybackRequest = change(wanted(c)).also { c.wanted = it }
+
     /** Before each load, and after a change made in the player: the delivery [plan] gives the subtitle, the player's tracks, the file. */
     fun prepare(c: PlayingItem, plan: PlaybackPlan) {
+        c.wanted = plan.request
         val track = (c.subtitle as? On)?.let { on -> plan.subtitleTracks.firstOrNull { it.index == on.index } }
         val delivery = track?.let { TrackRules.deliveryOf(plan, it, burnIn = plan.request.burnInSubtitleIndex == it.index) }
         c.subtitle = if (track != null && delivery != null) On(track.index, delivery) else Off
+        // A picture track this stream would need burned in, but its request did not ask for (an answer built from an older
+        // request): asked for once the load in hand is done, never just labelled as burned in (Task 7 review I-1).
+        if (track != null && delivery == SubtitleDelivery.BURNED_IN && !TrackRules.carries(plan, track.index)) {
+            val again = plan.request.copy(pictureSubtitleIndex = track.index)
+            c.wanted = again
+            work.launch { if (host.current === c) host.reload(c) { resolver.resolve(session, again, TrackRules.burnInFormat(plan)) } }
+        }
         val direct = plan.method == PlayMethod.DIRECT_PLAY
         engine.selectAudio(plan.audioIndex?.takeIf { direct }?.let { TrackRules.audioOrdinal(plan, it, emptyList()) })
         engine.selectPictureSubtitle(track?.takeIf { delivery == SubtitleDelivery.IN_STREAM }?.let { TrackRules.pictureOrdinal(plan, it.index) })
@@ -144,9 +168,9 @@ internal class TrackControl(
         val c = host.current ?: return
         val plan = c.resolved?.plan ?: return
         val track = plan.audioTracks.firstOrNull { it.index == index } ?: return
-        if (index == plan.audioIndex) return
+        if (index == (wanted(c).audioIndex ?: plan.audioIndex)) return
         remember(c) { it.copy(audioLanguage = track.language) }
-        apply(c, plan, TrackRules.step(plan, index, subtitleTrack(c, plan), burnIn = isBurnedIn(c, plan), engine.audioLanguages, keep(c)))
+        apply(c, plan, step(c, plan, index, subtitleTrack(c, plan), burnIn = isBurnedIn(c)))
     }
 
     /** Null: off. A forced track in the audio's language still shows on the next item (see [TrackChooser]). */
@@ -155,12 +179,12 @@ internal class TrackControl(
         val plan = c.resolved?.plan ?: return
         val track = index?.let { i -> plan.subtitleTracks.firstOrNull { it.index == i } ?: return }
         if (track != null && track.kind != SubtitleKind.PICTURE && track.fileFormat == null) return
-        if (track?.index == (c.subtitle as? On)?.index && !isBurnedIn(c, plan)) return
+        if (track?.index == (c.subtitle as? On)?.index && !isBurnedIn(c)) return
         c.notice = null
         dropFile(c)
         c.subtitle = track?.let { On(it.index, TrackRules.deliveryOf(plan, it, burnIn = false)) } ?: Off
         remember(c) { it.copy(subtitleLanguage = track?.language, subtitlesOff = track == null, forced = track?.forced == true, hearingImpaired = track?.hearingImpaired == true) }
-        apply(c, plan, TrackRules.step(plan, null, track, burnIn = false, engine.audioLanguages, keep(c)))
+        apply(c, plan, step(c, plan, null, track, burnIn = false))
     }
 
     /** "Let the server draw these subtitles": the server burns [index] into the picture (a conversion). */
@@ -168,12 +192,12 @@ internal class TrackControl(
         val c = host.current ?: return
         val plan = c.resolved?.plan ?: return
         val track = plan.subtitleTracks.firstOrNull { it.index == index } ?: return
-        if (plan.request.burnInSubtitleIndex == index) return
+        if (wanted(c).burnInSubtitleIndex == index) return
         c.notice = null
         dropFile(c)
         c.subtitle = On(index, SubtitleDelivery.BURNED_IN)
         remember(c) { it.copy(subtitleLanguage = track.language, subtitlesOff = false, forced = track.forced, hearingImpaired = track.hearingImpaired) }
-        apply(c, plan, TrackRules.step(plan, null, track, burnIn = true, engine.audioLanguages, keep(c)))
+        apply(c, plan, step(c, plan, null, track, burnIn = true))
     }
 
     /** For a FILE subtitle only (the others are drawn in the stream or the picture): later is positive. Kept for the item, across seeks. */
@@ -197,7 +221,8 @@ internal class TrackControl(
         val languages = engine.audioLanguages
         if (languages.isEmpty() || TrackRules.audioOrdinal(plan, audio, languages) != null) return
         c.audioForced = true
-        host.reload(c) { resolver.resolve(session, plan.request.copy(forceTranscode = true)) }
+        val r = want(c) { it.copy(forceTranscode = true) }
+        host.reload(c) { resolver.resolve(session, r) }
     }
 
     fun refreshCues() {
@@ -213,8 +238,12 @@ internal class TrackControl(
     /** Playback ended: nothing more is drawn. */
     fun clear() { _cues.value = SubtitleFrame.NONE }
 
+    private fun step(c: PlayingItem, plan: PlaybackPlan, audioIndex: Int?, subtitle: SubtitleTrack?, burnIn: Boolean) =
+        TrackRules.step(plan, audioIndex, subtitle, burnIn, engine.audioLanguages, keep(c), wanted(c), host.reloading)
+
     private fun apply(c: PlayingItem, plan: PlaybackPlan, step: TrackStep) {
         val resolved = c.resolved ?: return
+        c.wanted = step.request
         if (step.reask) return host.reload(c) { resolver.resolve(session, step.request, step.burnInFormat) }
         val next = TrackRules.withRequest(plan, step.request)
         c.resolved = Resolved(next, resolved.route)
@@ -256,8 +285,7 @@ internal class TrackControl(
     private fun subtitleTrack(c: PlayingItem, plan: PlaybackPlan): SubtitleTrack? =
         (c.subtitle as? On)?.let { on -> plan.subtitleTracks.firstOrNull { it.index == on.index } }
 
-    private fun isBurnedIn(c: PlayingItem, plan: PlaybackPlan) =
-        plan.request.burnInSubtitleIndex != null && plan.request.burnInSubtitleIndex == (c.subtitle as? On)?.index
+    private fun isBurnedIn(c: PlayingItem) = wanted(c).burnInSubtitleIndex.let { it != null && it == (c.subtitle as? On)?.index }
 
     private fun keep(c: PlayingItem) = c.fellBack || c.audioForced
 
