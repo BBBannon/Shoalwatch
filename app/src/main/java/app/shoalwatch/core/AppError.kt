@@ -21,6 +21,10 @@ class AppError(val kind: Kind, val userMessage: String, cause: Throwable? = null
         CONNECTION_CHANGED,
         /** No address of the server is verified right now: nothing was sent. */
         OFFLINE,
+        /** The server answered PlaybackInfo with `ErrorCode` NotAllowed / NoCompatibleStream / RateLimitExceeded. */
+        PLAYBACK_NOT_ALLOWED, NO_COMPATIBLE_STREAM, TOO_MANY_STREAMS,
+        /** The player stopped on an error (mapped from Media3's error code, never its message). */
+        PLAYBACK_FAILED,
         UNKNOWN,
     }
 
@@ -110,6 +114,10 @@ class AppError(val kind: Kind, val userMessage: String, cause: Throwable? = null
                 "The secure connection isn't available right now. Check the notice above, then press Try again to continue."
             Kind.CONNECTION_CHANGED -> "Your connection changed. Start Quick Connect again."
             Kind.OFFLINE -> "You're offline. Showing what's saved on this phone where possible."
+            Kind.PLAYBACK_NOT_ALLOWED -> "Your account isn't allowed to play this. Ask the server's owner."
+            Kind.NO_COMPATIBLE_STREAM -> "This can't be played on this phone, and the server couldn't convert it."
+            Kind.TOO_MANY_STREAMS -> "Too many people are watching on this server right now. Try again later."
+            Kind.PLAYBACK_FAILED -> "Playback stopped because of a problem with this video."
             Kind.UNKNOWN -> "Something went wrong. Please try again."
         }
     }
