@@ -223,6 +223,18 @@ class AdminMappersTest {
         assertTrue(devices[0].id != devices[1].id)
     }
 
+    /** When the newer row of a merged device wins, its own name is kept (the older one only fills an empty name). */
+    @Test fun aMergedDeviceTakesTheNewerRowsName() {
+        val json = """{"Items":[
+            {"Id":"tv-1","Name":"Old name","LastUserName":"anna","DateLastActivity":"2026-11-15T18:00:00Z"},
+            {"Id":"tv-1","Name":"New name","LastUserName":"bob","DateLastActivity":"2026-11-15T19:00:00Z"},
+            {"Id":"tv-2","Name":"Named","LastUserName":"anna","DateLastActivity":"2026-11-15T18:00:00Z"},
+            {"Id":"tv-2","Name":"","LastUserName":"bob","DateLastActivity":"2026-11-15T19:00:00Z"}]}"""
+        val devices = JsonBodies.JSON.decodeFromString(DeviceResultDto.serializer(), json).toDevices(AdminFixtures.THIS_PHONE).associateBy { it.id }
+        assertEquals("New name", devices.getValue("tv-1").name)
+        assertEquals("Named", devices.getValue("tv-2").name)
+    }
+
     @Test fun devicesMergeByIdAndPreferTheCustomName() {
         val devices = AdminFixtures.decode<DeviceResultDto>("devices.json").toDevices(AdminFixtures.THIS_PHONE)
         assertEquals(listOf("this-phone-device", "tv-living-room-1", "web-ben-laptop", "tablet-kid"), devices.map { it.id })

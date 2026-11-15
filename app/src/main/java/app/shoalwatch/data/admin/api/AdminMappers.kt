@@ -350,7 +350,7 @@ internal fun DeviceResultDto.toDevices(thisDeviceId: String): List<ServerDevice>
         }
         val names = (earlier.userNames + row.userNames).distinct().take(AdminLimits.USERS_PER_DEVICE)
         val newer = compareValues(row.lastSeen, earlier.lastSeen) > 0
-        rows[deviceId] = (if (newer) row.copy(name = earlier.name.ifEmpty { row.name }) else earlier).copy(userNames = names)
+        rows[deviceId] = (if (newer) row.copy(name = row.name.ifEmpty { earlier.name }) else earlier).copy(userNames = names)
     }
     return rows.values.sortedWith(Comparator<ServerDevice> { a, b -> compareValues(b.lastSeen, a.lastSeen) }.thenBy(String.CASE_INSENSITIVE_ORDER, ServerDevice::name))
 }
