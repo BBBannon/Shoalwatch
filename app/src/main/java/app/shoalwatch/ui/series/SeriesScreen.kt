@@ -88,6 +88,9 @@ import app.shoalwatch.ui.components.SignedOutNotice
 import app.shoalwatch.ui.components.SkeletonBlock
 import app.shoalwatch.ui.components.SkeletonEpisodes
 import app.shoalwatch.ui.components.WatchedButton
+import app.shoalwatch.ui.downloads.DownloadControls
+import app.shoalwatch.ui.downloads.EpisodeDownloadControl
+import app.shoalwatch.ui.downloads.SeriesDownloadMenu
 import app.shoalwatch.ui.present.Destination
 import app.shoalwatch.ui.present.Strings
 import app.shoalwatch.ui.present.displayName
@@ -121,7 +124,7 @@ class SeriesActions(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SeriesScreen(state: SeriesUiState, actions: SeriesActions, messages: Flow<String>, snackbar: SnackbarHostState) {
+fun SeriesScreen(state: SeriesUiState, actions: SeriesActions, messages: Flow<String>, snackbar: SnackbarHostState, download: DownloadControls? = null) {
     CollectMessages(messages, snackbar, state.session)
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -142,7 +145,7 @@ fun SeriesScreen(state: SeriesUiState, actions: SeriesActions, messages: Flow<St
                 }
                 else -> {
                     PullRefresh(isRefreshing = state.pulling, onRefresh = actions.onRefresh, modifier = Modifier.fillMaxSize(), belowStatusBar = true) {
-                        SeriesContent(state, actions)
+                        SeriesContent(state, actions, download)
                     }
                     RefreshLine(state.refreshing && !state.pulling, Modifier.statusBarsPadding().align(Alignment.TopCenter))
                 }
@@ -152,7 +155,7 @@ fun SeriesScreen(state: SeriesUiState, actions: SeriesActions, messages: Flow<St
 }
 
 @Composable
-private fun SeriesContent(state: SeriesUiState, actions: SeriesActions) {
+private fun SeriesContent(state: SeriesUiState, actions: SeriesActions, download: DownloadControls?) {
     val strings = rememberStrings()
     val session = state.session
     val listState = rememberLazyListState()
@@ -192,13 +195,13 @@ private fun SeriesContent(state: SeriesUiState, actions: SeriesActions) {
                 if (!failedEmpty) state.banner?.let { kind -> item(key = "banner") { FreshnessBanner(kind, banner) } }
                 if (series != null) {
                     if (overview.isNotEmpty()) item(key = "overview") { ExpandableText(overview, Modifier.padding(horizontal = Gutter)) }
-                    item(key = "actions") { SeriesActionsRow(state, actions) }
+                    item(key = "actions") { SeriesActionsRow(state, actions, download) }
                 }
                 if (state.seasons.isNotEmpty()) {
                     item(key = "seasons") { SeasonChips(state, actions) }
                     item(key = "season-header") { SeasonHeader(state, actions) }
                 }
-                episodes(state, actions, session, strings, banner) { sheetId = it }
+                episodes(state, actions, session, strings, banner, download) { sheetId = it }
             }
         }
         AnimatedVisibility(visible = showBar, modifier = Modifier.align(Alignment.TopStart)) {
@@ -256,7 +259,7 @@ private fun Header(state: SeriesUiState, title: String, strings: Strings, onRefr
 }
 
 @Composable
-private fun SeriesActionsRow(state: SeriesUiState, actions: SeriesActions) {
+private fun SeriesActionsRow(state: SeriesUiState, actions: SeriesActions, download: DownloadControls?) {
     val series = state.series ?: return
     val id = series.item.id
     Row(Modifier.fillMaxWidth().padding(horizontal = Gutter), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -266,6 +269,10 @@ private fun SeriesActionsRow(state: SeriesUiState, actions: SeriesActions) {
             onClick = { actions.onSetSeriesPlayed(!state.seriesPlayed) }, modifier = Modifier.weight(1f),
         )
         FavouriteButton(state.seriesFavourite, state.working.contains(Work(id, ActionKind.FAVOURITE)), { actions.onSetSeriesFavourite(!state.seriesFavourite) })
+    }
+    if (download != null) {
+        val season = state.selectedSeason
+        Box(Modifier.padding(horizontal = Gutter)) { SeriesDownloadMenu(season?.item?.id, season?.item?.let { (it.indexNumber ?: 0).toString() }, download) }
     }
 }
 
@@ -315,6 +322,7 @@ private fun LazyListScope.episodes(
     session: Session?,
     strings: Strings,
     banner: BannerActions,
+    download: DownloadControls?,
     onMenu: (String) -> Unit,
 ) {
     if (session == null) return
@@ -333,11 +341,12 @@ private fun LazyListScope.episodes(
     }
     items(state.episodes.distinctBy { it.item.id }, key = { it.item.id }) { entry: ItemWithUserData ->
         val row = remember(entry, session, strings) { episodeRow(entry, session, strings) }
-        Box(Modifier.padding(horizontal = Gutter)) {
+        Row(Modifier.padding(horizontal = Gutter), verticalAlignment = Alignment.CenterVertically) {
             EpisodeRow(
                 row, onClick = { actions.onOpen(Destination.Detail(entry.item.id)) }, onMenu = { onMenu(entry.item.id) },
-                highlighted = entry.item.id == state.highlightEpisodeId, working = state.working.isWorking(entry.item.id),
+                highlighted = entry.item.id == state.highlightEpisodeId, working = state.working.isWorking(entry.item.id), modifier = Modifier.weight(1f),
             )
+            if (download != null) EpisodeDownloadControl(entry.item, download)
         }
     }
 }

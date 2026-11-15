@@ -36,6 +36,8 @@ import app.shoalwatch.ui.series.SeriesScreen
 import app.shoalwatch.ui.series.SeriesViewModel
 import app.shoalwatch.ui.shell.AppShell
 import app.shoalwatch.ui.downloads.DownloadsActions
+import app.shoalwatch.ui.downloads.DownloadControls
+import app.shoalwatch.ui.downloads.DownloadSheetHost
 import app.shoalwatch.ui.downloads.DownloadsScreen
 import app.shoalwatch.ui.downloads.DownloadsViewModel
 import app.shoalwatch.ui.downloads.OfflineSeriesActions
@@ -124,8 +126,9 @@ internal fun LibraryRoute(graph: AppGraph, nav: NavHostController, viewId: Strin
 @Composable
 internal fun SeriesRoute(graph: AppGraph, nav: NavHostController, seriesId: String, season: String?, episode: String?) {
     val vm = graphStateViewModel(key = seriesId) { saved ->
-        SeriesViewModel(seriesId, season, episode, saved, graph.serverCatalog, graph.addressSelector, graph.library, graph.playstate)
+        SeriesViewModel(seriesId, season, episode, saved, graph.serverCatalog, graph.addressSelector, graph.library, graph.playstate, graph.downloads)
     }
+    val statuses by vm.downloadStatus.collectAsStateWithLifecycle()
     val state by vm.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val actions = remember(vm, nav) {
@@ -144,12 +147,18 @@ internal fun SeriesRoute(graph: AppGraph, nav: NavHostController, seriesId: Stri
             onSetFavourite = vm::setFavourite,
         )
     }
-    SeriesScreen(state, actions, vm.messages, snackbar)
+    val download = DownloadControls(
+        statuses, onDownload = vm::downloadEpisode, onRetry = vm::retryDownload, onOpenDownloads = { nav.switchTab(Tab.DOWNLOADS) },
+        onSeason = vm::downloadSeason, onSeries = vm::downloadSeries, onUnwatched = vm::downloadUnwatched,
+    )
+    SeriesScreen(state, actions, vm.messages, snackbar, download)
+    DownloadSheetHost(vm.downloadActions, state.session, { graph.downloadPrefs.notificationAsked }, graph.downloadPrefs::markNotificationAsked)
 }
 
 @Composable
 internal fun DetailRoute(graph: AppGraph, nav: NavHostController, itemId: String) {
-    val vm = graphViewModel(key = itemId) { DetailViewModel(itemId, graph.serverCatalog, graph.addressSelector, graph.library, graph.playstate) }
+    val vm = graphViewModel(key = itemId) { DetailViewModel(itemId, graph.serverCatalog, graph.addressSelector, graph.library, graph.playstate, graph.downloads) }
+    val statuses by vm.downloadStatus.collectAsStateWithLifecycle()
     val state by vm.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val actions = remember(vm, nav) {
@@ -165,7 +174,10 @@ internal fun DetailRoute(graph: AppGraph, nav: NavHostController, itemId: String
             onPlay = { from -> nav.navigate(Routes.player(itemId, from)) },
         )
     }
-    DetailScreen(state, actions, vm.messages, snackbar)
+    val film = state.item?.item?.kind == app.shoalwatch.data.library.ItemKind.MOVIE
+    val download = DownloadControls(statuses, onDownload = { vm.download(film) }, onRetry = { vm.retryDownload() }, onOpenDownloads = { nav.switchTab(Tab.DOWNLOADS) })
+    DetailScreen(state, actions, vm.messages, snackbar, download)
+    DownloadSheetHost(vm.downloadActions, state.session, { graph.downloadPrefs.notificationAsked }, graph.downloadPrefs::markNotificationAsked)
 }
 
 @Composable
@@ -202,7 +214,20 @@ internal fun DownloadsRoute(graph: AppGraph, nav: NavHostController) {
             onPauseAll = vm::pauseAll, onResumeAll = vm::resumeAll, onTryAgain = vm::tryAgain,
         )
     }
-    AppShell(Tab.DOWNLOADS, nav::switchTab, snackbar) { DownloadsScreen(state, actions, vm.messages, snackbar) }
+    AppShell(Tab.DOWNLOADS, nav::switchTab, snackbar) { DownloadsScreen(state, actions, vm.messages, snackbar, onOpenSettings = { nav.navigate(Routes.DOWNLOAD_SETTINGS) }) }
+}
+
+@Composable
+internal fun DownloadSettingsRoute(graph: AppGraph, nav: NavHostController) {
+    val vm = graphViewModel { app.shoalwatch.ui.downloads.DownloadSettingsViewModel(graph.serverCatalog, graph.downloads) }
+    val state by vm.state.collectAsStateWithLifecycle()
+    androidx.compose.runtime.LaunchedEffect(Unit) { vm.refreshCards() }
+    val actions = remember(vm, nav) {
+        app.shoalwatch.ui.downloads.DownloadSettingsActions(
+            onBack = { nav.popBackStack() }, onMobileData = vm::setMobileData, onStorage = vm::setStorage, onQuality = vm::setDefaultQuality, onSharing = vm::setSharing,
+        )
+    }
+    app.shoalwatch.ui.downloads.DownloadSettingsScreen(state, actions)
 }
 
 @Composable

@@ -67,6 +67,7 @@ internal object Routes {
     const val SERVER_EDIT = "server/{$ARG_SERVER}"
     /** One downloaded series, offline (Milestone 4). A malformed id reads as "This is no longer available". */
     const val DOWNLOADED_SERIES = "downloads/series/{$ARG_SERIES}"
+    const val DOWNLOAD_SETTINGS = "download_settings"
 
     fun home(fresh: Boolean = false) = "home?$ARG_FRESH=$fresh"
     fun library(viewId: String) = "library/${Uri.encode(viewId)}"
@@ -159,6 +160,7 @@ private fun AppNavHost(graph: AppGraph, start: String, openTab: String?, onTabOp
             downloadedSeries = { id -> OfflineSeriesRoute(graph, nav, id) },
         )
         composable(Routes.SERVERS) { ServersRoute(graph, nav) }
+        composable(Routes.DOWNLOAD_SETTINGS) { DownloadSettingsRoute(graph, nav) }
         composable(Routes.SERVER_EDIT, serverArg) { ServerEditRoute(graph, nav, it.arguments?.getString(Routes.ARG_SERVER).orEmpty()) }
     }
 }

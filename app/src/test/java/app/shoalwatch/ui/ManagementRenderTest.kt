@@ -87,6 +87,14 @@ class ManagementRenderTest {
         show { ServersScreen(servers.copy(confirm = Confirm.SignOut("s1", "u2", "amy", "Den")), serversActions) }
         assertTrue(shown(text(R.string.confirm_signout_title, "amy")))
         assertTrue(shown(text(R.string.confirm_signout_body, "Den")))
+        assertTrue("what sign-out does to downloads", shown(text(R.string.dl_signout_downloads)))
+        assertTrue("sharing off: no shared line", !shown(text(R.string.dl_signout_shared)))
+    }
+
+    @Test fun signOutWithSharingOnSaysSharedDownloadsStay() {
+        show { ServersScreen(servers.copy(confirm = Confirm.SignOut("s1", "u2", "amy", "Den", sharing = true)), serversActions) }
+        assertTrue(shown(text(R.string.dl_signout_downloads)))
+        assertTrue(shown(text(R.string.dl_signout_shared)))
     }
 
     @Test fun removingAServerListsWhatWillGo() {
@@ -96,6 +104,7 @@ class ManagementRenderTest {
         assertTrue(shown(text(R.string.confirm_remove_account, "amy")))
         assertTrue(shown(text(R.string.confirm_remove_settings)))
         assertTrue("the dialog says sign-ins are revoked too", shown(text(R.string.confirm_remove_revoke)))
+        assertTrue("its downloads go too", shown(text(R.string.dl_remove_downloads)))
     }
 
     @Test fun aSignOutOrRemovalThatCouldNotReachTheServerIsSaidPlainly() {

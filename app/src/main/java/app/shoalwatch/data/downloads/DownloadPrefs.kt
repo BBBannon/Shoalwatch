@@ -34,6 +34,11 @@ class DownloadPrefs(private val prefs: SharedPreferences) {
 
     fun setDefaultQuality(q: DownloadQuality?) = save(state.value.copy(defaultQuality = q))
 
+    /** The notification ask (Android 13+) was shown once: never again. */
+    val notificationAsked: Boolean get() = read { getBoolean(K_ASKED, false) } == true
+
+    fun markNotificationAsked() = prefs.edit().putBoolean(K_ASKED, true).apply()
+
     private fun save(s: DownloadSettings) {
         prefs.edit()
             .putBoolean(K_MOBILE, s.mobileData)
@@ -65,5 +70,6 @@ class DownloadPrefs(private val prefs: SharedPreferences) {
         const val K_STORAGE = "storage"
         const val K_VOLUME = "volume_id"
         const val K_QUALITY = "default_quality"
+        const val K_ASKED = "notification_asked"
     }
 }

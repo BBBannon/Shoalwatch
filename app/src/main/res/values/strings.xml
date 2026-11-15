@@ -508,4 +508,82 @@
     <string name="dl_size_gb">%1$s GB</string>
     <string name="dl_size_mb">%1$s MB</string>
     <string name="dl_size_kb">%1$s KB</string>
+    <!-- Download buttons, sheet and settings (Milestone 4 Task 15) -->
+    <string name="dl_download">Download</string>
+    <string name="dl_download_cd">Download %1$s</string>
+    <string name="dl_downloading_percent">Downloading %1$s%%</string>
+    <string name="dl_downloading">Downloading</string>
+    <string name="dl_downloaded">Downloaded</string>
+    <string name="dl_download_season">Download season %1$s</string>
+    <string name="dl_download_series">Download whole series</string>
+    <string name="dl_download_unwatched">Download unwatched episodes</string>
+    <string name="dl_download_menu_cd">Download options</string>
+    <string name="dl_episode_download">Download Season %1$s, episode %2$s</string>
+    <string name="dl_episode_downloading">Downloading, %1$s percent</string>
+    <string name="dl_episode_retry">Retry download of Season %1$s, episode %2$s</string>
+    <string name="dl_sheet_quality_title">Choose a quality</string>
+    <string name="dl_original_body">Best picture and sound, largest files. Keeps every audio and subtitle track.</string>
+    <string name="dl_high_body">About 3.6 GB an hour</string>
+    <string name="dl_medium_body">About 1.8 GB an hour</string>
+    <string name="dl_low_body">About 0.7 GB an hour</string>
+    <string name="dl_conversion_note">Converted downloads keep one audio track and text subtitles. Picture subtitles (such as PGS) aren\'t kept.</string>
+    <string name="dl_use_every_time">Use this every time</string>
+    <string name="dl_preparing">Working out what to download…</string>
+    <plurals name="dl_confirm_title_films">
+        <item quantity="one">Download %1$s film?</item>
+        <item quantity="other">Download %1$s films?</item>
+    </plurals>
+    <plurals name="dl_confirm_title_episodes">
+        <item quantity="one">Download %1$s episode?</item>
+        <item quantity="other">Download %1$s episodes?</item>
+    </plurals>
+    <string name="dl_confirm_body_phone">About %1$s. %2$s free on this phone.</string>
+    <string name="dl_confirm_body_card">About %1$s. %2$s free on the SD card.</string>
+    <plurals name="dl_skip_not_allowed">
+        <item quantity="one">%1$s can\'t be downloaded: your server doesn\'t allow it.</item>
+        <item quantity="other">%1$s can\'t be downloaded: your server doesn\'t allow it.</item>
+    </plurals>
+    <plurals name="dl_skip_conversion_unconfirmed">
+        <item quantity="one">%1$s can\'t be downloaded as a converted copy: your server didn\'t say whether that\'s allowed. Choose Original to download it.</item>
+        <item quantity="other">%1$s can\'t be downloaded as converted copies: your server didn\'t say whether that\'s allowed. Choose Original to download them.</item>
+    </plurals>
+    <plurals name="dl_skip_permission_unconfirmed">
+        <item quantity="one">%1$s is on this phone already, but this profile hasn\'t been confirmed as allowed to download it, so it can\'t be added.</item>
+        <item quantity="other">%1$s are on this phone already, but this profile hasn\'t been confirmed as allowed to download them, so they can\'t be added.</item>
+    </plurals>
+    <plurals name="dl_skip_not_found">
+        <item quantity="one">%1$s is no longer on your server.</item>
+        <item quantity="other">%1$s are no longer on your server.</item>
+    </plurals>
+    <plurals name="dl_converted_instead">
+        <item quantity="one">%1$s can\'t play on this phone as it is, so it\'ll be downloaded in High (1080p).</item>
+        <item quantity="other">%1$s can\'t play on this phone as they are, so they\'ll be downloaded in High (1080p).</item>
+    </plurals>
+    <plurals name="dl_already_here">
+        <item quantity="one">%1$s is already on this phone and will be added to your downloads.</item>
+        <item quantity="other">%1$s are already on this phone and will be added to your downloads.</item>
+    </plurals>
+    <string name="dl_capped">Only the first 500 episodes are included.</string>
+    <string name="dl_wifi_only">Downloads use Wi-Fi only. You can change this in Download settings.</string>
+    <string name="dl_not_enough_space">There isn\'t enough space. You need about %1$s and have %2$s free.</string>
+    <string name="dl_notify_ask">Shoalwatch shows download progress in a notification. If you say no, downloads still carry on and you can see them in Downloads.</string>
+    <string name="dl_not_now">Not now</string>
+    <string name="dl_close">Close</string>
+    <string name="dl_notification_settings">Open notification settings</string>
+    <string name="dl_settings_title">Download settings</string>
+    <string name="dl_mobile_data">Use mobile data</string>
+    <string name="dl_mobile_data_off">Off: downloads wait for Wi-Fi.</string>
+    <string name="dl_save_to">Save new downloads to</string>
+    <string name="dl_save_phone">This phone</string>
+    <string name="dl_save_card">SD card</string>
+    <string name="dl_card_warning">Files on an SD card can be read by anyone who takes the card out and puts it in another device. Your sign-ins are never stored there.</string>
+    <string name="dl_existing_stay">Existing downloads stay where they are.</string>
+    <string name="dl_quality_for_new">Quality for new downloads</string>
+    <string name="dl_quality_ask">Ask each time</string>
+    <string name="dl_share">Share downloads between profiles</string>
+    <string name="dl_share_body">Profiles signed in to %1$s on this device can watch each other\'s downloads, but only titles their own account is allowed to see. Each profile keeps its own watched progress.</string>
+    <string name="dl_notifications_off">Notifications are off for Shoalwatch, so download progress shows only here.</string>
+    <string name="dl_signout_downloads">Downloads that only this profile kept are deleted from this phone.</string>
+    <string name="dl_signout_shared">Shared downloads stay for the other profiles that can see them.</string>
+    <string name="dl_remove_downloads">Its downloads are deleted from this phone too.</string>
 </resources>
