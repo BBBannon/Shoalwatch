@@ -17,6 +17,7 @@ import app.shoalwatch.ui.browse.SERVER_ID
 import app.shoalwatch.ui.browse.account
 import app.shoalwatch.ui.present.Destination
 import app.shoalwatch.ui.testServer
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Before
@@ -152,6 +153,34 @@ class SessionChangeNavigationTest {
         rule.waitForIdle()
         assertSame(before, nav.currentBackStackEntry)
         assertEquals(true, nav.currentBackStackEntry?.arguments?.getBoolean(Routes.ARG_FRESH))
+    }
+
+    // --- a store read that fails is not a sign-out (I4) ----------------------------------------------------------
+
+    @Test fun aStoreReadFailureIsNotASignOutTheUserStaysWhereTheyAre() {
+        start()
+        openThreeAsBen()
+        val top = nav.currentBackStackEntry
+        catalog.failReads()
+        rule.waitForIdle()
+        assertEquals(listOf(Routes.HOME, Routes.LIBRARY, Routes.SERIES, Routes.ITEM), stack())
+        catalog.healReads()
+        runBlocking { catalog.retryWarmIfFailed() }
+        rule.waitForIdle()
+        assertSame("the same account came back: nothing moved", top, nav.currentBackStackEntry)
+        assertEquals(listOf(Routes.HOME, Routes.LIBRARY, Routes.SERIES, Routes.ITEM), stack())
+    }
+
+    @Test fun aSignOutDuringAStoreFailureClearsTheStackOnceTheStoreCanBeReadAgain() {
+        start()
+        openThreeAsBen()
+        catalog.failReads()
+        rule.waitForIdle()
+        catalog.activeFlow.value = null
+        catalog.healReads()
+        runBlocking { catalog.retryWarmIfFailed() }
+        rule.waitForIdle()
+        assertOnlyHome()
     }
 
     @Test fun theSameSessionAnnouncedAgainDoesNothing() {

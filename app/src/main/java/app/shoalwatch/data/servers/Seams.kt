@@ -47,6 +47,13 @@ interface ServerCatalog {
      */
     suspend fun retryWarmIfFailed(): Boolean
     suspend fun awaitActive(): AccountSummary?
+
+    /**
+     * True while a read of [servers], [activeAccount], [accounts] or [observeServer] has failed (a damaged or full database):
+     * those flows then show nothing (nobody active, empty lists, no server) instead of throwing into their collectors, and
+     * [retryWarmIfFailed] subscribes them again. A nobody caused by this is not a sign-out (see `ClearBrowsingOnSessionChange`).
+     */
+    val readFailed: StateFlow<Boolean>
 }
 
 /** Quick Connect progress for the UI; [Success] carries no token. */
@@ -134,6 +141,7 @@ class StoreCatalog(private val store: ServerStore) : ServerCatalog {
     override suspend fun awaitWarmed() = store.awaitWarmed()
     override suspend fun retryWarmIfFailed() = store.retryWarmIfFailed()
     override suspend fun awaitActive() = store.awaitActive()
+    override val readFailed = store.readFailed
 }
 
 class AuthenticatorImpl(private val repository: AuthRepository) : Authenticator {

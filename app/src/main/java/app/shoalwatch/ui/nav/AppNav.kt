@@ -33,7 +33,7 @@ import app.shoalwatch.AppGraph
 import app.shoalwatch.R
 import app.shoalwatch.data.servers.ServerCatalog
 import app.shoalwatch.data.servers.Session
-import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.first
 import androidx.navigation.NavHostController
 
@@ -155,12 +155,18 @@ internal fun ClearBrowsingOnSessionChange(nav: NavHostController, catalog: Serve
     LaunchedEffect(nav, catalog) {
         var previous: Session? = null
         var started = false
-        catalog.activeSession().distinctUntilChanged().collect { now ->
+        // The account flow, not `activeSession()`: that one drops a repeated value, and the store's answer once it can be read again
+        // must be seen even when it is the same nobody as the fail-closed one.
+        catalog.activeAccount.map { a -> a?.let { Session(it.serverId, it.userId) } }.collect { now ->
+            // Nobody because the store could not be read is not a sign-out: every screen shows its signed-out state meanwhile (nothing
+            // of the session is shown), but the stack stays and the user keeps their place. What the store says once it can be read
+            // again (after Retry) is compared with the session from before the failure: the same one moves nothing.
+            if (now == null && catalog.readFailed.value) return@collect
             val was = previous
             val first = !started
             started = true
             previous = now
-            if (first || was == null) return@collect
+            if (first || was == null || now == was) return@collect
             // A sign-in as another account (from Servers) has already taken the app to a fresh Home, alone: leave that one be.
             val here = nav.currentBackStackEntry
             val alone = nav.currentBackStack.value.count { it.destination !is NavGraph } == 1

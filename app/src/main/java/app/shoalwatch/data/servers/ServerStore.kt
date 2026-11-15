@@ -19,6 +19,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
@@ -67,6 +68,12 @@ class ServerStore(
     private val serverDao = db.serverDao()
     private val accountDao = db.accountDao()
 
+    /** Guards every read the screens observe ([summaries], [activeAccount], [accounts], [observeServer]); see [ReadHealth]. */
+    private val reads = ReadHealth(TAG)
+
+    /** True while a read the screens observe has failed; see `ServerCatalog.readFailed`. */
+    val readFailed: StateFlow<Boolean> = reads.failed
+
     /** Opened custom headers, memoised by ciphertext (see [OpenedHeaders]). */
     private val openedHeaders = OpenedHeaders(box)
 
@@ -74,12 +81,14 @@ class ServerStore(
     override val servers: Flow<List<Server>> = serverDao.observeAll().map { rows -> rows.map(::toServer) }.flowOn(io)
 
     /** What a list of servers shows. No secret column is read. */
-    val summaries: Flow<List<ServerSummary>> = serverDao.observeRows().map { rows ->
-        rows.map { ServerSummary(it.id, it.name, it.version, pinInvalid = it.pinnedSpkiSha256 != null && !isValidPin(it.pinnedSpkiSha256)) }
+    val summaries: Flow<List<ServerSummary>> = reads.guard("servers", emptyList()) {
+        serverDao.observeRows().map { rows ->
+            rows.map { ServerSummary(it.id, it.name, it.version, pinInvalid = it.pinnedSpkiSha256 != null && !isValidPin(it.pinnedSpkiSha256)) }
+        }
     }
 
-    /** One server with its full settings, live (for its settings screen); null once removed. */
-    fun observeServer(id: String): Flow<Server?> = servers.map { list -> list.firstOrNull { it.id == id } }
+    /** One server with its full settings, live (for its settings screen); null once removed, or while it cannot be read. */
+    fun observeServer(id: String): Flow<Server?> = reads.guard("a server", null) { servers.map { list -> list.firstOrNull { it.id == id } } }
 
     /** `(serverId, userId)` to token, for [cachedToken]. Changed only by [upsertAccount], [warmTokens] and removals, all under [tokenLock]. */
     private val tokens = ConcurrentHashMap<Pair<String, String>, String>()
@@ -134,8 +143,12 @@ class ServerStore(
         warmed.complete(Unit)
     }
 
-    /** Tries the warm once more if the last one failed (used by a "Retry" action); still fails closed if it fails again. */
+    /**
+     * Tries the warm once more if the last one failed (used by a "Retry" action); still fails closed if it fails again. Also
+     * subscribes again every observed read that failed ([readFailed]).
+     */
     suspend fun retryWarmIfFailed(): Boolean {
+        reads.retry()
         if (warmFailed) warmTokens()
         return warmFailed
     }
@@ -160,15 +173,19 @@ class ServerStore(
     }
 
     /** Who is signed in, without the token. */
-    val activeAccount: Flow<AccountSummary?> = flow {
-        awaitWarmed()
-        emitAll(combine(accountDao.observeActiveRow(), usable) { row, ok -> row?.takeIf { it.key() in ok }?.summary() })
+    val activeAccount: Flow<AccountSummary?> = reads.guard("the active account", null) {
+        flow {
+            awaitWarmed()
+            emitAll(combine(accountDao.observeActiveRow(), usable) { row, ok -> row?.takeIf { it.key() in ok }?.summary() })
+        }
     }
 
     /** A server's accounts, without tokens. */
-    fun accounts(serverId: String): Flow<List<AccountSummary>> = flow {
-        awaitWarmed()
-        emitAll(combine(accountDao.observeRowsForServer(serverId), usable) { rows, ok -> rows.filter { it.key() in ok }.map { it.summary() } })
+    fun accounts(serverId: String): Flow<List<AccountSummary>> = reads.guard("accounts", emptyList()) {
+        flow {
+            awaitWarmed()
+            emitAll(combine(accountDao.observeRowsForServer(serverId), usable) { rows, ok -> rows.filter { it.key() in ok }.map { it.summary() } })
+        }
     }
 
     /** @throws IllegalArgumentException if the id is not a normalised [JellyfinId], or the pin is not a valid base64 SHA-256 value. */
@@ -368,22 +385,4 @@ class ServerStore(
         const val TAG = "ServerStore"
         val HEADERS = OpenedHeaders.HEADERS
     }
-}
-
-/** What [ServerStore.token] found for one account. Never prints the token. */
-sealed interface StoredToken {
-    /** No such account: nothing to revoke. */
-    data object Missing : StoredToken
-
-    /** The account is there but its token cannot be opened (lost Keystore key): it cannot be revoked. */
-    data object Unreadable : StoredToken
-
-    class Found(val token: String) : StoredToken {
-        override fun toString() = "StoredToken.Found(<redacted>)"
-    }
-}
-
-/** What [ServerStore.tokens] found for one server: tokens that can be revoked, and a count of those that cannot be read. */
-class StoredTokens(val readable: List<Pair<String, String>>, val unreadable: Int) {
-    override fun toString() = "StoredTokens(readable=${readable.size}, unreadable=$unreadable)"
 }

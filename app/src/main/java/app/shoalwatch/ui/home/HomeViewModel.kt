@@ -49,7 +49,8 @@ import kotlinx.coroutines.launch
  * opening. Collecting alone does not refresh: `Library` already refreshes what is due.
  *
  * If loading the saved sign-ins failed at start-up it retries once when Home opens (and on every connection Retry); if it still
- * fails that is shown rather than a silent signed-out state.
+ * fails that is shown rather than a silent signed-out state. The same failure state shows while a read of the saved servers and
+ * sign-ins fails (`ServerCatalog.readFailed`); its Try again ([retry]) subscribes those reads again.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class HomeViewModel(
@@ -103,7 +104,7 @@ class HomeViewModel(
     }
 
     val state: StateFlow<HomeUiState> =
-        combine(shell, content, actions.working, warmFailed, actions.pulling) { shell, content, working, failed, pulling ->
+        combine(shell, content, actions.working, combine(warmFailed, catalog.readFailed) { a, b -> a || b }, actions.pulling) { shell, content, working, failed, pulling ->
             val session = shell?.session
             build(shell, content?.takeIf { it.first == session }?.second, working.forSession(session), failed, session?.let { it in pulling } == true)
         }.stateIn(viewModelScope, SharingStarted.Eagerly, HomeUiState())
