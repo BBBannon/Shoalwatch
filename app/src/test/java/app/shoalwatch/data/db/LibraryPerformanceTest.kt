@@ -42,6 +42,25 @@ class LibraryPerformanceTest : LibraryTestBase() {
         assertFalse("ordered by the key, no sort needed: $listPlan", listPlan.any { it.contains("TEMP B-TREE") })
     }
 
+    @Test fun theOfflineSeriesEpisodesQueryUsesTheDownloadsSeriesIndexAndThePrimaryKeys() = runBlocking {
+        val items = (1..5_000).map { n -> if (n <= 500) episode("e$n", 1 + n / 50, n % 50, series = "show${n % 10}") else item("p$n") }
+        items.chunked(500).forEach { library.writeItems(s1u1, it.map { i -> row(i) }, t0, requestedAtSeq = 0) }
+        val store = app.shoalwatch.data.db.downloads.DownloadStore(db, { 1L })
+        store.add(s1u1, items.take(500).map {
+            app.shoalwatch.data.db.downloads.DownloadStore.NewDownload(it.id, it.kind, it.seriesId, it.seasonId, app.shoalwatch.data.downloads.DownloadQuality.ORIGINAL,
+                app.shoalwatch.data.downloads.StorageKind.INTERNAL, null, null, null)
+        })
+        assertEquals(500, count("downloads"))
+        val sql = app.shoalwatch.data.db.downloads.OfflineLibraryDao.SERIES_EPISODES_SQL
+            .replace(":serverId", "'$S1'").replace(":userId", "'$U1'").replace(":seriesId", "'${id("show3")}'")
+        val p = plan(sql)
+        File("build/query-plan-offline-episodes.txt").writeText("OFFLINE SERIES EPISODES\n${p.joinToString("\n")}\n")
+        assertTrue(p.toString(), p.none { it.startsWith("SCAN i") || it.startsWith("SCAN items") || it.startsWith("SCAN d") })
+        assertTrue(p.toString(), p.any { it.startsWith("SEARCH d USING INDEX index_downloads_serverId_seriesId") })
+        assertTrue(p.toString(), p.any { it.startsWith("SEARCH i USING INDEX sqlite_autoindex_items_1") })
+        assertTrue(p.toString(), p.any { it.startsWith("SEARCH v USING") && it.contains("sqlite_autoindex_visible_items_1") })
+    }
+
     @Test fun theEpisodesQueryUsesTheSeriesIndex() = runBlocking {
         val episodes = (1..30).map { episode("e$it", 1 + it / 10, it % 10) }
         library.writeItems(s1u1, episodes.map { row(it) }, t0, requestedAtSeq = 0)

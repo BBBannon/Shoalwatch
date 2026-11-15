@@ -1,5 +1,6 @@
 package app.shoalwatch.data.downloads
 
+import app.shoalwatch.data.library.ItemWithUserData
 import app.shoalwatch.data.playback.Quality
 
 /** ORIGINAL is the server's own file; the rest are conversions at Milestone 3's streaming qualities. */
@@ -21,3 +22,23 @@ enum class StorageKind { INTERNAL, REMOVABLE }
 enum class ArtworkSlot { PRIMARY, BACKDROP, THUMB }
 
 enum class TrackType { AUDIO, SUBTITLE }
+
+/** What a screen shows about one download, for the session user. */
+data class DownloadInfo(
+    val itemId: String, val state: DownloadState, val failure: DownloadFailure?, val quality: DownloadQuality,
+    /** 0..1 when known (bytes, or segments for a conversion), else null. */
+    val progress: Float?, val totalBytes: Long?,
+    val ownedByMe: Boolean, val storage: StorageKind,
+    /** False when it was saved to an SD card that is not in the phone now. */
+    val available: Boolean,
+)
+
+data class OfflineEntry(val item: ItemWithUserData, val download: DownloadInfo)
+
+data class OfflineSeason(val season: ItemWithUserData?, val seasonNumber: Int?, val episodes: List<OfflineEntry>)
+
+data class OfflineSeries(val series: ItemWithUserData?, val seasons: List<OfflineSeason>)
+
+data class SeriesSummary(val series: ItemWithUserData, val episodeCount: Int, val bytes: Long)
+
+data class OfflineLibrary(val inProgress: List<OfflineEntry>, val films: List<OfflineEntry>, val series: List<SeriesSummary>)

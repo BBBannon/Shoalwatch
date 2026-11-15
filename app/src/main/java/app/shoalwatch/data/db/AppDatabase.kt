@@ -6,11 +6,13 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import app.shoalwatch.data.db.downloads.Converters
+import app.shoalwatch.data.db.downloads.DownloadDao
 import app.shoalwatch.data.db.downloads.DownloadEntity
 import app.shoalwatch.data.db.downloads.DownloadOwnerEntity
 import app.shoalwatch.data.db.downloads.DownloadSegmentEntity
 import app.shoalwatch.data.db.downloads.DownloadSettingsEntity
 import app.shoalwatch.data.db.downloads.DownloadTrackEntity
+import app.shoalwatch.data.db.downloads.OfflineLibraryDao
 import app.shoalwatch.data.db.downloads.OfflinePlayEntity
 import app.shoalwatch.data.db.downloads.PinnedArtworkEntity
 import app.shoalwatch.data.db.library.ItemDao
@@ -51,6 +53,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun viewDao(): ViewDao
     abstract fun libraryMaintenanceDao(): LibraryMaintenanceDao
     abstract fun trackChoiceDao(): TrackChoiceDao
+    abstract fun downloadDao(): DownloadDao
+    abstract fun offlineLibraryDao(): OfflineLibraryDao
 
     companion object {
         const val FILE_NAME = "shoalwatch.db"
