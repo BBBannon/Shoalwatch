@@ -10,10 +10,16 @@ import app.shoalwatch.AppGraph
 import app.shoalwatch.ui.home.HomeActions
 import app.shoalwatch.ui.home.HomeScreen
 import app.shoalwatch.ui.home.HomeViewModel
+import app.shoalwatch.ui.detail.DetailActions
+import app.shoalwatch.ui.detail.DetailScreen
+import app.shoalwatch.ui.detail.DetailViewModel
 import app.shoalwatch.ui.library.LibraryGridActions
 import app.shoalwatch.ui.library.LibraryGridScreen
 import app.shoalwatch.ui.library.LibraryGridViewModel
 import app.shoalwatch.ui.present.Destination
+import app.shoalwatch.ui.series.SeriesActions
+import app.shoalwatch.ui.series.SeriesScreen
+import app.shoalwatch.ui.series.SeriesViewModel
 import app.shoalwatch.ui.shell.AppShell
 import app.shoalwatch.ui.shell.DownloadsScreen
 import app.shoalwatch.ui.shell.Tab
@@ -36,11 +42,12 @@ internal fun NavHostController.switchTab(tab: Tab) {
     }
 }
 
-/** Where tapping an item goes. A series and a detail page are wired as those screens arrive. */
+/** Where tapping an item goes. */
 internal fun NavHostController.open(destination: Destination) {
     when (destination) {
         is Destination.Library -> navigate(Routes.library(destination.parentId))
-        is Destination.Series, is Destination.Detail -> Unit
+        is Destination.Series -> navigate(Routes.series(destination.seriesId, destination.seasonId, destination.episodeId))
+        is Destination.Detail -> navigate(Routes.item(destination.itemId))
     }
 }
 
@@ -85,11 +92,58 @@ internal fun LibraryRoute(graph: AppGraph, nav: NavHostController, viewId: Strin
             onOpen = nav::open,
             onSignIn = { nav.navigate(Routes.signIn(it)) },
             onReview = { nav.navigate(Routes.serverEdit(it)) },
+            onOpenServers = { nav.navigate(Routes.SERVERS) },
             onSetPlayed = vm::setPlayed,
             onSetFavourite = vm::setFavourite,
         )
     }
     LibraryGridScreen(state, actions, vm.messages, snackbar)
+}
+
+@Composable
+internal fun SeriesRoute(graph: AppGraph, nav: NavHostController, seriesId: String, season: String?, episode: String?) {
+    val vm = graphStateViewModel(key = seriesId) { saved ->
+        SeriesViewModel(seriesId, season, episode, saved, graph.serverCatalog, graph.addressSelector, graph.library, graph.playstate)
+    }
+    val state by vm.state.collectAsStateWithLifecycle()
+    val snackbar = remember { SnackbarHostState() }
+    val actions = remember(vm, nav) {
+        SeriesActions(
+            onBack = { nav.popBackStack() },
+            onPickSeason = vm::pickSeason,
+            onRefresh = vm::refresh,
+            onOpen = nav::open,
+            onSignIn = { nav.navigate(Routes.signIn(it)) },
+            onReview = { nav.navigate(Routes.serverEdit(it)) },
+            onOpenServers = { nav.navigate(Routes.SERVERS) },
+            onSetSeriesPlayed = vm::setSeriesPlayed,
+            onSetSeriesFavourite = vm::setSeriesFavourite,
+            onSetSeasonPlayed = vm::setSeasonPlayed,
+            onSetPlayed = vm::setPlayed,
+            onSetFavourite = vm::setFavourite,
+        )
+    }
+    SeriesScreen(state, actions, vm.messages, snackbar)
+}
+
+@Composable
+internal fun DetailRoute(graph: AppGraph, nav: NavHostController, itemId: String) {
+    val vm = graphViewModel(key = itemId) { DetailViewModel(itemId, graph.serverCatalog, graph.addressSelector, graph.library, graph.playstate) }
+    val state by vm.state.collectAsStateWithLifecycle()
+    val snackbar = remember { SnackbarHostState() }
+    val actions = remember(vm, nav) {
+        DetailActions(
+            onBack = { nav.popBackStack() },
+            onRefresh = vm::refresh,
+            onOpen = nav::open,
+            onSignIn = { nav.navigate(Routes.signIn(it)) },
+            onReview = { nav.navigate(Routes.serverEdit(it)) },
+            onOpenServers = { nav.navigate(Routes.SERVERS) },
+            onSetPlayed = vm::setPlayed,
+            onSetFavourite = vm::setFavourite,
+        )
+    }
+    DetailScreen(state, actions, vm.messages, snackbar)
 }
 
 @Composable

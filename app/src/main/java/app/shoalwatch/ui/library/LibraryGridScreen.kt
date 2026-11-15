@@ -59,6 +59,7 @@ import app.shoalwatch.ui.components.PosterCard
 import app.shoalwatch.ui.components.RefreshLine
 import app.shoalwatch.ui.components.SheetActions
 import app.shoalwatch.ui.components.SheetTarget
+import app.shoalwatch.ui.components.SignedOutNotice
 import app.shoalwatch.ui.components.SkeletonBlock
 import app.shoalwatch.ui.present.Destination
 import app.shoalwatch.ui.present.detailsDestination
@@ -81,6 +82,7 @@ class LibraryGridActions(
     val onOpen: (Destination) -> Unit,
     val onSignIn: (serverId: String) -> Unit,
     val onReview: (serverId: String) -> Unit,
+    val onOpenServers: () -> Unit,
     val onSetPlayed: (itemId: String, played: Boolean) -> Unit,
     val onSetFavourite: (itemId: String, favourite: Boolean) -> Unit,
 )
@@ -106,7 +108,8 @@ fun LibraryGridScreen(state: LibraryGridUiState, actions: LibraryGridActions, me
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             when (state.phase) {
-                GridPhase.SIGNED_OUT, GridPhase.GONE -> EmptyState(
+                GridPhase.SIGNED_OUT -> SignedOutNotice(actions.onOpenServers)
+                GridPhase.GONE -> EmptyState(
                     stringResource(R.string.gone_title), stringResource(R.string.gone_body),
                     actionLabel = stringResource(R.string.cd_back), onAction = actions.onBack,
                 )

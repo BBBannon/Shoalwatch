@@ -40,12 +40,13 @@ abstract class LibraryGridRenderBase : RenderBase() {
     private var backs = 0
     private var signIns = 0
     private var reviews = 0
+    private var servers = 0
     private val played = mutableListOf<Pair<String, Boolean>>()
 
     private val actions = LibraryGridActions(
         onBack = { backs++ }, onSetSort = { sorts += it }, onSetFilter = { filters += it }, onClearFilters = { cleared++ },
         onEndVisible = { ends += it }, onRefresh = { refreshed++ }, onOpen = { opened += it }, onSignIn = { signIns++ },
-        onReview = { reviews++ }, onSetPlayed = { id, p -> played += id to p }, onSetFavourite = { _, _ -> },
+        onReview = { reviews++ }, onOpenServers = { servers++ }, onSetPlayed = { id, p -> played += id to p }, onSetFavourite = { _, _ -> },
     )
 
     private val films = (1..6).map { entry(it, name = "Film $it", data = userData(played = it == 2)) }
@@ -177,6 +178,13 @@ abstract class LibraryGridRenderBase : RenderBase() {
         assertShown(text(R.string.gone_title))
         rule.onAllNodes(hasText(text(R.string.cd_back))).onFirst().performClick()
         assertEquals(1, backs)
+    }
+
+    @Test fun nobodySignedInLinksToTheServersList() {
+        showGrid(LibraryGridUiState(phase = GridPhase.SIGNED_OUT))
+        assertShown(text(R.string.home_signed_out_title))
+        rule.onAllNodes(hasText(text(R.string.home_manage))).onFirst().performClick()
+        assertEquals(1, servers)
     }
 
     @Test fun theBackArrowGoesBack() {

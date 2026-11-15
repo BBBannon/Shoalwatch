@@ -24,7 +24,7 @@ private val ready = LibraryGridUiState(
     ),
 )
 
-private val actions = LibraryGridActions({}, {}, {}, {}, {}, {}, {}, {}, {}, { _, _ -> }, { _, _ -> })
+private val actions = LibraryGridActions({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, { _, _ -> }, { _, _ -> })
 
 @Composable
 private fun Grid(state: LibraryGridUiState) = ShoalwatchTheme { LibraryGridScreen(state, actions, emptyFlow(), SnackbarHostState()) }
