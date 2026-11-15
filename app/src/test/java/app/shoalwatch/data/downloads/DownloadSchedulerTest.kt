@@ -82,6 +82,23 @@ class DownloadSchedulerTest {
         assertTrue(DownloadScheduler.isRunning { error("no answer") })
     }
 
+    /** Review Minor 5: starting to watch the setting must not replace (and so cancel) a running worker; only a change does. */
+    @Test fun watchingTheSettingReplacesOnlyOnAChangeAndOnlyWithSomethingQueued() = runTest(UnconfinedTestDispatcher()) {
+        val scheduler = DownloadScheduler({ workManager }, prefs) { true }
+        var queued = true
+        scheduler.kick()
+        val first = pending().single().id
+        val job = scheduler.watchSettings(backgroundScope) { queued }
+        assertEquals("the first value is not a change", first, pending().single().id)
+        queued = false
+        prefs.setMobileData(true)
+        assertEquals("nothing queued: not replaced", first, pending().single().id)
+        queued = true
+        prefs.setMobileData(false)
+        assertNotEquals("a change with something queued replaces it", first, pending().single().id)
+        job.cancel()
+    }
+
     @Test fun comingToTheForegroundWithQueuedRowsKicks() = runTest {
         val scheduler = DownloadScheduler(workManager, prefs)
         scheduler.inFront { false }

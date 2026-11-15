@@ -27,11 +27,18 @@ class DownloadWorkerTest {
     private val reported = CountDownLatch(1)
     private var drain: QueueDrain = QueueDrain { _, _ -> QueueRun.Drained }
     private var mobileData = false
+    private var ready = 0
+    /** Every foreground notice the worker set, in order (review Minor 5: deleting a `setForeground` must fail a test). */
+    private val foregrounds = mutableListOf<androidx.work.ForegroundInfo>()
+    private val recordingUpdater = androidx.work.ForegroundUpdater { _, _, info ->
+        synchronized(foregrounds) { foregrounds += info }
+        com.google.common.util.concurrent.Futures.immediateFuture(null)
+    }
 
     private fun parts() = DownloadWorker.Parts(
         queue = { stop, progress -> drain.drain(stop, progress) }, notifications = DownloadNotifications(context),
         report = { s -> synchronized(statuses) { statuses += s }; if (s != QueueStatus.Idle) reported.countDown() },
-        readySince = { 0 }, mobileData = { mobileData }, now = { 0L },
+        readySince = { ready }, mobileData = { mobileData }, now = { 0L },
     )
 
     /** Waits up to 5 s, letting the main looper run meanwhile (Robolectric pauses it). */
@@ -43,7 +50,34 @@ class DownloadWorkerTest {
         return false
     }
 
-    private fun worker(): DownloadWorker = TestListenableWorkerBuilder<DownloadWorker>(context).setWorkerFactory(ShoalwatchWorkerFactory { parts() }).build()
+    private fun worker(): DownloadWorker = TestListenableWorkerBuilder<DownloadWorker>(context).setWorkerFactory(ShoalwatchWorkerFactory { parts() })
+        .setForegroundUpdater(recordingUpdater).build()
+
+    private val manager get() = context.getSystemService(android.app.NotificationManager::class.java)
+
+    private fun progressOf(info: androidx.work.ForegroundInfo) = info.notification.extras.getInt(android.app.Notification.EXTRA_PROGRESS)
+
+    @Test fun theDrainRunsInTheForegroundAndEachNewStepUpdatesItsNotice() {
+        drain = QueueDrain { _, progress ->
+            progress(QueueStatus.Running(1, 2, 0.5f))
+            progress(QueueStatus.Running(1, 2, 0.502f)) // the same percent: not shown again
+            progress(QueueStatus.Running(2, 2, 0.25f))
+            QueueRun.Drained
+        }
+        runBlocking { worker().doWork() }
+        assertEquals("starting, then two progress notices", 3, foregrounds.size)
+        assertTrue(foregrounds.all { it.notificationId == DownloadNotifications.ID && it.foregroundServiceType == ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC })
+        assertEquals(listOf(50, 25), foregrounds.drop(1).map(::progressOf))
+    }
+
+    @Test fun anythingCompletedPostsTheFinishedNoticeAndNothingCompletedDoesNot() {
+        runBlocking { worker().doWork() }
+        assertTrue(org.robolectric.Shadows.shadowOf(manager).allNotifications.isEmpty())
+        ready = 3
+        runBlocking { worker().doWork() }
+        val finished = org.robolectric.Shadows.shadowOf(manager).allNotifications.single()
+        assertEquals("Downloads finished", finished.extras.getCharSequence(android.app.Notification.EXTRA_TITLE).toString())
+    }
 
     @Test fun anEmptiedQueueIsSuccess() {
         assertEquals(ListenableWorker.Result.success(), runBlocking { worker().doWork() })
