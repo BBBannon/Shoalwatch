@@ -10,6 +10,7 @@ import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -17,16 +18,26 @@ import org.junit.Before
 import org.junit.Test
 
 /** The one lookup of a saved copy the player may open: COMPLETE, visible by the sharing rule, mounted, and the recorded size. */
-class SavedCopiesTest : DownloadQueueTestBase() {
+class SavedCopiesTest : DownloadHousekeepingTestBase() {
     private val film get() = item("film")
     private lateinit var copies: SavedCopies
-    private val card by lazy { tmp.newFolder("card") }
+    private val sdCard by lazy { tmp.newFolder("sd-card") }
 
-    @Before fun setUpCopies() { copies = SavedCopies(db.offlineLibraryDao(), db.downloadDao().savedRows(), paths, Dispatchers.Unconfined) }
+    /** Whether the server can be reached now, and the sessions a re-ask was asked for (Tasks 13-16 review I-1). */
+    private var reachable = false
+    private val rechecks = mutableListOf<Session>()
+    private var onRecheck: (Session) -> Unit = {}
+
+    @Before fun setUpCopies() {
+        copies = SavedCopies(
+            db.offlineLibraryDao(), db.downloadDao().savedRows(), paths, Dispatchers.Unconfined,
+            now = { clock }, reachable = { reachable }, recheck = { s -> rechecks += s; onRecheck(s) },
+        )
+    }
 
     /** A's verified original of [item] on [storage], [bytes] long on disk. */
     private fun saved(item: Item = film, storage: StorageKind = StorageKind.INTERNAL, bytes: Int = 100, recorded: Long = 100): File {
-        val volumeId = if (storage == StorageKind.REMOVABLE) "CARD-1".also { fake.card(it, card) } else null
+        val volumeId = if (storage == StorageKind.REMOVABLE) "CARD-1".also { fake.card(it, sdCard) } else null
         seen(s1u1, item)
         runBlocking {
             store.add(s1u1, listOf(newDownload(item).let { n -> app.shoalwatch.data.db.downloads.DownloadStore.NewDownload(n.itemId, n.kind, n.seriesId, n.seasonId, n.quality, storage, volumeId, n.runtimeMs, null) }))
@@ -110,4 +121,51 @@ class SavedCopiesTest : DownloadQueueTestBase() {
         assertNull(runBlocking { copies.media(s1u1, film.id.uppercase()) })
         assertNull(runBlocking { copies.media(s1u1, "../x") })
     }
+
+    /** B (not an owner) was confirmed for A's shared film; [days] later, is the copy offered for playback? */
+    private fun sharedAndConfirmed(): Unit = runBlocking {
+        saved()
+        seen(s1u2, film)
+        store.setSharing(s1u1.serverId, true)
+        confirm(s1u2, film)
+    }
+
+    private fun plan(s: Session) = runBlocking { copies.plan(s, film.id) }
+
+    @Test fun aSharedCopyWhoseConfirmationIsOverAWeekOldIsNotPlayedWhileTheServerCanBeReachedUntilReAsked() {
+        sharedAndConfirmed()
+        reachable = true
+        clock += 6 * DAY
+        assertNotNull("six days old: still good", plan(s1u2))
+        assertTrue("nothing to re-ask", rechecks.isEmpty())
+        clock += 2 * DAY
+        assertNull("eight days old and the server is there: stream instead", plan(s1u2))
+        assertEquals("and it is re-asked", listOf(s1u2), rechecks)
+        assertNotNull("the owner needs no confirmation, however old", plan(s1u1))
+        confirm(s1u2, film) // the server said yes again
+        assertNotNull(plan(s1u2))
+        assertNotNull("subtitles of a copy already playing still load", media(s1u2))
+    }
+
+    @Test fun offlineAConfirmationThatCannotBeReAskedStillPlaysHoweverOld() {
+        sharedAndConfirmed()
+        reachable = false
+        clock += 60 * DAY
+        assertNotNull(plan(s1u2))
+        assertTrue(rechecks.isEmpty())
+    }
+
+    @Test fun aChildWhoNeverOpensDownloadsLosesTheSharedCopyOnceTheServerSaysNo() {
+        sharedAndConfirmed()
+        reachable = true
+        clock += 8 * DAY
+        facts.allow(film.id, canDownload = false) // the admin turned the child's download permission off
+        onRecheck = { s -> runBlocking { housekeeping.reconfirm(s) } } // what SharingRecheck runs
+        assertNull("never LOCAL", plan(s1u2))
+        assertFalse("the permission is gone", runBlocking { store.isConfirmed(key(film), s1u2.userId) })
+        assertNull("and stays gone", plan(s1u2))
+        assertNotNull("the owner keeps it", plan(s1u1))
+    }
+
+    private companion object { const val DAY = 24L * 60 * 60 * 1_000 }
 }

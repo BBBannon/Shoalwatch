@@ -37,8 +37,9 @@ import kotlinx.coroutines.launch
  * sharing rule), the queue's status and whether the server can be reached. It restarts when the session changes: the new
  * session's first state is empty and loading, and content read for another session is dropped by comparing sessions, so
  * nothing from the old profile lingers. This screen makes no network call of its own. Each time the session's server becomes
- * reachable while the tab is open (including on opening), [reconfirm] runs for it (`DownloadHousekeeping.reconfirm`: the
- * strict sharing rule's re-check, so other profiles see shared copies and a later "no" hides them).
+ * reachable while the tab is open (including on opening), [reconfirm] asks for it (`SharingRecheck.request`, rate limited: the
+ * strict sharing rule's re-check, so other profiles see shared copies and a later "no" hides them). The app runs the same
+ * re-ask whichever screen is open; this only makes it prompt when the tab is.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class DownloadsViewModel(

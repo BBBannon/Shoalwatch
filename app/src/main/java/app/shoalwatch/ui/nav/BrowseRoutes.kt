@@ -201,7 +201,7 @@ internal fun SearchRoute(graph: AppGraph, nav: NavHostController) {
 
 @Composable
 internal fun DownloadsRoute(graph: AppGraph, nav: NavHostController) {
-    val vm = graphViewModel { DownloadsViewModel(graph.serverCatalog, graph.addressSelector, graph.downloads) { s -> graph.downloadHousekeeping.reconfirm(s) } }
+    val vm = graphViewModel { DownloadsViewModel(graph.serverCatalog, graph.addressSelector, graph.downloads) { s -> graph.sharingRecheck.request(s)?.join() } }
     val state by vm.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val actions = remember(vm, nav) {

@@ -28,6 +28,9 @@ import app.shoalwatch.data.downloads.FileFetcher
 import app.shoalwatch.data.downloads.HlsFetcher
 import app.shoalwatch.data.downloads.Volumes
 import app.shoalwatch.data.downloads.SavedCopies
+import app.shoalwatch.data.downloads.SharingRecheck
+import app.shoalwatch.data.servers.Connection
+import app.shoalwatch.ui.browse.connectionRegained
 import app.shoalwatch.data.downloads.savedRows
 import app.shoalwatch.data.db.downloads.DownloadKey
 import app.shoalwatch.data.playback.LocalPlaybackReports
@@ -177,8 +180,23 @@ class AppGraph(private val appContext: Context) {
     /** From app start: a change of "Use mobile data" replaces the work (WorkManager is reached only once something is queued). */
     fun watchDownloads(): Job = downloadScheduler.watchSettings(appScope, anyQueued)
 
-    /** The app's activity started: kick the download worker if anything is queued (off the main thread). */
-    fun downloadsInFront() { appScope.launch { downloadScheduler.inFront(anyQueued) } }
+    /** From app start: the sharing re-ask for the active profile on each session change and each time its server comes back. */
+    fun watchSharing(): Job = sharingRecheck.watch(serverCatalog.activeSession(), connectionRegained(serverCatalog, addressSelector))
+
+    /**
+     * The app's activity started: kick the download worker if anything is queued, and re-ask the sharing confirmations of the
+     * active profile (rate limited), off the main thread.
+     */
+    fun downloadsInFront() {
+        appScope.launch { downloadScheduler.inFront(anyQueued) }
+        appScope.launch { sharingRecheck.inFront(serverCatalog.activeSession()) }
+    }
+
+    /** When the strict sharing rule's 7-day re-ask runs, whichever screen is open (see "Sharing rule" in docs/ARCHITECTURE.md). */
+    internal val sharingRecheck: SharingRecheck by lazy {
+        SharingRecheck({ s -> downloadHousekeeping.reconfirm(s) }, ::serverReachable, appScope, SystemMonotonicClock)
+    }
+    private fun serverReachable(s: Session): Boolean = addressSelector.connection(s.serverId).value is Connection.Online
     /** What `ShoalwatchWorkerFactory` hands the download worker. */
     internal val downloadWorkerParts: DownloadWorker.Parts by lazy {
         DownloadWorker.Parts(
@@ -205,7 +223,12 @@ class AppGraph(private val appContext: Context) {
         )
     }
     /** The one lookup of a saved copy a session may play (see "Offline playback" in docs/ARCHITECTURE.md). */
-    internal val savedCopies: SavedCopies by lazy { SavedCopies(database.offlineLibraryDao(), database.downloadDao().savedRows(), downloadPaths) }
+    internal val savedCopies: SavedCopies by lazy {
+        SavedCopies(
+            database.offlineLibraryDao(), database.downloadDao().savedRows(), downloadPaths,
+            reachable = ::serverReachable, recheck = { s -> sharingRecheck.request(s) },
+        )
+    }
     /** What the player and its subtitle loader ask: saved subtitles and skip markers for a saved copy, else the server. */
     internal val playerGateway: PlaybackGateway by lazy { SavedFirstPlaybackGateway(playbackGateway, savedCopies::media, database.downloadDao().savedRows(), downloadPaths) }
     /** What a LOCAL play keeps for Milestone 5 to send (`offline_plays`). */

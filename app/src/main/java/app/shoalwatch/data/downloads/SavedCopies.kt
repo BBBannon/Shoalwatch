@@ -37,6 +37,8 @@ internal fun DownloadDao.savedRows(): SavedRows = object : SavedRows {
  *  - its storage is mounted now (`DownloadPaths.itemFolder` is not null) and every path comes from `DownloadPaths`;
  *  - a cheap check before every play: an original's media file is the recorded length; a conversion's playlist and every one of
  *    its recorded segments are there.
+ *  - for playback ([plan]): a copy it does not own whose confirmation is over 7 days old is offered only once re-asked, or
+ *    while the server cannot be reached ([staleWhileReachable]).
  * Anything else is null, so the item streams as before. Never throws (a failure is logged by class and is null).
  */
 internal class SavedCopies(
@@ -44,15 +46,39 @@ internal class SavedCopies(
     private val rows: SavedRows,
     private val paths: DownloadPaths,
     private val io: CoroutineDispatcher = Dispatchers.IO,
+    private val now: () -> Long = System::currentTimeMillis,
+    private val reachable: (Session) -> Boolean = { false },
+    private val recheck: (Session) -> Unit = {},
 ) {
     suspend fun media(s: Session, itemId: String): SavedMedia? = found(s, itemId)?.second
 
     suspend fun plan(s: Session, itemId: String): SavedPlan? {
         val (row, media) = found(s, itemId) ?: return null
         val key = DownloadKey(row.serverId, row.itemId)
+        if (staleWhileReachable(s, row.itemId)) return null
         return guarded {
             SavedPlan(media, SavedPlans.plan(row.itemId, media, rows.tracks(key), row.runtimeMs, rows.segments(key).isNotEmpty()))
         }
+    }
+
+    /**
+     * The strict sharing rule's re-ask at the point of play (Tasks 13-16 review I-1): a copy this session does NOT own whose
+     * confirmation is over 7 days old is not played while the server can be reached; a re-ask is asked for ([recheck], rate
+     * limited by `SharingRecheck`) and the item streams meanwhile. Offline, a confirmation that cannot be re-asked still counts.
+     * A failure to read it refuses the copy (it streams), never the other way round.
+     */
+    private suspend fun staleWhileReachable(s: Session, itemId: String): Boolean {
+        val confirmedAt = try {
+            offline.sharedConfirmedAt(s.serverId, s.userId, itemId) ?: return false // its own copy
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            AppLog.w(TAG, "saved copy not offered: ${e.javaClass.simpleName}")
+            return true
+        }
+        if (now() - confirmedAt <= STALE_AFTER_MS || !reachable(s)) return false
+        recheck(s)
+        return true
     }
 
     private suspend fun found(s: Session, itemId: String): Pair<DownloadEntity, SavedMedia>? {
@@ -92,5 +118,8 @@ internal class SavedCopies(
         null
     }
 
-    private companion object { const val TAG = "SavedCopies" }
+    private companion object {
+        const val TAG = "SavedCopies"
+        const val STALE_AFTER_MS = 7L * 24 * 60 * 60 * 1_000
+    }
 }

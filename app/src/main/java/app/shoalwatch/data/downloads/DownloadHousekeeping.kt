@@ -68,7 +68,7 @@ internal class DownloadHousekeeping(
     }
 
     /**
-     * When a profile opens Downloads online: re-asks the server about up to 50 shared items (and their series) this profile
+     * Run by `SharingRecheck` (session change, server back, app to the front, a stale copy about to play; rate limited): re-asks the server about up to 50 shared items (and their series) this profile
      * has not had confirmed for 7 days, or whose download permission it never confirmed. A 403 or 404 revokes that profile's
      * record (the library's rule), so the item is hidden from it at once; the owner still sees it. Then ONE `facts` call
      * records this profile's own CanDownload: true is a confirmed permission (the strict sharing rule), anything else removes
