@@ -75,7 +75,7 @@ class LibraryRepository(
         wholeList(s, ListKey.episodes(seriesId, seasonId), SERIES_WINDOW) { gateway.episodes(s, seriesId, seasonId) }
 
     private fun itemRecipe(s: Session, itemId: String, window: Duration) = Recipe(ListKey.item(itemId), window) {
-        cache.writeItems(s, listOf(gateway.item(s, itemId)))
+        cache.writeItems(s, listOf(gateway.item(s, itemId)), authoritative = true) // a detail fetch asks for every field, so a missing overview is really gone
         cache.markLoaded(s, ListKey.item(itemId))
     }
 

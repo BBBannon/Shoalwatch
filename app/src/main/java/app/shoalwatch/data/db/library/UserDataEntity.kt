@@ -36,4 +36,5 @@ data class UserDataEntity(
     val lastPlayed: Long?,
     val unplayedItemCount: Int?,
     val updatedAt: Long,
+    val pendingSyncAt: Long? = null,
 )

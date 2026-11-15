@@ -121,13 +121,27 @@ class LibraryStore(private val db: AppDatabase) {
         lists.upsertState(state.copy(loadedCount = loaded, total = state.total?.plus(delta)?.coerceAtLeast(loaded)))
     }
 
-    /** Stores items (and the user data that came with them) without touching any list, e.g. a detail fetch. Same rules as [writePage]. */
-    suspend fun writeItems(s: Session, rows: List<ItemWithUserData>, now: Instant) {
+    /**
+     * Stores items (and the user data that came with them) without touching any list, e.g. a detail fetch. Same rules as
+     * [writePage]: [ItemDao.upsertItems] for the items (a list write keeps a stored `overview` and `childCount` when the
+     * incoming value is null; an [authoritative] write, i.e. a detail fetch, does not), and for user data the server
+     * provided, [ItemDao.writeServerUserData]: a row with an unconfirmed local change (`pendingSyncAt`) is ignored.
+     */
+    suspend fun writeItems(s: Session, rows: List<ItemWithUserData>, now: Instant, authoritative: Boolean = false) {
         db.withTransaction {
-            items.upsertItems(s.serverId, rows.map { it.item.toEntity(s.serverId, now) })
-            items.upsertUserData(rows.mapNotNull { r -> r.userData?.toEntity(s.serverId, s.userId, r.item.id, now) })
+            items.upsertItems(s.serverId, rows.map { it.item.toEntity(s.serverId, now) }, authoritative)
+            items.writeServerUserData(rows.mapNotNull { r -> r.userData?.toEntity(s.serverId, s.userId, r.item.id, now) })
         }
     }
+
+    /** Marks this user's row for the item as holding a local change the server has not confirmed. False if there is no row (set the value first). */
+    suspend fun markPending(s: Session, itemId: String, now: Instant): Boolean = items.markPending(s.serverId, s.userId, itemId, now.toEpochMilli()) > 0
+
+    /** The server has confirmed the change: the next refresh may overwrite the row again. The local value is kept. */
+    suspend fun clearPending(s: Session, itemId: String) = items.clearPending(s.serverId, s.userId, itemId)
+
+    /** Deletes this user's row for the item (even if pending), to roll back an optimistic action on a row that did not exist. */
+    suspend fun deleteUserData(s: Session, itemId: String) = items.deleteUserData(s.serverId, s.userId, itemId)
 
     /** Makes this user's stored libraries exactly [libraries], in order. */
     suspend fun replaceViews(s: Session, libraries: List<LibraryView>) =

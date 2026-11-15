@@ -139,6 +139,20 @@ class LibraryItemTest : LibraryTestBase() {
         assertEquals(1_200, count("items", "overview IS NOT NULL AND name = 'N'"))
     }
 
+    @Test fun anAuthoritativeWriteLetsOverviewAndChildCountBeCleared() = runBlocking {
+        library.writeItems(s1u1, listOf(row(item("a", overview = "Plot", childCount = 4))), t0)
+        sql("UPDATE items SET pinned = 1 WHERE itemId = ?", id("a"))
+        library.writeItems(s1u1, listOf(row(item("a", name = "Detail", overview = null, childCount = null))), t0.plusSeconds(1), authoritative = true)
+        val stored = items.getItemEntity(S1, id("a"))!!
+        assertNull(stored.overview)
+        assertNull(stored.childCount)
+        assertEquals("Detail", stored.name)
+        assertTrue("pinned is still never touched", stored.pinned)
+        library.writeItems(s1u1, listOf(row(item("a", overview = "Again"))), t0.plusSeconds(2), authoritative = true)
+        library.writeItems(s1u1, listOf(row(item("a", overview = null))), t0.plusSeconds(3)) // a list write keeps it
+        assertEquals("Again", items.getItemEntity(S1, id("a"))!!.overview)
+    }
+
     // ---- targeted user-data updates
 
     @Test fun setPlayedCreatesTheRowAndKeepsWhatItShouldKeep() = runBlocking {
@@ -221,6 +235,24 @@ class LibraryItemTest : LibraryTestBase() {
         assertEquals(listOf("Élite Squad"), search("élite"))
         assertEquals(listOf("Élite Squad"), search("ÉLITE"))
         assertEquals(listOf("Zoë"), search("ZOË"))
+    }
+
+    @Test fun searchFoldsAccentsAndTheTurkishIs() = runBlocking {
+        library.writeItems(s1u1, listOf("Élite", "İstanbul", "Ångström", "Isparta", "Plain").map { row(item(it, name = it)) }, t0)
+        assertEquals(listOf("Élite"), search("elite"))
+        assertEquals(listOf("İstanbul"), search("istanbul"))
+        assertEquals(listOf("İstanbul"), search("İSTANBUL"))
+        assertEquals(listOf("Ångström"), search("ANGSTROM"))
+        assertEquals(listOf("Ångström"), search("ångström"))
+        assertEquals(listOf("Isparta"), search("ısparta"))
+        assertEquals(listOf("İstanbul", "Isparta").sorted(), search("is").sorted())
+    }
+
+    @Test fun anAllKindsSearchIncludesRowsWhoseStoredKindIsUnknown() = runBlocking {
+        library.writeItems(s1u1, listOf(row(item("a", name = "Mystery one")), row(item("b", name = "Mystery two"))), t0)
+        sql("UPDATE items SET kind = 'HOLOGRAM' WHERE itemId = ?", id("a"))
+        assertEquals(listOf("Mystery one", "Mystery two"), search("mystery"))
+        assertEquals("a search for named kinds still filters", listOf("Mystery two"), search("mystery", setOf(ItemKind.MOVIE)))
     }
 
     @Test fun searchMatchesInsideTheNameAndOrdersByName() = runBlocking {

@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 2,
-    "identityHash": "de6689f8a9ca279da4fb246b5b6c240f",
+    "identityHash": "d5c26e3c2a621fb3f10f1085ae30aefd",
     "entities": [
       {
         "tableName": "servers",
@@ -370,7 +370,7 @@
       },
       {
         "tableName": "user_data",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`serverId` TEXT NOT NULL, `userId` TEXT NOT NULL, `itemId` TEXT NOT NULL, `played` INTEGER NOT NULL, `positionMs` INTEGER NOT NULL, `playedPercentage` REAL, `playCount` INTEGER NOT NULL, `favourite` INTEGER NOT NULL, `lastPlayed` INTEGER, `unplayedItemCount` INTEGER, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`serverId`, `userId`, `itemId`), FOREIGN KEY(`serverId`, `userId`) REFERENCES `accounts`(`serverId`, `userId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`serverId` TEXT NOT NULL, `userId` TEXT NOT NULL, `itemId` TEXT NOT NULL, `played` INTEGER NOT NULL, `positionMs` INTEGER NOT NULL, `playedPercentage` REAL, `playCount` INTEGER NOT NULL, `favourite` INTEGER NOT NULL, `lastPlayed` INTEGER, `unplayedItemCount` INTEGER, `updatedAt` INTEGER NOT NULL, `pendingSyncAt` INTEGER, PRIMARY KEY(`serverId`, `userId`, `itemId`), FOREIGN KEY(`serverId`, `userId`) REFERENCES `accounts`(`serverId`, `userId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "serverId",
@@ -434,6 +434,11 @@
             "columnName": "updatedAt",
             "affinity": "INTEGER",
             "notNull": true
+          },
+          {
+            "fieldPath": "pendingSyncAt",
+            "columnName": "pendingSyncAt",
+            "affinity": "INTEGER"
           }
         ],
         "primaryKey": {
@@ -694,7 +699,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'de6689f8a9ca279da4fb246b5b6c240f')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'd5c26e3c2a621fb3f10f1085ae30aefd')"
     ]
   }
 }

@@ -36,6 +36,23 @@ class LibraryRepositoryItemSearchTest : LibraryRepositoryTestBase() {
         assertEquals("The full story", done.item!!.item.overview)
     }
 
+    @Test fun aDetailRefreshIsAuthoritativeSoAnOverviewTheServerNoLongerHasIsCleared() = runBlocking {
+        library.writeItems(s1u1, listOf(full("a")), t0)
+        gateway.itemFor = { row(item("a", overview = null)) }
+        repo.refresh(s1u1, RefreshTarget.Item(id("a")))
+        assertNull(detail().first5s { it.item != null }.item!!.item.overview)
+    }
+
+    @Test fun aRefreshNeverUndoesAWatchedMarkWaitingToBeSent() = runBlocking {
+        library.writeItems(s1u1, listOf(row(item("a"), watched())), t0)
+        db.itemDao().setPlayed(s1u1.serverId, s1u1.userId, id("a"), true, 0, t0.toEpochMilli(), pending = true)
+        gateway.itemFor = { row(item("a"), watched(played = false, positionMs = 900)) }
+        repo.refresh(s1u1, RefreshTarget.Item(id("a")))
+        val d = detail().first5s { it.item != null }.item!!
+        assertTrue(d.userData!!.played)
+        assertEquals(0L, d.userData!!.positionMs)
+    }
+
     @Test fun anItemNeverSeenAndOfflineIsNothingWithAReason() {
         gateway.failAll = AppError.Kind.OFFLINE
         val d = detail().await { it.freshness is Freshness.Stale }

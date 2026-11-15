@@ -6,11 +6,19 @@ import app.shoalwatch.data.library.ItemWithUserData
 import app.shoalwatch.data.library.LibraryKind
 import app.shoalwatch.data.library.LibraryView
 import app.shoalwatch.data.library.UserData
+import java.text.Normalizer
 import java.time.Instant
 import java.util.Locale
 
-/** The key offline search compares against: lower-cased for every script, locale-independent. */
-internal fun searchKey(text: String): String = text.lowercase(Locale.ROOT)
+private val combiningMarks = Regex("\\p{M}+")
+
+/**
+ * The key offline search compares against, built the same way for the stored name and for the query: accents and other
+ * combining marks removed (so "elite" finds "Élite" and "angstrom" finds "Ångström"), Turkish dotted and dotless I both
+ * read as i, then lower-cased for every script, locale-independent.
+ */
+internal fun searchKey(text: String): String =
+    Normalizer.normalize(text, Normalizer.Form.NFD).replace(combiningMarks, "").replace('ı', 'i').lowercase(Locale.ROOT)
 
 internal fun Item.toEntity(serverId: String, fetchedAt: Instant) = ItemEntity(
     serverId = serverId, itemId = id, kind = kind, name = name, nameKey = searchKey(name), sortName = sortName,

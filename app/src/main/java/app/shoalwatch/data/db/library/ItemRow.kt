@@ -16,4 +16,4 @@ internal const val ROW_COLUMNS =
     "i.*, u.serverId AS ud_serverId, u.userId AS ud_userId, u.itemId AS ud_itemId, u.played AS ud_played, " +
         "u.positionMs AS ud_positionMs, u.playedPercentage AS ud_playedPercentage, u.playCount AS ud_playCount, " +
         "u.favourite AS ud_favourite, u.lastPlayed AS ud_lastPlayed, u.unplayedItemCount AS ud_unplayedItemCount, " +
-        "u.updatedAt AS ud_updatedAt"
+        "u.updatedAt AS ud_updatedAt, u.pendingSyncAt AS ud_pendingSyncAt"

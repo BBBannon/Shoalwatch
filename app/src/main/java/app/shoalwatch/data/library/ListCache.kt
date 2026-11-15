@@ -29,6 +29,10 @@ internal data class Cached(val rows: List<ItemWithUserData>, val state: ListStat
  * list was never loaded or is older than its window. Room is the only thing readers observe; the network only ever
  * writes to it, through here.
  *
+ * Whose copy of a user's watched state wins is decided in one place, `ItemDao.writeServerUserData` (reached through
+ * `LibraryStore`): a row with a local change the server has not confirmed (`pendingSyncAt`) is never overwritten by a
+ * refresh. Milestone 5's playstate outbox sets and clears that marker; nothing here needs to know.
+ *
  * Every write takes [writeGate], so list writes and eviction never overlap each other, and one list's writes never
  * interleave (a list also has at most one refresh in flight, see [Refresher]).
  */
@@ -108,8 +112,7 @@ internal class ListCache(
         endReached: Boolean,
         basedOn: ListStateEntity? = null,
     ): PageResult {
-        val reconciled = reconcileUserData(s, rows)
-        return writeGate.withLock { store.writePage(s, key, start, reconciled, total, now(), nextStartIndex, pagesLoaded, endReached, basedOn) }
+        return writeGate.withLock { store.writePage(s, key, start, rows, total, now(), nextStartIndex, pagesLoaded, endReached, basedOn) }
     }
 
     /** A list that is read in one go (resume, next up, latest, seasons, episodes). */
@@ -117,21 +120,12 @@ internal class ListCache(
         writePage(s, key, 0, rows, rows.size, rows.size, 1, true)
 
     /** Saves items without a list (a detail fetch, search results). */
-    suspend fun writeItems(s: Session, rows: List<ItemWithUserData>) {
-        val reconciled = reconcileUserData(s, rows)
-        writeGate.withLock { store.writeItems(s, reconciled, now()) }
+    suspend fun writeItems(s: Session, rows: List<ItemWithUserData>, authoritative: Boolean = false) {
+        writeGate.withLock { store.writeItems(s, rows, now(), authoritative) }
     }
 
     suspend fun replaceViews(s: Session, views: List<LibraryView>) = writeGate.withLock { store.replaceViews(s, views) }
 
     /** Records "loaded now" for a key that holds no entries (views, an item): a state row with nothing in it. */
     suspend fun markLoaded(s: Session, key: String) = writePage(s, key, 0, emptyList(), 0, 0, 1, true)
-
-    /**
-     * THE one place that decides whose copy of a user's watched state wins when the server's answer is saved. Today the
-     * server's wins: what it sent overwrites the cached copy. Milestone 5's playstate outbox changes only this function: a
-     * row with a change still waiting to be sent will keep the local value here, so a refresh cannot undo it.
-     */
-    @Suppress("RedundantSuspendModifier", "UNUSED_PARAMETER")
-    private suspend fun reconcileUserData(s: Session, rows: List<ItemWithUserData>): List<ItemWithUserData> = rows
 }

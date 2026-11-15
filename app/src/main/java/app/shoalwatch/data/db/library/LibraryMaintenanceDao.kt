@@ -37,9 +37,9 @@ abstract class LibraryMaintenanceDao {
     @Query("DELETE FROM items WHERE rowid IN (SELECT rowid FROM items WHERE $UNPROTECTED ORDER BY fetchedAt, itemId LIMIT :count)")
     protected abstract suspend fun deleteOldest(serverId: String, count: Int): Int
 
-    /** Watched state must survive eviction of metadata: rows that are watched, favourite or have a resume position stay. */
+    /** Watched state must survive eviction of metadata: rows that are watched, favourite, have a resume position or hold an unsynced local change (`pendingSyncAt`) stay. */
     @Query(
-        "DELETE FROM user_data WHERE serverId = :serverId AND played = 0 AND favourite = 0 AND positionMs <= 0 " +
+        "DELETE FROM user_data WHERE serverId = :serverId AND played = 0 AND favourite = 0 AND positionMs <= 0 AND pendingSyncAt IS NULL " +
             "AND NOT EXISTS (SELECT 1 FROM items i WHERE i.serverId = user_data.serverId AND i.itemId = user_data.itemId)",
     )
     protected abstract suspend fun deleteOrphanedUserData(serverId: String): Int
@@ -50,7 +50,7 @@ abstract class LibraryMaintenanceDao {
      *  2. delete unprotected items fetched before [itemCutoffMs];
      *  3. if the server still has more than [maxUnpinnedItems] unpinned items, delete the oldest-fetched unprotected ones
      *     until it does not (protected rows are never deleted, so the cap can be exceeded only by protected rows);
-     *  4. delete user data whose item is gone, except rows that are watched, favourite or have a resume position.
+     *  4. delete user data whose item is gone, except rows that are watched, favourite, have a resume position or are pending sync.
      */
     @Transaction
     open suspend fun evict(serverId: String, listCutoffMs: Long, itemCutoffMs: Long, maxUnpinnedItems: Int): EvictionCounts {

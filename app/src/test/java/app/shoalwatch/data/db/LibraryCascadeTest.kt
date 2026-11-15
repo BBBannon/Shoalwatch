@@ -49,4 +49,23 @@ class LibraryCascadeTest : LibraryTestBase() {
         servers.removeServer(S2)
         assertEquals(0, count("accounts", "serverId = '$S2'"))
     }
+
+    @Test fun aRejectedTokenKeepsTheUsersCachedListsAndUserData() = runBlocking {
+        fill()
+        val before = tables.associateWith { count(it) }
+        servers.invalidateToken(S1, U1) // the server said 401: signed out, but nothing is deleted
+        assertEquals(before, tables.associateWith { count(it) })
+    }
+
+    @Test fun signingInAgainOverAnExistingAccountDoesNotCascadeAwayItsCache() = runBlocking {
+        fill()
+        val before = tables.associateWith { count(it) }
+        servers.upsertAccount(app.shoalwatch.data.servers.Account(S1, U1, "ann", "a-brand-new-token"), makeActive = true)
+        assertEquals(before, tables.associateWith { count(it) })
+    }
+
+    @Test fun anItemRowInsertedWithoutPinnedIsNotPinned() {
+        sql("INSERT INTO items (serverId, itemId, kind, name, nameKey, fetchedAt) VALUES (?, ?, 'MOVIE', 'x', 'x', 1)", S1, id("raw"))
+        assertEquals(1, count("items", "itemId = '${id("raw")}' AND pinned = 0"))
+    }
 }
