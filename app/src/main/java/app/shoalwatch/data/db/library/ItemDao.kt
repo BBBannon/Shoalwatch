@@ -159,6 +159,19 @@ abstract class ItemDao {
     protected abstract suspend fun updatePosition(serverId: String, userId: String, itemId: String, positionMs: Long, nowMs: Long, pending: Boolean)
 
     /**
+     * Sets the cached count of unplayed episodes under a season or series (null: not known), on a row that exists (a count
+     * only means something on a row the server sent). With [pending] it also marks the row as holding an unconfirmed local change.
+     */
+    @Query("UPDATE user_data SET unplayedItemCount = :count, updatedAt = :nowMs, pendingSyncAt = CASE WHEN :pending THEN :nowMs ELSE pendingSyncAt END WHERE serverId = :serverId AND userId = :userId AND itemId = :itemId")
+    internal abstract suspend fun setUnplayedCount(serverId: String, userId: String, itemId: String, count: Int?, nowMs: Long, pending: Boolean)
+
+    /**
+     * Puts a row back EXACTLY as it was (its marker included): the undo of an optimistic action. Not for data the server
+     * sent (that is [writeServerUserData], which respects pending rows).
+     */
+    internal suspend fun restoreUserData(row: UserDataEntity) = upsertUserRows(listOf(row))
+
+    /**
      * Marks an item watched or not for this user, creating the row if there is none. Watched sets the last-played time and
      * keeps at least one play; not watched resets the play count. [positionMs] is stored as given (a watched item has 0).
      * The percentage is cleared (it is derived from position and runtime). [nowMs] is stored as `updatedAt`. With [pending] the

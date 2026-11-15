@@ -72,6 +72,9 @@ internal class Refresher(private val scope: CoroutineScope, private val context:
         cur.filterNot { (id, a) -> a != Attempt.Running && id.serverId == serverId && (userId == null || id.userId == userId) }
     }
 
+    /** The work running for [id] right now, if any (a caller can wait for it to finish; it never completes exceptionally). */
+    fun inFlight(id: ListId): Job? = synchronized(lock) { flights[id]?.job }
+
     fun attempt(id: ListId): Flow<Attempt> = attempts.map { it[id] ?: Attempt.Idle }.distinctUntilChanged()
 
     /**

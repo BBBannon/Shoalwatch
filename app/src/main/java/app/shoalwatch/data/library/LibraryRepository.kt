@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.runningFold
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.time.Duration
 
@@ -43,7 +44,7 @@ class LibraryRepository(
     private val clock: () -> Long,
     maintenanceLog: MaintenanceLog,
     /** The lock every write to the library takes (and eviction): one is made unless a test wants to hold it. */
-    writeGate: Mutex = Mutex(),
+    private val writeGate: Mutex = Mutex(),
 ) : Library {
     private val lists = db.listDao()
     private val items = db.itemDao()
@@ -239,6 +240,32 @@ class LibraryRepository(
     /** Each starts at once and joins any refresh already running; the refresher's own limit keeps the server load gentle. */
     private suspend fun refreshTogether(recipes: List<Recipe>, s: Session) = coroutineScope {
         recipes.forEach { launch { cache.refreshNow(s, it) } }
+    }
+
+    // ---- for the tidy-up actions (PlaystateRepository): a write through the same gate, and refreshes of what the server recomputes
+
+    /** Runs [block] (on [io]) holding the same lock every list write and eviction takes, so an action's change never interleaves with a page write. */
+    internal suspend fun <T> writeGated(block: suspend () -> T): T = withContext(io) { writeGate.withLock { block() } }
+
+    private fun recipeFor(s: Session, list: Recompute): Recipe = when (list) {
+        Recompute.Resume -> resumeRecipe(s)
+        Recompute.NextUp -> nextUpRecipe(s)
+        is Recompute.Seasons -> seasonsRecipe(s, list.seriesId)
+        is Recompute.Episodes -> episodesRecipe(s, list.seriesId, list.seasonId)
+        is Recompute.Item -> itemRecipe(s, list.itemId, ITEM_WINDOW)
+    }
+
+    /**
+     * Waits for any refresh of these lists that is running now: one that began before the server heard about a change
+     * carries the old answer, and must have landed (and been ignored, the rows being pending) before the pending marker is cleared.
+     */
+    internal suspend fun awaitRefreshes(s: Session, lists: Set<Recompute>) {
+        lists.mapNotNull { refresher.inFlight(ListId(s, recipeFor(s, it).key)) }.forEach { it.join() }
+    }
+
+    /** Starts a refresh of each list (joining one already running) without waiting for it; a failure shows as the list's freshness, never as an error here. */
+    internal fun refreshInBackground(s: Session, lists: Set<Recompute>) {
+        lists.map { recipeFor(s, it) }.forEach { refresher.launch(ListId(s, it.key), Refresher.Mode.REFRESH, it.run) }
     }
 
     private companion object {

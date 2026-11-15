@@ -238,6 +238,38 @@ The on-phone copy of what the server told us, and the only thing browsing screen
 
 **Threading.** All Room and network work runs on the injected IO dispatcher, including `refresh`, `loadMore` and `search` whatever the caller's dispatcher (`withContext(io)`); flows are safe to collect on the main thread; there is no `runBlocking`. Tests (`LibraryRepository*Test`) use a fake `LibraryGateway` (programmable answers, call log, a gate to hold calls, forced failures), a real in-memory Room under Robolectric, and an injected clock for time.
 
+## Tidy-up actions (`Playstate`)
+
+`data/library/Playstate` is what screens call to take an item off Continue Watching, mark it watched or unwatched, or favourite it; `PlaystateRepository` implements it (`AppGraph.playstate`, lazy). Screens observe Room, so an action is "change Room, then tell the server" and the screen updates at once. Each function returns normally only when the server accepted the change, and otherwise throws an `AppError` (the gateway's own, unchanged, whatever its kind) after putting everything back.
+
+**The five steps** (the same for every action):
+1. **Snapshot** what will change: the `user_data` row of every item touched (or its absence), and the position of every `resume` entry about to go (`Touched`).
+2. **Change Room** in ONE transaction under the library write gate (`LibraryRepository.writeGated`, the lock every list write and eviction takes, so an action never interleaves with a page write), setting `pendingSyncAt` on every row it writes. The item must be one this user was shown (the visibility join); otherwise, and for a malformed id, `AppError(SERVER_NOT_FOUND)` with nothing changed or sent.
+3. **Call the server**, exactly once. No retry loop here (the three mutations already opt in to `ServerApi`'s single retry).
+4. **On success:** wait for any refresh of the affected lists that is already running (`Refresher.inFlight`: one that began before the server heard carries the old answer, and must land while the rows are still pending, where it is ignored), clear the markers, then start a refresh of the lists the server recomputes (`LibraryRepository.refreshInBackground`: joins or starts, never waited for, a failure only shows as that list's freshness).
+5. **On failure:** restore the snapshot EXACTLY under the gate (a row that did not exist is deleted with `deleteUserData`; the others go back through `ItemDao.restoreUserData`, marker included; removed entries go back with `insertEntryAt` in ascending position order at their old positions, unless a refresh has already put the item back), then throw. If the restore itself throws, every marker is cleared one row at a time and the lists are refreshed (plus the item), so the cache reconverges with the server; the original error is still the one thrown.
+
+**The pending marker is what makes the sequence safe.** `ItemDao.writeServerUserData` ignores a server row for a pending row, so a list refresh that lands during step 3 cannot revert the optimistic state (SPEC 3.2: a watched mark is never undone by a sync). It is also the Milestone 5 hook: **Milestone 5 replaces step 3 with a durable outbox behind this same interface. On failure it will keep the local change and its marker and queue the call instead of rolling back.** Until then actions are online only: offline is a rolled-back failure whose `AppError` the screen shows.
+
+**What each action changes locally, and what it refreshes afterwards**
+
+| Action | Local change (all rows pending) | Refreshed after success |
+|---|---|---|
+| `removeFromContinueWatching` | `positionMs = 0`, `playedPercentage = null`, `played` untouched; entry removed from `resume` (not `nextUp`: the server's Next Up is unaffected) | `resume` |
+| `setPlayed`, film or other kind | the store's `setPlayed`: watched is `played`, position 0, no percentage, `playCount = max(playCount, 1)`, `lastPlayed = now`; unwatched is `played = false`, position 0, `playCount = 0`, `lastPlayed` kept. Out of `resume` either way (position 0) | `resume`, `nextUp` |
+| `setPlayed`, episode | as a film, and the cached `unplayedItemCount` of its season and series rows moves by one (down when marked watched, up when unwatched; never below 0; only where the row has a count; not at all if the episode was already in that state) | `resume`, `nextUp` |
+| `setPlayed`, season | the season row as a film, with `unplayedItemCount = 0` (watched) or null (unwatched: the server's count is not guessed from a partly saved list); every saved episode of that season this user was shown the same way; those episodes out of `resume`. Episodes that are not saved get no row | `resume`, `nextUp`, `seasons:<series>`, `episodes:<series>:<season>`, the series item (its badge) |
+| `setPlayed`, series | the series row, every season in the saved `seasons:<series>` list, and every saved episode, as above | `resume`, `nextUp`, the series item, `seasons:<series>`, `episodes:` of every season seen |
+| `setFavourite` | `favourite` only; no list is edited | nothing. A list filtered by favourites (`children:...:fav...`) shows the change after its next refresh; the screen can ask for one with `Library.refresh` |
+
+**One action at a time per (user, item):** a second action for the same item waits for the first (fair lock per key, dropped when unused), so it starts from the first's finished state (markers cleared, or rolled back). Actions on different items do not wait for each other. A season or series action also changes rows that have their own key; an episode tapped in the same instant as its season can clear a marker early, which only allows a refresh to show the server's older answer for a moment, never a wrong final state.
+
+**Not abandoned:** steps 2 to 5 run in the app scope and the caller awaits them (`CompletableDeferred`): a screen cancelled after the change stops waiting and the action still finishes, so no marker is ever left behind. Rollback and clean-up run non-cancellable, so an app scope that shuts down mid-call still puts the rows back. An action started on a scope that is already dead ends with a cancellation and has changed nothing.
+
+**Known limit:** a refresh that lands during step 3 replaces list MEMBERSHIP with the server's (still old) list, so an item taken off Continue Watching can reappear there, shown as already cleared, until step 4's refresh. Its watched state and position stay as the user set them.
+
+Tests: `PlaystateResumeTest`, `PlaystatePlayedTest`, `PlaystateSeriesTest`, `PlaystateConcurrencyTest` (fake gateway, real in-memory Room through the real `LibraryRepository`, injected clock).
+
 ## Jellyfin client decision (SDK vs direct)
 
 **Decision: `JellyfinGateway` is implemented directly on OkHttp + kotlinx.serialization; the Jellyfin Kotlin SDK is not used for any request.**

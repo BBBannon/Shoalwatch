@@ -5,6 +5,8 @@ import app.shoalwatch.data.api.ServerApi
 import app.shoalwatch.data.db.AppDatabase
 import app.shoalwatch.data.library.Library
 import app.shoalwatch.data.library.LibraryRepository
+import app.shoalwatch.data.library.Playstate
+import app.shoalwatch.data.library.PlaystateRepository
 import app.shoalwatch.data.library.PrefsMaintenanceLog
 import app.shoalwatch.data.library.api.LibraryGateway
 import app.shoalwatch.data.library.api.LibraryGatewayImpl
@@ -55,6 +57,8 @@ class AppGraph(private val appContext: Context) {
     /** What every browsing screen reads: saved rows first, refreshed behind them (see "Library repository" in docs/ARCHITECTURE.md). */
     val libraryRepository: LibraryRepository by lazy { LibraryRepository(libraryGateway, database, appScope, Dispatchers.IO, System::currentTimeMillis, PrefsMaintenanceLog(appContext)) }
     val library: Library get() = libraryRepository
+    /** The tidy-up actions (remove from Continue Watching, mark watched, favourite): Room first, then the server, rolled back on failure (see "Tidy-up actions" in docs/ARCHITECTURE.md). */
+    val playstate: Playstate by lazy { PlaystateRepository(libraryGateway, database, libraryRepository, appScope, Dispatchers.IO, System::currentTimeMillis) }
     /** Loads saved tokens into the store's live lookup. Started at app start; anything authenticated waits on `serverStore.awaitWarmed()` (or uses `awaitActive()`). */
     val tokensWarmed: Job by lazy { appScope.launch { serverStore.warmTokens() } }
     /** What the trust prompt reads; the UI never touches `HttpClientFactory` itself. */

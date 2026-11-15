@@ -25,6 +25,9 @@ class FakeLibraryGateway : LibraryGateway {
     /** Throws this (not an AppError) from the named operation. */
     val throwOps = HashMap<String, Throwable>()
 
+    /** Runs inside every call after the gate is open and before a programmed failure, so a test can act "while the server is answering". */
+    @Volatile var onCall: suspend (String) -> Unit = {}
+
     /** Calls that were cancelled while waiting at the gate. */
     val cancelled = CopyOnWriteArrayList<String>()
 
@@ -50,6 +53,7 @@ class FakeLibraryGateway : LibraryGateway {
         synchronized(this) { maxRunning = maxOf(maxRunning, now) }
         try {
             gate?.await()
+            onCall(name)
             throwOps[op]?.let { throw it }
             (failOps[op] ?: failAll)?.let { throw AppError.of(it) }
         } catch (e: CancellationException) {
@@ -87,9 +91,9 @@ class FakeLibraryGateway : LibraryGateway {
 
     override suspend fun search(s: Session, term: String, limit: Int): List<ItemWithUserData> { enter("search", term); return searchFor(term) }
 
-    override suspend fun setPlayed(s: Session, itemId: String, played: Boolean) = error("not used by the repository")
+    override suspend fun setPlayed(s: Session, itemId: String, played: Boolean) { enter("setPlayed", "$itemId:$played") }
 
-    override suspend fun setFavourite(s: Session, itemId: String, favourite: Boolean) = error("not used by the repository")
+    override suspend fun setFavourite(s: Session, itemId: String, favourite: Boolean) { enter("setFavourite", "$itemId:$favourite") }
 
-    override suspend fun clearResume(s: Session, itemId: String) = error("not used by the repository")
+    override suspend fun clearResume(s: Session, itemId: String) { enter("clearResume", itemId) }
 }
