@@ -168,7 +168,7 @@ class AdminText(private val s: Strings, private val zone: ZoneId) {
     }
 }
 
-/** Trimmed, case-insensitive, runs of white space as one space. */
-fun typedMatches(typed: CharSequence, word: String): Boolean = normalise(typed) == normalise(word)
+/** Trimmed, case-insensitive, runs of white space as one space. A blank word never matches, so an empty field never confirms. */
+fun typedMatches(typed: CharSequence, word: String): Boolean = normalise(word).let { it.isNotEmpty() && normalise(typed) == it }
 
 private fun normalise(text: CharSequence): String = text.trim().split(Regex("\\s+")).joinToString(" ").lowercase(Locale.ROOT)

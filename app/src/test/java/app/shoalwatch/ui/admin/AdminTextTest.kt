@@ -162,4 +162,9 @@ class AdminTextTest {
         for (typed in listOf("restar", "restarts", "", "re start")) assertFalse(typed, typedMatches(typed, "restart"))
         assertFalse(typedMatches("shutdown", "shut down"))
     }
+
+    /** A blank word (a bad translation, a future resource edit) must never let an empty field confirm. */
+    @Test fun aBlankWordNeverMatches() {
+        for (word in listOf("", " ", "\t \n")) for (typed in listOf("", " ", "\t")) assertFalse("'$typed' vs '$word'", typedMatches(typed, word))
+    }
 }
