@@ -44,6 +44,10 @@ internal class DownloadWorker(context: Context, params: WorkerParameters, privat
         } catch (e: CancellationException) {
             stopped()
             throw e
+        } catch (e: Exception) { // a full or failing database, say: try again later rather than stop the queue for good
+            AppLog.w(TAG, "downloads drain failed: ${e.javaClass.simpleName}")
+            parts.report(QueueStatus.Idle)
+            return Result.retry()
         }
         return when (run) {
             QueueRun.Drained -> {

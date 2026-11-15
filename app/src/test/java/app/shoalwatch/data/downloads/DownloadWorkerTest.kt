@@ -90,6 +90,13 @@ class DownloadWorkerTest {
         assertEquals(QueueStatus.WaitingForConnection, statuses.last())
     }
 
+    /** Tasks 11-12 review Minor 7: a failure escaping the drain (a full database, say) retries the work, never fails it for good. */
+    @Test fun anUnexpectedFailureInTheDrainIsRetryNotFailure() {
+        drain = QueueDrain { _, _ -> throw IllegalStateException("database or disk is full") }
+        assertEquals(ListenableWorker.Result.retry(), runBlocking { worker().doWork() })
+        assertEquals(QueueStatus.Idle, statuses.last())
+    }
+
     @Test fun stoppedIsRetry() {
         drain = QueueDrain { _, _ -> QueueRun.Stopped }
         assertEquals(ListenableWorker.Result.retry(), runBlocking { worker().doWork() })
