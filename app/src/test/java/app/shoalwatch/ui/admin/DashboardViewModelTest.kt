@@ -19,7 +19,6 @@ import app.shoalwatch.ui.address
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceTimeBy
-import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -46,9 +45,10 @@ class DashboardViewModelTest {
     private val now = Instant.parse("2026-11-15T14:02:05Z")
     private val context: Context = ApplicationProvider.getApplicationContext()
 
-    private fun vm() = DashboardViewModel(catalog, rights, connections, admin, opener) { now }
+    private val models = ModelsInTest()
+    private fun vm() = models.add(DashboardViewModel(catalog, rights, connections, admin, opener) { now })
 
-    @Test fun checkingUntilTheRightsAnswer() = runTest(main.dispatcher) {
+    @Test fun checkingUntilTheRightsAnswer() = main.adminTest(models) {
         val answer = CompletableDeferred<AdminStatus>()
         rights.checkAnswer = { answer.await() }
         val vm = vm()
@@ -60,7 +60,7 @@ class DashboardViewModelTest {
         vm.setVisible(false)
     }
 
-    @Test fun openLoadsTheServerStatus() = runTest(main.dispatcher) {
+    @Test fun openLoadsTheServerStatus() = main.adminTest(models) {
         admin.status = admin.status.copy(pendingRestart = true)
         val vm = vm()
         vm.setVisible(true)
@@ -69,21 +69,21 @@ class DashboardViewModelTest {
         assertTrue(state.status!!.pendingRestart)
         assertEquals(now, state.frame.updatedAt)
         assertFalse(state.frame.loading)
-        assertEquals(listOf("serverStatus"), admin.calls)
-        assertEquals(listOf(owner), admin.sessionsSeen)
+        assertEquals(listOf("serverStatus", "sessions"), admin.calls)
+        assertEquals(listOf(owner, owner), admin.sessionsSeen)
         advanceTimeBy(SESSIONS_POLL_MS + 1)
-        assertEquals("polled again after five seconds", 2, admin.calls.size)
+        assertEquals("polled again after five seconds", 4, admin.calls.size)
         vm.setVisible(false)
     }
 
-    @Test fun nothingLoadsUntilVisible() = runTest(main.dispatcher) {
+    @Test fun nothingLoadsUntilVisible() = main.adminTest(models) {
         val vm = vm()
         advanceTimeBy(60_000)
         assertEquals(emptyList<String>(), admin.calls)
         assertNull(vm.state.value.status)
     }
 
-    @Test fun aSwitchDropsEverythingAndStopsAtOnce() = runTest(main.dispatcher) {
+    @Test fun aSwitchDropsEverythingAndStopsAtOnce() = main.adminTest(models) {
         val vm = vm()
         vm.setVisible(true)
         assertEquals(admin.status, vm.state.value.status)
@@ -100,7 +100,7 @@ class DashboardViewModelTest {
         assertEquals(emptyList<Session>(), opener.opened)
     }
 
-    @Test fun offlineLoadsNothing() = runTest(main.dispatcher) {
+    @Test fun offlineLoadsNothing() = main.adminTest(models) {
         connections.stateFor(S1).value = Connection.Offline()
         val vm = vm()
         vm.setVisible(true)
@@ -110,7 +110,7 @@ class DashboardViewModelTest {
         assertEquals(emptyList<String>(), admin.calls)
     }
 
-    @Test fun theBrowserDashboardOpensAsTheGatesSession() = runTest(main.dispatcher) {
+    @Test fun theBrowserDashboardOpensAsTheGatesSession() = main.adminTest(models) {
         val vm = vm()
         vm.setVisible(true)
         vm.openDashboard(context)
@@ -128,7 +128,7 @@ class DashboardViewModelTest {
         vm.setVisible(false)
     }
 
-    @Test fun aLoadFailureIsShownAndTheLastStatusKept() = runTest(main.dispatcher) {
+    @Test fun aLoadFailureIsShownAndTheLastStatusKept() = main.adminTest(models) {
         val vm = vm()
         vm.setVisible(true)
         val shown = vm.state.value.status
@@ -142,7 +142,7 @@ class DashboardViewModelTest {
         vm.setVisible(false)
     }
 
-    @Test fun aRefusalThatEndsTheRightsClosesWithoutAWord() = runTest(main.dispatcher) {
+    @Test fun aRefusalThatEndsTheRightsClosesWithoutAWord() = main.adminTest(models) {
         val vm = vm()
         vm.setVisible(true)
         admin.failures["serverStatus"] = AppError.of(AppError.Kind.FORBIDDEN)

@@ -16,8 +16,11 @@ import app.shoalwatch.data.admin.ServerTask
 import app.shoalwatch.data.admin.ServerUser
 import app.shoalwatch.data.admin.WatchSession
 import app.shoalwatch.data.servers.Session
+import app.shoalwatch.ui.MainDispatcherRule
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.runTest
 
 /**
  * [AdminRights] for ViewModel tests: [check] answers [checkAnswer] (ADMIN by default) and records it as the real one does
@@ -67,6 +70,8 @@ class FakeAdmin : Admin {
 
     val calls = mutableListOf<String>()
     val sessionsSeen = mutableListOf<Session>()
+    /** Every message sent, as (sessionId, header, text). */
+    val messages = mutableListOf<Triple<String, String, String>>()
 
     private suspend fun <T> call(name: String, s: Session, answer: () -> T): T {
         calls += name
@@ -78,7 +83,8 @@ class FakeAdmin : Admin {
 
     override suspend fun serverStatus(s: Session) = call("serverStatus", s) { status }
     override suspend fun sessions(s: Session) = call("sessions", s) { sessions }
-    override suspend fun sendMessage(s: Session, sessionId: String, header: String, text: String) = call("sendMessage:$sessionId", s) {}
+    override suspend fun sendMessage(s: Session, sessionId: String, header: String, text: String) =
+        call("sendMessage:$sessionId", s) { messages += Triple(sessionId, header, text) }
     override suspend fun command(s: Session, sessionId: String, command: RemoteCommand) = call("command:$sessionId:${command.wire}", s) {}
     override suspend fun libraries(s: Session) = call("libraries", s) { libraries }
     override suspend fun scanAll(s: Session) = call("scanAll", s) {}
@@ -101,5 +107,24 @@ class FakeDashboardOpener(var result: DashboardResult = DashboardResult.OPENED) 
     override suspend fun open(session: Session, context: Context): DashboardResult {
         opened += session
         return result
+    }
+}
+
+/** The admin ViewModels a test made, so they can all be hidden when it ends (see [adminTest]). */
+class ModelsInTest {
+    private val made = mutableListOf<AdminScreenModel>()
+    fun <T : AdminScreenModel> add(model: T): T = model.also { made += it }
+    fun hideAll() = made.forEach { it.setVisible(false) }
+}
+
+/**
+ * runTest on the main test dispatcher that hides every model in [models] when [block] ends, pass or fail: a visible admin
+ * screen polls for ever in virtual time, so a failed assertion would otherwise leave runTest's clean-up spinning.
+ */
+fun MainDispatcherRule.adminTest(models: ModelsInTest, block: suspend TestScope.() -> Unit) = runTest(dispatcher) {
+    try {
+        block()
+    } finally {
+        models.hideAll()
     }
 }

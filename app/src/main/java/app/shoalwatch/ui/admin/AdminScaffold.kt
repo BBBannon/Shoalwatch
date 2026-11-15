@@ -108,7 +108,10 @@ private fun OpenContent(frame: AdminFrame, onDismissProblem: () -> Unit, onDismi
     val text = rememberAdminText()
     val loadLine = frame.loadProblem?.let { if (frame.updatedAt != null) stringResource(R.string.admin_refresh_failed) else text.problem(it) }
     val problemLine = frame.problem?.let(text::problem)
-    val noticeLine = frame.notice?.let { stringResource(it.text, *it.args.toTypedArray()) }
+    val noticeLine = frame.notice?.let { notice ->
+        val fallback = notice.fallback?.let { stringResource(it) }
+        stringResource(notice.text, *notice.args.map { a -> if (a.isEmpty() && fallback != null) fallback else a }.toTypedArray())
+    }
     val updated = frame.updatedAt?.let { stringResource(R.string.admin_updated_at, text.clock(it)) }
     LazyColumn(
         Modifier.widthIn(max = AdminMaxWidth).fillMaxSize(),

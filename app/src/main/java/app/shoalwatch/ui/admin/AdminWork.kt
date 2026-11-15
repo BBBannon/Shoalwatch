@@ -9,8 +9,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-/** A one-line result shown on an admin screen ("Message sent to kid."). [args] are display text already made safe. */
-data class AdminNotice(@StringRes val text: Int, val args: List<String> = emptyList()) {
+/**
+ * A one-line result shown on an admin screen ("Message sent to kid."). [args] are display text already made safe; an empty one
+ * is shown as the neutral word [fallback] ("Unnamed user") when there is one.
+ */
+data class AdminNotice(@StringRes val text: Int, val args: List<String> = emptyList(), @StringRes val fallback: Int? = null) {
     override fun toString() = "AdminNotice(<redacted>)"
 }
 
@@ -50,6 +53,14 @@ class AdminWork(private val guard: AdminGuard, private val scope: CoroutineScope
                 runningKey.value = null
             }
         }
+    }
+
+    /**
+     * Shows [problem] without sending anything (a confirmed target that is no longer in the latest list is GONE). Ignored unless
+     * the gate is Open.
+     */
+    fun fail(problem: AdminProblem) {
+        if (guard.gate.value is AdminGate.Open) problemState.value = problem
     }
 
     fun dismissProblem() {

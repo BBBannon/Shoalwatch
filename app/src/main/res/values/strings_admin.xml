@@ -97,4 +97,28 @@
     <string name="admin_severity_warning">Warning</string>
     <string name="admin_severity_error">Error</string>
     <string name="admin_severity_critical">Critical</string>
+    <!-- Who is watching -->
+    <string name="admin_watching_heading">Who is watching</string>
+    <string name="admin_watching_none">Nobody is watching anything right now.</string>
+    <string name="admin_watching_idle_heading">Connected, not playing</string>
+    <string name="admin_last_active">Last active %1$s</string>
+    <string name="admin_session_paused">Paused</string>
+    <string name="admin_session_message">Message</string>
+    <string name="admin_session_message_cd">Send a message to %1$s on %2$s</string>
+    <string name="admin_session_pause">Pause</string>
+    <string name="admin_session_pause_cd">Pause %1$s’s playback on %2$s</string>
+    <string name="admin_session_stop">Stop</string>
+    <string name="admin_session_stop_cd">Stop %1$s’s playback on %2$s</string>
+    <string name="admin_confirm_pause_title">Pause %1$s’s playback?</string>
+    <string name="admin_confirm_pause_body">%1$s on %2$s will pause. They can carry on when they like.</string>
+    <string name="admin_confirm_pause_action">Pause</string>
+    <string name="admin_confirm_stop_title">Stop %1$s’s playback?</string>
+    <string name="admin_confirm_stop_body">%1$s on %2$s will stop.</string>
+    <string name="admin_confirm_stop_action">Stop playback</string>
+    <string name="admin_message_title">Send a message to %1$s</string>
+    <string name="admin_message_body">It shows on %1$s for 10 seconds.</string>
+    <string name="admin_message_header">Message from %1$s</string>
+    <string name="admin_message_sent">Message sent to %1$s.</string>
+    <string name="admin_paused_done">Paused %1$s’s playback.</string>
+    <string name="admin_stopped_done">Stopped %1$s’s playback.</string>
 </resources>

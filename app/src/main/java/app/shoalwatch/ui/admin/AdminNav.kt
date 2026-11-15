@@ -100,9 +100,16 @@ private fun DashboardRoute(graph: AppGraph, nav: NavHostController) {
             onOpenDashboard = { vm.openDashboard(context) },
             onDismissProblem = vm::dismissProblem,
             onDismissNotice = vm::dismissNotice,
+            onMessage = vm::askMessage,
+            onPause = vm::askPause,
+            onStop = vm::askStop,
+            onConfirm = vm::confirmCommand,
+            onDismissConfirm = vm::dismissConfirm,
+            onSend = { vm.sendMessage(context) },
+            onDismissMessage = vm::dismissMessage,
         )
     }
-    DashboardScreen(state, actions)
+    DashboardScreen(state, actions, vm.messageText)
 }
 
 /** Stand-in for an admin screen a later task builds: it shows nothing and goes straight back. */
