@@ -147,6 +147,11 @@ internal class DownloadQueue(
         extras.tracks(s, key, folder, playable.sourceId, playable.audio, playable.subtitles, DownloadQuality.ORIGINAL)
         val part = paths.partFile(folder, playable.container)
         val target = paths.mediaFile(folder, playable.container)
+        // A file saved under another container (the server remuxed it since) never stays beside this one (review Minor 9).
+        for (ext in DownloadPaths.MEDIA_EXTENSIONS - playable.container) {
+            paths.mediaFile(folder, ext).takeIf { it.exists() }?.let(paths::deleteInside)
+            paths.partFile(folder, ext).takeIf { it.exists() }?.let(paths::deleteInside)
+        }
         val fetched = QueueFetched(target, hls = false, shape = null, audioListed = playable.audio.isNotEmpty())
         if (target.exists() && !part.exists()) return fetched // renamed before the process died: only the check is left
         var route = server(key) { downloadRoute(s, key.itemId) }

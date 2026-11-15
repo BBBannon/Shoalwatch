@@ -142,6 +142,29 @@ class DownloadQueueFailureTest : DownloadQueueTestBase() {
         assertEquals("no attempt used", 0, download(f2)!!.attempts)
     }
 
+    /** Tasks 9-10 review, "cannot verify": a media source id from the server is validated before anything of it reaches Room. */
+    @Test fun aHostileMediaSourceIdIsNeverWrittenToRoom() {
+        queued(a, f1, quality = DownloadQuality.MEDIUM)
+        val hostile = fixtureInfo("transcode.json").let { info -> info.copy(sources = info.sources.map { it.copy(id = "../../System") }) }
+        playback.answer(fixtureInfo("direct-play.json"), hostile)
+        drain()
+        assertEquals(DownloadState.FAILED to DownloadFailure.NOT_PLAYABLE, failure(f1))
+        assertNull(download(f1)!!.mediaSourceId)
+        assertTrue(hls.opens.isEmpty())
+    }
+
+    /** Tasks 9-10 review Minor 9: a file saved under an older container (the server remuxed it) does not stay beside the new one. */
+    @Test fun aMediaFileOfAnotherContainerIsDeletedOnceTheContainerIsKnown() {
+        queued(a, f1)
+        playable()
+        val old = File(folder(f1).apply { mkdirs() }, "media.mp4").apply { writeBytes(ByteArray(5)) }
+        val oldPart = File(folder(f1), "media.mp4.part").apply { writeBytes(ByteArray(5)) }
+        drain()
+        assertEquals(DownloadState.COMPLETE, download(f1)!!.state)
+        assertTrue(File(folder(f1), "media.mkv").exists())
+        assertFalse(old.exists() || oldPart.exists())
+    }
+
     @Test fun tooLittleSpaceIsNoSpaceBeforeAnyRequest() {
         queued(a, f1)
         fake.free[null] = (1L shl 30) - 1 // under the internal reserve
