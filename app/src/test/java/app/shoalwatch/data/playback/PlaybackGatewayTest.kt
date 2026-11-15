@@ -305,6 +305,13 @@ class PlaybackGatewayTest : PlaybackGatewayTestBase() {
         assertEquals(AppError.Kind.SERVER_ERROR, failure { gateway.subtitleFile(session, ITEM, SOURCE, 2, "srt") }.kind)
     }
 
+    /** A hostile 9 MiB file with no declared length: refused while reading, at the 8 MiB mark, never read whole. */
+    @Test fun aNineMebibyteSubtitleFileWithNoDeclaredLengthIsRefusedWhileReading() {
+        val nine = buildString(9 * 1024 * 1024) { repeat(9 * 1024 * 1024 / 32) { append("00:00:01,000 --> 00:00:02,000\nx\n") } }
+        web.enqueue(MockResponse().setHeader("Content-Type", "text/plain").setChunkedBody(nine, 64 * 1024))
+        assertEquals(AppError.Kind.SERVER_ERROR, failure { gateway.subtitleFile(session, ITEM, SOURCE, 2, "srt") }.kind)
+    }
+
     @Test fun subtitleFileRefusesBadArgumentsBeforeSending() {
         for (call in listOf<suspend () -> Unit>(
             { gateway.subtitleFile(session, "nope", SOURCE, 2, "srt") },

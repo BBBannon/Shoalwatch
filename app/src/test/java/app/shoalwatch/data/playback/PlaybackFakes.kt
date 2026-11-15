@@ -86,8 +86,16 @@ internal class FakePlaybackGateway : PlaybackGateway {
         segmentsFail?.let { throw it }
         return segmentAnswer
     }
-    override suspend fun subtitleFile(s: Session, itemId: String, mediaSourceId: String, index: Int, format: String): ByteArray =
-        throw AppError.of(AppError.Kind.SERVER_NOT_FOUND)
+    /** Subtitle files by stream index (none: SERVER_NOT_FOUND); each call is recorded as `subtitle:<index>.<format>`. */
+    val subtitleFiles = mutableMapOf<Int, ByteArray>()
+    /** Holds every subtitle call (after it is recorded) until completed. */
+    var subtitleGate: CompletableDeferred<Unit>? = null
+
+    override suspend fun subtitleFile(s: Session, itemId: String, mediaSourceId: String, index: Int, format: String): ByteArray {
+        calls += "subtitle:$index.$format"
+        subtitleGate?.await()
+        return subtitleFiles[index] ?: throw AppError.of(AppError.Kind.SERVER_NOT_FOUND)
+    }
 }
 
 /**
