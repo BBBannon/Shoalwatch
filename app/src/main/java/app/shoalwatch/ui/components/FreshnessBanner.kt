@@ -39,7 +39,7 @@ class BannerActions(val onRetry: () -> Unit, val onSignIn: () -> Unit, val onRev
  * it is announced politely when it appears.
  */
 @Composable
-fun FreshnessBanner(kind: BannerKind, actions: BannerActions, modifier: Modifier = Modifier) {
+fun FreshnessBanner(kind: BannerKind, actions: BannerActions, modifier: Modifier = Modifier, padded: Boolean = true) {
     val (text, button, onClick) = when (kind) {
         BannerKind.OFFLINE -> Triple(R.string.banner_offline, R.string.action_retry, actions.onRetry)
         BannerKind.SIGN_IN -> Triple(R.string.banner_signin, R.string.action_sign_in, actions.onSignIn)
@@ -53,7 +53,7 @@ fun FreshnessBanner(kind: BannerKind, actions: BannerActions, modifier: Modifier
         else -> colours.tertiaryContainer to colours.onTertiaryContainer
     }
     Surface(
-        modifier.fillMaxWidth().padding(horizontal = Gutter, vertical = 4.dp).semantics { liveRegion = LiveRegionMode.Polite },
+        modifier.fillMaxWidth().padding(horizontal = if (padded) Gutter else 0.dp, vertical = 4.dp).semantics { liveRegion = LiveRegionMode.Polite },
         shape = CardShape,
         color = container,
         contentColor = content,

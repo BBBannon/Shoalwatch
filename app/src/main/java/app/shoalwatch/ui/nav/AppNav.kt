@@ -38,12 +38,15 @@ internal object Routes {
     /** Home (the shell). [ARG_FRESH] is set when it is reached by a successful sign-in, so it asks the server for its rows once. */
     const val HOME = "home?$ARG_FRESH={$ARG_FRESH}"
     const val DOWNLOADS = "downloads"
+    const val ARG_VIEW = "viewId"
+    const val LIBRARY = "library/{$ARG_VIEW}"
     const val SERVERS = "servers"
     const val ARG_SERVER = "serverId"
     const val SIGN_IN = "sign_in/{$ARG_SERVER}"
     const val SERVER_EDIT = "server/{$ARG_SERVER}"
 
     fun home(fresh: Boolean = false) = "home?$ARG_FRESH=$fresh"
+    fun library(viewId: String) = "library/${Uri.encode(viewId)}"
     fun signIn(serverId: String) = "sign_in/${Uri.encode(serverId)}"
     fun serverEdit(serverId: String) = "server/${Uri.encode(serverId)}"
 }
@@ -100,6 +103,9 @@ private fun AppNavHost(graph: AppGraph, start: String) {
             HomeRoute(graph, nav, fresh = it.arguments?.getBoolean(Routes.ARG_FRESH) == true)
         }
         composable(Routes.DOWNLOADS) { DownloadsRoute(graph, nav) }
+        composable(Routes.LIBRARY, listOf(navArgument(Routes.ARG_VIEW) { type = NavType.StringType })) {
+            LibraryRoute(graph, nav, it.arguments?.getString(Routes.ARG_VIEW).orEmpty())
+        }
         composable(Routes.SERVERS) { ServersRoute(graph, nav) }
         composable(Routes.SERVER_EDIT, serverArg) { ServerEditRoute(graph, nav, it.arguments?.getString(Routes.ARG_SERVER).orEmpty()) }
     }

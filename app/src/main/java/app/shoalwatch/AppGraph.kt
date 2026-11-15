@@ -27,6 +27,7 @@ import app.shoalwatch.data.servers.JellyfinGateway
 import app.shoalwatch.data.servers.JellyfinGatewayImpl
 import app.shoalwatch.data.servers.ServerClients
 import app.shoalwatch.data.servers.ServerStore
+import app.shoalwatch.ui.library.BrowseMemory
 import app.shoalwatch.net.AndroidNetworkMonitor
 import app.shoalwatch.net.HttpClientFactory
 import app.shoalwatch.net.NetworkMonitor
@@ -78,6 +79,9 @@ class AppGraph(private val appContext: Context) {
     val localChanges: LocalChangeLog by lazy { LocalChangeLog(SystemMonotonicClock) }
     val libraryRepository: LibraryRepository by lazy { LibraryRepository(libraryGateway, database, appScope, Dispatchers.IO, System::currentTimeMillis, PrefsMaintenanceLog(appContext), localChanges) }
     val library: Library get() = libraryRepository
+
+    /** What the user chose to sort and filter each library by, for as long as the app is open (never saved to disk). */
+    val browseMemory: BrowseMemory by lazy { BrowseMemory() }
     /** The tidy-up actions (remove from Continue Watching, mark watched, favourite): Room first, then the server, rolled back on failure (see "Tidy-up actions" in docs/ARCHITECTURE.md). */
     val playstate: Playstate by lazy { PlaystateRepository(libraryGateway, libraryRepository, appScope, Dispatchers.IO, System::currentTimeMillis) }
     /** Loads saved tokens into the store's live lookup. Started at app start; anything authenticated waits on `serverStore.awaitWarmed()` (or uses `awaitActive()`). */
