@@ -42,6 +42,10 @@ class FakeLibraryGateway : LibraryGateway {
     private val running = AtomicInteger()
     @Volatile var maxRunning = 0
 
+    /** Most tidy-up mutations (setPlayed, setFavourite, clearResume) in the gateway at once. Refreshes do not count: they legitimately overlap a mutation. */
+    @Volatile var maxMutationsRunning = 0
+    private val mutationsRunning = AtomicInteger()
+
     var viewsFor: (Session) -> List<LibraryView> = { emptyList() }
     var resumeFor: (Session) -> List<ItemWithUserData> = { emptyList() }
     var nextUpFor: (Session) -> List<ItemWithUserData> = { emptyList() }
@@ -61,7 +65,12 @@ class FakeLibraryGateway : LibraryGateway {
         val name = if (detail.isEmpty()) op else "$op:$detail"
         calls += name
         val now = running.incrementAndGet()
-        synchronized(this) { maxRunning = maxOf(maxRunning, now) }
+        val mutation = op == "setPlayed" || op == "setFavourite" || op == "clearResume"
+        val mutations = if (mutation) mutationsRunning.incrementAndGet() else 0
+        synchronized(this) {
+            maxRunning = maxOf(maxRunning, now)
+            maxMutationsRunning = maxOf(maxMutationsRunning, mutations)
+        }
         try {
             gate?.await()
             clockTick()
@@ -73,6 +82,7 @@ class FakeLibraryGateway : LibraryGateway {
             throw e
         } finally {
             running.decrementAndGet()
+            if (mutation) mutationsRunning.decrementAndGet()
         }
         return name
     }

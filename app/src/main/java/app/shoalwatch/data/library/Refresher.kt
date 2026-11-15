@@ -61,6 +61,9 @@ internal class Refresher(
 
     private class Flight(val mode: Mode) {
         lateinit var job: Job
+
+        /** True once the work is about to take its request stamp: after that, a caller who needs a fresher answer must queue another. */
+        var started = false
     }
 
     private val permits = Semaphore(maxParallel)
@@ -93,17 +96,24 @@ internal class Refresher(
     /** A refresh that begins AFTER whatever is running for [id] has finished, instead of joining it: what the running one fetched may be older than a change just made. */
     fun launchAfterCurrent(id: ListId, work: suspend () -> Unit): Job = start(id, Mode.REFRESH, again = true, work)!!
 
+
     private fun start(id: ListId, mode: Mode, again: Boolean, work: suspend () -> Unit): Job? = synchronized(lock) {
         val current = flights[id]
         if (current != null && mode == Mode.MORE) return null
         if (current != null && current.mode == mode && !again) return current.job
+        // Coalesced: a refresh still waiting for the running one has not stamped its request yet, so its stamp will be newer than
+        // every change made so far; asking for another would only repeat it. Only one that has started needs a second behind it.
+        if (again && current != null && current.mode == Mode.REFRESH && !current.started) return current.job
         val flight = Flight(mode)
         val waitFor = current?.job
         flight.job = scope.launch(context, start = CoroutineStart.LAZY) {
             val outcome: Attempt = try {
                 waitFor?.join()
                 beforeWork()
-                permits.withPermit { work() }
+                permits.withPermit {
+                    synchronized(lock) { flight.started = true }
+                    work()
+                }
                 Attempt.Done
             } catch (e: CancellationException) {
                 finish(id, flight, Attempt.Idle)

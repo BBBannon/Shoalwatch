@@ -23,7 +23,7 @@ class LibraryRepositoryItemSearchTest : LibraryRepositoryTestBase() {
     // ---- item detail
 
     @Test fun theSavedRowIsShownAtOnceWithoutAnOverviewThenTheRefreshBringsOne() = runBlocking {
-        library.writeItems(s1u1, listOf(row(item("a", overview = null))), t0, fetchStartedAtMs = 0) // as a list leaves it
+        library.writeItems(s1u1, listOf(row(item("a", overview = null))), t0, requestedAtSeq = 0) // as a list leaves it
         advance(Duration.ofMinutes(10))
         gateway.gate = CompletableDeferred()
         gateway.itemFor = { full("a") }
@@ -36,7 +36,7 @@ class LibraryRepositoryItemSearchTest : LibraryRepositoryTestBase() {
     }
 
     @Test fun aDetailRefreshIsAuthoritativeSoAnOverviewTheServerNoLongerHasIsCleared() = runBlocking {
-        library.writeItems(s1u1, listOf(full("a")), t0, fetchStartedAtMs = 0)
+        library.writeItems(s1u1, listOf(full("a")), t0, requestedAtSeq = 0)
         gateway.itemFor = { row(item("a", overview = null)) }
         repo.refresh(s1u1, RefreshTarget.Item(id("a")))
         assertNull(detail().first5s { it.item != null }.item!!.item.overview)
@@ -44,7 +44,7 @@ class LibraryRepositoryItemSearchTest : LibraryRepositoryTestBase() {
 
     @Test fun aRefreshNeverUndoesAWatchedMarkWaitingToBeSent() = runBlocking {
         repo.ensureSwept() // the start-up sweep has run, so this marker belongs to a live action
-        library.writeItems(s1u1, listOf(row(item("a"), watched())), t0, fetchStartedAtMs = 0)
+        library.writeItems(s1u1, listOf(row(item("a"), watched())), t0, requestedAtSeq = 0)
         db.itemDao().setPlayed(s1u1.serverId, s1u1.userId, id("a"), true, 0, t0.toEpochMilli(), pending = true)
         gateway.itemFor = { row(item("a"), watched(played = false, positionMs = 900)) }
         repo.refresh(s1u1, RefreshTarget.Item(id("a")))
@@ -86,7 +86,7 @@ class LibraryRepositoryItemSearchTest : LibraryRepositoryTestBase() {
     }
 
     @Test fun anotherUserIsNeverShownARowOnlyTheFirstUserWasShown() {
-        runBlocking { library.writeItems(s1u1, listOf(row(item("a", overview = "x"), watched(played = true))), t0, fetchStartedAtMs = 0) }
+        runBlocking { library.writeItems(s1u1, listOf(row(item("a", overview = "x"), watched(played = true))), t0, requestedAtSeq = 0) }
         gateway.failAll = AppError.Kind.OFFLINE
         val bob = repo.item(s1u2, id("a")).await { it.freshness is Freshness.Stale }
         assertNull(bob.item) // the row is on the phone, but the server never showed it to Bob
@@ -94,7 +94,7 @@ class LibraryRepositoryItemSearchTest : LibraryRepositoryTestBase() {
     }
 
     @Test fun onceTheServerReturnsTheItemToTheOtherUserTheySeeItWithTheirOwnWatchedState() {
-        runBlocking { library.writeItems(s1u1, listOf(row(item("a", overview = "x"), watched(played = true))), t0, fetchStartedAtMs = 0) }
+        runBlocking { library.writeItems(s1u1, listOf(row(item("a", overview = "x"), watched(played = true))), t0, requestedAtSeq = 0) }
         gateway.itemFor = { row(item("a", overview = "x")) }
         val bob = repo.item(s1u2, id("a")).await { it.item != null }
         assertEquals("x", bob.item!!.item.overview)
@@ -102,8 +102,8 @@ class LibraryRepositoryItemSearchTest : LibraryRepositoryTestBase() {
     }
 
     @Test fun offlineSearchAndSeriesNeverRevealWhatTheOtherUserCached() = runBlocking {
-        library.writeItems(s1u1, listOf(row(item("m", name = "Secret Film")), row(episode("e1", 1, 1))), t0, fetchStartedAtMs = 0)
-        library.writePage(s1u1, ListKey.seasons(id("show")), 0, listOf(row(item("season1", ItemKind.SEASON, "Season 1", seriesId = "show", indexNumber = 1))), 1, t0, fetchStartedAtMs = 0)
+        library.writeItems(s1u1, listOf(row(item("m", name = "Secret Film")), row(episode("e1", 1, 1))), t0, requestedAtSeq = 0)
+        library.writePage(s1u1, ListKey.seasons(id("show")), 0, listOf(row(item("season1", ItemKind.SEASON, "Season 1", seriesId = "show", indexNumber = 1))), 1, t0, requestedAtSeq = 0)
         gateway.failAll = AppError.Kind.OFFLINE
         assertEquals(emptyList<String>(), names(repo.search(s1u2, "secret").items))
         assertEquals(1, repo.search(s1u1, "secret").items.size)
@@ -133,7 +133,7 @@ class LibraryRepositoryItemSearchTest : LibraryRepositoryTestBase() {
     }
 
     @Test fun offlineSearchFindsSavedNamesIgnoringCaseAndSaysSo() = runBlocking {
-        library.writeItems(s1u1, listOf(row(item("a", name = "The Matrix Reloaded")), row(item("b", name = "Other")), row(item("c", ItemKind.EPISODE, "matrix ep"))), t0, fetchStartedAtMs = 0)
+        library.writeItems(s1u1, listOf(row(item("a", name = "The Matrix Reloaded")), row(item("b", name = "Other")), row(item("c", ItemKind.EPISODE, "matrix ep"))), t0, requestedAtSeq = 0)
         for (kind in listOf(AppError.Kind.OFFLINE, AppError.Kind.NETWORK, AppError.Kind.TIMEOUT)) {
             gateway.failAll = kind
             val result = repo.search(s1u1, "MATRIX")
@@ -143,15 +143,15 @@ class LibraryRepositoryItemSearchTest : LibraryRepositoryTestBase() {
     }
 
     @Test fun offlineSearchShowsThisUsersWatchedState() = runBlocking {
-        library.writeItems(s1u1, listOf(row(item("a", name = "Matrix"), watched(played = true))), t0, fetchStartedAtMs = 0)
-        library.writeItems(s1u2, listOf(row(item("a", name = "Matrix"))), t0, fetchStartedAtMs = 0) // shown to Bob too, with nothing of his own
+        library.writeItems(s1u1, listOf(row(item("a", name = "Matrix"), watched(played = true))), t0, requestedAtSeq = 0)
+        library.writeItems(s1u2, listOf(row(item("a", name = "Matrix"))), t0, requestedAtSeq = 0) // shown to Bob too, with nothing of his own
         gateway.failAll = AppError.Kind.OFFLINE
         assertTrue(repo.search(s1u1, "matrix").items.single().userData!!.played)
         assertNull(repo.search(s1u2, "matrix").items.single().userData)
     }
 
     @Test fun otherFailuresAreNotAnExcuseToSearchTheSavedCopy() = runBlocking {
-        library.writeItems(s1u1, listOf(row(item("a", name = "Matrix"))), t0, fetchStartedAtMs = 0)
+        library.writeItems(s1u1, listOf(row(item("a", name = "Matrix"))), t0, requestedAtSeq = 0)
         gateway.failAll = AppError.Kind.UNAUTHORISED
         try {
             repo.search(s1u1, "matrix")
@@ -168,8 +168,8 @@ class LibraryRepositoryItemSearchTest : LibraryRepositoryTestBase() {
     private fun agedWorld() {
         now = t0.toEpochMilli() + Duration.ofDays(40).toMillis()
         runBlocking {
-            library.writePage(s1u1, "old-list", 0, films("listed"), 1, t0, fetchStartedAtMs = 0) // 40 days old
-            library.writeItems(s1u1, films("loose", "pinned"), t0, fetchStartedAtMs = 0)
+            library.writePage(s1u1, "old-list", 0, films("listed"), 1, t0, requestedAtSeq = 0) // 40 days old
+            library.writeItems(s1u1, films("loose", "pinned"), t0, requestedAtSeq = 0)
             sql("UPDATE items SET pinned = 1 WHERE itemId = ?", id("pinned"))
         }
     }
@@ -191,7 +191,7 @@ class LibraryRepositoryItemSearchTest : LibraryRepositoryTestBase() {
         gateway.failAll = AppError.Kind.OFFLINE
         repo.home(s1u1).first5s()
         until { log.records.size == 1 }
-        library.writePage(s1u1, "another-old", 0, films("x"), 1, t0, fetchStartedAtMs = 0)
+        library.writePage(s1u1, "another-old", 0, films("x"), 1, t0, requestedAtSeq = 0)
         now += day - 1_000
         repo.home(s1u1).first5s()
         settle() // every background job has finished, so "nothing ran" is a fact, not a guess

@@ -1,6 +1,8 @@
 package app.shoalwatch.data.library
 
 import app.cash.turbine.ReceiveTurbine
+import app.shoalwatch.TestMonotonic
+import app.shoalwatch.data.db.library.LocalChangeLog
 import app.shoalwatch.data.db.LibraryTestBase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,11 +33,13 @@ abstract class LibraryRepositoryTestBase : LibraryTestBase() {
     protected val gateway = FakeLibraryGateway()
     protected val log = MemoryLog()
     protected var now: Long = t0.toEpochMilli()
+    protected val mono = TestMonotonic()
+    protected val changes = LocalChangeLog(mono)
     protected val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     protected lateinit var repo: LibraryRepository
 
     @Before fun openRepository() {
-        repo = LibraryRepository(gateway, db, appScope, Dispatchers.IO, { now }, log)
+        repo = LibraryRepository(gateway, db, appScope, Dispatchers.IO, { now }, log, changes)
     }
 
     /** Lets background work finish before the database is closed (this @After runs before the base class's). */
@@ -54,7 +58,10 @@ abstract class LibraryRepositoryTestBase : LibraryTestBase() {
         }
     }
 
-    protected fun advance(duration: Duration) { now += duration.toMillis() }
+    protected fun advance(duration: Duration) {
+        now += duration.toMillis()
+        mono.ms += duration.toMillis()
+    }
 
     /** The first value of this flow that satisfies [test]; fails after five real seconds rather than hanging. */
     protected suspend fun <T> Flow<T>.first5s(test: (T) -> Boolean = { true }): T = withTimeout(5_000) { first(test) }

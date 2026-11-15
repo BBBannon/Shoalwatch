@@ -6,7 +6,9 @@ import app.shoalwatch.S1
 import app.shoalwatch.S2
 import app.shoalwatch.U1
 import app.shoalwatch.U2
+import app.shoalwatch.TestMonotonic
 import app.shoalwatch.data.db.library.LibraryStore
+import app.shoalwatch.data.db.library.LocalChangeLog
 import app.shoalwatch.data.library.Item
 import app.shoalwatch.data.library.ItemImages
 import app.shoalwatch.data.library.ItemKind
@@ -43,7 +45,7 @@ abstract class LibraryTestBase {
     @Before fun openDatabase() {
         db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java).allowMainThreadQueries().build()
         servers = ServerStore(db, SecretBox { key })
-        library = LibraryStore(db)
+        library = LibraryStore(db, LocalChangeLog(TestMonotonic()))
         runBlocking {
             listOf(S1, S2).forEach { id ->
                 servers.upsertServer(Server(id, "Den", "10.10.3", ServerAddress.parse("https://den.example"), null, false, null, null, emptyMap()))

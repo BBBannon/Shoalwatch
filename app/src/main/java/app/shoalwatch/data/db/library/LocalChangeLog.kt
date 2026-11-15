@@ -1,44 +1,58 @@
 package app.shoalwatch.data.db.library
 
+import app.shoalwatch.core.MonotonicClock
 import app.shoalwatch.data.servers.Session
+import java.util.concurrent.atomic.AtomicLong
 
 /**
- * What the app changed locally and when, kept in memory for this process only (so nothing here is ever a source of truth):
- * the rule that stops a slow server answer undoing a change made after it was asked for. An answer carries the time its
- * request STARTED; if the item was changed locally at or after that moment, the answer is older than the change and must
- * not overwrite the user's data for that item ([newerThan]), nor put the item back into a list the action took it out of
- * ([removedFrom]). The same millisecond counts as the change being newer.
+ * What the app changed locally, kept in memory for this process only (so nothing here is ever a source of truth): the rule
+ * that stops a slow server answer undoing a change made after it was asked for.
  *
- * Entries older than [TTL_MS] are forgotten (an answer that old would have timed out long since), and at most [MAX_ENTRIES]
- * are kept (the oldest go first), so it cannot grow. Thread-safe. [clock] is the repository's injected clock (epoch ms).
+ * **Ordering is by a sequence number, never by time.** A local change takes the next number ([record]); a request takes the
+ * current number just BEFORE it is sent ([stamp]); an answer is older than a change, and must not overwrite that item's user
+ * data ([newerThan]) nor put the item back into a list an action took it out of ([removedFrom]), exactly when the change's
+ * number is greater than the request's stamp. A request stamped at or after the change applies; one stamped before is dropped. The wall
+ * clock plays no part, so setting it back or forward changes nothing.
+ *
+ * Entries are forgotten after [TTL_MS] by the [monotonic] clock (an answer that old would have timed out long since; a
+ * clock change cannot expire them early), and at most [MAX_ENTRIES] are kept, oldest first out, so it cannot grow. If the cap ever
+ * evicts an entry, protection for that item ends early; that needs more than 5,000 distinct items changed within 10 minutes.
+ * One instance is made in `AppGraph` and shared by everything that writes server data or user changes. Thread-safe.
  */
-class LocalChangeLog(private val clock: () -> Long) {
+class LocalChangeLog(val monotonic: MonotonicClock) {
     private data class Key(val serverId: String, val userId: String, val itemId: String)
 
-    private class Entry(var at: Long, val removedFrom: MutableSet<String>)
+    private class Entry(var seq: Long, var atMs: Long, val removedFrom: MutableSet<String>)
+
+    private val sequence = AtomicLong()
 
     /** Oldest first: an entry that is recorded again moves to the end. */
     private val entries = LinkedHashMap<Key, Entry>()
 
     val size: Int get() = synchronized(entries) { entries.size }
 
+    /** The stamp a request takes immediately before it is sent. */
+    fun stamp(): Long = sequence.get()
+
     /** Notes that this user's data for [itemId] was just changed, and (if given) that it was taken out of list [removedFrom]. */
     fun record(s: Session, itemId: String, removedFrom: String? = null) = synchronized(entries) {
-        val now = clock()
+        val now = monotonic.nowMs()
         prune(now)
         val key = Key(s.serverId, s.userId, itemId)
-        val entry = entries.remove(key) ?: Entry(now, mutableSetOf())
-        entry.at = now
+        val entry = entries.remove(key) ?: Entry(0, now, mutableSetOf())
+        entry.seq = sequence.incrementAndGet()
+        entry.atMs = now
         if (removedFrom != null) entry.removedFrom += removedFrom
         entries[key] = entry
         while (entries.size > MAX_ENTRIES) entries.remove(entries.keys.first())
     }
 
-    /** When this user's data for the item was last changed locally, or null (never, or too long ago to matter). */
-    fun changedAt(s: Session, itemId: String): Long? = synchronized(entries) { live(Key(s.serverId, s.userId, itemId))?.at }
+    /** True when the item was changed locally AFTER a request stamped [requestedAtSeq] was sent: the answer is older than the change. */
+    fun newerThan(s: Session, itemId: String, requestedAtSeq: Long): Boolean =
+        synchronized(entries) { (live(Key(s.serverId, s.userId, itemId))?.seq ?: Long.MIN_VALUE) > requestedAtSeq }
 
-    /** True when the item was changed locally at or after [fetchStartedAtMs]: an answer to a request that started then is older than the change. */
-    fun newerThan(s: Session, itemId: String, fetchStartedAtMs: Long): Boolean = (changedAt(s, itemId) ?: Long.MIN_VALUE) >= fetchStartedAtMs
+    /** True when this process has changed the item for this user recently (so any marker on it may belong to a live action). */
+    fun touched(s: Session, itemId: String): Boolean = synchronized(entries) { live(Key(s.serverId, s.userId, itemId)) != null }
 
     /** True when a local action took the item out of [listKey] (and has not put it back). */
     fun removedFrom(s: Session, itemId: String, listKey: String): Boolean =
@@ -50,11 +64,11 @@ class LocalChangeLog(private val clock: () -> Long) {
         Unit
     }
 
-    private fun live(key: Key): Entry? = entries[key]?.takeIf { clock() - it.at <= TTL_MS }
+    private fun live(key: Key): Entry? = entries[key]?.takeIf { monotonic.nowMs() - it.atMs <= TTL_MS }
 
     private fun prune(now: Long) {
         val it = entries.values.iterator()
-        while (it.hasNext() && now - it.next().at > TTL_MS) it.remove()
+        while (it.hasNext() && now - it.next().atMs > TTL_MS) it.remove()
     }
 
     companion object {

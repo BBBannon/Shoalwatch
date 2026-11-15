@@ -29,10 +29,10 @@ abstract class PlaystateTestBase : LibraryRepositoryTestBase() {
     protected fun ud(played: Boolean = false, positionMs: Long = 0, favourite: Boolean = false, playCount: Int = if (played) 1 else 0, unplayed: Int? = null, lastPlayed: Long? = null) =
         UserData(played, positionMs, null, playCount, favourite, lastPlayed?.let(java.time.Instant::ofEpochMilli), unplayed)
 
-    protected fun save(vararg rows: ItemWithUserData, s: Session = s1u1) = runBlocking { library.writeItems(s, rows.toList(), t0, fetchStartedAtMs = 0) }
+    protected fun save(vararg rows: ItemWithUserData, s: Session = s1u1) = runBlocking { library.writeItems(s, rows.toList(), t0, requestedAtSeq = 0) }
 
     protected fun saveList(key: String, vararg rows: ItemWithUserData, s: Session = s1u1) =
-        runBlocking { library.writePage(s, key, 0, rows.toList(), rows.size, t0, fetchStartedAtMs = 0) }
+        runBlocking { library.writePage(s, key, 0, rows.toList(), rows.size, t0, requestedAtSeq = 0) }
 
     protected fun saveResume(vararg rows: ItemWithUserData) = saveList(ListKey.RESUME, *rows)
 

@@ -20,8 +20,8 @@ class LibraryRepositoryRevocationTest : LibraryRepositoryTestBase() {
     /** Ann and Bob were both shown film X (in their Continue Watching lists), and a little time has passed. */
     private fun bothWereShownX() {
         runBlocking {
-            library.writePage(s1u1, ListKey.RESUME, 0, listOf(row(item("x", name = "Film X")), row(item("y", name = "Film Y"))), 2, t0, fetchStartedAtMs = 0)
-            library.writePage(s1u2, ListKey.RESUME, 0, listOf(row(item("x", name = "Film X")), row(item("y", name = "Film Y"))), 2, t0, fetchStartedAtMs = 0)
+            library.writePage(s1u1, ListKey.RESUME, 0, listOf(row(item("x", name = "Film X")), row(item("y", name = "Film Y"))), 2, t0, requestedAtSeq = 0)
+            library.writePage(s1u2, ListKey.RESUME, 0, listOf(row(item("x", name = "Film X")), row(item("y", name = "Film Y"))), 2, t0, requestedAtSeq = 0)
         }
         advance(Duration.ofMinutes(10))
     }

@@ -46,7 +46,12 @@ internal class PlaystateLocal(private val store: LibraryStore, private val clock
     /** Takes the item out of `resume` (a list holds an id once, so the one entry), remembering where it was. */
     private suspend fun Touched.dropFromResume(s: Session, itemId: String) {
         val position = store.entryIds(s, ListKey.RESUME).indexOf(itemId)
-        if (position < 0) return
+        if (position < 0) {
+            // Not in the saved list, but a stale page asked for before this change may still carry it: remember the intent too.
+            removed += RemovedEntry(ListKey.RESUME, itemId, NOT_IN_LIST)
+            store.noteChanged(s, itemId, removedFrom = ListKey.RESUME)
+            return
+        }
         removed += RemovedEntry(ListKey.RESUME, itemId, position)
         store.removeEntryForAction(s, ListKey.RESUME, itemId)
     }
@@ -143,6 +148,18 @@ internal class PlaystateLocal(private val store: LibraryStore, private val clock
     suspend fun clearPending(s: Session, itemIds: Collection<String>) = itemIds.forEach { store.clearPending(s, it) }
 
     /**
+     * The server has confirmed the change. The confirmation is a change too: every row and removed entry is stamped again, so a
+     * request sent while the server call was in flight (after the optimistic write, so not older than it) but answered from
+     * the server's old state is older than this moment and cannot overwrite the result. Then the markers go. Same gate and
+     * transaction as the caller's. A request sent after this applies normally.
+     */
+    suspend fun confirm(s: Session, t: Touched) {
+        t.markedIds.forEach { store.noteChanged(s, it) }
+        t.removed.forEach { store.noteChanged(s, it.itemId, removedFrom = it.listKey) }
+        clearPending(s, t.markedIds)
+    }
+
+    /**
      * Puts the cache back as it was. Rows set as a whole go back exactly (a row that did not exist is deleted) and NEVER with
      * a marker: one action runs at a time per user, so no marker left on a row belongs to anyone else. A badge is moved back by
      * what this action moved it by. Removed list entries go back in REVERSE order of removal (each was recorded after the
@@ -159,6 +176,10 @@ internal class PlaystateLocal(private val store: LibraryStore, private val clock
         }
         clearPending(s, t.badges.keys)
         for (e in t.removed.asReversed()) {
+            if (e.position == NOT_IN_LIST) {
+                store.forgetRemoval(s, e.itemId, e.listKey)
+                continue
+            }
             if (store.visibleItem(s, e.itemId) == null) continue
             val now = store.entryIds(s, e.listKey)
             if (e.itemId !in now) store.restoreEntry(s, e.listKey, e.position.coerceAtMost(now.size), e.itemId)
@@ -166,6 +187,8 @@ internal class PlaystateLocal(private val store: LibraryStore, private val clock
     }
 
     private companion object {
+        /** A [RemovedEntry] position meaning the item was not in the saved list: only the intent to keep it out was recorded. */
+        const val NOT_IN_LIST = -1
         const val MAX_CHILDREN = 10_000
     }
 }

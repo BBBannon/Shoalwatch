@@ -44,6 +44,8 @@ class LibraryRepository(
     private val io: CoroutineDispatcher,
     private val clock: () -> Long,
     maintenanceLog: MaintenanceLog,
+    /** What was changed locally, shared with the tidy-up actions and made once (in `AppGraph`): see [LocalChangeLog]. */
+    changes: LocalChangeLog,
     /** The lock every write to the library takes (and eviction): one is made unless a test wants to hold it. */
     private val writeGate: Mutex = Mutex(),
 ) : Library {
@@ -53,7 +55,7 @@ class LibraryRepository(
     private val refresher = Refresher(scope, io, clock, beforeWork = ::ensureSwept)
     private val cache: ListCache
     /** The one store (and so the one record of local changes) this repository and the tidy-up actions share. */
-    internal val store = LibraryStore(db, LocalChangeLog(clock))
+    internal val store = LibraryStore(db, changes)
 
     init {
         cache = ListCache(db, store, refresher, LibraryMaintenance(store, maintenanceLog, clock, scope, io, writeGate, onCleared = refresher::forgetFinished), clock, io, writeGate, beforeUse = ::ensureSwept)
@@ -71,8 +73,8 @@ class LibraryRepository(
 
     private fun wholeList(s: Session, key: String, window: Duration, fetch: suspend () -> List<ItemWithUserData>) =
         Recipe(key, window) {
-            val startedAt = clock()
-            cache.writeWhole(s, key, fetch(), startedAt)
+            val requestedAt = store.requestStamp()
+            cache.writeWhole(s, key, fetch(), requestedAt)
         }
 
     private fun resumeRecipe(s: Session) = wholeList(s, ListKey.RESUME, HOME_WINDOW) { gateway.resume(s, RESUME_LIMIT) }
@@ -87,7 +89,7 @@ class LibraryRepository(
         wholeList(s, ListKey.episodes(seriesId, seasonId), SERIES_WINDOW) { gateway.episodes(s, seriesId, seasonId) }
 
     private fun itemRecipe(s: Session, itemId: String, window: Duration) = Recipe(ListKey.item(itemId), window) {
-        val startedAt = clock()
+        val requestedAt = store.requestStamp()
         val fetched = try {
             gateway.item(s, itemId)
         } catch (e: AppError) {
@@ -99,7 +101,7 @@ class LibraryRepository(
             }
             throw e
         }
-        cache.writeItems(s, listOf(fetched), authoritative = true, fetchStartedAtMs = startedAt) // a detail fetch asks for every field, so a missing overview is really gone
+        cache.writeItems(s, listOf(fetched), authoritative = true, requestedAtSeq = requestedAt) // a detail fetch asks for every field, so a missing overview is really gone
         cache.markLoaded(s, ListKey.item(itemId))
     }
 
@@ -118,9 +120,9 @@ class LibraryRepository(
     private fun childrenRecipe(s: Session, parentId: String, shape: ListShape, sort: Sort, filter: ItemFilter): Recipe {
         val key = ListKey.children(parentId, shape, sort, filter)
         return Recipe(key, LISTING_WINDOW) {
-            val startedAt = clock()
+            val requestedAt = store.requestStamp()
             val page = gateway.children(s, parentId, 0, PAGE_SIZE, sort, filter, shape.kinds, shape.recursive)
-            cache.writePage(s, key, 0, page.items, page.total, page.nextStartIndex, 1, page.endReached, fetchStartedAtMs = startedAt)
+            cache.writePage(s, key, 0, page.items, page.total, page.nextStartIndex, 1, page.endReached, requestedAtSeq = requestedAt)
         }
     }
 
@@ -172,11 +174,11 @@ class LibraryRepository(
         val state = lists.getState(s.serverId, s.userId, key)?.takeIf { canLoadMore(it) } ?: return
         // Read before fetching: if a refresh replaces the list while this page is on its way, the page is for the old list and is dropped.
         val stored = lists.entryIds(s.serverId, s.userId, key)
-        val startedAt = clock()
+        val requestedAt = store.requestStamp()
         val page = gateway.children(s, parentId, state.nextStartIndex, PAGE_SIZE, sort, filter, shape.kinds, shape.recursive)
         val have = stored.toHashSet()
         val added = page.items.filter { have.add(it.item.id) }
-        cache.writePage(s, key, stored.size, added, page.total ?: state.total, page.nextStartIndex, state.pagesLoaded + 1, page.endReached, basedOn = state, fetchStartedAtMs = startedAt)
+        cache.writePage(s, key, stored.size, added, page.total ?: state.total, page.nextStartIndex, state.pagesLoaded + 1, page.endReached, basedOn = state, requestedAtSeq = requestedAt)
     }
 
     // ---- series and items
@@ -222,11 +224,11 @@ class LibraryRepository(
     private suspend fun searchOnIo(s: Session, text: String): SearchResult {
         ensureSwept()
         return try {
-            val startedAt = clock()
+            val requestedAt = store.requestStamp()
             val found = gateway.search(s, text, SEARCH_LIMIT)
             // Saved so a detail screen opens at once. A failure to save must not lose the results the user is waiting for.
             try {
-                cache.writeItems(s, found, fetchStartedAtMs = startedAt)
+                cache.writeItems(s, found, requestedAtSeq = requestedAt)
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
@@ -293,7 +295,7 @@ class LibraryRepository(
         writeGate.withLock { block() }
     }
 
-    private val startupSweep = StartupSweep(store, writeGate, clock)
+    private val startupSweep = StartupSweep(store, writeGate, changes.monotonic)
 
     /** See [StartupSweep]: every entry point waits for it, once per process (and again after a failure, a bounded number of times). */
     internal suspend fun ensureSwept() = startupSweep.ensure()

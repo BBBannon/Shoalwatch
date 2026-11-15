@@ -121,7 +121,7 @@ class PlaystateRepository(
         }
         withContext(NonCancellable) {
             try {
-                library.writeGated { local.transaction { local.clearPending(s, touched.markedIds) } }
+                library.writeGated { local.transaction { local.confirm(s, touched) } }
             } catch (_: Exception) {
                 // The server accepted the change, so this is not the caller's failure. Clear what can still be cleared; a marker that
                 // cannot be cleared is cleaned up by the start-up sweep.

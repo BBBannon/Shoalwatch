@@ -121,7 +121,7 @@ class PlaystateRestoreTest : PlaystateTestBase() {
         withTimeout(10_000) { calls.forEach { it.await() } }
         settle()
         assertEquals(labels.map { "setFavourite:${id(it)}:true" }, gateway.calls.filter { it.startsWith("setFavourite") })
-        assertEquals(1, gateway.maxRunning)
+        assertEquals(1, gateway.maxMutationsRunning)
         assertNoPending()
         labels.forEach { assertTrue(userData(it)!!.favourite) }
     }

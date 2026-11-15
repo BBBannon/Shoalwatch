@@ -67,7 +67,7 @@ class LibraryRepositoryListingTest : LibraryRepositoryTestBase() {
         val ordinary = gateway.childPage
         // While the second page is on its way, a refresh finishes and the saved list becomes one film long.
         gateway.childPage = { p, start, limit ->
-            if (start == 100) runBlocking { library.writePage(s1u1, key, 0, films("x"), 1, t0.plusSeconds(1), fetchStartedAtMs = 0) }
+            if (start == 100) runBlocking { library.writePage(s1u1, key, 0, films("x"), 1, t0.plusSeconds(1), requestedAtSeq = 0) }
             ordinary(p, start, limit)
         }
         more()

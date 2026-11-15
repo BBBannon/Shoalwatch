@@ -24,8 +24,8 @@ enum class PageResult { Written, Stale }
  */
 class LibraryStore(
     private val db: AppDatabase,
-    /** What was changed locally and when: a server answer asked for before a change never overwrites it (see [LocalChangeLog]). */
-    private val changes: LocalChangeLog = LocalChangeLog(System::currentTimeMillis),
+    /** What was changed locally: a server answer asked for before a change never overwrites it (see [LocalChangeLog]). The one instance, shared. */
+    private val changes: LocalChangeLog,
 ) {
     private val items = db.itemDao()
     private val lists = db.listDao()
@@ -58,7 +58,7 @@ class LibraryStore(
         pagesLoaded: Int = 1,
         endReached: Boolean = true,
         basedOn: ListStateEntity? = null,
-        fetchStartedAtMs: Long,
+        requestedAtSeq: Long,
     ): PageResult {
         require(start >= 0) { "A page cannot start before the first item." }
         require(listKey.isNotEmpty() && listKey.length <= ListEntryEntity.MAX_LIST_KEY) { "A list key is 1 to 200 characters." }
@@ -69,9 +69,9 @@ class LibraryStore(
             }
             val stored = if (start == 0) 0 else repacked(s, listKey)
             if (start > stored) return@withTransaction PageResult.Stale
-            writeItems(s, page, now, fetchStartedAtMs = fetchStartedAtMs)
+            writeItems(s, page, now, requestedAtSeq = requestedAtSeq)
             // An item a local action took out of this list after this page was asked for stays out: the page is older than that.
-            val entries = page.filterNot { changes.removedFrom(s, it.item.id, listKey) && changes.newerThan(s, it.item.id, fetchStartedAtMs) }
+            val entries = page.filterNot { changes.removedFrom(s, it.item.id, listKey) && changes.newerThan(s, it.item.id, requestedAtSeq) }
             lists.deleteEntriesFrom(s.serverId, s.userId, listKey, start)
             lists.insertEntries(entries.mapIndexed { i, row -> ListEntryEntity(s.serverId, s.userId, listKey, start + i, row.item.id) })
             val loaded = start + entries.size
@@ -136,13 +136,13 @@ class LibraryStore(
      * provided, [ItemDao.writeServerUserData]: a row with an unconfirmed local change (`pendingSyncAt`) is ignored. In the same
      * transaction every item written is recorded as shown to this user by the server ([VisibleItemEntity]).
      */
-    suspend fun writeItems(s: Session, rows: List<ItemWithUserData>, now: Instant, authoritative: Boolean = false, fetchStartedAtMs: Long) {
+    suspend fun writeItems(s: Session, rows: List<ItemWithUserData>, now: Instant, authoritative: Boolean = false, requestedAtSeq: Long) {
         db.withTransaction {
             items.upsertItems(s.serverId, rows.map { it.item.toEntity(s.serverId, now) }, authoritative)
             items.markVisible(s.serverId, s.userId, rows.map { it.item.id }, now.toEpochMilli())
             // The one way server user data is written. Skipped, besides pending rows (in the DAO): any item changed locally at or
             // after the moment this answer was asked for. The shared item row and visibility above are still written.
-            items.writeServerUserData(rows.filterNot { changes.newerThan(s, it.item.id, fetchStartedAtMs) }.mapNotNull { r -> r.userData?.toEntity(s.serverId, s.userId, r.item.id, now) })
+            items.writeServerUserData(rows.filterNot { changes.newerThan(s, it.item.id, requestedAtSeq) }.mapNotNull { r -> r.userData?.toEntity(s.serverId, s.userId, r.item.id, now) })
         }
     }
 
@@ -232,20 +232,37 @@ class LibraryStore(
         return insertEntryAt(s, listKey, position, itemId)
     }
 
+    /** The stamp for a request, read immediately BEFORE it is sent; pass it to [writePage] or [writeItems] with that request's answer. */
+    fun requestStamp(): Long = changes.stamp()
+
+    /** A change the action has just had confirmed (or rolled back) is a change too: every request sent before this moment is older than it. */
+    fun noteChanged(s: Session, itemId: String, removedFrom: String? = null) = changes.record(s, itemId, removedFrom)
+
+    /** The entry was put back by a rollback: the server's own answers about that list are authoritative for it again. */
+    fun forgetRemoval(s: Session, itemId: String, listKey: String) = changes.forgetRemoval(s, itemId, listKey)
+
     /** Clears the markers of one user (the local values stay): used when that user has no action running, so none can be live. Returns how many were cleared. */
     suspend fun clearPendingFor(s: Session): Int = items.clearPendingFor(s.serverId, s.userId)
 
+    /** One row with an unconfirmed local change. */
+    data class PendingKey(val serverId: String, val userId: String, val itemId: String)
+
+    /** Every row that has a marker right now (for the start-up sweep's snapshot). */
+    suspend fun pendingKeys(): Set<PendingKey> = items.pendingRows().map { PendingKey(it.serverId, it.userId, it.itemId) }.toSet()
+
     /**
-     * The start-up sweep: clears EVERY pending marker (all servers and users; the local values stay), and makes every list of
-     * each user who had one [ageByMs] older so it refreshes promptly and the server's copy decides. One transaction.
-     * Returns how many markers were cleared. Milestone 5 replaces this with outbox replay.
+     * The start-up sweep: clears the markers of exactly the rows in [snapshot] that still have one and that this process has
+     * not touched since (a marker on a touched row may belong to a live action). The local values stay. Each user who really
+     * had a leftover cleared has their lists made [ageByMs] older, so they refresh promptly and the server's copy decides.
+     * One transaction. Returns how many markers were cleared. Milestone 5 replaces this with outbox replay.
      */
-    suspend fun clearAllPending(ageByMs: Long): Int = db.withTransaction {
-        val pending = items.pendingRows()
-        if (pending.isEmpty()) return@withTransaction 0
-        items.clearAllPending()
-        pending.map { it.serverId to it.userId }.distinct().forEach { (server, user) -> lists.ageLists(server, user, ageByMs) }
-        pending.size
+    suspend fun clearLeftovers(snapshot: Set<PendingKey>, ageByMs: Long): Int = db.withTransaction {
+        val clear = items.pendingRows()
+            .map { PendingKey(it.serverId, it.userId, it.itemId) }
+            .filter { it in snapshot && !changes.touched(Session(it.serverId, it.userId), it.itemId) }
+        clear.forEach { items.clearPending(it.serverId, it.userId, it.itemId) }
+        clear.map { it.serverId to it.userId }.distinct().forEach { (server, user) -> lists.ageLists(server, user, ageByMs) }
+        clear.size
     }
 
     /** Makes this user's stored libraries exactly [libraries], in order. */

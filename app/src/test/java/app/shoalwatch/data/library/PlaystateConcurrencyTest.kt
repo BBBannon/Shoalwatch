@@ -37,7 +37,7 @@ class PlaystateConcurrencyTest : PlaystateTestBase() {
         second.within5s()
         settle()
         assertEquals(listOf("setPlayed:${id("a")}:true", "setPlayed:${id("a")}:false"), gateway.calls.filter { it.startsWith("setPlayed") })
-        assertEquals(1, gateway.maxRunning)
+        assertEquals("two mutations were at the server at once", 1, gateway.maxMutationsRunning)
         assertFalse(userData("a")!!.played)
         assertNoPending()
     }
@@ -166,7 +166,7 @@ class PlaystateConcurrencyTest : PlaystateTestBase() {
 
     @Test fun theChangeAndItsUndoWaitForTheLibraryWriteGate() = runBlocking {
         val gate = Mutex()
-        val gated = PlaystateRepository(gateway, LibraryRepository(gateway, db, appScope, Dispatchers.IO, { now }, log, gate), appScope, Dispatchers.IO, { now })
+        val gated = PlaystateRepository(gateway, LibraryRepository(gateway, db, appScope, Dispatchers.IO, { now }, log, changes, gate), appScope, Dispatchers.IO, { now })
         saveResume(film("a"))
         val held = holdMutation()
         gateway.failAll = AppError.Kind.NETWORK
@@ -196,5 +196,18 @@ class PlaystateConcurrencyTest : PlaystateTestBase() {
         save(film("a", ud()), s = s2u1) // same user id on another server
         playstate.setFavourite(s1u1, id("a"), true)
         assertNull(userData("a", s2u1)?.takeIf { it.favourite })
+    }
+
+    /** The diagnosis of a flaky run: the first action's follow-up refresh can be at the gateway while the second action's call is, so "at most one call at once" was the wrong thing to assert. */
+    @Test fun aRefreshOverlappingASecondActionsCallIsNotTwoMutationsAtOnce() = runBlocking {
+        save(film("a", ud()), film("b", ud()))
+        val resume = latch()
+        gateway.onCall = { call -> if (call.startsWith("resume")) resume.await() }
+        withTimeout(5_000) { playstate.setPlayed(s1u1, id("a"), true) }
+        until { gateway.count("resume") == 1 } // the follow-up refresh is now held at the gateway
+        withTimeout(5_000) { playstate.setPlayed(s1u1, id("b"), true) }
+        assertTrue("a refresh and a mutation were at the gateway together", gateway.maxRunning >= 2)
+        assertEquals(1, gateway.maxMutationsRunning)
+        resume.release()
     }
 }

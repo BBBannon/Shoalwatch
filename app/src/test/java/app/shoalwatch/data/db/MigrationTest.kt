@@ -115,10 +115,10 @@ class MigrationTest {
     @Test fun theNewTablesAreUsableAfterMigration() = runBlocking {
         createVersion1()
         val db = openWithMigration()
-        val library = LibraryStore(db)
+        val library = LibraryStore(db, app.shoalwatch.data.db.library.LocalChangeLog(app.shoalwatch.TestMonotonic()))
         val s = Session(S1, U1)
         val film = ItemFixtures.film("m1")
-        library.writePage(s, "resume", 0, listOf(app.shoalwatch.data.library.ItemWithUserData(film, null)), 1, Instant.parse("2026-11-14T10:00:00Z"), fetchStartedAtMs = 0)
+        library.writePage(s, "resume", 0, listOf(app.shoalwatch.data.library.ItemWithUserData(film, null)), 1, Instant.parse("2026-11-14T10:00:00Z"), requestedAtSeq = 0)
         db.itemDao().setFavourite(S1, U1, film.id, true, 1)
         val back = db.listDao().getList(S1, U1, "resume", 10).single()
         assertEquals(film.id, back.item.itemId)
@@ -130,8 +130,8 @@ class MigrationTest {
     @Test fun foreignKeysAreEnforcedAfterMigration() = runBlocking {
         createVersion1()
         val db = openWithMigration()
-        val library = LibraryStore(db)
-        library.writePage(Session(S1, U1), "resume", 0, listOf(app.shoalwatch.data.library.ItemWithUserData(ItemFixtures.film("m1"), null)), 1, Instant.now(), fetchStartedAtMs = 0)
+        val library = LibraryStore(db, app.shoalwatch.data.db.library.LocalChangeLog(app.shoalwatch.TestMonotonic()))
+        library.writePage(Session(S1, U1), "resume", 0, listOf(app.shoalwatch.data.library.ItemWithUserData(ItemFixtures.film("m1"), null)), 1, Instant.now(), requestedAtSeq = 0)
         db.itemDao().setFavourite(S1, U1, ItemFixtures.film("m1").id, true, 1)
         ServerStore(db, box).removeAccount(S1, U1)
         assertEquals(0, db.openHelper.readableDatabase.query("SELECT COUNT(*) FROM user_data").use { it.moveToFirst(); it.getInt(0) })

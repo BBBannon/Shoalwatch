@@ -124,4 +124,89 @@ class PlaystateStalenessTest : PlaystateTestBase() {
         assertNoPending()
         l.release()
     }
+
+    // ---- ordering is by sequence, never by the wall clock
+
+    private val hour = 3_600_000L
+
+    @Test fun aWallClockSetBackAnHourAfterAChangeDoesNotMakeLaterAnswersLookOld() = runBlocking {
+        gateway.clockTick = {}
+        save(film("a", ud(favourite = false)))
+        playstate.setFavourite(s1u1, id("a"), true)
+        now -= hour // the phone's clock is corrected backwards
+        gateway.itemFor = { film("a", ud(favourite = false)) } // changed on another device since
+        repo.refresh(s1u1, RefreshTarget.Item(id("a")))
+        assertFalse("an answer asked for after the change applies, whatever the clock says", userData("a")!!.favourite)
+    }
+
+    @Test fun aWallClockSetForwardAnHourWhileAStaleRequestIsInFlightDoesNotLetItThrough() = runBlocking {
+        save(film("a", ud(favourite = false)))
+        gateway.answerAtRequest = true
+        gateway.itemFor = { film("a", ud(favourite = false)) }
+        val l = holdCalls("item")
+        val refreshing = background { repo.refresh(s1u1, RefreshTarget.Item(id("a"))) }
+        until { gateway.count("item") == 1 }
+        withTimeout(5_000) { playstate.setFavourite(s1u1, id("a"), true) }
+        now += hour
+        l.release()
+        withTimeout(5_000) { refreshing.await() }
+        settle()
+        assertTrue(userData("a")!!.favourite)
+    }
+
+    @Test fun aRequestStampedStraightAfterAChangeAppliesEvenWithNoTimePassing() = runBlocking {
+        gateway.clockTick = {}
+        save(film("a", ud(favourite = false)))
+        playstate.setFavourite(s1u1, id("a"), true)
+        gateway.itemFor = { film("a", ud(favourite = false)) }
+        repo.refresh(s1u1, RefreshTarget.Item(id("a")))
+        assertFalse(userData("a")!!.favourite)
+    }
+
+    @Test fun aRequestStampedStraightBeforeAChangeIsDroppedEvenWithNoTimePassing() = runBlocking {
+        gateway.clockTick = {}
+        save(film("a", ud(favourite = false)))
+        gateway.answerAtRequest = true
+        gateway.itemFor = { film("a", ud(favourite = false)) }
+        val l = holdCalls("item")
+        val refreshing = background { repo.refresh(s1u1, RefreshTarget.Item(id("a"))) }
+        until { gateway.count("item") == 1 }
+        withTimeout(5_000) { playstate.setFavourite(s1u1, id("a"), true) }
+        l.release()
+        withTimeout(5_000) { refreshing.await() }
+        assertTrue(userData("a")!!.favourite)
+    }
+
+    // ---- the acknowledgement is a change too
+
+    @Test fun anItemRequestMadeWhileTheServerCallIsInFlightAndAnsweredFromOldStateCannotUndoTheChangeAfterItIsConfirmed() = runBlocking {
+        save(film("a", ud(favourite = false)))
+        gateway.answerAtRequest = true
+        gateway.itemFor = { film("a", ud(favourite = false)) } // the server has not heard yet
+        val server = latch()
+        val item = latch()
+        gateway.onCall = { call -> if (call.startsWith("setFavourite")) server.await() else if (call.startsWith("item")) item.await() }
+        val action = background { playstate.setFavourite(s1u1, id("a"), true) }
+        until { gateway.count("setFavourite") == 1 }
+        val refreshing = background { repo.refresh(s1u1, RefreshTarget.Item(id("a"))) } // asked for after the optimistic write, before the confirmation
+        until { gateway.count("item") == 1 }
+        server.release()
+        withTimeout(5_000) { action.await() }
+        item.release() // the old answer lands after the action has completed
+        withTimeout(5_000) { refreshing.await() }
+        settle()
+        assertTrue(userData("a")!!.favourite)
+        assertNoPending()
+    }
+
+    @Test fun theRefreshAfterTheActionStillAppliesAndSoDoesOneAskedForLater() = runBlocking {
+        saveResume(film("a"), film("b"))
+        gateway.resumeFor = { listOf(film("b")) }
+        playstate.removeFromContinueWatching(s1u1, id("a"))
+        settle()
+        assertEquals(ids("b"), resumeIds())
+        gateway.resumeFor = { listOf(film("b"), film("c")) }
+        repo.refresh(s1u1, RefreshTarget.Home)
+        assertEquals(ids("b", "c"), resumeIds())
+    }
 }

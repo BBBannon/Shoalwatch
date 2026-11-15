@@ -28,8 +28,8 @@ class LibraryMaintenanceTest : LibraryTestBase() {
     private fun pin(label: String) = sql("UPDATE items SET pinned = 1 WHERE itemId = ?", id(label))
 
     @Test fun listsNotRefreshedSinceTheCutoffAreDeletedWithTheirState() = runBlocking {
-        library.writePage(s1u1, "stale", 0, listOf(row(item("a")), row(item("b"))), 2, longAgo, fetchStartedAtMs = 0)
-        library.writePage(s1u1, "fresh", 0, listOf(row(item("c"))), 1, recently, fetchStartedAtMs = 0)
+        library.writePage(s1u1, "stale", 0, listOf(row(item("a")), row(item("b"))), 2, longAgo, requestedAtSeq = 0)
+        library.writePage(s1u1, "fresh", 0, listOf(row(item("c"))), 1, recently, requestedAtSeq = 0)
         val counts = library.evict(now)
         assertEquals(2, counts.listEntries)
         assertEquals(1, counts.listStates)
@@ -40,9 +40,9 @@ class LibraryMaintenanceTest : LibraryTestBase() {
     }
 
     @Test fun oldUnreferencedItemsGoAndRecentOrReferencedOrPinnedOnesStay() = runBlocking {
-        library.writeItems(s1u1, listOf(row(item("old")), row(item("old-pinned")), row(item("old-listed"))), longAgo, fetchStartedAtMs = 0)
-        library.writeItems(s1u1, listOf(row(item("recent"))), recently, fetchStartedAtMs = 0)
-        library.writePage(s1u1, "resume", 0, listOf(row(item("old-listed"))), 1, recently, fetchStartedAtMs = 0)
+        library.writeItems(s1u1, listOf(row(item("old")), row(item("old-pinned")), row(item("old-listed"))), longAgo, requestedAtSeq = 0)
+        library.writeItems(s1u1, listOf(row(item("recent"))), recently, requestedAtSeq = 0)
+        library.writePage(s1u1, "resume", 0, listOf(row(item("old-listed"))), 1, recently, requestedAtSeq = 0)
         pin("old-pinned")
         val counts = library.evict(now)
         assertEquals(ids("old-pinned", "old-listed", "recent"), itemIds())
@@ -50,8 +50,8 @@ class LibraryMaintenanceTest : LibraryTestBase() {
     }
 
     @Test fun anItemListedByAnyUserIsKept() = runBlocking {
-        library.writeItems(s1u1, listOf(row(item("a"))), longAgo, fetchStartedAtMs = 0)
-        library.writePage(s1u2, "resume", 0, listOf(row(item("a"))), 1, recently, fetchStartedAtMs = 0)
+        library.writeItems(s1u1, listOf(row(item("a"))), longAgo, requestedAtSeq = 0)
+        library.writePage(s1u2, "resume", 0, listOf(row(item("a"))), 1, recently, requestedAtSeq = 0)
         library.evict(now)
         assertEquals(ids("a"), itemIds())
     }
@@ -60,8 +60,8 @@ class LibraryMaintenanceTest : LibraryTestBase() {
         val series = item("show", ItemKind.SERIES)
         val season = item("season", ItemKind.SEASON, seriesId = "show", parentId = "show")
         val ep = item("ep", ItemKind.EPISODE, seriesId = "show", seasonId = "season", parentId = "season")
-        library.writeItems(s1u1, listOf(row(series), row(season), row(ep), row(item("stray"))), longAgo, fetchStartedAtMs = 0)
-        library.writePage(s1u1, "resume", 0, listOf(row(ep)), 1, recently, fetchStartedAtMs = 0)
+        library.writeItems(s1u1, listOf(row(series), row(season), row(ep), row(item("stray"))), longAgo, requestedAtSeq = 0)
+        library.writePage(s1u1, "resume", 0, listOf(row(ep)), 1, recently, requestedAtSeq = 0)
         library.evict(now)
         assertEquals(ids("show", "season", "ep"), itemIds())
     }
@@ -70,7 +70,7 @@ class LibraryMaintenanceTest : LibraryTestBase() {
         val series = item("show", ItemKind.SERIES)
         val season = item("season", ItemKind.SEASON, seriesId = "show", parentId = "show")
         val ep = item("ep", ItemKind.EPISODE, seriesId = "show", seasonId = "season", parentId = "season")
-        library.writeItems(s1u1, listOf(row(series), row(season), row(ep), row(item("stray"))), longAgo, fetchStartedAtMs = 0)
+        library.writeItems(s1u1, listOf(row(series), row(season), row(ep), row(item("stray"))), longAgo, requestedAtSeq = 0)
         pin("ep")
         library.evict(now)
         assertEquals(ids("show", "season", "ep"), itemIds())
@@ -79,13 +79,13 @@ class LibraryMaintenanceTest : LibraryTestBase() {
     @Test fun aSeriesWhoseEpisodesAreNeitherListedNorPinnedIsEvictedToo() = runBlocking {
         val series = item("show", ItemKind.SERIES)
         val ep = item("ep", ItemKind.EPISODE, seriesId = "show", seasonId = "season", parentId = "season")
-        library.writeItems(s1u1, listOf(row(series), row(ep)), longAgo, fetchStartedAtMs = 0)
+        library.writeItems(s1u1, listOf(row(series), row(ep)), longAgo, requestedAtSeq = 0)
         library.evict(now)
         assertEquals(emptySet<String>(), itemIds())
     }
 
     @Test fun itemsOfAStaleListBecomeEvictableInTheSamePass() = runBlocking {
-        library.writePage(s1u1, "stale", 0, listOf(row(item("a")), row(item("b"))), 2, longAgo, fetchStartedAtMs = 0)
+        library.writePage(s1u1, "stale", 0, listOf(row(item("a")), row(item("b"))), 2, longAgo, requestedAtSeq = 0)
         val counts = library.evict(now)
         assertEquals(emptySet<String>(), itemIds())
         assertEquals(2, counts.items)
@@ -98,9 +98,9 @@ class LibraryMaintenanceTest : LibraryTestBase() {
                 row(item("seen"), watched(played = true)), row(item("fav"), watched(favourite = true)),
                 row(item("resume"), watched(positionMs = 1_000)), row(item("nothing"), watched()), row(item("kept-item"), watched()),
             ),
-            longAgo, fetchStartedAtMs = 0,
+            longAgo, requestedAtSeq = 0,
         )
-        library.writeItems(s1u1, listOf(row(item("kept-item"))), recently, fetchStartedAtMs = 0)
+        library.writeItems(s1u1, listOf(row(item("kept-item"))), recently, requestedAtSeq = 0)
         val counts = library.evict(now)
         val survivors = buildSet { listOf("seen", "fav", "resume", "nothing", "kept-item").forEach { if (db.itemDao().getUserData(S1, U1, id(it)) != null) add(it) } }
         assertEquals(setOf("seen", "fav", "resume", "kept-item"), survivors)
@@ -110,10 +110,10 @@ class LibraryMaintenanceTest : LibraryTestBase() {
 
     @Test fun theCapRemovesTheOldestUnprotectedItemsFirst() = runBlocking {
         val policy = EvictionPolicy(listMaxAge = Duration.ofDays(365), itemMaxAge = Duration.ofDays(365), maxUnpinnedItems = 6)
-        (1..10).forEach { library.writeItems(s1u1, listOf(row(item("f$it"))), now.minusSeconds(1_000L - it), fetchStartedAtMs = 0) } // f1 oldest
-        library.writeItems(s1u1, listOf(row(item("listed1")), row(item("listed2"))), now.minusSeconds(5_000), fetchStartedAtMs = 0) // oldest of all, but listed
-        library.writePage(s1u1, "resume", 0, listOf(row(item("listed1")), row(item("listed2"))), 2, now, fetchStartedAtMs = 0)
-        library.writeItems(s1u1, listOf(row(item("pinned"))), now.minusSeconds(9_000), fetchStartedAtMs = 0)
+        (1..10).forEach { library.writeItems(s1u1, listOf(row(item("f$it"))), now.minusSeconds(1_000L - it), requestedAtSeq = 0) } // f1 oldest
+        library.writeItems(s1u1, listOf(row(item("listed1")), row(item("listed2"))), now.minusSeconds(5_000), requestedAtSeq = 0) // oldest of all, but listed
+        library.writePage(s1u1, "resume", 0, listOf(row(item("listed1")), row(item("listed2"))), 2, now, requestedAtSeq = 0)
+        library.writeItems(s1u1, listOf(row(item("pinned"))), now.minusSeconds(9_000), requestedAtSeq = 0)
         pin("pinned")
         val counts = library.evict(now, policy)
         // 12 unpinned (10 + 2 listed): 6 must go, and only the oldest of the 10 unprotected ones
@@ -123,22 +123,22 @@ class LibraryMaintenanceTest : LibraryTestBase() {
 
     @Test fun theCapNeverDeletesProtectedRowsEvenIfItIsStillExceeded() = runBlocking {
         val policy = EvictionPolicy(itemMaxAge = Duration.ofDays(365), listMaxAge = Duration.ofDays(365), maxUnpinnedItems = 1)
-        library.writePage(s1u1, "resume", 0, listOf(row(item("a")), row(item("b")), row(item("c"))), 3, now, fetchStartedAtMs = 0)
+        library.writePage(s1u1, "resume", 0, listOf(row(item("a")), row(item("b")), row(item("c"))), 3, now, requestedAtSeq = 0)
         assertEquals(0, library.evict(now, policy).items)
         assertEquals(3, itemIds().size)
     }
 
     @Test fun pinnedRowsDoNotCountTowardsTheCap() = runBlocking {
         val policy = EvictionPolicy(itemMaxAge = Duration.ofDays(365), listMaxAge = Duration.ofDays(365), maxUnpinnedItems = 2)
-        library.writeItems(s1u1, (1..5).map { row(item("p$it")) } + row(item("x")) + row(item("y")), now, fetchStartedAtMs = 0)
+        library.writeItems(s1u1, (1..5).map { row(item("p$it")) } + row(item("x")) + row(item("y")), now, requestedAtSeq = 0)
         (1..5).forEach { pin("p$it") }
         assertEquals(0, library.evict(now, policy).items)
         assertEquals(7, itemIds().size)
     }
 
     @Test fun eachServerIsEvictedOnItsOwn() = runBlocking {
-        library.writeItems(s1u1, listOf(row(item("a"))), longAgo, fetchStartedAtMs = 0)
-        library.writeItems(s2u1, listOf(row(item("a"))), longAgo, fetchStartedAtMs = 0)
+        library.writeItems(s1u1, listOf(row(item("a"))), longAgo, requestedAtSeq = 0)
+        library.writeItems(s2u1, listOf(row(item("a"))), longAgo, requestedAtSeq = 0)
         val dao = db.libraryMaintenanceDao()
         val counts = dao.evict(S1, now.minus(Duration.ofDays(30)).toEpochMilli(), now.minus(Duration.ofDays(30)).toEpochMilli(), 100)
         assertEquals(1, counts.items)

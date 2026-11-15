@@ -14,7 +14,7 @@ import java.time.Duration
 /** Every write to the library, and the daily clear-out, takes one lock: they never overlap. */
 class LibraryRepositoryWriteGateTest : LibraryRepositoryTestBase() {
     private val gate = Mutex()
-    private val held by lazy { LibraryRepository(gateway, db, appScope, Dispatchers.IO, { now }, log, gate) }
+    private val held by lazy { LibraryRepository(gateway, db, appScope, Dispatchers.IO, { now }, log, changes, gate) }
 
     @Test fun aRefreshWriteWaitsForTheLock() = runBlocking {
         held.ensureSwept() // the start-up sweep takes the lock too, and is not what this test is about
@@ -34,7 +34,7 @@ class LibraryRepositoryWriteGateTest : LibraryRepositoryTestBase() {
     @Test fun theClearOutWaitsForTheLockToo() = runBlocking {
         held.ensureSwept()
         now = t0.toEpochMilli() + Duration.ofDays(40).toMillis()
-        library.writePage(s1u1, "old-list", 0, films("x"), 1, t0, fetchStartedAtMs = 0)
+        library.writePage(s1u1, "old-list", 0, films("x"), 1, t0, requestedAtSeq = 0)
         gateway.failAll = AppError.Kind.OFFLINE
         gate.withLock {
             held.home(s1u1).first5s()

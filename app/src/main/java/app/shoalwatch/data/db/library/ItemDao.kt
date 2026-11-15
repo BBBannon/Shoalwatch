@@ -129,17 +129,13 @@ abstract class ItemDao {
     @Query("UPDATE user_data SET pendingSyncAt = :nowMs WHERE serverId = :serverId AND userId = :userId AND itemId = :itemId")
     internal abstract suspend fun markPending(serverId: String, userId: String, itemId: String, nowMs: Long): Int
 
-    /** Every row with an unconfirmed local change, for every user and server (the start-up sweep). */
+    /** Every row with an unconfirmed local change, for every user and server (the start-up sweep's snapshot). */
     @Query("SELECT * FROM user_data WHERE pendingSyncAt IS NOT NULL")
     internal abstract suspend fun pendingRows(): List<UserDataEntity>
 
     /** Clears every marker of one user (the local values stay); returns how many rows had one. */
     @Query("UPDATE user_data SET pendingSyncAt = NULL WHERE serverId = :serverId AND userId = :userId AND pendingSyncAt IS NOT NULL")
     internal abstract suspend fun clearPendingFor(serverId: String, userId: String): Int
-
-    /** Clears every marker (the local values stay); returns how many rows had one. */
-    @Query("UPDATE user_data SET pendingSyncAt = NULL WHERE pendingSyncAt IS NOT NULL")
-    internal abstract suspend fun clearAllPending(): Int
 
     @Query("UPDATE user_data SET pendingSyncAt = NULL WHERE serverId = :serverId AND userId = :userId AND itemId = :itemId")
     internal abstract suspend fun clearPending(serverId: String, userId: String, itemId: String)

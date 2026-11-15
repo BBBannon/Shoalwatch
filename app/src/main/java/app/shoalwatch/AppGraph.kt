@@ -6,6 +6,8 @@ import app.shoalwatch.data.db.AppDatabase
 import app.shoalwatch.data.images.ArtworkDiskCaches
 import app.shoalwatch.data.images.ArtworkEviction
 import app.shoalwatch.data.images.ArtworkLoader
+import app.shoalwatch.core.SystemMonotonicClock
+import app.shoalwatch.data.db.library.LocalChangeLog
 import app.shoalwatch.data.library.Library
 import app.shoalwatch.data.library.LibraryRepository
 import app.shoalwatch.data.library.Playstate
@@ -72,7 +74,9 @@ class AppGraph(private val appContext: Context) {
     /** Library endpoints as safe models; only `library` uses it. */
     val libraryGateway: LibraryGateway by lazy { LibraryGatewayImpl(serverApi) }
     /** What every browsing screen reads: saved rows first, refreshed behind them (see "Library repository" in docs/ARCHITECTURE.md). */
-    val libraryRepository: LibraryRepository by lazy { LibraryRepository(libraryGateway, database, appScope, Dispatchers.IO, System::currentTimeMillis, PrefsMaintenanceLog(appContext)) }
+    /** The one record of local changes, shared by everything that writes server data or user changes: ordering by sequence, expiry by the monotonic clock. */
+    val localChanges: LocalChangeLog by lazy { LocalChangeLog(SystemMonotonicClock) }
+    val libraryRepository: LibraryRepository by lazy { LibraryRepository(libraryGateway, database, appScope, Dispatchers.IO, System::currentTimeMillis, PrefsMaintenanceLog(appContext), localChanges) }
     val library: Library get() = libraryRepository
     /** The tidy-up actions (remove from Continue Watching, mark watched, favourite): Room first, then the server, rolled back on failure (see "Tidy-up actions" in docs/ARCHITECTURE.md). */
     val playstate: Playstate by lazy { PlaystateRepository(libraryGateway, libraryRepository, appScope, Dispatchers.IO, System::currentTimeMillis) }

@@ -22,7 +22,7 @@ class LibraryPerformanceTest : LibraryTestBase() {
 
     @Test fun aTwoHundredRowPageOfFiveThousandIsReadThroughTheJoin() = runBlocking {
         val rows = (1..5_000).map { row(item("p$it", name = "Film $it"), if (it % 2 == 0) watched(played = true) else null) }
-        rows.chunked(500).forEachIndexed { i, chunk -> library.writePage(s1u1, "big", i * 500, chunk, 5_000, t0, fetchStartedAtMs = 0) }
+        rows.chunked(500).forEachIndexed { i, chunk -> library.writePage(s1u1, "big", i * 500, chunk, 5_000, t0, requestedAtSeq = 0) }
         assertEquals(5_000, db.listDao().countEntries(S1, U1, "big"))
         val page = db.listDao().getList(S1, U1, "big", 200)
         assertEquals(200, page.size)
@@ -32,7 +32,7 @@ class LibraryPerformanceTest : LibraryTestBase() {
     }
 
     @Test fun theListQueryUsesIndexesAndNeverScansItems() = runBlocking {
-        library.writePage(s1u1, "big", 0, (1..50).map { row(item("p$it")) }, 50, t0, fetchStartedAtMs = 0)
+        library.writePage(s1u1, "big", 0, (1..50).map { row(item("p$it")) }, 50, t0, requestedAtSeq = 0)
         val listPlan = plan(ListDao.LIST_SQL.replace(Regex(":\\w+"), "?"), S1, U1, "big", 200)
         // Named parameters become one slot each in order of appearance in the original; the rewritten SQL repeats none here.
         File("build/query-plan-list.txt").writeText("LIST\n${listPlan.joinToString("\n")}\n")
@@ -44,7 +44,7 @@ class LibraryPerformanceTest : LibraryTestBase() {
 
     @Test fun theEpisodesQueryUsesTheSeriesIndex() = runBlocking {
         val episodes = (1..30).map { episode("e$it", 1 + it / 10, it % 10) }
-        library.writeItems(s1u1, episodes.map { row(it) }, t0, fetchStartedAtMs = 0)
+        library.writeItems(s1u1, episodes.map { row(it) }, t0, requestedAtSeq = 0)
         val everySeason = plan(ItemDao.EPISODES_SQL, U1, S1, id("show"), null)
         val oneSeason = plan(ItemDao.EPISODES_SQL, U1, S1, id("show"), id("season1"))
         File("build/query-plan-episodes.txt").writeText("EPISODES (all seasons)\n${everySeason.joinToString("\n")}\nEPISODES (one season)\n${oneSeason.joinToString("\n")}\n")

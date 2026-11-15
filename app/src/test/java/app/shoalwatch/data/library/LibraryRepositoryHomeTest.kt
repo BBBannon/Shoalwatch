@@ -22,7 +22,7 @@ import java.time.Duration
 /** Cache first, refresh behind: what the home screen shows and when it asks the server. */
 class LibraryRepositoryHomeTest : LibraryRepositoryTestBase() {
     private fun seedResume(vararg labels: String) = runBlocking {
-        library.writePage(s1u1, ListKey.RESUME, 0, films(*labels), labels.size, t0, fetchStartedAtMs = 0)
+        library.writePage(s1u1, ListKey.RESUME, 0, films(*labels), labels.size, t0, requestedAtSeq = 0)
     }
 
     @Test fun savedRowsAreEmittedBeforeTheNetworkAnswersThenTheRefreshLands() = runBlocking {

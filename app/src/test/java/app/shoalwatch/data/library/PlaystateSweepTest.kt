@@ -76,7 +76,7 @@ class PlaystateSweepTest : PlaystateTestBase() {
         leaveMarker("stale", favourite = true)
         save(film("live", ud()))
         val gate = Mutex()
-        val lib = LibraryRepository(gateway, db, appScope, Dispatchers.IO, { now }, log, gate)
+        val lib = LibraryRepository(gateway, db, appScope, Dispatchers.IO, { now }, log, changes, gate)
         val gated = PlaystateRepository(gateway, lib, appScope, Dispatchers.IO, { now })
         val held = holdMutation()
         gate.withLock {
@@ -135,5 +135,27 @@ class PlaystateSweepTest : PlaystateTestBase() {
         gateway.failAll = AppError.Kind.OFFLINE
         repo.refresh(s1u1, RefreshTarget.Item(id("a"))) // must return rather than hang or throw
         assertEquals(1, gateway.count("item"))
+    }
+
+    @Test fun aLateRetryClearsTheLeftoverOfTheLastProcessButNotALiveActionsMarker() = runBlocking {
+        leaveMarker("old")
+        save(film("other", ud()), s = s1u2)
+        runBlocking { listDao.upsertState(app.shoalwatch.data.db.library.ListStateEntity(s1u2.serverId, s1u2.userId, "resume", 0, 0, 0, 1, true, now)) }
+        sql("CREATE TRIGGER nope BEFORE UPDATE ON user_data BEGIN SELECT RAISE(ABORT, 'no'); END")
+        repo.refresh(s1u1, RefreshTarget.Item(id("old"))) // the first attempt fails
+        sql("DROP TRIGGER nope")
+        save(film("live", ud()))
+        val held = holdMutation()
+        val action = background { playstate.setFavourite(s1u1, id("live"), true) }
+        until { gateway.count("setFavourite") == 1 } // a live marker is set
+        val u2Before = runBlocking { listDao.getState(s1u2.serverId, s1u2.userId, "resume") }!!.refreshedAt
+        advance(Duration.ofSeconds(31))
+        repo.refresh(s1u1, RefreshTarget.Item(id("old"))) // the retry
+        assertNull("the previous process's leftover is cleared", userData("old")!!.pendingSyncAt)
+        assertNotNull("a live action's marker is not", userData("live")!!.pendingSyncAt)
+        assertEquals("a user with no leftover keeps their lists as they were", u2Before, runBlocking { listDao.getState(s1u2.serverId, s1u2.userId, "resume") }!!.refreshedAt)
+        held.release()
+        withTimeout(5_000) { action.await() }
+        assertNoPending()
     }
 }
