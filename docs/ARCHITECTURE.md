@@ -66,7 +66,8 @@ app.shoalwatch
 │   │                EngineEvent, EngineFailure), ExoPlayerEngine, MediaItems, SubtitleFiles (+ CueTimeline), SubtitleFrame, SubtitleSurface
 │   │                (the only Media3 code); see "Playback endpoints", "Media route", "Device profile", "Playback decision", "Progress
 │   │                reports and teardown", "Player engine and controller" and "Tracks and subtitles"
-│   ├── downloads/   DownloadModels (the download enums, DownloadInfo, OfflineEntry/Season/Series, SeriesSummary, OfflineLibrary; Milestone 4)
+│   ├── downloads/   DownloadModels (the download enums, DownloadInfo, OfflineEntry/Season/Series, SeriesSummary, OfflineLibrary; Milestone 4),
+│   │                DownloadPaths (+ ArtworkKey, SweepResult), Volumes (+ StorageChoice, AndroidVolumes), DownloadPrefs (+ DownloadSettings); see "Download files"
 │   ├── sync/
 └── ui/          theme, nav, components, one package per screen group (see "UI" below)
 ```
@@ -403,6 +404,16 @@ The on-phone copy of what the server told us, and the only thing browsing screen
 **What screens must do:** catch `AppError` from each call and show its `userMessage` (a rolled-back change reverts on screen by itself, because the screen observes Room); a list filtered by favourites needs `Library.refresh` to show a favourite change; an action completes even if the calling screen has gone, so a screen never needs to retry or clean up.
 
 Tests: `PlaystateResumeTest`, `PlaystatePlayedTest`, `PlaystateSeriesTest`, `PlaystateConcurrencyTest`, `PlaystateRestoreTest` (order, shared badges, revoked mid-action), `PlaystateRefreshRaceTest`, `PlaystateStalenessTest` (the rule, ordering, acknowledgement), `PlaystateStampTest`, `PlaystateCoalesceTest`, `PlaystateSweepTest`, `LocalChangeLogTest`, `SourceShapeTest` (no main file over 400 lines or 45% blank) (fake gateway, real in-memory Room through the real `LibraryRepository`, injected clock).
+
+## Download files (`DownloadPaths`, `Volumes`, `DownloadPrefs`)
+
+**Where files go.** App-private storage only: no storage permission, removed on uninstall, never backed up (`allowBackup="false"`; the backup rules exclude `file` and `external`). INTERNAL (the default) is `filesDir/downloads`, sandboxed and covered by file-based encryption. REMOVABLE, only by explicit choice, is `<app-specific dir>/downloads` on a card: an entry of `ContextCompat.getExternalFilesDirs` after index 0 whose `StorageVolume` is removable, `MEDIA_MOUNTED` and has a uuid matching `[A-Za-z0-9-]{1,36}` (the uuid is the download's `volumeId`; a volume without one is not offered). A card is not encrypted at rest (see the plan's decisions). Every root gets a `.nomedia` file. `freeBytes` is `StorageManager.getAllocatableBytes` on INTERNAL (falling back to `usableSpace` if it throws) and `usableSpace` on a card; `reserve` calls `allocateBytes` on INTERNAL only. Tokens, the database and artwork are never on the card. `AndroidVolumesTest` (Robolectric `ShadowStorageManager`/`ShadowEnvironment`; the app-dir list, mount state and allocatable bytes are constructor seams).
+
+**File names: `DownloadPaths` is the only code that turns ids into names.** Under a root: `<serverId>/<itemId>/media.<ext>` (`.part` while fetching; ext one of `mp4 m4v mov mkv webm ts`), `sub-<0..10000>.<srt|vtt|ass|ssa>`, `hls/seg-00000.ts` to `seg-19999.ts`, `hls/local.m3u8`; and on INTERNAL only `<serverId>/art/<itemId>-<SLOT>-<tag>.img`. Every builder `require`s ids equal to their `JellyfinId`-normalised form, a tag `[A-Za-z0-9]{1,64}`, an index in range and an extension or format from the fixed sets (fixed messages, never the input), that a folder argument is exactly an item (or `hls`) folder, and then that the result's real path lies strictly inside its root. Real paths resolve every link in the part that exists (`Path.toRealPath`, which also sees a Windows junction that `File.canonicalPath` does not), and a path with a `.` or `..` part is refused outright. `deleteInside` deletes only what is inside a root (never a root itself) and never follows a link: a symbolic link (or junction) is removed as itself and its target is untouched. `DownloadPathsTest` (on this Windows build machine the link cases use directory junctions, since symbolic links need a privilege).
+
+**Orphan sweep** (`DownloadPaths.sweep(known, servers, artwork)`, run by housekeeping, Milestone 4 Task 12): under each mounted root it deletes a `<serverId>` folder whose server is not saved, an `<itemId>` folder with no download row, an `art/` file with no `pinned_artwork` row (and any `art/` on a card), and anything whose name is not in the layout above (links included, removed as themselves); `.nomedia` stays. At most 100,000 entries per run (`SweepResult.stoppedAtLimit`); a root that disappears mid-sweep is skipped. `OrphanSweepTest`.
+
+**Device settings** (`DownloadPrefs`, private SharedPreferences `download_prefs`, as `playback_prefs` holds the player's): mobile data (default off: Wi-Fi only), storage and volume (default internal), default quality (default null: ask each time). An unknown name, a wrong type, or a removable choice without a valid volume id reads as the default. "Share downloads between profiles" is per server and lives in Room (`download_settings`). `DownloadPrefsTest`.
 
 ## Artwork (`data/images`, `ui/components/Artwork`)
 
