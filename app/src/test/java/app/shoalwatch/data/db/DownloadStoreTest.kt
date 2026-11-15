@@ -144,6 +144,22 @@ class DownloadStoreTest : DownloadTestBase() {
         assertEquals(1, count("downloads", "itemId = '${a.id}'"))
     }
 
+    @Test fun updateCannotMoveARowToAnotherSeasonSeriesOrKindSoThePinsStayRight() = runBlocking {
+        val e1 = ep("e1", 1, 1)
+        seen(s1u1, series, season1, season2, e1)
+        store.add(s1u1, listOf(newDownload(e1)))
+        for (change in listOf<(app.shoalwatch.data.db.downloads.DownloadEntity) -> app.shoalwatch.data.db.downloads.DownloadEntity>(
+            { it.copy(seasonId = season2.id) }, { it.copy(seriesId = null) }, { it.copy(kind = app.shoalwatch.data.library.ItemKind.MOVIE) },
+        )) {
+            val thrown = runCatching { store.update(key(e1), change) }.exceptionOrNull()
+            assertTrue(thrown is IllegalArgumentException)
+            assertEquals("A download's item cannot change.", thrown!!.message)
+        }
+        assertEquals(season1.id, db.downloadDao().get(S1, e1.id)!!.seasonId)
+        assertTrue(pinned("season1"))
+        assertFalse(pinned("season2"))
+    }
+
     @Test fun deleteRemovesTheRowAndItsOwners() = runBlocking {
         seen(s1u1, a)
         store.add(s1u1, listOf(newDownload(a)))

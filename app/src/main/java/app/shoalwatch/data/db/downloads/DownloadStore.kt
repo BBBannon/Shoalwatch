@@ -150,11 +150,16 @@ internal class DownloadStore(private val db: AppDatabase, private val now: () ->
     /** RUNNING and VERIFYING back to QUEUED (process death, reboot). */
     suspend fun requeueInterrupted(): Int = dao.requeueInterrupted()
 
-    /** Read, change and write back in one transaction; a throw in [change] leaves the row as it was. The key cannot change. */
+    /**
+     * Read, change and write back in one transaction; a throw in [change] leaves the row as it was. The key cannot change, nor
+     * can the kind, series or season: the pins follow those, and only [add] and the deletes recompute pins (a moved row would
+     * leave the old season pinned for ever and the new one evictable).
+     */
     suspend fun update(key: DownloadKey, change: (DownloadEntity) -> DownloadEntity) = db.withTransaction {
         val row = dao.get(key.serverId, key.itemId) ?: return@withTransaction
         val changed = change(row)
         require(changed.serverId == row.serverId && changed.itemId == row.itemId) { "A download's key cannot change." }
+        require(changed.kind == row.kind && changed.seriesId == row.seriesId && changed.seasonId == row.seasonId) { "A download's item cannot change." }
         dao.update(changed)
         Unit
     }
