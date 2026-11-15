@@ -17,6 +17,7 @@ class LibraryRepositoryWriteGateTest : LibraryRepositoryTestBase() {
     private val held by lazy { LibraryRepository(gateway, db, appScope, Dispatchers.IO, { now }, log, gate) }
 
     @Test fun aRefreshWriteWaitsForTheLock() = runBlocking {
+        held.ensureSwept() // the start-up sweep takes the lock too, and is not what this test is about
         gateway.resumeFor = { films("a") }
         gate.withLock {
             val collector = launch { held.home(s1u1).collect { } }
@@ -31,6 +32,7 @@ class LibraryRepositoryWriteGateTest : LibraryRepositoryTestBase() {
     }
 
     @Test fun theClearOutWaitsForTheLockToo() = runBlocking {
+        held.ensureSwept()
         now = t0.toEpochMilli() + Duration.ofDays(40).toMillis()
         library.writePage(s1u1, "old-list", 0, films("x"), 1, t0)
         gateway.failAll = AppError.Kind.OFFLINE

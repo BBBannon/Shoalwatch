@@ -49,7 +49,14 @@ internal sealed interface Attempt {
  * At most [maxParallel] pieces of work run at once across all lists, so a home screen with many rows is gentle on the
  * server. There are no retries here: `ServerApi` already retries a lost connection once, and retries on top would multiply.
  */
-internal class Refresher(private val scope: CoroutineScope, private val context: CoroutineContext, private val clock: () -> Long, maxParallel: Int = 4) {
+internal class Refresher(
+    private val scope: CoroutineScope,
+    private val context: CoroutineContext,
+    private val clock: () -> Long,
+    maxParallel: Int = 4,
+    /** Runs first in every piece of work (before it takes a permit): the library's once-per-process start-up sweep. */
+    private val beforeWork: suspend () -> Unit = {},
+) {
     enum class Mode { REFRESH, MORE }
 
     private class Flight(val mode: Mode) {
@@ -78,6 +85,10 @@ internal class Refresher(private val scope: CoroutineScope, private val context:
     /** The work running for [id] right now, if any (a caller can wait for it to finish; it never completes exceptionally). */
     fun inFlight(id: ListId): Job? = synchronized(lock) { flights[id]?.job }
 
+    /** Everything running now for one user (any list). The jobs never complete exceptionally. */
+    fun inFlightFor(serverId: String, userId: String): List<Job> =
+        synchronized(lock) { flights.filterKeys { it.serverId == serverId && it.userId == userId }.values.map { it.job } }
+
     fun attempt(id: ListId): Flow<Attempt> = attempts.map { it[id] ?: Attempt.Idle }.distinctUntilChanged()
 
     /**
@@ -93,6 +104,7 @@ internal class Refresher(private val scope: CoroutineScope, private val context:
         flight.job = scope.launch(context, start = CoroutineStart.LAZY) {
             val outcome: Attempt = try {
                 waitFor?.join()
+                beforeWork()
                 permits.withPermit { work() }
                 Attempt.Done
             } catch (e: CancellationException) {

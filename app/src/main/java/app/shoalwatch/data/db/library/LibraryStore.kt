@@ -155,6 +155,53 @@ class LibraryStore(private val db: AppDatabase) {
     /** Deletes this user's row for the item (even if pending), to roll back an optimistic action on a row that did not exist. */
     suspend fun deleteUserData(s: Session, itemId: String) = items.deleteUserData(s.serverId, s.userId, itemId)
 
+    // ---- what the tidy-up actions (PlaystateLocal) read and write: the one place their rules are applied
+
+    /** Runs [block] as one transaction (several store calls, or reads that must agree with the writes that follow). */
+    suspend fun <T> inTransaction(block: suspend () -> T): T = db.withTransaction { block() }
+
+    /** The item as this user may see it (a record that the server showed it to them), or null. */
+    suspend fun visibleItem(s: Session, itemId: String): ItemRow? = items.getItem(s.serverId, s.userId, itemId)
+
+    suspend fun userData(s: Session, itemId: String): UserDataEntity? = items.getUserData(s.serverId, s.userId, itemId)
+
+    suspend fun entryIds(s: Session, listKey: String): List<String> = lists.entryIds(s.serverId, s.userId, listKey)
+
+    /** This user's saved list, visible items only. */
+    suspend fun savedList(s: Session, listKey: String, limit: Int): List<ItemRow> = lists.getList(s.serverId, s.userId, listKey, limit)
+
+    /** The saved episodes of a series (or one season) this user may see. */
+    suspend fun savedEpisodes(s: Session, seriesId: String, seasonId: String?): List<ItemRow> = items.getEpisodes(s.serverId, s.userId, seriesId, seasonId)
+
+    /** An optimistic watched/unwatched change: position 0, row created if missing, marker set (see [ItemDao.setPlayed]). */
+    suspend fun setPlayedPending(s: Session, itemId: String, played: Boolean, nowMs: Long) = items.setPlayed(s.serverId, s.userId, itemId, played, 0, nowMs, pending = true)
+
+    suspend fun setFavouritePending(s: Session, itemId: String, favourite: Boolean, nowMs: Long) = items.setFavourite(s.serverId, s.userId, itemId, favourite, nowMs, pending = true)
+
+    /** An optimistic "start again": position 0, `played` untouched, marker set. */
+    suspend fun clearPositionPending(s: Session, itemId: String, nowMs: Long) = items.setPosition(s.serverId, s.userId, itemId, 0, nowMs, pending = true)
+
+    suspend fun setUnplayedCountPending(s: Session, itemId: String, count: Int?, nowMs: Long) = items.setUnplayedCount(s.serverId, s.userId, itemId, count, nowMs, pending = true)
+
+    /** The badge back without a marker (rolling back a change to it). */
+    suspend fun setUnplayedCount(s: Session, itemId: String, count: Int?, nowMs: Long) = items.setUnplayedCount(s.serverId, s.userId, itemId, count, nowMs, pending = false)
+
+    /** Puts a row back exactly as it was (see [ItemDao.restoreUserData]): the undo of an optimistic change only. */
+    suspend fun restoreUserData(row: UserDataEntity) = items.restoreUserData(row)
+
+    /**
+     * The start-up sweep: clears EVERY pending marker (all servers and users; the local values stay), and makes every list of
+     * each user who had one [ageByMs] older so it refreshes promptly and the server's copy decides. One transaction.
+     * Returns how many markers were cleared. Milestone 5 replaces this with outbox replay.
+     */
+    suspend fun clearAllPending(ageByMs: Long): Int = db.withTransaction {
+        val pending = items.pendingRows()
+        if (pending.isEmpty()) return@withTransaction 0
+        items.clearAllPending()
+        pending.map { it.serverId to it.userId }.distinct().forEach { (server, user) -> lists.ageLists(server, user, ageByMs) }
+        pending.size
+    }
+
     /** Makes this user's stored libraries exactly [libraries], in order. */
     suspend fun replaceViews(s: Session, libraries: List<LibraryView>) =
         views.replaceViews(s.serverId, s.userId, libraries.mapIndexed { i, v -> v.toEntity(s.serverId, s.userId, i) })

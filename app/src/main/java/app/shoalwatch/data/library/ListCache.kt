@@ -45,6 +45,8 @@ internal class ListCache(
     private val clock: () -> Long,
     private val io: CoroutineContext,
     private val writeGate: Mutex,
+    /** Runs before a list is judged fresh or stale: the once-per-process start-up sweep, which ages the lists of users it cleared markers for. */
+    private val beforeUse: suspend () -> Unit = {},
 ) {
     private val lists = db.listDao()
 
@@ -54,6 +56,7 @@ internal class ListCache(
 
     /** Starts a refresh unless the list is loaded and still within its window. Does not wait for it. */
     suspend fun ensure(s: Session, recipe: Recipe) {
+        beforeUse()
         maintenance.kick()
         val state = lists.getState(s.serverId, s.userId, recipe.key)
         if (state == null || clock() - state.refreshedAt >= recipe.window.toMillis()) {

@@ -58,17 +58,19 @@ class PlaystateConcurrencyTest : PlaystateTestBase() {
         assertNoPending()
     }
 
-    @Test fun actionsOnDifferentItemsDoNotWaitForEachOther() = runBlocking {
+    @Test fun actionsOnDifferentItemsOfOneUserAlsoWaitTheirTurn() = runBlocking {
         save(film("a", ud()), film("b", ud()))
-        val a = latch()
-        gateway.onCall = { call -> if (call.contains(id("a"))) a.await() }
-        val slow = background { playstate.setFavourite(s1u1, id("a"), true) }
+        val held = holdServer()
+        val first = background { playstate.setFavourite(s1u1, id("a"), true) }
         until { gateway.count("setFavourite") == 1 }
-        withTimeout(5_000) { playstate.setFavourite(s1u1, id("b"), true) }
+        val second = background { playstate.setFavourite(s1u1, id("b"), true) }
+        delay(150) // a negative check: long enough for an unqueued second action to have changed its row
+        assertFalse(userData("b")!!.favourite)
+        assertEquals(1, gateway.count("setFavourite"))
+        release(held)
+        first.within5s()
+        second.within5s()
         assertTrue(userData("b")!!.favourite)
-        assertTrue(slow.isActive)
-        a.release()
-        slow.within5s()
         assertNoPending()
     }
 

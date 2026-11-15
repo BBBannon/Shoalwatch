@@ -1,0 +1,86 @@
+package app.shoalwatch.data.library
+
+import app.shoalwatch.core.AppError
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/** A refresh of ANY list that began before the server heard cannot revert a change after its marker is cleared; and a failed clear does not fail the action. */
+class PlaystateRefreshRaceTest : PlaystateTestBase() {
+    /** Holds only the gateway calls whose name starts with [prefix], until the returned latch is released. */
+    private fun holdCalls(prefix: String): Latch = latch().also { l -> gateway.onCall = { call -> if (call.startsWith(prefix)) l.await() } }
+
+    @Test fun anItemRefreshInFlightWithOldDataCannotRevertAFavourite() = runBlocking {
+        save(film("a", ud(favourite = false)))
+        gateway.itemFor = { film("a", ud(favourite = false)) } // the detail answer the server gave before it heard
+        val l = holdCalls("item")
+        val refreshing = background { repo.refresh(s1u1, RefreshTarget.Item(id("a"))) }
+        until { gateway.count("item") == 1 }
+        val call = background { playstate.setFavourite(s1u1, id("a"), true) }
+        until { gateway.count("setFavourite") == 1 }
+        l.release()
+        withTimeout(5_000) { refreshing.await(); call.await() }
+        settle()
+        assertTrue("the old detail answer must not have undone the favourite", userData("a")!!.favourite)
+        assertNoPending()
+    }
+
+    @Test fun aListingRefreshInFlightWithOldDataCannotRevertAPlayedChange() = runBlocking {
+        val parent = id("lib")
+        save(film("a", ud()))
+        gateway.childPage = { _, start, _ -> Page(listOf(film("a", ud())), start, 1, 1, true) }
+        val l = holdCalls("children")
+        val refreshing = background { repo.refresh(s1u1, RefreshTarget.Children(parent, ListShape.DIRECT, nameAsc, noFilter)) }
+        until { gateway.count("children") == 1 }
+        val call = background { playstate.setPlayed(s1u1, id("a"), true) }
+        until { gateway.count("setPlayed") == 1 }
+        l.release()
+        withTimeout(5_000) { refreshing.await(); call.await() }
+        settle()
+        assertTrue(userData("a")!!.played)
+        assertNoPending()
+    }
+
+    @Test fun aStuckRefreshIsWaitedForOnlyBrieflyThenTheActionCompletesAndAsksForTheItemAgain() = runBlocking {
+        save(film("a", ud()))
+        val quick = PlaystateRepository(gateway, db, repo, appScope, Dispatchers.IO, { now }, settleTimeoutMs = 200)
+        holdCalls("item") // never released during the test body
+        val refreshing = background { repo.refresh(s1u1, RefreshTarget.Item(id("a"))) }
+        until { gateway.count("item") == 1 }
+        withTimeout(5_000) { quick.setFavourite(s1u1, id("a"), true) }
+        assertTrue(userData("a")!!.favourite)
+        assertNoPending()
+        refreshing.cancel()
+    }
+
+    // ---- M1: the server accepted the change, so a failed clear is not the caller's failure
+
+    private fun failClearingMarkerOf(label: String) = sql(
+        "CREATE TRIGGER stuck BEFORE UPDATE ON user_data WHEN OLD.itemId = '${id(label)}' AND OLD.pendingSyncAt IS NOT NULL AND NEW.pendingSyncAt IS NULL " +
+            "BEGIN SELECT RAISE(ABORT, 'no'); END",
+    )
+
+    @Test fun aMarkerThatCannotBeClearedDoesNotFailAnActionTheServerAccepted() = runBlocking {
+        saveResume(film("a"), film("b"))
+        gateway.resumeFor = { listOf(film("b")) }
+        failClearingMarkerOf("a")
+        playstate.removeFromContinueWatching(s1u1, id("a")) // returns normally
+        settle()
+        assertEquals("the follow-up refresh still ran", 1, gateway.count("resume"))
+        assertEquals(1, pendingRows()) // left for the start-up sweep
+    }
+
+    @Test fun oneUnclearableRowDoesNotKeepTheOthersPending() = runBlocking {
+        save(series(), season("s1", 1), ep("e1", "s1", 1), ep("e2", "s1", 2))
+        saveList(ListKey.seasons(id("show")), season("s1", 1))
+        failClearingMarkerOf("e2")
+        playstate.setPlayed(s1u1, id("s1"), true)
+        settle()
+        assertEquals(1, pendingRows())
+        assertTrue(userData("e1")!!.played)
+        assertEquals(null, userData("e1")!!.pendingSyncAt)
+    }
+}

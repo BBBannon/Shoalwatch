@@ -9,6 +9,7 @@ import app.shoalwatch.data.library.api.LibraryGateway
 import app.shoalwatch.data.servers.JellyfinId
 import app.shoalwatch.data.servers.Session
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -28,6 +29,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.time.Duration
 
 /**
@@ -49,12 +51,12 @@ class LibraryRepository(
     private val lists = db.listDao()
     private val items = db.itemDao()
     private val views = db.viewDao()
-    private val refresher = Refresher(scope, io, clock)
+    private val refresher = Refresher(scope, io, clock, beforeWork = ::ensureSwept)
     private val cache: ListCache
+    private val store = LibraryStore(db)
 
     init {
-        val store = LibraryStore(db)
-        cache = ListCache(db, store, refresher, LibraryMaintenance(store, maintenanceLog, clock, scope, io, writeGate, onCleared = refresher::forgetFinished), clock, io, writeGate)
+        cache = ListCache(db, store, refresher, LibraryMaintenance(store, maintenanceLog, clock, scope, io, writeGate, onCleared = refresher::forgetFinished), clock, io, writeGate, beforeUse = ::ensureSwept)
     }
 
     /** Forgets what the last attempts did for this account (or, with no [userId], every account of the server): it was removed or signed out. */
@@ -274,8 +276,47 @@ class LibraryRepository(
 
     // ---- for the tidy-up actions (PlaystateRepository): a write through the same gate, and refreshes of what the server recomputes
 
-    /** Runs [block] (on [io]) holding the same lock every list write and eviction takes, so an action's change never interleaves with a page write. */
-    internal suspend fun <T> writeGated(block: suspend () -> T): T = withContext(io) { writeGate.withLock { block() } }
+    /**
+     * Runs [block] (on [io]) holding the same lock every list write and eviction takes, so an action's change never
+     * interleaves with a page write. The start-up sweep has always run first, so it can never clear a marker this action is about to set.
+     */
+    internal suspend fun <T> writeGated(block: suspend () -> T): T = withContext(io) {
+        ensureSwept()
+        writeGate.withLock { block() }
+    }
+
+    private val sweep: CompletableDeferred<Unit> by lazy {
+        CompletableDeferred<Unit>().also { done ->
+            scope.launch(io) {
+                try {
+                    writeGate.withLock { store.clearAllPending(STALE_SHIFT_MS) }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    // Nothing more can be done here; the library still works, and a stuck marker only holds one row's local value.
+                } finally {
+                    done.complete(Unit)
+                }
+            }.invokeOnCompletion { done.complete(Unit) }
+        }
+    }
+
+    /**
+     * The start-up sweep, once per process, before any refresh, any list is judged fresh, or any action changes anything:
+     * a marker with no live action means the app died mid-action, and left alone it would hide the server's copy of that
+     * row for ever. Every marker is cleared; the local value stays until the next refresh from the server decides, and each
+     * affected user's lists are aged so that refresh comes promptly. In this milestone an unconfirmed change may therefore
+     * be reverted. **Milestone 5 owns recovery:** a marker with no live action will then mean "send this change", not "discard it".
+     */
+    internal suspend fun ensureSwept() = sweep.await()
+
+    /**
+     * Waits (at most [timeoutMs]) for every refresh running now for this user, of any list: one that began before the server
+     * heard about a change carries the old answer, and must have landed (and been ignored, the rows being pending) before the
+     * markers are cleared. True when everything finished in time.
+     */
+    internal suspend fun awaitSessionRefreshes(s: Session, timeoutMs: Long): Boolean =
+        withTimeoutOrNull(timeoutMs) { refresher.inFlightFor(s.serverId, s.userId).forEach { it.join() }; true } ?: false
 
     private fun recipeFor(s: Session, list: Recompute): Recipe = when (list) {
         Recompute.Resume -> resumeRecipe(s)
@@ -285,20 +326,14 @@ class LibraryRepository(
         is Recompute.Item -> itemRecipe(s, list.itemId, ITEM_WINDOW)
     }
 
-    /**
-     * Waits for any refresh of these lists that is running now: one that began before the server heard about a change
-     * carries the old answer, and must have landed (and been ignored, the rows being pending) before the pending marker is cleared.
-     */
-    internal suspend fun awaitRefreshes(s: Session, lists: Set<Recompute>) {
-        lists.mapNotNull { refresher.inFlight(ListId(s, recipeFor(s, it).key)) }.forEach { it.join() }
-    }
-
     /** Starts a refresh of each list (joining one already running) without waiting for it; a failure shows as the list's freshness, never as an error here. */
     internal fun refreshInBackground(s: Session, lists: Set<Recompute>) {
         lists.map { recipeFor(s, it) }.forEach { refresher.launch(ListId(s, it.key), Refresher.Mode.REFRESH, it.run) }
     }
 
     private companion object {
+        /** More than the longest freshness window (15 minutes), so an aged list always reads as stale, yet far under the 30 days after which a list is cleared out. */
+        const val STALE_SHIFT_MS = 60L * 60 * 1000
         const val PAGE_SIZE = 100
         const val MAX_PAGES = 200
         const val MAX_ROWS = PAGE_SIZE * MAX_PAGES

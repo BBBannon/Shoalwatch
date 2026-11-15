@@ -43,6 +43,7 @@ class LibraryRepositoryItemSearchTest : LibraryRepositoryTestBase() {
     }
 
     @Test fun aRefreshNeverUndoesAWatchedMarkWaitingToBeSent() = runBlocking {
+        repo.ensureSwept() // the start-up sweep has run, so this marker belongs to a live action
         library.writeItems(s1u1, listOf(row(item("a"), watched())), t0)
         db.itemDao().setPlayed(s1u1.serverId, s1u1.userId, id("a"), true, 0, t0.toEpochMilli(), pending = true)
         gateway.itemFor = { row(item("a"), watched(played = false, positionMs = 900)) }

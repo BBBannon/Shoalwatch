@@ -6,6 +6,7 @@ import app.shoalwatch.data.servers.Session
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
@@ -33,6 +34,14 @@ abstract class PlaystateTestBase : LibraryRepositoryTestBase() {
         runBlocking { library.writePage(s, key, 0, rows.toList(), rows.size, t0) }
 
     protected fun saveResume(vararg rows: ItemWithUserData) = saveList(ListKey.RESUME, *rows)
+
+    protected fun series(label: String = "show", data: UserData? = ud(unplayed = 10)) = row(item(label, ItemKind.SERIES, "Series $label"), data)
+
+    protected fun season(label: String, number: Int, data: UserData? = ud(unplayed = 3), series: String = "show") =
+        row(item(label, ItemKind.SEASON, "Season $label", seriesId = series, indexNumber = number, childCount = 3), data)
+
+    protected fun ep(label: String, season: String, number: Int, data: UserData? = ud(), series: String = "show") =
+        row(item(label, ItemKind.EPISODE, "Episode $label", seriesId = series, seasonId = season, indexNumber = number, parentIndexNumber = 1), data)
 
     protected fun film(label: String, data: UserData? = ud(positionMs = 60_000)) = row(item(label), data)
 
@@ -65,7 +74,7 @@ abstract class PlaystateTestBase : LibraryRepositoryTestBase() {
     private val callers = CoroutineScope(Dispatchers.Default)
 
     /** Starts an action the way a screen would (its own scope, not the app scope); the Deferred is what the screen awaits. */
-    protected fun <T> background(block: suspend () -> T): Deferred<T> = callers.async { block() }
+    protected fun <T> background(block: suspend () -> T): Deferred<T> = callers.async(start = CoroutineStart.UNDISPATCHED) { block() }
 
     /** The error a failing action throws; fails the test if it returns normally. */
     protected fun failure(action: suspend () -> Unit): AppError = runBlocking {

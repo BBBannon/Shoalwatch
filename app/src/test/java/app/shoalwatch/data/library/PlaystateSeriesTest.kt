@@ -10,14 +10,6 @@ import org.junit.Test
 
 /** Episodes adjust the badges above them; a season or a series marks every episode and season already saved under it. */
 class PlaystateSeriesTest : PlaystateTestBase() {
-    private fun series(label: String = "show", data: UserData? = ud(unplayed = 10)) = row(item(label, ItemKind.SERIES, "Series $label"), data)
-
-    private fun season(label: String, number: Int, data: UserData? = ud(unplayed = 3), series: String = "show") =
-        row(item(label, ItemKind.SEASON, "Season $label", seriesId = series, indexNumber = number, childCount = 3), data)
-
-    private fun ep(label: String, season: String, number: Int, data: UserData? = ud(), series: String = "show") =
-        row(item(label, ItemKind.EPISODE, "Episode $label", seriesId = series, seasonId = season, indexNumber = number, parentIndexNumber = 1), data)
-
     private fun played(label: String, value: Boolean, s: app.shoalwatch.data.servers.Session = s1u1) = runBlocking { playstate.setPlayed(s, id(label), value) }
 
     private fun unplayed(label: String, s: app.shoalwatch.data.servers.Session = s1u1) = userData(label, s)!!.unplayedItemCount

@@ -3,6 +3,7 @@ package app.shoalwatch.data.library
 import app.shoalwatch.core.AppError
 import app.shoalwatch.data.db.AppDatabase
 import app.shoalwatch.data.db.library.ItemRow
+import app.shoalwatch.data.db.library.LibraryStore
 import app.shoalwatch.data.library.api.LibraryGateway
 import app.shoalwatch.data.servers.JellyfinId
 import app.shoalwatch.data.servers.Session
@@ -13,9 +14,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.completeWith
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * [Playstate] on [LibraryGateway] and Room (see "Tidy-up actions" in docs/ARCHITECTURE.md). Every action is the same five steps:
@@ -23,17 +23,17 @@ import kotlinx.coroutines.withContext
  *  1. snapshot what will change;
  *  2. change Room in ONE transaction under the library write gate, marking every `user_data` row `pendingSyncAt`;
  *  3. call the server, exactly once (the gateway's mutations already retry once; nothing here loops);
- *  4. on success, wait for any refresh that began before the server heard, clear the markers, then refresh what the server recomputes (not waited for);
+ *  4. on success, wait (briefly) for every refresh running for this user, clear the markers, then refresh what the server recomputes (not waited for);
  *  5. on failure, put the snapshot back exactly and throw the gateway's [AppError].
  *
  * **Milestone 5** replaces step 3 with a durable outbox: on failure it will KEEP the change and its `pendingSyncAt` marker
- * and queue the call, instead of rolling back. The marker is the hook; this class is the only thing that changes.
+ * and queue the call, instead of rolling back; and a marker with no live action will then mean "send this change", where
+ * today the start-up sweep (`LibraryRepository`) discards it. The marker is the hook; this class is what changes.
  *
  * The work runs in [scope] (the app scope) and the caller awaits it: a caller that is cancelled after step 2 stops waiting,
- * and the action still finishes, so no marker is ever left behind by a screen that went away. One action runs at a time per
- * (user, item); a second for the same item waits for the first. A season or series action also changes rows of items that
- * have their own key: an episode tapped at the very moment its season is marked can clear the marker early; that costs a
- * brief window in which a refresh may show the server's older answer for it, never a wrong final state.
+ * and the action still finishes, so no marker is ever left behind by a screen that went away. **One action runs at a time per
+ * user** (calls queue in the order they were made): sibling episodes share the season and series badges, so per-item
+ * ordering would not be enough. Another user's actions do not wait.
  */
 class PlaystateRepository(
     private val gateway: LibraryGateway,
@@ -42,9 +42,12 @@ class PlaystateRepository(
     private val scope: CoroutineScope,
     private val io: CoroutineDispatcher,
     clock: () -> Long,
+    private val settleTimeoutMs: Long = 15_000,
 ) : Playstate {
-    private val local = PlaystateLocal(db, clock)
-    private val locks = KeyedLocks()
+    private val local = PlaystateLocal(LibraryStore(db), clock)
+
+    /** The end of each user's queue of actions: the next call waits for it. Swapped atomically, in the caller, so the order is the order of the calls. */
+    private val tails = ConcurrentHashMap<Session, CompletableDeferred<Unit>>()
 
     override suspend fun setPlayed(s: Session, itemId: String, played: Boolean) =
         act(s, itemId, { item -> local.played(s, item, played) }, { id -> gateway.setPlayed(s, id, played) })
@@ -64,9 +67,21 @@ class PlaystateRepository(
     ) {
         val id = JellyfinId.parseOrNull(rawId)?.value ?: throw AppError.of(AppError.Kind.SERVER_NOT_FOUND)
         val done = CompletableDeferred<Unit>()
-        scope.launch(io) {
-            done.completeWith(runCatching { locks.withLock(Key(s, id)) { perform(s, id, change, send) } })
-        }.invokeOnCompletion { if (!done.isCompleted) done.completeExceptionally(CancellationException("The app is shutting down.")) }
+        val mine = CompletableDeferred<Unit>()
+        val before = tails.put(s, mine) // synchronous: queue position is call order
+        val work = scope.launch(io) {
+            try {
+                before?.await() // never fails: a queue entry is only ever completed normally
+                done.completeWith(runCatching { perform(s, id, change, send) })
+            } finally {
+                mine.complete(Unit)
+                tails.remove(s, mine)
+            }
+        }
+        work.invokeOnCompletion {
+            mine.complete(Unit)
+            if (!done.isCompleted) done.completeExceptionally(CancellationException("The app is shutting down."))
+        }
         try {
             done.await() // cancelling the caller stops this wait, not the work above
         } catch (e: CancellationException) {
@@ -101,14 +116,16 @@ class PlaystateRepository(
             throw if (e is Exception && e !is CancellationException) AppError.from(e) else e // an Error or a cancellation goes on as it is
         }
         withContext(NonCancellable) {
-            library.awaitRefreshes(s, touched.recompute)
+            // A refresh of ANY list that began before the server heard carries the old answer: let it land (and be ignored, the rows being pending) first.
+            val settled = library.awaitSessionRefreshes(s, settleTimeoutMs)
             try {
-                library.writeGated { local.transaction { local.clearPending(s, touched.rows.keys) } }
-            } catch (e: Exception) {
-                clearOneByOne(s, touched) // the database is unwell: do what can still be done so nothing stays pending
-                throw e
+                library.writeGated { local.transaction { local.clearPending(s, touched.markedIds) } }
+            } catch (_: Exception) {
+                // The server accepted the change, so this is not the caller's failure. Clear what can still be cleared; a marker that
+                // cannot be cleared is cleaned up by the start-up sweep.
+                clearOneByOne(s, touched)
             }
-            library.refreshInBackground(s, touched.recompute)
+            library.refreshInBackground(s, if (settled) touched.recompute else touched.recompute + Recompute.Item(id))
         }
     }
 
@@ -127,28 +144,10 @@ class PlaystateRepository(
 
     /** Best effort: each row on its own, so one that cannot be written does not keep the others pending. */
     private suspend fun clearOneByOne(s: Session, touched: Touched) {
-        for (itemId in touched.rows.keys) {
+        for (itemId in touched.markedIds) {
             try {
                 library.writeGated { local.transaction { local.clearPending(s, listOf(itemId)) } }
             } catch (_: Exception) {
-            }
-        }
-    }
-
-    private data class Key(val session: Session, val itemId: String)
-
-    /** One mutex per key in use, dropped when nobody holds or waits for it. */
-    private class KeyedLocks {
-        private class Entry(val mutex: Mutex = Mutex(), var users: Int = 0)
-
-        private val entries = HashMap<Key, Entry>()
-
-        suspend fun <T> withLock(key: Key, block: suspend () -> T): T {
-            val entry = synchronized(entries) { entries.getOrPut(key) { Entry() }.also { it.users++ } }
-            try {
-                return entry.mutex.withLock { block() }
-            } finally {
-                synchronized(entries) { if (--entry.users == 0) entries.remove(key) }
             }
         }
     }

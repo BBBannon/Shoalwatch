@@ -53,6 +53,10 @@ interface ListDao {
     @Insert
     suspend fun insertEntries(entries: List<ListEntryEntity>)
 
+    /** Makes every list of this user [byMs] older, so each reads as stale and is refreshed the next time it is collected (the saved rows stay). */
+    @Query("UPDATE list_state SET refreshedAt = refreshedAt - :byMs WHERE serverId = :serverId AND userId = :userId")
+    suspend fun ageLists(serverId: String, userId: String, byMs: Long)
+
     @Upsert
     suspend fun upsertState(state: ListStateEntity)
 
