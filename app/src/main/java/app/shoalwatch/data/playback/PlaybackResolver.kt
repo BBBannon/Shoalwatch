@@ -64,8 +64,10 @@ class PlaybackResolver internal constructor(
     private suspend fun ask(s: Session, request: PlaybackRequest, burnInFormat: String?): PlaybackInfo {
         val burnIn = request.burnInSubtitleIndex
         val direct = !request.forceTranscode && burnIn == null
+        // A burn-in is always a conversion, and the server applies the picture-size ceiling only as a codec condition (AAFin's
+        // finding), so it gets the forced transcode's ceiling too.
         val profile = withContext(io) {
-            DeviceProfileBuilder.build(capabilities.read(), request.quality, request.forceTranscode, burnInFormat.takeIf { burnIn != null })
+            DeviceProfileBuilder.build(capabilities.read(), request.quality, !direct, burnInFormat.takeIf { burnIn != null })
         }
         val body = PlaybackInfoBody(
             userId = s.userId,

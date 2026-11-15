@@ -56,6 +56,17 @@ class PlaybackResolverTest {
         assertSame(session, resolved.route.session)
     }
 
+    @Test fun aBurnInCarriesTheQualitysPictureSizeCeilingAsAForcedTranscodeDoes() = runTest {
+        gateway.answer(fixtureInfo("transcode.json"), fixtureInfo("transcode.json"))
+        val r = resolver(StandardTestDispatcher(testScheduler))
+        r.resolve(session, request(quality = Quality.MBPS_4, burnIn = 4), burnInFormat = "ass")
+        r.resolve(session, request(quality = Quality.MBPS_4, force = true))
+        fun ceiling(i: Int) = gateway.bodies[i].deviceProfile.codecProfiles.singleOrNull { it.type == "Video" && it.codec == null }
+            ?.conditions?.map { it.property to it.value }
+        assertEquals(listOf("Width" to "1280", "Height" to "720"), ceiling(0))
+        assertEquals(ceiling(1), ceiling(0))
+    }
+
     @Test fun anAskedAudioTrackIsSent() = runTest {
         gateway.answer(fixtureInfo("direct-play.json"))
         resolver(StandardTestDispatcher(testScheduler)).resolve(session, request(audio = 2))
