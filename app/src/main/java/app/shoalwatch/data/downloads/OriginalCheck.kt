@@ -13,7 +13,9 @@ internal sealed interface OriginalCheck {
     data class Playable(
         val sourceId: String, val container: String, val sizeBytes: Long?, val eTag: String?,
         val audio: List<AudioTrack>, val subtitles: List<SubtitleTrack>, val defaultAudio: Int?,
-    ) : OriginalCheck
+    ) : OriginalCheck {
+        override fun toString() = "Playable(<redacted>)"
+    }
 
     data object NotPlayableHere : OriginalCheck
 }

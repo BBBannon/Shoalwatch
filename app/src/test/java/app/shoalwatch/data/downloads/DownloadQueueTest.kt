@@ -265,6 +265,22 @@ class DownloadQueueTest : DownloadQueueTestBase() {
         assertEquals(DownloadState.COMPLETE, download(f1)!!.state)
     }
 
+    /** Tasks 1-4 review Minor 4 and Tasks 5-8 review Minor 10: no download model prints an id, a size or a validator. */
+    @Test fun downloadModelsNeverPrintIdsSizesOrValidators() {
+        queued(a, f1)
+        runBlocking { store.update(key(f1)) { it.copy(totalBytes = 123_456_789, validator = "\"secret-etag\"") } }
+        val printed = listOf(
+            download(f1).toString(),
+            app.shoalwatch.data.downloads.api.DownloadFacts(f1.id, true, "src1", "mkv", 123_456_789, "\"secret-etag\"").toString(),
+            PlannedItem(f1.id, DownloadQuality.ORIGINAL, 123_456_789, shareOnly = false).toString(),
+            Skipped(f1.id, SkipReason.NOT_ALLOWED).toString(),
+            OriginalCheck.Playable("src1", "mkv", 123_456_789, "\"secret-etag\"", emptyList(), emptyList(), null).toString(),
+        )
+        for (p in printed) {
+            assertFalse(p, p.contains(f1.id) || p.contains("123456789") || p.contains("secret-etag") || p.contains("src1"))
+        }
+    }
+
     @Test fun aRowWithNoContainerOrMediaSourceIsNeverMarkedComplete() {
         queued(a, f1)
         playable()

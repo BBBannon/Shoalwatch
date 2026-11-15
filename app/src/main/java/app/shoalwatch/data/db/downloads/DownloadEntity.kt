@@ -57,4 +57,7 @@ data class DownloadEntity(
     val requestedAt: Long,
     val completedAt: Long?,
     val verifiedAt: Long?,
-)
+) {
+    /** Never prints ids, sizes or the validator (Tasks 1-4 review Minor 4). */
+    override fun toString() = "DownloadEntity(<redacted>)"
+}

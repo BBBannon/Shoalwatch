@@ -21,7 +21,9 @@ import kotlinx.serialization.json.longOrNull
  */
 internal data class DownloadFacts(
     val itemId: String, val canDownload: Boolean?, val sourceId: String?, val container: String?, val sizeBytes: Long?, val eTag: String?,
-)
+) {
+    override fun toString() = "DownloadFacts(<redacted>)"
+}
 
 /** The server's download facts, on `ServerApi`. See "Download call path" in docs/ARCHITECTURE.md. */
 internal interface DownloadGateway {
