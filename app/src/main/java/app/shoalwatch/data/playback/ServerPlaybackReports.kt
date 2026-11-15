@@ -37,11 +37,18 @@ class ServerPlaybackReports internal constructor(
 ) : PlaybackReports {
     private class PendingStop(val report: PlaybackReport, val job: Job)
 
-    /** Guarded by itself, with [forgets]. */
+    /** Guarded by itself, with [serverForgets] and [accountForgets]. */
     private val pending = HashMap<Pair<Session, String>, PendingStop>()
 
-    /** Counts [forget] calls: a stop whose send overlapped one is neither kept nor saved (its account may be the one that went). */
-    private var forgets = 0L
+    /**
+     * Count [forget] calls per server and per account: a stop whose send overlapped a forget of ITS account or server is neither
+     * kept nor saved (its account may be the one that went). Another account going changes nothing for it.
+     */
+    private val serverForgets = HashMap<String, Long>()
+    private val accountForgets = HashMap<Session, Long>()
+
+    /** Under the lock. Only ever grows for [s], so a change means a forget that covers [s] happened. */
+    private fun forgetsOf(s: Session): Long = (serverForgets[s.serverId] ?: 0) + (accountForgets[s] ?: 0)
 
     override suspend fun started(s: Session, r: PlaybackReport) = send("start") { gateway.reportStart(s, r) }
 
@@ -50,11 +57,11 @@ class ServerPlaybackReports internal constructor(
     override suspend fun ping(s: Session, playSessionId: String) = send("ping") { gateway.ping(s, playSessionId) }
 
     override suspend fun stopped(s: Session, r: PlaybackReport, finished: Boolean): ReportOutcome {
-        val before = synchronized(pending) { forgets }
+        val before = synchronized(pending) { forgetsOf(s) }
         val outcome = send("stop") { gateway.reportStopped(s, r) }
         val key = s to r.itemId
         val current = synchronized(pending) {
-            if (forgets != before) return@synchronized false
+            if (forgetsOf(s) != before) return@synchronized false
             pending.remove(key)?.job?.cancel() // a newer stop for the item replaces (or, sent, cancels) the pending one
             if (outcome is ReportOutcome.NotSent && outcome.kind in KEPT) keep(key, r)
             true
@@ -67,7 +74,7 @@ class ServerPlaybackReports internal constructor(
     /** Forget everything held for this account, or for every account of the server (its pending stop). Called by the store hooks. */
     fun forget(serverId: String, userId: String? = null) {
         synchronized(pending) {
-            forgets++
+            if (userId == null) serverForgets.merge(serverId, 1, Long::plus) else accountForgets.merge(Session(serverId, userId), 1, Long::plus)
             val gone = pending.keys.filter { (s, _) -> s.serverId == serverId && (userId == null || s.userId == userId) }
             gone.forEach { pending.remove(it)?.job?.cancel() }
         }

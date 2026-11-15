@@ -191,4 +191,19 @@ class ServerPlaybackReportsTest {
         assertEquals(1, gateway.calls.size)
         assertTrue("nothing written for an account that went", playstate.calls.isEmpty())
     }
+
+    @Test fun forgettingAnotherAccountWhileAStopIsSentLeavesThatStopKeptAndSaved() = runTest {
+        val r = reports()
+        val held = kotlinx.coroutines.CompletableDeferred<Unit>()
+        gateway.gate = held
+        offline()
+        val stopping = backgroundScope.async { r.stopped(BEN, report(61_000), finished = false) }
+        runCurrent()
+        r.forget(AMY.serverId, AMY.userId) // another account going (a 401, a sign-out) is not Ben's business
+        gateway.gate = null; held.complete(Unit); stopping.await()
+        assertEquals("saved locally for Ben", 1, playstate.calls.size)
+        gateway.failOps.clear()
+        reconnect(); runCurrent()
+        assertEquals("kept and resent for Ben", listOf(BEN to 61_000L), gateway.reports.drop(1).map { it.first to it.second.positionMs })
+    }
 }
