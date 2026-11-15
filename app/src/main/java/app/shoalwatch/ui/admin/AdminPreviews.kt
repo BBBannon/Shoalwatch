@@ -85,3 +85,18 @@ private fun UsersPreview() = ShoalwatchTheme {
     val kid = ServerUser("k", "kid", Instant.parse("2026-11-15T13:30:00Z"), true, false, false, false, false, listOf("t"), false)
     UsersScreen(UsersUiState(open, listOf(UserRow(kid, listOf("TV")))), UsersActions({}, {}, {}, {}, {}, {}))
 }
+
+@Preview(showBackground = true, widthDp = 360, heightDp = 760, name = "Activity") @Composable
+private fun ActivityPreview() = ShoalwatchTheme {
+    val at = Instant.parse("2026-11-15T12:00:00Z")
+    ActivityScreen(
+        ActivityUiState(open, listOf(ActivityEntry(2, "kid failed to sign in", "IP address: 192.168.1.20", at, Severity.WARNING), ActivityEntry(1, "ben signed in", null, at, Severity.INFORMATION))),
+        ActivityActions({}, {}, {}),
+    )
+}
+
+@Preview(showBackground = true, widthDp = 360, heightDp = 760, name = "Devices") @Composable
+private fun DevicesPreview() = ShoalwatchTheme {
+    val tv = ServerDevice("tv", "Living room TV", listOf("kid"), "Jellyfin Android TV", "0.17.0", Instant.parse("2026-11-15T13:57:00Z"), false)
+    DevicesScreen(DevicesUiState(open, listOf(tv, tv.copy(id = "p", name = "Pixel", isThisDevice = true))), DevicesActions({}, {}, {}, {}, {}))
+}

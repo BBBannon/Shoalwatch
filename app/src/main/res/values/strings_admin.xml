@@ -181,4 +181,25 @@
     <string name="admin_user_disabled_done">%1$s’s account is disabled.</string>
     <string name="admin_user_enabled_done">%1$s’s account is enabled.</string>
     <string name="admin_users_note_dashboard">Resetting passwords and adding users are done in the full dashboard.</string>
+    <!-- Activity -->
+    <string name="admin_activity_title">Activity</string>
+    <string name="admin_activity_row_spoken">%1$s. %2$s. %3$s</string>
+    <string name="admin_activity_more">Show older entries</string>
+    <string name="admin_activity_limit">That’s as far back as Shoalwatch shows. The full log is in the dashboard.</string>
+    <string name="admin_activity_end">That’s everything in the log.</string>
+    <string name="admin_activity_empty">Nothing in the activity log yet.</string>
+
+    <!-- Devices -->
+    <string name="admin_devices_title">Devices</string>
+    <string name="admin_device_users">Signed in as %1$s</string>
+    <string name="admin_device_app">%1$s %2$s</string>
+    <string name="admin_device_last_seen">Last seen %1$s</string>
+    <string name="admin_device_remove">Remove</string>
+    <string name="admin_device_remove_cd">Remove %1$s</string>
+    <string name="admin_device_this_phone_note">This phone. To sign it out, use Sign out in Servers and accounts.</string>
+    <string name="admin_confirm_device_title">Remove %1$s?</string>
+    <string name="admin_confirm_device_body">The sign-in for %1$s on this device ends, and they’ll need to sign in on it again.</string>
+    <string name="admin_confirm_device_action">Remove device</string>
+    <string name="admin_device_removed">%1$s removed.</string>
+    <string name="admin_devices_empty">No devices are signed in.</string>
 </resources>

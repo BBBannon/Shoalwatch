@@ -38,8 +38,8 @@ internal fun NavGraphBuilder.adminDestinations(graph: AppGraph, nav: NavHostCont
     libraries = { LibrariesRoute(graph, nav) },
     tasks = { TasksRoute(graph, nav) },
     users = { UsersRoute(graph, nav) },
-    activity = { NotBuiltYet(nav) },
-    devices = { NotBuiltYet(nav) },
+    activity = { ActivityRoute(graph, nav) },
+    devices = { DevicesRoute(graph, nav) },
     power = { NotBuiltYet(nav) },
 )
 
@@ -143,6 +143,26 @@ private fun UsersRoute(graph: AppGraph, nav: NavHostController) {
         UsersActions({ nav.popBackStack() }, vm::refresh, vm::askDisable, vm::askEnable, vm::confirm, vm::dismissConfirm, vm::dismissProblem, vm::dismissNotice)
     }
     UsersScreen(state, actions)
+}
+
+@Composable
+private fun ActivityRoute(graph: AppGraph, nav: NavHostController) {
+    val vm = graphViewModel { ActivityViewModel(graph.serverCatalog, graph.adminRights, graph.addressSelector, graph.admin) }
+    val state by vm.state.collectAsStateWithLifecycle()
+    AdminRouteEffects(vm, state.frame.gate, nav)
+    val actions = remember(vm, nav) { ActivityActions({ nav.popBackStack() }, vm::refresh, vm::loadMore, vm::dismissProblem, vm::dismissNotice) }
+    ActivityScreen(state, actions)
+}
+
+@Composable
+private fun DevicesRoute(graph: AppGraph, nav: NavHostController) {
+    val vm = graphViewModel { DevicesViewModel(graph.serverCatalog, graph.adminRights, graph.addressSelector, graph.admin) }
+    val state by vm.state.collectAsStateWithLifecycle()
+    AdminRouteEffects(vm, state.frame.gate, nav)
+    val actions = remember(vm, nav) {
+        DevicesActions({ nav.popBackStack() }, vm::refresh, vm::askRemove, vm::confirmRemove, vm::dismissConfirm, vm::dismissProblem, vm::dismissNotice)
+    }
+    DevicesScreen(state, actions)
 }
 
 /** Stand-in for an admin screen a later task builds: it shows nothing and goes straight back. */

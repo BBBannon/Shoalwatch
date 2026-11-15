@@ -103,4 +103,13 @@ object AdminSamples {
         id = "u-odd", name = "odd", lastSeen = null, policyKnown = false, isAdministrator = false,
         isDisabled = false, canDownload = false, allLibraries = false, libraryIds = emptyList(), isYou = false,
     )
+
+    val tvDevice = ServerDevice(
+        id = "tv-device-1", name = "Living room TV", userNames = listOf("kid", "ben"), appName = "Jellyfin Android TV", appVersion = "0.17.0",
+        lastSeen = Instant.parse("2026-11-15T13:57:00Z"), isThisDevice = false,
+    )
+    val phoneDevice = ServerDevice(
+        id = "this-phone", name = "Pixel", userNames = listOf("ben"), appName = "Shoalwatch", appVersion = "1.0",
+        lastSeen = now, isThisDevice = true,
+    )
 }
