@@ -594,7 +594,7 @@
     <string name="dl_quality_for_new">Quality for new downloads</string>
     <string name="dl_quality_ask">Ask each time</string>
     <string name="dl_share">Share downloads between profiles</string>
-    <string name="dl_share_body">Profiles signed in to %1$s on this device can watch each other\'s downloads, but only titles their own account is allowed to see. Each profile keeps its own watched progress.</string>
+    <string name="dl_share_body">Profiles signed in to %1$s on this device can watch each other\'s downloads, but only titles their own account is allowed to download. A shared download appears for another profile once Shoalwatch has checked with your server. Each profile keeps its own watched progress.</string>
     <string name="dl_notifications_off">Notifications are off for Shoalwatch, so download progress shows only here.</string>
     <string name="dl_signout_downloads">Downloads that only this profile kept are deleted from this phone.</string>
     <string name="dl_signout_shared">Shared downloads stay for the other profiles that can see them.</string>
