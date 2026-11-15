@@ -25,8 +25,8 @@ fun plainOverview(raw: String?, maxLength: Int = OVERVIEW_MAX): String {
                 i = end + 1
             }
             c == '&' -> {
-                val semi = raw.indexOf(';', i)
-                val decoded = if (semi in i + 2..i + 10) decodeEntity(raw.substring(i + 1, semi)) else null
+                val semi = entityEnd(raw, i)
+                val decoded = if (semi > 0) decodeEntity(raw.substring(i + 1, semi)) else null
                 if (decoded == null) {
                     out.append(c)
                     i++
@@ -47,6 +47,13 @@ fun plainOverview(raw: String?, maxLength: Int = OVERVIEW_MAX): String {
         }
     }
     return tidy(out.toString()).cap(maxLength)
+}
+
+/** Where the `;` closing an entity that starts at [from] is, looking only as far as the longest entity (never to the end of the text); -1 if none. */
+private fun entityEnd(s: String, from: Int): Int {
+    val last = minOf(s.length - 1, from + 10)
+    for (j in from + 2..last) if (s[j] == ';') return j
+    return -1
 }
 
 private fun startsTag(s: String, i: Int): Boolean =

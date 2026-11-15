@@ -104,4 +104,19 @@ class HtmlTextTest {
         val out = plainOverview(hostile)
         assertTrue(out.length <= OVERVIEW_MAX)
     }
+
+    @Test fun aRunOfAmpersandsWithNoSemicolonIsReadInLinearTime() {
+        val hostile = "&".repeat(3_000_000)
+        val start = System.nanoTime()
+        val out = plainOverview(hostile)
+        val ms = (System.nanoTime() - start) / 1_000_000
+        assertTrue(out.length <= OVERVIEW_MAX)
+        assertTrue("took $ms ms", ms < 300)
+    }
+
+    @Test fun anEntityAtTheLongestAllowedLengthStillDecodes() {
+        assertEquals("a😀b", plainOverview("a&#x1F600;b"))
+        assertEquals("a&b", plainOverview("a&amp;b"))
+        assertEquals("a&bcdefghijkl;b", plainOverview("a&bcdefghijkl;b"))
+    }
 }
