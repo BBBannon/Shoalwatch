@@ -1,6 +1,10 @@
 package app.shoalwatch.ui.library
 
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
@@ -19,6 +23,7 @@ import app.shoalwatch.data.library.LibraryKind
 import app.shoalwatch.data.library.Sort
 import app.shoalwatch.data.library.SortBy
 import app.shoalwatch.ui.browse.ActionKind
+import app.shoalwatch.ui.browse.AMY
 import app.shoalwatch.ui.browse.BEN
 import app.shoalwatch.ui.browse.RenderBase
 import app.shoalwatch.ui.browse.Work
@@ -259,6 +264,18 @@ abstract class LibraryGridRenderBase : RenderBase() {
         showGrid(ready.copy(working = setOf(Work(id(2), ActionKind.PLAYED))))
         assertDescribed("Film 2, 2019, watched")
         assertTrue(rule.onAllNodes(hasContentDescription(text(R.string.cd_more_actions, "Film 2"))).fetchSemanticsNodes().isNotEmpty())
+    }
+
+    @Test fun theScrollPositionGoesBackToTheTopWhenTheAccountChanges() {
+        val many = (1..60).map { entry(it, name = "Film $it") }
+        var state by mutableStateOf(ready.copy(items = many))
+        show { LibraryGridScreen(state, actions, emptyFlow(), snackbar) }
+        rule.onAllNodes(hasScrollAction()).onFirst().performScrollToNode(hasContentDescription("Film 55, 2019"))
+        rule.waitForIdle()
+        assertTrue("scrolled away from the top", !described("Film 1, 2019"))
+        state = state.copy(session = AMY)
+        rule.waitForIdle()
+        assertDescribed("Film 1, 2019")
     }
 }
 

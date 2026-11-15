@@ -33,6 +33,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -135,7 +136,8 @@ fun LibraryGridScreen(state: LibraryGridUiState, actions: LibraryGridActions, me
 private fun Grid(state: LibraryGridUiState, actions: LibraryGridActions) {
     val strings = rememberStrings()
     val session = state.session
-    val gridState = rememberLazyGridState()
+    // Another account never starts part way down the last one's list.
+    val gridState = key(session) { rememberLazyGridState() }
     var sheetId by rememberSaveable(session) { mutableStateOf<String?>(null) }
     val loading = stringResource(R.string.cd_loading_content)
     val banner = BannerActions(actions.onRefresh, { session?.let { actions.onSignIn(it.serverId) } }, { session?.let { actions.onReview(it.serverId) } })

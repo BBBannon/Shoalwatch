@@ -103,7 +103,7 @@ class HomeViewModel(
     val state: StateFlow<HomeUiState> =
         combine(shell, content, actions.working, warmFailed, actions.pulling) { shell, content, working, failed, pulling ->
             val session = shell?.session
-            build(shell, content?.takeIf { it.first == session }?.second, working.forSession(session), failed, pulling != null && pulling == session)
+            build(shell, content?.takeIf { it.first == session }?.second, working.forSession(session), failed, session?.let { it in pulling } == true)
         }.stateIn(viewModelScope, SharingStarted.Eagerly, HomeUiState())
 
     init {

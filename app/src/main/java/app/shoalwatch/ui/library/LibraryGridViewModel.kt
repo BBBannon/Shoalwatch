@@ -60,8 +60,11 @@ class LibraryGridViewModel(
     private val actions = ItemActions(playstate, viewModelScope, connections) { state.value.session }
     private val endVisible = MutableStateFlow(false)
 
-    /** The session whose page load is running: another session's load never holds up this one's. */
-    private var loadingMoreFor: Session? = null
+    /** The sessions whose page load is running (main thread only): one session never runs two beside each other, and never holds up another's. */
+    private val loadingMore = HashSet<Session>()
+
+    /** The session whose last page load failed locally with nothing yet to show: the grid says so with Retry instead of skeleton cards. */
+    private val loadFailedFor = MutableStateFlow<Session?>(null)
 
     /** Failure messages for a snackbar, each once. */
     val messages: Flow<String> = actions.failures
@@ -117,8 +120,11 @@ class LibraryGridViewModel(
             },
             actions.working,
             actions.pulling,
-        ) { st, working, pulling ->
-            st.copy(working = working.forSession(st.session), pulling = pulling != null && pulling == st.session)
+            loadFailedFor,
+        ) { st, working, pulling, loadFailed ->
+            // A failed page load that left nothing on screen is shown like any other failed load (error state with Retry).
+            val banner = st.banner ?: FAILED_LOCALLY.reason.banner().takeIf { st.session != null && st.session == loadFailed && st.items.isEmpty() }
+            st.copy(working = working.forSession(st.session), pulling = st.session?.let { it in pulling } == true, banner = banner)
         }
             .stateIn(viewModelScope, SharingStarted.Eagerly, LibraryGridUiState())
 
@@ -145,13 +151,13 @@ class LibraryGridViewModel(
         val st = state.value
         val s = st.session ?: return
         val shape = st.shape ?: return
-        if (loadingMoreFor == s) return
-        loadingMoreFor = s
+        if (!loadingMore.add(s)) return
         viewModelScope.launch {
             try {
-                actions.attempt(s) { library.loadMore(s, parentId, shape, st.sort, st.filter) }
+                val ok = actions.attempt(s) { library.loadMore(s, parentId, shape, st.sort, st.filter) }
+                if (ok) loadFailedFor.compareAndSet(s, null) else loadFailedFor.value = s
             } finally {
-                if (loadingMoreFor == s) loadingMoreFor = null
+                loadingMore.remove(s)
             }
         }
     }
@@ -170,6 +176,7 @@ class LibraryGridViewModel(
         val st = state.value
         val s = st.session ?: return
         val t = target(st) ?: return
+        loadFailedFor.value = null
         actions.pull(s) { library.refresh(s, t) }
     }
 

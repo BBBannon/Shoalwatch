@@ -41,7 +41,8 @@ data class OwnedWork(val session: Session, val work: Work)
  *    screen shows it again because it observes the database); anything else becomes a plain "something went wrong" message. A
  *    failure is only shown while its session is still the one on screen ([current]), checked when it is sent and again when it is
  *    about to be shown: it is dropped, not queued, for the next user;
- *  - after a success, runs [onDone] (a favourites-filtered list refreshes itself with it).
+ *  - after a success, runs [onDone] (a favourites-filtered list refreshes itself with it); if that fails the change is not reported
+ *    as failed: the message says the list could not be refreshed.
  *
  * [pull] and [attempt] are for the other calls a screen makes (refresh, load more, switching account): a failing local call, such
  * as a full disk, is reported the same way and never ends the app.
@@ -55,10 +56,13 @@ class ItemActions(
     private val _working = MutableStateFlow<Set<OwnedWork>>(emptySet())
     val working: StateFlow<Set<OwnedWork>> = _working
 
-    private val _pulling = MutableStateFlow<Session?>(null)
+    private val _pulling = MutableStateFlow<Set<Session>>(emptySet())
 
-    /** The session whose pull-to-refresh or Retry is running, if any; compare it with the session on screen. */
-    val pulling: StateFlow<Session?> = _pulling
+    /** How many pulls are running per session (main thread only): the indicator stays until the last one has ended. */
+    private val pullsRunning = HashMap<Session, Int>()
+
+    /** The sessions whose pull-to-refresh or Retry is running; a screen shows the indicator only if the session on screen is in it. */
+    val pulling: StateFlow<Set<Session>> = _pulling
 
     /** Each message travels with the session it belongs to, so it can be checked again when it is about to be shown. */
     private val failureChannel = Channel<Pair<Session?, String>>(Channel.BUFFERED)
@@ -86,24 +90,26 @@ class ItemActions(
     fun pull(s: Session, block: suspend () -> Unit) {
         connections.reprobeIfOffline(s)
         scope.launch {
-            _pulling.value = s
+            pullsRunning.merge(s, 1, Int::plus)
+            _pulling.value = pullsRunning.keys.toSet()
             try {
                 attempt(s, block)
             } finally {
-                _pulling.compareAndSet(s, null)
+                pullsRunning.computeIfPresent(s) { _, n -> if (n <= 1) null else n - 1 }
+                _pulling.value = pullsRunning.keys.toSet()
             }
         }
     }
 
-    /** Runs [block] for [s]; a failure becomes a message (while [s] is still on screen) instead of an uncaught exception. */
-    suspend fun attempt(s: Session?, block: suspend () -> Unit) {
-        try {
-            block()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            report(s, e)
-        }
+    /** Runs [block] for [s]; a failure becomes a message (while [s] is still on screen) instead of an uncaught exception. True if it did not fail. */
+    suspend fun attempt(s: Session?, block: suspend () -> Unit): Boolean = try {
+        block()
+        true
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        report(s, e)
+        false
     }
 
     /**
@@ -119,6 +125,11 @@ class ItemActions(
         emit(fallback())
     }
 
+    companion object {
+        /** When a change worked but the list refresh after it did not: the change itself is not reported as failed. */
+        const val REFRESH_AFTER_CHANGE_FAILED = "Your change was saved, but the list could not be refreshed."
+    }
+
     private fun report(s: Session?, e: Exception) {
         if (current() != s) return
         failureChannel.trySend(s to (e as? AppError ?: AppError.of(AppError.Kind.UNKNOWN)).userMessage)
@@ -130,9 +141,15 @@ class ItemActions(
         _working.update { it + owned }
         scope.launch {
             try {
-                attempt(s) {
-                    call()
-                    onDone()
+                // The change and the refresh after it are told apart: a change that worked is never reported as failed.
+                if (attempt(s, call)) {
+                    try {
+                        onDone()
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        failureChannel.trySend(s to REFRESH_AFTER_CHANGE_FAILED)
+                    }
                 }
             } finally {
                 _working.update { it - owned }

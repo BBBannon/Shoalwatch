@@ -489,4 +489,58 @@ class LibraryGridViewModelTest {
         }
         assertTrue(v.state.value.showError)
     }
+
+    // --- a load that is still running when the account changes and changes back ---------------------------------------
+
+    @Test fun aPageLoadStillRunningForOneAccountIsNotStartedAgainAfterAWayAndBack() {
+        val gate = CompletableDeferred<Unit>()
+        library.loadMoreGate = gate
+        list(more = true)
+        list(more = true, k = key(AMY))
+        vm()
+        assertEquals(listOf(key()), library.loadMores)
+        catalog.activeFlow.value = account(AMY, "amy")
+        assertEquals(listOf(key(), key(AMY)), library.loadMores)
+        catalog.activeFlow.value = account(BEN, "ben")
+        assertEquals("Ben's first load is still running: no second one beside it", listOf(key(), key(AMY)), library.loadMores)
+        gate.complete(Unit)
+    }
+
+    // --- a local failure on an empty grid ends in an error state with Retry ------------------------------------------
+
+    @Test fun aLocalPageLoadFailureOnAnEmptyGridEndsInTheErrorStateNotSkeletonCards() = kotlinx.coroutines.test.runTest {
+        library.onLoadMore = { throw AppError.of(AppError.Kind.UNKNOWN) }
+        list(more = true)
+        val v = vm()
+        v.messages.test {
+            assertEquals(AppError.of(AppError.Kind.UNKNOWN).userMessage, awaitItem())
+            cancelAndIgnoreRemainingEvents()
+        }
+        val s = v.state.value
+        assertTrue(s.showError)
+        assertFalse(s.showSkeleton)
+    }
+
+    @Test fun retryAfterThatFailureTriesAgainAndClearsTheError() = kotlinx.coroutines.test.runTest {
+        var fail = true
+        library.onLoadMore = { if (fail) throw AppError.of(AppError.Kind.UNKNOWN) }
+        list(more = true)
+        val v = vm()
+        v.messages.test { awaitItem(); cancelAndIgnoreRemainingEvents() }
+        assertTrue(v.state.value.showError)
+        fail = false
+        v.refresh()
+        assertFalse(v.state.value.showError)
+        assertEquals(1, library.refreshes.size)
+    }
+
+    @Test fun aLocalFailureWithPostersAlreadyShownKeepsThemAndAddsNoErrorState() = kotlinx.coroutines.test.runTest {
+        library.onLoadMore = { throw AppError.of(AppError.Kind.UNKNOWN) }
+        list(*films(3), more = true)
+        val v = vm()
+        v.onEndVisible(true)
+        v.messages.test { awaitItem(); cancelAndIgnoreRemainingEvents() }
+        assertFalse(v.state.value.showError)
+        assertEquals(3, v.state.value.items.size)
+    }
 }

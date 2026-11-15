@@ -125,7 +125,7 @@ class SeriesViewModel(
             actions.working,
             actions.pulling,
         ) { st, working, pulling ->
-            st.copy(working = working.forSession(st.session), pulling = pulling != null && pulling == st.session)
+            st.copy(working = working.forSession(st.session), pulling = st.session?.let { it in pulling } == true)
         }
             .stateIn(viewModelScope, SharingStarted.Eagerly, SeriesUiState())
 
