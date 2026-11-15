@@ -11,6 +11,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
+import java.time.Duration
 
 /**
  * The player's window across a configuration change (Task 8 review I-1): the switch to landscape recreates the activity, and
@@ -25,7 +26,11 @@ class PlayerWindowTest {
         HostLifecycle(onStopped = { stops++ }, onStarted = {})
     }
 
-    private fun idle() = shadowOf(Looper.getMainLooper()).idle()
+    /**
+     * Runs what is due AND lets a frame pass: a composition change (new content, a disposal) is applied on the next frame, which
+     * a plain `idle()` only reaches when the frame happens to be due already. That made this test fail now and then under load.
+     */
+    private fun idle() = shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(100))
 
     @Test fun aConfigurationChangeIsNotLeavingThePlayer() {
         ActivityScenario.launch(ComponentActivity::class.java).use { scenario ->
