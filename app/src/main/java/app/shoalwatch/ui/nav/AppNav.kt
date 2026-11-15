@@ -36,8 +36,10 @@ import app.shoalwatch.data.playback.StartFrom
 import app.shoalwatch.data.servers.ServerCatalog
 import app.shoalwatch.data.servers.Session
 import app.shoalwatch.ui.admin.adminDestinations
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import androidx.navigation.NavHostController
 
 /** Screens and their paths. Server ids go through [Uri.encode] so any id is a safe path segment. */
@@ -187,19 +189,23 @@ internal fun ClearBrowsingOnSessionChange(nav: NavHostController, catalog: Serve
             previous = now
             if (first || was == null || now == was) return@collect
             val target = if (now == null && catalog.servers.first().isEmpty()) Routes.WELCOME else Routes.home()
-            // A sign-in as another account (from Servers) has already taken the app to a fresh Home, alone: leave that one be.
-            val here = nav.currentBackStackEntry
-            val alone = nav.currentBackStack.value.count { it.destination !is NavGraph } == 1
-            if (alone && here?.destination?.route == Routes.HOME && here.arguments?.getBoolean(Routes.ARG_FRESH) == true) {
+            // The store's answer can arrive on its own thread, and the navigation controller may only be touched on the main one.
+            // The effect's own dispatcher is the main one in the app; this holds it there whatever dispatcher runs the effect.
+            withContext(Dispatchers.Main.immediate) {
+                // A sign-in as another account (from Servers) has already taken the app to a fresh Home, alone: leave that one be.
+                val here = nav.currentBackStackEntry
+                val alone = nav.currentBackStack.value.count { it.destination !is NavGraph } == 1
+                if (alone && here?.destination?.route == Routes.HOME && here.arguments?.getBoolean(Routes.ARG_FRESH) == true) {
+                    nav.clearTabStates()
+                    return@withContext
+                }
+                val keep = here?.takeIf { it.destination.route in AccountRoutes }
+                if (keep != null) nav.popBackStack(keep.destination.id, inclusive = true, saveState = true)
+                // Before the new start: clearing a tab restores what it saved and pops it, which may take anything left with it.
                 nav.clearTabStates()
-                return@collect
+                nav.navigate(target) { popUpTo(nav.graph.id) { inclusive = true } }
+                if (keep != null) nav.navigate(keep.destination.id, keep.arguments, navOptions { restoreState = true })
             }
-            val keep = here?.takeIf { it.destination.route in AccountRoutes }
-            if (keep != null) nav.popBackStack(keep.destination.id, inclusive = true, saveState = true)
-            // Before the new start: clearing a tab restores what it saved and pops it, which may take anything left with it.
-            nav.clearTabStates()
-            nav.navigate(target) { popUpTo(nav.graph.id) { inclusive = true } }
-            if (keep != null) nav.navigate(keep.destination.id, keep.arguments, navOptions { restoreState = true })
         }
     }
 }
