@@ -3,6 +3,9 @@ package app.shoalwatch.ui.servers
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.shoalwatch.core.AppError
+import app.shoalwatch.data.admin.AdminRights
+import app.shoalwatch.data.admin.AdminState
+import app.shoalwatch.data.admin.AdminStatus
 import app.shoalwatch.data.servers.AccountSummary
 import app.shoalwatch.data.servers.Authenticator
 import app.shoalwatch.data.servers.ServerSummary
@@ -13,9 +16,11 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -49,6 +54,8 @@ data class ServersUiState(
     val busy: Boolean = false,
     val error: String? = null,
     val notice: ServersNotice? = null,
+    /** The server whose card shows "Server admin": the active account's, only while its server confirms it is an administrator. */
+    val adminServerId: String? = null,
 )
 
 /**
@@ -60,6 +67,8 @@ data class ServersUiState(
 class ServersViewModel(
     private val catalog: ServerCatalog,
     private val auth: Authenticator,
+    /** Who may see "Server admin" (Milestone 6); null shows it nowhere. */
+    private val rights: AdminRights? = null,
 ) : ViewModel() {
     private data class Local(val confirm: Confirm? = null, val busy: Boolean = false, val error: String? = null, val notice: ServersNotice? = null)
 
@@ -73,8 +82,18 @@ class ServersViewModel(
         }
     }
 
+    /** The active session's server id while `rights` says exactly (that session, ADMIN); null at once on any switch. */
+    private val adminServer: Flow<String?> = if (rights == null) flowOf(null) else catalog.activeSession().flatMapLatest { session ->
+        if (session == null) flowOf(null) else rights.state.map { held -> session.serverId.takeIf { held == AdminState(session, AdminStatus.ADMIN) } }
+    }
+
+    init {
+        // Ask the server once for each active session; a switch cancels the question for the one before.
+        if (rights != null) viewModelScope.launch { catalog.activeSession().collectLatest { s -> if (s != null) rights.check(s) } }
+    }
+
     val state: StateFlow<ServersUiState> =
-        combine(rows, catalog.activeAccount, local) { rows, active, local ->
+        combine(rows, catalog.activeAccount, local, adminServer) { rows, active, local, adminServerId ->
             ServersUiState(
                 loading = false,
                 servers = rows.map { (server, accounts) ->
@@ -85,6 +104,7 @@ class ServersViewModel(
                     )
                 },
                 confirm = local.confirm, busy = local.busy, error = local.error, notice = local.notice,
+                adminServerId = adminServerId,
             )
         }.stateIn(viewModelScope, SharingStarted.Eagerly, ServersUiState())
 

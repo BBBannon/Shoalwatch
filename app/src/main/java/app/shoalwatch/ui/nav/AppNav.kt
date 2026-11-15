@@ -35,6 +35,7 @@ import app.shoalwatch.R
 import app.shoalwatch.data.playback.StartFrom
 import app.shoalwatch.data.servers.ServerCatalog
 import app.shoalwatch.data.servers.Session
+import app.shoalwatch.ui.admin.adminDestinations
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.first
 import androidx.navigation.NavHostController
@@ -148,6 +149,7 @@ private fun AppNavHost(graph: AppGraph, start: String) {
         )
         composable(Routes.SERVERS) { ServersRoute(graph, nav) }
         composable(Routes.SERVER_EDIT, serverArg) { ServerEditRoute(graph, nav, it.arguments?.getString(Routes.ARG_SERVER).orEmpty()) }
+        adminDestinations(graph, nav)
     }
 }
 

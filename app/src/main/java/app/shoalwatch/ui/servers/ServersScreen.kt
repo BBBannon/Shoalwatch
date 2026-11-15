@@ -11,6 +11,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Person
@@ -53,6 +54,7 @@ class ServersActions(
     val onConfirm: () -> Unit,
     val onDismissConfirm: () -> Unit,
     val onDismissNotice: () -> Unit = {},
+    val onAdmin: () -> Unit = {},
 )
 
 /** Every saved server with its accounts: switch the active one, add, sign out, remove, open connection settings. */
@@ -77,7 +79,7 @@ fun ServersScreen(state: ServersUiState, actions: ServersActions) {
                 Text(stringResource(R.string.servers_empty_title), style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
                 Text(stringResource(R.string.servers_empty_body), style = MaterialTheme.typography.bodyLarge)
             }
-            else -> state.servers.forEach { ServerCard(it, actions) }
+            else -> state.servers.forEach { ServerCard(it, actions, showAdmin = it.id == state.adminServerId) }
         }
     }
     when (val confirm = state.confirm) {
@@ -105,7 +107,7 @@ fun ServersScreen(state: ServersUiState, actions: ServersActions) {
 }
 
 @Composable
-private fun ServerCard(server: ServerItem, actions: ServersActions) {
+private fun ServerCard(server: ServerItem, actions: ServersActions, showAdmin: Boolean) {
     Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
             Text(server.name, style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
@@ -123,6 +125,10 @@ private fun ServerCard(server: ServerItem, actions: ServersActions) {
             }
             IconTextButton(stringResource(R.string.server_add_account), Icons.Filled.Add, { actions.onAddAccount(server.id) })
             IconTextButton(stringResource(R.string.server_settings), Icons.Filled.Settings, { actions.onSettings(server.id) })
+            if (showAdmin) {
+                val adminLabel = stringResource(R.string.admin_entry_cd, server.name)
+                IconTextButton(stringResource(R.string.admin_entry), Icons.Filled.Build, actions.onAdmin, Modifier.semantics { contentDescription = adminLabel })
+            }
             IconTextButton(stringResource(R.string.server_remove), Icons.Filled.Delete, { actions.onAskRemove(server.id) }, caution = true)
         }
     }

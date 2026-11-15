@@ -38,7 +38,7 @@ data class AdminFrame(
 
 /**
  * The base of every admin ViewModel: an [AdminGuard] (the session rule), an [AdminWork] (one action at a time) and [poller]s
- * (load only while visible, open and online). When the gate closes, [clear] drops everything the screen loaded and any open
+ * (load only while visible, open and online). When the gate closes, [dropLoaded] drops everything the screen loaded and any open
  * confirmation or typed text; nothing from an admin screen outlives the session that opened it. Nothing is saved anywhere.
  */
 abstract class AdminScreenModel(
@@ -62,7 +62,13 @@ abstract class AdminScreenModel(
         }.stateIn(viewModelScope, SharingStarted.Eagerly, AdminFrame())
 
     /**
-     * Started on first use of [frame] or [setVisible], so [clear] never runs before the subclass is constructed. Until then
+     * [frame] for a subclass to build its own state from, without starting the close watcher (so a subclass may use it in its
+     * constructor). Its value is a Closed frame with nothing else the moment the gate closes.
+     */
+    protected val frames: StateFlow<AdminFrame> get() = frameState
+
+    /**
+     * Started on first use of [frame] or [setVisible], so [dropLoaded] never runs before the subclass is constructed. Until then
      * nothing can have been loaded: a poller loads only once the screen says it is visible.
      */
     private val watchingClose = AtomicBoolean(false)
@@ -103,8 +109,11 @@ abstract class AdminScreenModel(
         }
     }
 
-    /** Called (on the main thread) the moment the gate closes: drop every loaded list, confirmation and typed text. */
-    protected abstract fun clear()
+    /**
+     * Called (on the main thread) the moment the gate closes: drop every loaded list, confirmation and typed text. (Not named
+     * `clear`: `ViewModel` has an internal `clear()` of its own.)
+     */
+    protected abstract fun dropLoaded()
 
     private fun watchClose() {
         if (!watchingClose.compareAndSet(false, true)) return
@@ -113,7 +122,7 @@ abstract class AdminScreenModel(
             loadState.value = LoadState(loading = false)
             noticeState.value = null
             work.dismissProblem()
-            clear()
+            dropLoaded()
         }
     }
 

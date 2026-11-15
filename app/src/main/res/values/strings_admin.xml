@@ -1,6 +1,33 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Server admin (Milestone 6). Every admin word lives here, not in strings.xml, so the parallel branches merge cleanly. -->
 <resources>
+    <!-- Entry -->
+    <string name="admin_entry">Server admin</string>
+    <string name="admin_entry_cd">Server admin for %1$s</string>
+
+    <!-- Dashboard -->
+    <string name="admin_title">Server admin</string>
+    <string name="admin_version">Jellyfin %1$s</string>
+    <string name="admin_pending_restart_title">Restart needed</string>
+    <string name="admin_pending_restart_body">The server needs a restart to finish an update or a settings change.</string>
+    <string name="admin_shutting_down">The server is shutting down.</string>
+    <string name="admin_manage_heading">Manage</string>
+    <string name="admin_link_libraries">Libraries</string>
+    <string name="admin_link_libraries_detail">Scan for new files and see scan progress</string>
+    <string name="admin_link_tasks">Scheduled tasks</string>
+    <string name="admin_link_tasks_detail">See what runs, and run or stop a task</string>
+    <string name="admin_link_users">Users</string>
+    <string name="admin_link_users_detail">See accounts, and switch them on or off</string>
+    <string name="admin_link_activity">Activity</string>
+    <string name="admin_link_activity_detail">Recent sign-ins, playback and errors</string>
+    <string name="admin_link_devices">Devices</string>
+    <string name="admin_link_devices_detail">Signed-in devices, and remove one</string>
+    <string name="admin_link_power">Restart or shut down</string>
+    <string name="admin_link_power_detail">Restart or shut down the server</string>
+    <string name="admin_open_dashboard">Open the full dashboard in your browser</string>
+    <string name="admin_open_dashboard_note">For everything else. You’ll sign in again in the browser: Shoalwatch doesn’t pass on your sign-in.</string>
+    <string name="admin_no_browser">There’s no web browser on this phone to open the dashboard.</string>
+
     <!-- Common -->
     <string name="admin_checking">Checking you’re an administrator…</string>
     <string name="admin_offline_title">You’re offline</string>
