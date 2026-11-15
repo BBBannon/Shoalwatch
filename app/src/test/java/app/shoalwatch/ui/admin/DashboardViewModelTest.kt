@@ -16,7 +16,13 @@ import app.shoalwatch.ui.FakeCatalog
 import app.shoalwatch.ui.FakeConnections
 import app.shoalwatch.ui.MainDispatcherRule
 import app.shoalwatch.ui.address
+import app.shoalwatch.data.admin.Admin
+import app.shoalwatch.data.admin.ServerStatus
+import app.shoalwatch.data.admin.WatchSession
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceTimeBy
 import org.junit.Assert.assertEquals
@@ -152,4 +158,27 @@ class DashboardViewModelTest {
         assertNull(vm.state.value.frame.loadProblem)
         assertNull(vm.state.value.status)
     }
+
+    /**
+     * An answer that lands after the gate closed (here: one that cannot be cancelled) is not written back into the ViewModel:
+     * nothing the server said outlives the session in memory, not just on screen.
+     */
+    @Test fun anAnswerArrivingAfterTheGateClosedIsNotKept() = main.adminTest(models) {
+        val slow = CompletableDeferred<Unit>()
+        val late = object : Admin by admin {
+            override suspend fun serverStatus(s: Session): ServerStatus = withContext(NonCancellable) { slow.await(); admin.status }
+        }
+        admin.sessions = listOf(AdminSamples.kidOnTv)
+        val vm = models.add(DashboardViewModel(catalog, rights, connections, late, opener) { now })
+        vm.setVisible(true)
+        catalog.activeFlow.value = kid
+        assertEquals(AdminGate.Closed, vm.state.value.frame.gate)
+        slow.complete(Unit)
+        assertNull("status kept after the close", held<ServerStatus?>(vm, "status"))
+        assertEquals("sessions kept after the close", emptyList<WatchSession>(), held<List<WatchSession>>(vm, "sessions"))
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun <T> held(vm: DashboardViewModel, field: String): T =
+        (DashboardViewModel::class.java.getDeclaredField(field).apply { isAccessible = true }.get(vm) as MutableStateFlow<T>).value
 }

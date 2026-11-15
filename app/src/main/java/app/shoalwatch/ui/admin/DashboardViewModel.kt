@@ -84,8 +84,13 @@ class DashboardViewModel(
     val messageText = TextFieldState()
 
     private val poll = poller { session ->
-        status.value = admin.serverStatus(session)
-        sessions.value = admin.sessions(session)
+        val server = admin.serverStatus(session)
+        val list = admin.sessions(session)
+        // An answer that lands after the gate closed is dropped, not kept in memory.
+        if (guard.gate.value is AdminGate.Open) {
+            status.value = server
+            sessions.value = list
+        }
         SESSIONS_POLL_MS
     }
 
