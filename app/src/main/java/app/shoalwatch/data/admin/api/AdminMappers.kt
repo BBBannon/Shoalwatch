@@ -58,6 +58,11 @@ internal object AdminLimits {
     val TASK_ID = Regex("[A-Za-z0-9]{1,64}")
     val TASK_KEY = Regex("[A-Za-z0-9_.-]{1,64}")
     val DEVICE_ID = Regex("[\\x21-\\x7E]{1,256}")
+    /**
+     * A device id a removal may name: no comma, semicolon or other separator, because `DELETE /Devices` takes `id` as an array
+     * (12.4.0 reference) that the server may split. A listed device outside this set is shown but never offered for removal.
+     */
+    val REMOVABLE_DEVICE_ID = Regex("[A-Za-z0-9._~+/=:-]{1,256}")
     val VERSION_TEXT = Regex("[0-9A-Za-z.+-]{1,40}")
 
     /** Transcode reasons read per session (kept: at most [REASONS] distinct). */
@@ -330,6 +335,7 @@ internal fun DeviceResultDto.toDevices(thisDeviceId: String): List<ServerDevice>
             appVersion = displayText(dto.appVersion, AdminLimits.VERSION),
             lastSeen = instant(dto.dateLastActivity),
             isThisDevice = deviceId == thisDeviceId,
+            removable = AdminLimits.REMOVABLE_DEVICE_ID.matches(deviceId),
         )
         val earlier = rows[deviceId]
         if (earlier == null) {

@@ -78,5 +78,5 @@ class DevicesViewModel(
         confirmState.value = null
     }
 
-    private fun removable(id: String) = devices.value.firstOrNull { it.id == id && !it.isThisDevice }
+    private fun removable(id: String) = devices.value.firstOrNull { it.id == id && it.removable && !it.isThisDevice }
 }

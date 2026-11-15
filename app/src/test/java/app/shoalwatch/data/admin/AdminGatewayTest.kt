@@ -1,5 +1,6 @@
 package app.shoalwatch.data.admin
 
+import app.shoalwatch.core.AppError
 import app.shoalwatch.data.api.JsonBodies
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonObject
@@ -159,10 +160,13 @@ class AdminGatewayTest : AdminGatewayTestBase() {
 
     @Test fun aDeviceIdWithPathCharactersIsOnlyAQueryValue() {
         web.enqueue(noContent())
-        runBlocking { gateway.removeDevice(session, "a/b?c") }
+        runBlocking { gateway.removeDevice(session, "../a/b") }
         val request = nextRequest()
-        request.check("DELETE", "/Devices", mapOf("id" to "a/b?c"))
-        assertEquals("id=a%2Fb%3Fc", request.requestUrl!!.encodedQuery)
+        request.check("DELETE", "/Devices", mapOf("id" to "../a/b"))
+        assertEquals("id=..%2Fa%2Fb", request.requestUrl!!.encodedQuery)
+        // A query or list separator is outside the removable set: refused with nothing sent.
+        assertEquals(AppError.Kind.SERVER_NOT_FOUND, failure { gateway.removeDevice(session, "a/b?c") }.kind)
+        assertEquals(1, web.requestCount)
     }
 
     @Test fun restartAndShutDown() {

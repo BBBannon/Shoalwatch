@@ -18,6 +18,7 @@ import app.shoalwatch.U1
 import app.shoalwatch.data.admin.ActivityEntry
 import app.shoalwatch.data.admin.Severity
 import app.shoalwatch.data.servers.Session
+import app.shoalwatch.ui.admin.AdminSamples.commaDevice
 import app.shoalwatch.ui.admin.AdminSamples.phoneDevice
 import app.shoalwatch.ui.admin.AdminSamples.tvDevice
 import app.shoalwatch.ui.browse.PHONE
@@ -101,6 +102,12 @@ abstract class ActivityDevicesRenderBase : RenderBase() {
         scrollTo(hasText(text(R.string.admin_device_this_phone_note)))
         assertShown(text(R.string.admin_device_this_phone_note))
         assertFalse(described(text(R.string.admin_device_remove_cd, "Pixel")))
+    }
+
+    @Test fun aDeviceThatIsNotRemovableHasNoRemove() {
+        devices(DevicesUiState(open, listOf(commaDevice)))
+        assertShown("Junk")
+        assertFalse(described(text(R.string.admin_device_remove_cd, "Junk")))
     }
 
     @Test fun offlineSwitchesRemoveOff() {

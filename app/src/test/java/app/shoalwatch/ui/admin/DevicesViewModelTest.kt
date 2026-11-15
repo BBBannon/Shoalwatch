@@ -12,6 +12,7 @@ import app.shoalwatch.ui.FakeCatalog
 import app.shoalwatch.ui.FakeConnections
 import app.shoalwatch.ui.MainDispatcherRule
 import app.shoalwatch.ui.address
+import app.shoalwatch.ui.admin.AdminSamples.commaDevice
 import app.shoalwatch.ui.admin.AdminSamples.phoneDevice
 import app.shoalwatch.ui.admin.AdminSamples.tvDevice
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -56,6 +57,16 @@ class DevicesViewModelTest {
         vm.askRemove("unknown")
         assertNull(vm.state.value.confirm)
         vm.setVisible(false)
+    }
+
+    @Test fun aDeviceThatIsNotRemovableCannotBeAskedAbout() = main.adminTest(models) {
+        admin.devices = listOf(tvDevice, commaDevice)
+        val vm = vm()
+        vm.setVisible(true)
+        vm.askRemove(commaDevice.id)
+        assertNull(vm.state.value.confirm)
+        vm.confirmRemove()
+        assertTrue(removed().isEmpty())
     }
 
     @Test fun removeAfterConfirmationIsSentOnce() = main.adminTest(models) {

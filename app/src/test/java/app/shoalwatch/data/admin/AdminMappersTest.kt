@@ -186,6 +186,20 @@ class AdminMappersTest {
         assertFalse(AdminFixtures.decode<ActivityResultDto>("activity.json").toPage(startIndex = 0, limit = 9).endReached)
     }
 
+    @Test fun aDeviceIdOutsideTheStrictSetIsListedButNeverRemovable() {
+        val json = """{"Items":[
+            {"Id":"junk,${AdminFixtures.THIS_PHONE}","Name":"Junk","LastUserName":"kid"},
+            {"Id":"odd|id","Name":"Odd","LastUserName":"kid"},
+            {"Id":"tv-living-room-1","Name":"TV","LastUserName":"kid"},
+            {"Id":"${AdminFixtures.THIS_PHONE}","Name":"Phone","LastUserName":"ben"}]}"""
+        val devices = JsonBodies.JSON.decodeFromString(DeviceResultDto.serializer(), json).toDevices(AdminFixtures.THIS_PHONE).associateBy { it.name }
+        assertFalse("a comma could name a second device", devices.getValue("Junk").removable)
+        assertFalse("not this phone, but not removable either", devices.getValue("Junk").isThisDevice)
+        assertFalse(devices.getValue("Odd").removable)
+        assertTrue(devices.getValue("TV").removable)
+        assertTrue(devices.getValue("Phone").isThisDevice)
+    }
+
     @Test fun devicesMergeByIdAndPreferTheCustomName() {
         val devices = AdminFixtures.decode<DeviceResultDto>("devices.json").toDevices(AdminFixtures.THIS_PHONE)
         assertEquals(listOf("this-phone-device", "tv-living-room-1", "web-ben-laptop", "tablet-kid"), devices.map { it.id })

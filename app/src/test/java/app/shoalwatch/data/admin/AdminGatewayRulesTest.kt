@@ -71,6 +71,9 @@ class AdminGatewayRulesTest : AdminGatewayTestBase() {
             { gateway.setUserDisabled(session, AdminFixtures.KID.uppercase(), true) },
             { gateway.removeDevice(session, "has space") },
             { gateway.removeDevice(session, "x".repeat(257)) },
+            // DELETE /Devices takes `id` as an array, which the server may split on commas: this would also remove this phone.
+            { gateway.removeDevice(session, "junk,${AdminFixtures.THIS_PHONE}") },
+            { gateway.removeDevice(session, "junk;other") },
         )
         for (call in bad) assertEquals(AppError.Kind.SERVER_NOT_FOUND, failure(call).kind)
         assertEquals(0, web.requestCount)

@@ -129,6 +129,11 @@ data class ServerDevice(
     val appVersion: String,
     val lastSeen: Instant?,
     val isThisDevice: Boolean,
+    /**
+     * The id is in the strict set a removal may name (see `AdminLimits.REMOVABLE_DEVICE_ID`): `DELETE /Devices` takes its `id` as
+     * an array, so an id holding a separator could name a second device. Remove is offered only when true.
+     */
+    val removable: Boolean,
 ) {
     override fun toString() = "ServerDevice(<redacted>)"
 }

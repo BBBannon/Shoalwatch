@@ -73,7 +73,7 @@ private fun DeviceCard(device: ServerDevice, text: AdminText, now: Instant, canA
         Text(stringResource(R.string.admin_device_last_seen, text.ago(device.lastSeen, now)), style = body)
         if (device.isThisDevice) {
             Text(stringResource(R.string.admin_device_this_phone_note), style = body, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        } else {
+        } else if (device.removable) {
             AdminAction(stringResource(R.string.admin_device_remove), stringResource(R.string.admin_device_remove_cd, name), canAct, caution = true, onClick = onRemove)
         }
     }

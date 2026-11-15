@@ -97,7 +97,7 @@ private fun ActivityPreview() = ShoalwatchTheme {
 
 @Preview(showBackground = true, widthDp = 360, heightDp = 760, name = "Devices") @Composable
 private fun DevicesPreview() = ShoalwatchTheme {
-    val tv = ServerDevice("tv", "Living room TV", listOf("kid"), "Jellyfin Android TV", "0.17.0", Instant.parse("2026-11-15T13:57:00Z"), false)
+    val tv = ServerDevice("tv", "Living room TV", listOf("kid"), "Jellyfin Android TV", "0.17.0", Instant.parse("2026-11-15T13:57:00Z"), false, true)
     DevicesScreen(DevicesUiState(open, listOf(tv, tv.copy(id = "p", name = "Pixel", isThisDevice = true))), DevicesActions({}, {}, {}, {}, {}))
 }
 

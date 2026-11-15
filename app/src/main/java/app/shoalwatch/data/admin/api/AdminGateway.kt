@@ -109,7 +109,7 @@ internal class AdminGateway(
     }
 
     override suspend fun removeDevice(s: Session, deviceId: String) = gated(s, "removeDevice") {
-        if (!AdminLimits.DEVICE_ID.matches(deviceId)) throw notFound()
+        if (!AdminLimits.REMOVABLE_DEVICE_ID.matches(deviceId)) throw notFound()
         // A device id is a client-chosen string: only ever a query value, never a path segment.
         api.delete(s, "/Devices", listOf("id" to deviceId), retry = false, sendOnce = true)
     }

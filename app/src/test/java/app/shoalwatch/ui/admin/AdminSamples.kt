@@ -106,10 +106,15 @@ object AdminSamples {
 
     val tvDevice = ServerDevice(
         id = "tv-device-1", name = "Living room TV", userNames = listOf("kid", "ben"), appName = "Jellyfin Android TV", appVersion = "0.17.0",
-        lastSeen = Instant.parse("2026-11-15T13:57:00Z"), isThisDevice = false,
+        lastSeen = Instant.parse("2026-11-15T13:57:00Z"), isThisDevice = false, removable = true,
+    )
+    /** A client-chosen id with a comma: listed, never removable (the server may split it into two ids). */
+    val commaDevice = ServerDevice(
+        id = "junk,this-phone", name = "Junk", userNames = listOf("kid"), appName = "App", appVersion = "1.0",
+        lastSeen = Instant.parse("2026-11-15T13:57:00Z"), isThisDevice = false, removable = false,
     )
     val phoneDevice = ServerDevice(
         id = "this-phone", name = "Pixel", userNames = listOf("ben"), appName = "Shoalwatch", appVersion = "1.0",
-        lastSeen = now, isThisDevice = true,
+        lastSeen = now, isThisDevice = true, removable = true,
     )
 }
