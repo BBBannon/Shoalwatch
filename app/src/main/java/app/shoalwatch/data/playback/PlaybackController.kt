@@ -315,7 +315,8 @@ class PlaybackController internal constructor(
             // Both from the latest wanted request, so a track change still being asked for is not undone (Task 7 review I-1).
             Recovery.FallBack -> { c.fellBack = true; val p = plan.copy(request = trackControl.want(c) { it.copy(forceTranscode = true) }); reload(c, Stop.FAILED) { resolver.fallBack(session, p) } }
             Recovery.ReResolve -> { c.reResolved = true; val p = plan.copy(request = trackControl.wanted(c)); reload(c, Stop.NORMAL) { resolver.resolve(session, p.request, TrackRules.burnInFormat(p)) } }
-            Recovery.Reroute -> { c.reroutes++; reload(c, Stop.NONE) { resolver.reroute(resolved) } }
+            // A track change still being asked for is asked for again, not replaced by the old plan on a new route (m-1).
+            Recovery.Reroute -> { c.reroutes++; val w = trackControl.wanted(c); reload(c, Stop.NONE) { if (w == plan.request) resolver.reroute(resolved) else resolver.resolve(session, w, TrackRules.burnInFormat(plan.copy(request = w))) } }
             Recovery.SignedOut -> return end(EndReason.SIGNED_OUT)
             is Recovery.Fail -> fail(c, r.kind)
         }

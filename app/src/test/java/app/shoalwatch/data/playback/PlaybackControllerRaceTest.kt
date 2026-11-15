@@ -82,6 +82,17 @@ internal class PlaybackControllerRaceTest : PlaybackControllerTestBase() {
         assertTrue(c.state.value.fellBackToTranscode)
     }
 
+    @Test fun aStaleRouteWhileATrackChangeIsBeingAskedForAsksAgainWithTheLatestChoice() = runTest {
+        answers(info("transcode.json"), info("transcode.json"), info("transcode.json"))
+        val c = controller(); started(c)
+        val gate = hold()
+        c.selectAudio(2); runCurrent()
+        engine.emit(EngineEvent.Failed(EngineFailure.ROUTE_STALE)); runCurrent()
+        release(gate)
+        assertEquals("the reroute does not bring back the old plan (Task 8 review m-1)", 2, c.state.value.audioIndex)
+        assertEquals(2, gateway.bodies.last().audioStreamIndex)
+    }
+
     // ---- Task 6 M-9, the rest
 
     @Test fun aSecondUnauthorisedAfterASuccessfulReResolveFailsAsUnauthorised() = runTest {

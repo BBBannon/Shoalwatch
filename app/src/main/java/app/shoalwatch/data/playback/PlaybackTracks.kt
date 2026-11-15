@@ -151,9 +151,10 @@ internal class TrackControl(
         // A picture track this stream would need burned in, but its request did not ask for (an answer built from an older
         // request): asked for once the load in hand is done, never just labelled as burned in (Task 7 review I-1).
         if (track != null && delivery == SubtitleDelivery.BURNED_IN && !TrackRules.carries(plan, track.index)) {
-            val again = plan.request.copy(pictureSubtitleIndex = track.index)
-            c.wanted = again
-            work.launch { if (host.current === c) host.reload(c) { resolver.resolve(session, again, TrackRules.burnInFormat(plan)) } }
+            // Through the same rules as any change (an external picture track is a burn-in, not a picture index: review m-2).
+            val again = TrackRules.step(plan, null, track, burnIn = false, engine.audioLanguages, keep(c), plan.request, pending = true)
+            c.wanted = again.request
+            work.launch { if (host.current === c) host.reload(c) { resolver.resolve(session, again.request, again.burnInFormat) } }
         }
         val direct = plan.method == PlayMethod.DIRECT_PLAY
         engine.selectAudio(plan.audioIndex?.takeIf { direct }?.let { TrackRules.audioOrdinal(plan, it, emptyList()) })
