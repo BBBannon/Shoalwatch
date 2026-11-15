@@ -77,6 +77,9 @@ class DownloadPathsTest {
         assertEquals("Stream index out of range.", refusal { paths.subtitleFile(f, 10_001, "srt") })
         assertEquals("Segment index out of range.", refusal { paths.segmentFile(hls, -1) })
         assertEquals("Segment index out of range.", refusal { paths.segmentFile(hls, 20_000) })
+        assertEquals("Segment index out of range.", refusal { paths.segmentPartFile(hls, -1) })
+        assertEquals("Segment index out of range.", refusal { paths.segmentPartFile(hls, 20_000) })
+        assertEquals(listOf("seg-00000.ts.part", "seg-19999.ts.part"), listOf(paths.segmentPartFile(hls, 0).name, paths.segmentPartFile(hls, 19_999).name))
         for (ext in listOf("exe", "MP4", "mp4/../x", "", "m3u8", "part")) {
             assertEquals(ext, "Not an allowed extension.", refusal { paths.mediaFile(f, ext) })
             assertEquals(ext, "Not an allowed extension.", refusal { paths.partFile(f, ext) })

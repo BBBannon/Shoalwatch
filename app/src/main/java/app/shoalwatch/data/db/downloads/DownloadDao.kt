@@ -40,6 +40,21 @@ abstract class DownloadDao {
     @Query("SELECT * FROM downloads WHERE serverId = :serverId AND NOT EXISTS (SELECT 1 FROM download_owners o WHERE o.serverId = downloads.serverId AND o.itemId = downloads.itemId)")
     internal abstract suspend fun ownerless(serverId: String): List<DownloadEntity>
 
+    // ---- the orphan sweep's inputs
+
+    @Query("SELECT EXISTS (SELECT 1 FROM downloads WHERE state IN ('RUNNING', 'VERIFYING'))")
+    internal abstract suspend fun busy(): Boolean
+
+    @Query("SELECT serverId, itemId FROM downloads")
+    internal abstract suspend fun keys(): List<KeyRow>
+
+    @Query("SELECT id FROM servers")
+    internal abstract suspend fun serverIds(): List<String>
+
+    /** [ArtworkRow.slot] is read as text: an unknown slot would fail Room's not-null check in a whole entity. */
+    @Query("SELECT serverId, itemId, slot, tag FROM pinned_artwork")
+    internal abstract suspend fun artworkRows(): List<ArtworkRow>
+
     // ---- owners
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
@@ -78,4 +93,11 @@ abstract class DownloadDao {
 
     @Upsert
     internal abstract suspend fun upsertSettings(row: DownloadSettingsEntity)
+}
+
+internal data class KeyRow(val serverId: String, val itemId: String)
+
+/** A `pinned_artwork` row with its slot as stored text (mapped through `Converters.toSlot`; unknown is dropped). */
+internal data class ArtworkRow(val serverId: String, val itemId: String, val slot: String, val tag: String) {
+    override fun toString() = "ArtworkRow(<redacted>)"
 }

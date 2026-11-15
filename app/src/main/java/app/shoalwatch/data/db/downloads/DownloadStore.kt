@@ -2,6 +2,7 @@ package app.shoalwatch.data.db.downloads
 
 import androidx.room.withTransaction
 import app.shoalwatch.data.db.AppDatabase
+import app.shoalwatch.data.downloads.ArtworkKey
 import app.shoalwatch.data.downloads.DownloadQuality
 import app.shoalwatch.data.downloads.DownloadState
 import app.shoalwatch.data.downloads.StorageKind
@@ -13,6 +14,11 @@ import kotlinx.coroutines.flow.map
 
 /** A download's key. Never printed: ids in a log line could say what a profile downloads. */
 data class DownloadKey(val serverId: String, val itemId: String) { override fun toString() = "DownloadKey(<redacted>)" }
+
+/** What the orphan sweep keeps: every download key, every saved server and every pinned picture, read together. */
+class SweepInputs(val known: Set<DownloadKey>, val servers: Set<String>, val artwork: Set<ArtworkKey>) {
+    override fun toString() = "SweepInputs(<redacted>)"
+}
 
 sealed interface RemoveOutcome {
     data object KeptForOthers : RemoveOutcome
@@ -182,6 +188,22 @@ internal class DownloadStore(private val db: AppDatabase, private val now: () ->
     suspend fun setSharing(serverId: String, on: Boolean) = dao.upsertSettings(DownloadSettingsEntity(serverId, on))
 
     fun observeSharing(serverId: String): Flow<Boolean> = dao.observeSharing(serverId).map { it == true }.distinctUntilChanged()
+
+    /**
+     * The orphan sweep's inputs, read in one transaction; null while any download is RUNNING or VERIFYING (its files are being
+     * written or checked, and its `.part` names must not race a sweep). A pinned picture whose slot this version does not know
+     * is left out (read as text, mapped through [Converters]). The caller must still hold the queue's lock while it sweeps, so
+     * nothing starts between this read and the sweep (Task 12).
+     */
+    suspend fun sweepInputs(): SweepInputs? = db.withTransaction {
+        if (dao.busy()) return@withTransaction null
+        val converters = Converters()
+        SweepInputs(
+            known = dao.keys().map { DownloadKey(it.serverId, it.itemId) }.toSet(),
+            servers = dao.serverIds().toSet(),
+            artwork = dao.artworkRows().mapNotNull { r -> converters.toSlot(r.slot)?.let { ArtworkKey(r.serverId, r.itemId, it, r.tag) } }.toSet(),
+        )
+    }
 
     private companion object {
         val VOLUME_ID = Regex("[A-Za-z0-9-]{1,36}")

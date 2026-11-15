@@ -19,7 +19,8 @@ data class SweepResult(val deleted: Int, val stoppedAtLimit: Boolean)
 
 /**
  * THE ONLY CODE THAT TURNS IDS INTO FILE NAMES. Layout, under each root ([Volumes.root]):
- * `<serverId>/<itemId>/media.<ext>` (+ `.part` while fetching), `sub-<index>.<format>`, `hls/seg-00000.ts`, `hls/local.m3u8`;
+ * `<serverId>/<itemId>/media.<ext>` (+ `.part` while fetching), `sub-<index>.<format>`, `hls/seg-00000.ts` (+ `.part` while
+ * fetching), `hls/local.m3u8`;
  * and on INTERNAL only `<serverId>/art/<itemId>-<SLOT>-<tag>.img`. Names come only from `JellyfinId`-normalised ids, a
  * validated image tag, a validated index and fixed words; no server string ever becomes part of a path.
  *
@@ -44,6 +45,12 @@ internal class DownloadPaths(private val volumes: Volumes, private val sweepLimi
     fun segmentFile(hls: File, index: Int): File {
         require(index in 0 until MAX_SEGMENTS) { "Segment index out of range." }
         return hlsChild(hls, "seg-%05d.ts".format(index))
+    }
+
+    /** `seg-<n>.ts.part`: a segment while it is being written, before its fsync and rename to [segmentFile]. */
+    fun segmentPartFile(hls: File, index: Int): File {
+        require(index in 0 until MAX_SEGMENTS) { "Segment index out of range." }
+        return hlsChild(hls, "seg-%05d.ts$PART".format(index))
     }
 
     fun localPlaylist(hls: File): File = hlsChild(hls, LOCAL_PLAYLIST)
@@ -254,7 +261,7 @@ internal class DownloadPaths(private val volumes: Volumes, private val sweepLimi
         private val TAG = Regex("[A-Za-z0-9]{1,64}")
         private val ID = Regex("[0-9a-f]{32}")
         private val ART_FILE = Regex("([0-9a-f]{32})-([A-Z]+)-([A-Za-z0-9]{1,64})\\.img")
-        private val SEGMENT = Regex("seg-(\\d{5})\\.ts")
+        private val SEGMENT = Regex("seg-(\\d{5})\\.ts(\\.part)?")
         private val SUBTITLE = Regex("sub-(\\d{1,5})\\.(srt|vtt|ass|ssa)")
 
         private fun isId(name: String) = ID.matches(name)

@@ -58,6 +58,15 @@ class OrphanSweepTest {
         assertFalse(result.stoppedAtLimit)
     }
 
+    @Test fun aSegmentBeingWrittenIsKeptButOtherPartNamesInHlsAreNot() {
+        val hls = paths.hlsFolder(folder(internal, s1, kept)).also { it.mkdirs() }
+        val writing = file(paths.segmentPartFile(hls, 7))
+        val stray = listOf(file(File(hls, "local.m3u8.part")), file(File(hls, "seg-7.ts.part")), file(File(hls, "seg-00007.part")))
+        sweep()
+        assertTrue("seg-00007.ts.part is the fetcher's own name", writing.exists())
+        for (f in stray) assertFalse(f.name, f.exists())
+    }
+
     @Test fun aFileNamedLikeAGuidButOutsideThePatternsIsDeleted() {
         val asFile = file(File(internal, s1)) // the server id, but a file rather than a folder
         sweep()
