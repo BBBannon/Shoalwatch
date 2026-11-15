@@ -17,6 +17,9 @@ import app.shoalwatch.ui.library.LibraryGridActions
 import app.shoalwatch.ui.library.LibraryGridScreen
 import app.shoalwatch.ui.library.LibraryGridViewModel
 import app.shoalwatch.ui.present.Destination
+import app.shoalwatch.ui.search.SearchActions
+import app.shoalwatch.ui.search.SearchScreen
+import app.shoalwatch.ui.search.SearchViewModel
 import app.shoalwatch.ui.series.SeriesActions
 import app.shoalwatch.ui.series.SeriesScreen
 import app.shoalwatch.ui.series.SeriesViewModel
@@ -33,6 +36,7 @@ import app.shoalwatch.ui.shell.Tab
 internal fun NavHostController.switchTab(tab: Tab) {
     val route = when (tab) {
         Tab.HOME -> Routes.home()
+        Tab.SEARCH -> Routes.SEARCH
         Tab.DOWNLOADS -> Routes.DOWNLOADS
     }
     navigate(route) {
@@ -144,6 +148,23 @@ internal fun DetailRoute(graph: AppGraph, nav: NavHostController, itemId: String
         )
     }
     DetailScreen(state, actions, vm.messages, snackbar)
+}
+
+@Composable
+internal fun SearchRoute(graph: AppGraph, nav: NavHostController) {
+    val vm = graphViewModel { SearchViewModel(graph.serverCatalog, graph.library) }
+    val state by vm.state.collectAsStateWithLifecycle()
+    val snackbar = remember { SnackbarHostState() }
+    val actions = remember(vm, nav) {
+        SearchActions(
+            onQueryChange = vm::onQueryChange,
+            onClear = vm::clear,
+            onRetry = vm::retry,
+            onOpen = nav::open,
+            onOpenServers = { nav.navigate(Routes.SERVERS) },
+        )
+    }
+    AppShell(Tab.SEARCH, nav::switchTab, snackbar) { SearchScreen(state, actions) }
 }
 
 @Composable

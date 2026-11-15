@@ -38,6 +38,7 @@ internal object Routes {
     /** Home (the shell). [ARG_FRESH] is set when it is reached by a successful sign-in, so it asks the server for its rows once. */
     const val HOME = "home?$ARG_FRESH={$ARG_FRESH}"
     const val DOWNLOADS = "downloads"
+    const val SEARCH = "search"
     const val ARG_VIEW = "viewId"
     const val LIBRARY = "library/{$ARG_VIEW}"
     const val ARG_SERIES = "seriesId"
@@ -90,7 +91,7 @@ private fun SplashScreen() {
     ) { CircularProgressIndicator() }
 }
 
-private val TabRoutes = setOf(Routes.HOME, Routes.DOWNLOADS)
+private val TabRoutes = setOf(Routes.HOME, Routes.SEARCH, Routes.DOWNLOADS)
 
 private fun AnimatedContentTransitionScope<NavBackStackEntry>.betweenTabs() =
     initialState.destination.route in TabRoutes && targetState.destination.route in TabRoutes
@@ -114,6 +115,7 @@ private fun AppNavHost(graph: AppGraph, start: String) {
         composable(Routes.HOME, listOf(navArgument(Routes.ARG_FRESH) { type = NavType.BoolType; defaultValue = false })) {
             HomeRoute(graph, nav, fresh = it.arguments?.getBoolean(Routes.ARG_FRESH) == true)
         }
+        composable(Routes.SEARCH) { SearchRoute(graph, nav) }
         composable(Routes.DOWNLOADS) { DownloadsRoute(graph, nav) }
         composable(Routes.LIBRARY, listOf(navArgument(Routes.ARG_VIEW) { type = NavType.StringType })) {
             LibraryRoute(graph, nav, it.arguments?.getString(Routes.ARG_VIEW).orEmpty())

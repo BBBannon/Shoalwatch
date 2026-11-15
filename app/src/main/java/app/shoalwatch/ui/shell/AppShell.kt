@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -33,6 +34,7 @@ import app.shoalwatch.ui.theme.ShoalwatchTheme
 /** The three places the bottom bar (or the rail, on a wide screen) goes to. */
 enum class Tab(@param:StringRes val label: Int, val icon: ImageVector) {
     HOME(R.string.nav_home, Icons.Filled.Home),
+    SEARCH(R.string.nav_search, Icons.Filled.Search),
     DOWNLOADS(R.string.nav_downloads, DownloadIcon),
 }
 
