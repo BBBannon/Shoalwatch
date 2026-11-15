@@ -150,8 +150,7 @@ class AdminSmokeTest {
     @Test fun anAdministratorStopsPlaybackAndASwitchEndsEverything() {
         val entry = string(R.string.admin_entry_cd, "Test Den")
         // Home -> Servers and accounts -> Server admin.
-        waitFor { described(string(R.string.home_settings_cd)) }
-        compose.onAllNodes(hasContentDescription(string(R.string.home_settings_cd))).onFirst().performClick()
+        openServersFromHome()
         waitFor { described(entry) }
         compose.onAllNodes(hasContentDescription(entry)).onFirst().performClick()
 
@@ -178,9 +177,9 @@ class AdminSmokeTest {
         val graph = ShoalwatchApp.graph(ApplicationProvider.getApplicationContext<Context>())
         runBlocking { graph.serverCatalog.setActive(serverId, kidId) }
         waitFor(5_000) { !shown(string(R.string.admin_watching_heading)) && !shown(string(R.string.admin_title)) && !secure() }
-        waitFor { shown(string(R.string.servers_title)) || shown(string(R.string.home_manage)) || described(string(R.string.home_settings_cd)) }
+        waitFor { shown(string(R.string.servers_title)) || described(string(R.string.account_menu_cd)) || described(string(R.string.home_manage)) }
         if (!shown(string(R.string.servers_title))) {
-            compose.onAllNodes(hasContentDescription(string(R.string.home_settings_cd))).onFirst().performClick()
+            openServersFromHome()
             waitFor { shown(string(R.string.servers_title)) }
         }
         compose.waitForIdle()
@@ -191,6 +190,23 @@ class AdminSmokeTest {
                 r.path.orEmpty().substringBefore('?') != "/Users/Me" && !r.path.orEmpty().startsWith("/System/Info/Public")
         }
         check(kidAdmin.isEmpty()) { "admin requests were sent with kid's token: ${kidAdmin.size}" }
+    }
+
+    /**
+     * Home's account button: with one account it IS "Servers and accounts"; with several (this test seeds two) it opens a menu
+     * whose last entry is "Servers and accounts".
+     */
+    private fun openServersFromHome() {
+        val manage = string(R.string.home_manage)
+        val menu = string(R.string.account_menu_cd)
+        waitFor { described(manage) || described(menu) }
+        if (described(manage)) {
+            compose.onAllNodes(hasContentDescription(manage)).onFirst().performClick()
+        } else {
+            compose.onAllNodes(hasContentDescription(menu)).onFirst().performClick()
+            waitFor { shown(manage) }
+            compose.onAllNodesWithText(manage).onFirst().performClick()
+        }
     }
 
     private fun scrollTo(label: String) {
