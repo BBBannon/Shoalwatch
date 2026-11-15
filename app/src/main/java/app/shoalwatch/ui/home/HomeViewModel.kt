@@ -87,6 +87,9 @@ class HomeViewModel(
             }
         }
 
+    /** What [content] gives when reading Home failed locally: told apart by identity, so the screen shows one plain message. */
+    private val failedHome = Home(emptyList(), FAILED_LOCALLY, HomeRow(emptyList(), FAILED_LOCALLY), HomeRow(emptyList(), FAILED_LOCALLY), emptyList())
+
     /** The library's Home for the active session; null until the new session's first answer, so nothing old lingers. */
     private val content: Flow<Pair<Session, Home>?> = catalog.activeSession().flatMapLatest { s ->
         if (s == null) {
@@ -94,8 +97,7 @@ class HomeViewModel(
         } else {
             flow {
                 emit(null)
-                val failed = Home(emptyList(), FAILED_LOCALLY, HomeRow(emptyList(), FAILED_LOCALLY), HomeRow(emptyList(), FAILED_LOCALLY), emptyList())
-                emitAll(actions.guard(s, library.home(s).map { s to it }) { s to failed })
+                emitAll(actions.guard(s, library.home(s).map { s to it }) { s to failedHome })
             }
         }
     }
@@ -161,6 +163,7 @@ class HomeViewModel(
             userName = shell.account.userName, connection = shell.connection, accounts = shell.accounts, pulling = pull, working = working,
         )
         if (home == null) return base
+        if (home === failedHome) return base.copy(phase = HomePhase.READY, localFailure = true)
         val freshness = listOf(home.resume.freshness, home.nextUp.freshness, home.viewsFreshness) + home.latest.map { it.second.freshness }
         // One banner when every failing part failed the same way; otherwise each failing row carries its own.
         val top = freshness.mapNotNull { (it as? Freshness.Stale)?.reason?.banner() }.distinct().singleOrNull()

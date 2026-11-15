@@ -156,6 +156,17 @@ private fun HomeList(state: HomeUiState, actions: HomeActions) {
                 item(key = "skeleton-wide") { Box(wideGap) { SkeletonRow(16f / 9f, if (wide) TabletWideCardWidth else PhoneWideCardWidth) } }
                 val posterGap = gaps.next()
                 item(key = "skeleton-poster") { Box(posterGap) { SkeletonRow(2f / 3f, if (wide) 152.dp else 128.dp) } }
+            } else if (state.localFailure) {
+                // Reading what is saved failed on this phone: one message that says so, not a refresh banner as well.
+                val gap = gaps.next()
+                item(key = "empty") {
+                    Box(gap) {
+                        EmptyState(
+                            stringResource(R.string.home_local_failure_title), stringResource(R.string.home_local_failure_body),
+                            actionLabel = stringResource(R.string.action_retry), onAction = actions.onRefresh,
+                        )
+                    }
+                }
             } else if (!state.hasContent) {
                 val gap = gaps.next()
                 item(key = "empty") {

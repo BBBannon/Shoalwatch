@@ -171,11 +171,15 @@ class LibraryGridViewModel(
         target(st)?.let { actions.attempt(s) { library.refresh(s, it) } }
     }
 
-    /** Pull-to-refresh and a banner's Retry: always tries (it bypasses the failure cooldown). */
+    /**
+     * Pull-to-refresh and a banner's Retry: always tries (it bypasses the failure cooldown). While the shape is not known (Home's
+     * libraries are not saved yet, or reading this screen failed locally) what is refreshed is the list of libraries, where the
+     * shape comes from; like every user refresh it re-probes an offline server first and brings a failed screen back.
+     */
     fun refresh() {
         val st = state.value
         val s = st.session ?: return
-        val t = target(st) ?: return
+        val t: RefreshTarget = target(st) ?: RefreshTarget.Home
         loadFailedFor.value = null
         actions.pull(s) { library.refresh(s, t) }
     }

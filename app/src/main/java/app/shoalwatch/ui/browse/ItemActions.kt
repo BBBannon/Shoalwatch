@@ -12,7 +12,10 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
@@ -64,6 +67,9 @@ class ItemActions(
     /** The sessions whose pull-to-refresh or Retry is running; a screen shows the indicator only if the session on screen is in it. */
     val pulling: StateFlow<Set<Session>> = _pulling
 
+    /** Counts the user's own refreshes ([pull]): a [guard]ed flow that failed waits for the next one, then subscribes again. */
+    private val retries = MutableStateFlow(0)
+
     /** Each message travels with the session it belongs to, so it can be checked again when it is about to be shown. */
     private val failureChannel = Channel<Pair<Session?, String>>(Channel.BUFFERED)
 
@@ -89,6 +95,7 @@ class ItemActions(
      */
     fun pull(s: Session, block: suspend () -> Unit) {
         connections.reprobeIfOffline(s)
+        retries.update { it + 1 }
         scope.launch {
             pullsRunning.merge(s, 1, Int::plus)
             _pulling.value = pullsRunning.keys.toSet()
@@ -114,15 +121,27 @@ class ItemActions(
 
     /**
      * For a flow the library gives a screen (Room-backed: a damaged database throws while it is collected, which in a ViewModel
-     * scope would end the app). A failure is reported like any other and the flow ends with [fallback], so the screen shows an
-     * error state rather than a skeleton that never goes. Cancellation and `Error`s pass through untouched. The message is queued
-     * for [s] without asking [current], which may not exist yet when a flow fails as the ViewModel starts; it is checked
-     * against the session on screen when it is shown, like every message.
+     * scope would end the app). A failure is reported like any other and [fallback] is emitted, so the screen shows an error
+     * state with Retry rather than a skeleton that never goes. The failed flow then waits for the user's next refresh ([pull],
+     * which every Retry and pull-to-refresh goes through) and subscribes to [flow] again, so Retry brings the screen back once
+     * the database works again. A flow that has not failed is never restarted. Cancellation and `Error`s pass through
+     * untouched. The message is queued for [s] without asking [current], which may not exist yet when a flow fails as the
+     * ViewModel starts; it is checked against the session on screen when it is shown, like every message.
      */
-    fun <T> guard(s: Session, flow: Flow<T>, fallback: () -> T): Flow<T> = flow.catch { e ->
-        if (e !is Exception || e is CancellationException) throw e
-        failureChannel.trySend(s to (e as? AppError ?: AppError.of(AppError.Kind.UNKNOWN)).userMessage)
-        emit(fallback())
+    fun <T> guard(s: Session, flow: Flow<T>, fallback: () -> T): Flow<T> = flow {
+        while (true) {
+            var failedAt: Int? = null
+            emitAll(
+                flow.catch { e ->
+                    if (e !is Exception || e is CancellationException) throw e
+                    failedAt = retries.value
+                    failureChannel.trySend(s to (e as? AppError ?: AppError.of(AppError.Kind.UNKNOWN)).userMessage)
+                    emit(fallback())
+                },
+            )
+            val seen = failedAt ?: return@flow
+            retries.first { it != seen }
+        }
     }
 
     companion object {

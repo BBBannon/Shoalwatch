@@ -485,6 +485,6 @@ class HomeViewModelTest {
             cancelAndIgnoreRemainingEvents()
         }
         assertEquals(HomePhase.READY, v.state.value.phase)
-        assertTrue(v.state.value.topBanner != null)
+        assertTrue("one plain message for a local failure", v.state.value.localFailure)
     }
 }

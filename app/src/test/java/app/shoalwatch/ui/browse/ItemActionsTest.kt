@@ -8,7 +8,10 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -22,13 +25,33 @@ class ItemActionsTest {
 
     private val actions = ItemActions(FakePlaystate(), CoroutineScope(Job()), FakeConnections()) { BEN }
 
-    @Test fun aFlowThatFailsIsReportedAndEndsWithTheFallback() = runTest {
-        val seen = actions.guard(BEN, flow { emit(1); throw IllegalStateException("database disk image is malformed") }) { -1 }.toList()
+    @Test fun aFlowThatFailsIsReportedAndGivesTheFallback() = runTest {
+        // The guarded flow does not end after the fallback: it waits for the user's Retry to subscribe again (take(2) stops it).
+        val seen = actions.guard(BEN, flow { emit(1); throw IllegalStateException("database disk image is malformed") }) { -1 }.take(2).toList()
         assertEquals(listOf(1, -1), seen)
         actions.failures.test {
             assertEquals(AppError.of(AppError.Kind.UNKNOWN).userMessage, awaitItem())
             cancelAndIgnoreRemainingEvents()
         }
+    }
+
+    @Test fun aFailedFlowSubscribesAgainOnTheNextUserRefreshAndAHealthyOneIsNeverRestarted() {
+        var subscriptions = 0
+        var broken = true
+        val seen = mutableListOf<Int>()
+        val healthy = mutableListOf<Int>()
+        var healthySubscriptions = 0
+        val scope = CoroutineScope(main.dispatcher + Job())
+        scope.launch { actions.guard(BEN, flow { subscriptions++; if (broken) throw IllegalStateException("disk full"); emit(5) }) { -1 }.collect { seen += it } }
+        scope.launch { actions.guard(BEN, flow { healthySubscriptions++; emit(7); kotlinx.coroutines.awaitCancellation() }) { -1 }.collect { healthy += it } }
+        assertEquals(listOf(-1), seen)
+        broken = false
+        actions.pull(BEN) {}
+        assertEquals("Retry subscribes again", listOf(-1, 5), seen)
+        assertEquals(2, subscriptions)
+        assertEquals("a flow that did not fail is left alone", 1, healthySubscriptions)
+        assertEquals(listOf(7), healthy)
+        scope.coroutineContext[Job]!!.cancel()
     }
 
     @Test fun cancellationIsNeverSwallowedOrReported() = runTest {
@@ -47,7 +70,7 @@ class ItemActionsTest {
     }
 
     @Test fun aFailureOfAnAppErrorKeepsItsOwnMessage() = runTest {
-        actions.guard(BEN, flow<Int> { throw AppError.of(AppError.Kind.OFFLINE) }) { -1 }.toList()
+        actions.guard(BEN, flow<Int> { throw AppError.of(AppError.Kind.OFFLINE) }) { -1 }.first()
         actions.failures.test {
             assertEquals(AppError.of(AppError.Kind.OFFLINE).userMessage, awaitItem())
             cancelAndIgnoreRemainingEvents()
