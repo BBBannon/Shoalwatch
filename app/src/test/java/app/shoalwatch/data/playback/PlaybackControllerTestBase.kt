@@ -17,6 +17,7 @@ import app.shoalwatch.ui.browse.FakeLibrary
 import app.shoalwatch.ui.browse.id
 import app.shoalwatch.ui.browse.item
 import app.shoalwatch.ui.browse.userData
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
@@ -68,9 +69,12 @@ internal abstract class PlaybackControllerTestBase {
 
     fun answerOnly(vararg names: String) { gateway.infos.clear(); names.forEach { gateway.answer(fixtureInfo(it)) } }
 
-    fun TestScope.controller(player: PlayerEngine = engine) = PlaybackController(
-        session, player, PlaybackResolver(gateway, { caps }, routes, StandardTestDispatcher(testScheduler)), reports, gateway, library,
-        EpisodeNavigator(library), activePlayback, backgroundScope, backgroundScope, clock, { autoplay },
+    fun TestScope.controller(player: PlayerEngine = engine) = controllerFor(session, backgroundScope, player)
+
+    /** For [s] on [scope] (a screen's scope); the reports' scope is still the test's background scope. */
+    fun TestScope.controllerFor(s: Session, scope: CoroutineScope, player: PlayerEngine = engine) = PlaybackController(
+        s, player, PlaybackResolver(gateway, { caps }, routes, StandardTestDispatcher(testScheduler)), reports, gateway, library,
+        EpisodeNavigator(library), activePlayback, scope, backgroundScope, clock, { autoplay },
         trackPrefs, SubtitleLoader(gateway, StandardTestDispatcher(testScheduler)), { captions },
     )
 
