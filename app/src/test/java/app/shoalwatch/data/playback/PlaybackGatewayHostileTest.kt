@@ -43,7 +43,7 @@ class PlaybackGatewayHostileTest : PlaybackGatewayTestBase() {
             ),
             source.audio,
         )
-        assertEquals(listOf(SubtitleTrack(7, "", "eng", "webvtt", SubtitleKind.TEXT, false, false, false, external = true)), source.subtitles)
+        assertEquals(listOf(SubtitleTrack(7, "", "eng", "webvtt", SubtitleKind.TEXT, false, false, false, external = true, fileFormat = "vtt")), source.subtitles)
         assertNull("default audio that is not a kept audio track", source.defaultAudioIndex)
         assertNull("default subtitle that is an audio index", source.defaultSubtitleIndex)
     }

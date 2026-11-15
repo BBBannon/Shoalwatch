@@ -30,6 +30,8 @@ enum class SubtitleDelivery { FILE, IN_STREAM, BURNED_IN }
 data class SubtitleTrack(
     val index: Int, val label: String, val language: String?, val format: String, val kind: SubtitleKind,
     val forced: Boolean, val hearingImpaired: Boolean, val isDefault: Boolean, val external: Boolean,
+    /** The format to fetch it as a file (`srt`, `vtt`, `ass`, `ssa`: what the subtitle route takes), or null: not fetchable as text. [format] is the codec name. */
+    val fileFormat: String? = null,
 )
 
 /** A server path plus query, relative to the verified address. Never absolute, never carries a credential. */

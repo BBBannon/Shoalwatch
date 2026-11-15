@@ -1,0 +1,20 @@
+{
+  "MediaSources": [
+    {
+      "Id": "0123456789abcdef0123456789abcdef",
+      "Container": "mkv",
+      "SupportsDirectPlay": true,
+      "MediaStreams": [
+        {"Codec": "h264", "Type": "Video", "Index": 0},
+        {"Codec": "aac", "Type": "Audio", "Index": 1},
+        {"Codec": "subrip", "Language": "eng", "Type": "Subtitle", "Index": 2, "IsTextSubtitleStream": true, "SupportsExternalStream": true},
+        {"Codec": "webvtt", "Language": "eng", "Type": "Subtitle", "Index": 3, "IsTextSubtitleStream": true, "SupportsExternalStream": true},
+        {"Codec": "ass", "Language": "jpn", "Type": "Subtitle", "Index": 4, "IsTextSubtitleStream": true, "SupportsExternalStream": true},
+        {"Codec": "SSA", "Language": "jpn", "Type": "Subtitle", "Index": 5, "IsTextSubtitleStream": true, "SupportsExternalStream": true},
+        {"Codec": "pgssub", "Language": "eng", "Type": "Subtitle", "Index": 6, "IsTextSubtitleStream": false, "SupportsExternalStream": false},
+        {"Codec": "mov_text", "Language": "eng", "Type": "Subtitle", "Index": 7, "IsTextSubtitleStream": true, "SupportsExternalStream": true}
+      ]
+    }
+  ],
+  "PlaySessionId": "5e55105e55105e55105e55105e551051"
+}

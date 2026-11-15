@@ -71,8 +71,8 @@ class PlaybackGatewayTest : PlaybackGatewayTestBase() {
                         AudioTrack(2, "Commentaire", "fre", "ac3", 6, isDefault = false),
                     ),
                     subtitles = listOf(
-                        SubtitleTrack(3, "English - SUBRIP - External", "eng", "subrip", SubtitleKind.TEXT, forced = false, hearingImpaired = true, isDefault = false, external = true),
-                        SubtitleTrack(4, "Japanese - ASS", "jpn", "ass", SubtitleKind.STYLED_TEXT, forced = false, hearingImpaired = false, isDefault = true, external = false),
+                        SubtitleTrack(3, "English - SUBRIP - External", "eng", "subrip", SubtitleKind.TEXT, forced = false, hearingImpaired = true, isDefault = false, external = true, fileFormat = "srt"),
+                        SubtitleTrack(4, "Japanese - ASS", "jpn", "ass", SubtitleKind.STYLED_TEXT, forced = false, hearingImpaired = false, isDefault = true, external = false, fileFormat = "ass"),
                         SubtitleTrack(5, "English - PGSSUB - Forced", "eng", "pgssub", SubtitleKind.PICTURE, forced = true, hearingImpaired = false, isDefault = false, external = false),
                     ),
                     defaultAudioIndex = 1, defaultSubtitleIndex = 4, hasSegments = true,
@@ -270,6 +270,20 @@ class PlaybackGatewayTest : PlaybackGatewayTestBase() {
         assertEquals("GET", request.method)
         assertEquals("/Videos/$ITEM/$SOURCE/Subtitles/2/Stream.srt", request.path)
         for (type in listOf("application/x-subrip", "text/vtt", "TEXT/X-SSA", "text/plain")) assertTrue(type, subtitle(type).isNotEmpty())
+    }
+
+    /** Jellyfin names SRT `subrip` and VTT `webvtt`; each text track's file format is one the subtitle route takes, and the path is exact. */
+    @Test fun everyTextTrackFromPlaybackInfoFetchesItsFile() {
+        val tracks = info("subtitles.json").sources.single().subtitles
+        assertEquals(
+            listOf(2 to "srt", 3 to "vtt", 4 to "ass", 5 to "ssa", 6 to null, 7 to null),
+            tracks.map { it.index to it.fileFormat },
+        )
+        for (track in tracks.filter { it.fileFormat != null }) {
+            web.enqueue(MockResponse().setHeader("Content-Type", "text/plain").setBody("x"))
+            runBlocking { gateway.subtitleFile(session, ITEM, SOURCE, track.index, track.fileFormat!!) }
+            assertEquals("/Videos/$ITEM/$SOURCE/Subtitles/${track.index}/Stream.${track.fileFormat}", nextRequest().path)
+        }
     }
 
     @Test fun subtitleFileRefusesOtherTypes() {

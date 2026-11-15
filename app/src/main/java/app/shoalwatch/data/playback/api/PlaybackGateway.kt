@@ -27,7 +27,7 @@ internal interface PlaybackGateway {
     suspend fun reportStopped(s: Session, r: PlaybackReport)    // POST /Sessions/Playing/Stopped  (PlaybackStopInfo)
     suspend fun ping(s: Session, playSessionId: String)         // POST /Sessions/Playing/Ping?playSessionId= (required)
     suspend fun segments(s: Session, itemId: String): List<MediaSegment> // GET /MediaSegments/{itemId} (every kind; the mapper keeps the five)
-    /** GET the subtitle file through ServerApi.getBytes: at most 8 MiB, Content-Type a `text` type (not `text/html`) or `application/x-subrip`, else SERVER_ERROR. */
+    /** [format]: the track's `SubtitleTrack.fileFormat` (never its codec name). GET the subtitle file through ServerApi.getBytes: at most 8 MiB, Content-Type a `text` type (not `text/html`) or `application/x-subrip`, else SERVER_ERROR. */
     suspend fun subtitleFile(s: Session, itemId: String, mediaSourceId: String, index: Int, format: String): ByteArray
 }
 
