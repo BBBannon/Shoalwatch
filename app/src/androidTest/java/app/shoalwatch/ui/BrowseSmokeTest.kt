@@ -57,7 +57,7 @@ class BrowseSmokeTest {
                 override fun dispatch(request: RecordedRequest): MockResponse = when (request.path.orEmpty().substringBefore('?')) {
                     "/System/Info/Public" -> json("""{"Id":"$serverId","ServerName":"Test Den","Version":"10.10.3"}""")
                     "/UserViews" -> json(fixture("views"))
-                    "/Items/Resume" -> json(fixture("resume"))
+                    "/UserItems/Resume" -> json(fixture("resume"))
                     "/Shows/NextUp" -> json(fixture("nextup"))
                     "/Items/Latest" -> json(fixture("latest"))
                     "/Items" -> json(fixture("items_page"))
