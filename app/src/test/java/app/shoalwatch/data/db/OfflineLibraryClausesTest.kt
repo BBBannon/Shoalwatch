@@ -7,6 +7,9 @@ import app.shoalwatch.data.db.downloads.DownloadKey
 import app.shoalwatch.data.db.downloads.OfflineLibraryDao
 import app.shoalwatch.data.db.downloads.OfflineLibraryDao.Companion.FILMS_SQL
 import app.shoalwatch.data.db.downloads.OfflineLibraryDao.Companion.FOR_SERIES_SQL
+import app.shoalwatch.data.db.downloads.OfflineLibraryDao.Companion.IN_PROGRESS_SQL
+import app.shoalwatch.data.db.downloads.OfflineLibraryDao.Companion.MINE
+import app.shoalwatch.data.db.downloads.OfflineLibraryDao.Companion.ONE_SQL
 import app.shoalwatch.data.db.downloads.OfflineLibraryDao.Companion.PLAYABLE_SQL
 import app.shoalwatch.data.db.downloads.OfflineLibraryDao.Companion.SEASONS_SQL
 import app.shoalwatch.data.db.downloads.OfflineLibraryDao.Companion.SEASON_VISIBLE
@@ -146,5 +149,24 @@ class OfflineLibraryClausesTest : DownloadTestBase() {
         seen(b, film)
         assertEquals(listOf(film.id), dao.observeInProgress(S1, a.userId).first().map { it.item.itemId })
         assertEquals(emptyList<String>(), dao.observeInProgress(S1, b.userId).first().map { it.item.itemId })
+    }
+
+    /**
+     * Tasks 5-8 review Minor 1: `o.serverId = d.serverId` inside MINE (owner controls, and the in-progress queue) is guarded too.
+     * B owns the film on S1 (shared); A owns the same item id on S2. On S1, A gets no owner controls and none of B's queue.
+     */
+    @Test fun nAnOwnerRowOnAnotherServerGivesNoOwnerControlsOrQueueHere() = runBlocking {
+        seen(b, film)
+        downloads(b, film)
+        store.setSharing(S1, true)
+        seen(s2u1, film)
+        downloads(s2u1, film, state = DownloadState.RUNNING)
+        seen(a, film)
+        val weak = MINE.replace("o.serverId = d.serverId AND ", "")
+        assertEquals(false, dao.observeOne(S1, a.userId, film.id).first()!!.ownedByMe)
+        assertEquals("without the clause A would get the owner controls", 1, firstWithout(ONE_SQL, "$MINE AS ownedByMe", "$weak AS ownedByMe", a, "ownedByMe"))
+        store.update(DownloadKey(S1, film.id)) { it.copy(state = DownloadState.RUNNING) }
+        assertEquals(emptyList<String>(), dao.observeInProgress(S1, a.userId).first().map { it.item.itemId })
+        assertEquals("without the clause B's queue would be A's", 1, rowsWithout(IN_PROGRESS_SQL, MINE, weak, a))
     }
 }
