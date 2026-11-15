@@ -28,7 +28,7 @@ class ProgressReporterTest {
     private fun at(ms: Long, method: PlayMethod = PlayMethod.DIRECT_PLAY, paused: Boolean = false) =
         PlaybackReport(ITEM, SOURCE, PSID, method, ms, paused, audioIndex = 1, subtitleIndex = null)
 
-    private fun TestScope.reporter(scope: CoroutineScope = this) = ProgressReporter(fake, session, scope, clock)
+    private fun TestScope.reporter(scope: CoroutineScope = this, startMs: Long = 0) = ProgressReporter(fake, session, scope, clock, startMs)
 
     @Test fun startsOnceThenEveryTenSecondsWhilePlaying() = runTest {
         val r = reporter(); r.onPlaying(at(0)); advanceTimeBy(1); r.tick(at(5_000)); clock.ms += 10_000; r.tick(at(10_000)); runCurrent()
@@ -113,9 +113,38 @@ class ProgressReporterTest {
         assertEquals("stopped@1000000 finished", fake.calls.last())
     }
 
-    @Test fun aStopBeforeAnythingPlayedIsStillSent() = runTest {
+    @Test fun aStopBeforePlaybackBeganKeepsTheResumePosition() = runTest {
+        val r = reporter(startMs = 2_400_000); r.stop(at(0), finished = false); runCurrent()
+        assertEquals(listOf("stopped@2400000"), fake.calls)
+    }
+
+    @Test fun aStopBeforeAnythingPlayedFromTheBeginningIsAtZero() = runTest {
         val r = reporter(); r.stop(at(0), finished = false); runCurrent()
         assertEquals(listOf("stopped@0"), fake.calls)
+    }
+
+    @Test fun tracksChangedBeforeStartSendsNothing() = runTest {
+        val r = reporter(startMs = 2_400_000); r.onTracksChanged(at(0)); runCurrent()
+        assertTrue(fake.calls.isEmpty())
+        r.stop(at(0), finished = false); runCurrent()
+        assertEquals(listOf("stopped@2400000"), fake.calls)
+    }
+
+    @Test fun aPauseBeforeStartSendsNothing() = runTest {
+        val r = reporter(startMs = 2_400_000); r.onPaused(at(0)); runCurrent()
+        assertTrue(fake.calls.isEmpty())
+    }
+
+    @Test fun aSeekBeforeStartIsNotSentButIsWhereTheStopSays() = runTest {
+        val r = reporter(startMs = 2_400_000); r.onSeeked(at(600_000)); runCurrent()
+        assertTrue(fake.calls.isEmpty())
+        r.stop(at(0), finished = false); runCurrent()
+        assertEquals(listOf("stopped@600000"), fake.calls)
+    }
+
+    @Test fun aStartHeardAtZeroDuringTheResumeSeekIsTheResumePosition() = runTest {
+        val r = reporter(startMs = 2_400_000); r.onPlaying(at(0)); runCurrent()
+        assertEquals(listOf("started@2400000"), fake.calls)
     }
 
     @Test fun pausedTranscodeIsPingedEveryThirtySeconds() = runTest {

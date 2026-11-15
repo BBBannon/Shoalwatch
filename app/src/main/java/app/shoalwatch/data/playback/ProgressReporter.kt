@@ -15,18 +15,22 @@ import kotlinx.coroutines.launch
  * Ported from AAFin's `ProgressReporter`. See "Progress reports" in docs/ARCHITECTURE.md.
  *
  * - [onPlaying]: the first call is `started`; a later one after a pause is `progress`.
- * - [onPaused], [onSeeked], [onTracksChanged]: `progress` at once (a pause always as paused).
+ * - [onPaused], [onSeeked], [onTracksChanged]: `progress` at once (a pause always as paused). Before `started` they send
+ *   nothing (the engine is still preparing and its position means nothing yet); a seek then only moves where a stop would be.
  * - [tick]: `progress` once [intervalMs] has passed since the last report while playing; a paused TRANSCODE with a play session
  *   is pinged every [pingMs] instead, so the server keeps its conversion.
  * - [stop]: exactly once; every later call is ignored. Its position is the real last one: a stop that says 0 when the last
  *   thing heard was later (the engine let go of its position when the output changed, e.g. headphones gone) sends the last
- *   known position instead (research: "stop position sent as 0 on Bluetooth disconnect").
+ *   known position instead (research: "stop position sent as 0 on Bluetooth disconnect"). A stop before `started` is at
+ *   [startPositionMs] (the resume point the player seeks to) or a seek made since, never at the engine's 0, so backing out
+ *   before playback began leaves the saved resume point as it was.
  */
 class ProgressReporter(
     private val reports: PlaybackReports,
     private val session: Session,
     private val scope: CoroutineScope,
     private val clock: MonotonicClock,
+    private val startPositionMs: Long = 0,
     private val intervalMs: Long = 10_000,
     private val pingMs: Long = 30_000,
 ) {
@@ -56,18 +60,17 @@ class ProgressReporter(
         paused = false
     }
 
-    fun onPaused(snapshot: PlaybackReport) = heard(snapshot) { r ->
+    fun onPaused(snapshot: PlaybackReport) = heardOnceStarted(snapshot) { r ->
         paused = true
         enqueue(Send.Progress(r.copy(paused = true)))
     }
 
     /** The one call whose position 0 is believed: the user seeked to the start. */
-    fun onSeeked(snapshot: PlaybackReport) = heard(snapshot, seek = true) { r -> enqueue(Send.Progress(r)) }
+    fun onSeeked(snapshot: PlaybackReport) = heard(snapshot, seek = true) { r -> if (started) enqueue(Send.Progress(r)) }
 
-    fun onTracksChanged(snapshot: PlaybackReport) = heard(snapshot) { r -> enqueue(Send.Progress(r)) }
+    fun onTracksChanged(snapshot: PlaybackReport) = heardOnceStarted(snapshot) { r -> enqueue(Send.Progress(r)) }
 
-    fun tick(snapshot: PlaybackReport) = heard(snapshot) { r ->
-        if (!started) return@heard
+    fun tick(snapshot: PlaybackReport) = heardOnceStarted(snapshot) { r ->
         val since = clock.nowMs() - lastReportAt
         val playSession = r.playSessionId
         when {
@@ -79,7 +82,7 @@ class ProgressReporter(
     fun stop(snapshot: PlaybackReport, finished: Boolean) {
         if (stopped) return
         stopped = true
-        val final = known(snapshot, seek = false)
+        val final = if (started) known(snapshot, seek = false) else snapshot.copy(positionMs = last?.positionMs ?: startPositionMs)
         synchronized(lock) { waiting.removeAll { it is Send.Progress || it is Send.Ping } }
         enqueue(Send.Stopped(final, finished))
     }
@@ -95,13 +98,21 @@ class ProgressReporter(
         last = r
     }
 
+    /** [heard], but ignored entirely until `started`: nothing is sent and the snapshot's position is not believed. */
+    private inline fun heardOnceStarted(snapshot: PlaybackReport, block: (PlaybackReport) -> Unit) {
+        if (started) heard(snapshot, block = block)
+    }
+
     /**
-     * A position of 0 (or less) from anything but a seek, for the same item, after a later one was heard, means the engine let go
-     * of its position (the output changed, or it was released): the last known position stands.
+     * A position of 0 (or less) from anything but a seek, for the same item, after a later one was heard (or, before anything
+     * was heard, with a later start position), means the engine let go of its position (the output changed, it was released, or
+     * the resume seek has not landed yet): the last known position stands.
      */
     private fun known(snapshot: PlaybackReport, seek: Boolean): PlaybackReport {
-        val before = last ?: return snapshot
-        return if (!seek && snapshot.positionMs <= 0 && before.itemId == snapshot.itemId) snapshot.copy(positionMs = before.positionMs) else snapshot
+        if (seek || snapshot.positionMs > 0) return snapshot
+        val before = last
+        val known = if (before == null) startPositionMs else before.positionMs.takeIf { before.itemId == snapshot.itemId } ?: return snapshot
+        return snapshot.copy(positionMs = known)
     }
 
     private fun enqueue(send: Send) {
