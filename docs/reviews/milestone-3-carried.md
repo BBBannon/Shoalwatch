@@ -81,7 +81,7 @@ From the whole-milestone review of 15/11/2026 (branch `milestone-3`). Each line 
 
 All were fixed before the merge: N-1 (constant media id), N-2 (test), N-3 (wording), N-4 (headset play refused while the app is stopped), N-9 and N-10 (tidy). The subtitle findings were closed by replacing Media3's text parsers with the app's own (see `docs/ARCHITECTURE.md`, "Tracks and subtitles", and `docs/security/milestone-3-check.md`).
 
-## Added by the last review rounds (16/11/2026) — all carried
+## Added by the last review rounds (15/11/2026) — all carried
 
 | # | Point | Where | Decision |
 |---|---|---|---|
