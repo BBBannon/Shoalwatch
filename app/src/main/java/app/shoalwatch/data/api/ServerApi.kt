@@ -177,8 +177,9 @@ class ServerApi(
      * For `sendOnce` (admin actions only): OkHttp's own `retryOnConnectionFailure` silently resends a request on a fresh connection
      * when a kept-alive one fails after the request was written, unless its body is one-shot. Marked so, a failure on a reused
      * socket surfaces as an error instead. OkHttp still recovers when nothing of the request was written (a failure while
-     * connecting, or an HTTP/2 connection shut down before the stream was created), and it still follows a 503 with
-     * `Retry-After: 0` whatever the body (a residual risk, recorded in the milestone's security check). Every other
+     * connecting, or an HTTP/2 connection shut down before the stream was created). The same mark stops its follow-ups: a 503
+     * with `Retry-After: 0` (or a 408) is answered to the caller, not resent, because OkHttp never follows up with a one-shot body
+     * (`AdminGatewayRulesTest.anActionAnswered503WithRetryAfterZeroIsNotResent`, which fails if the mark is removed). Every other
      * caller (playback reports) keeps OkHttp's recovery, as before Milestone 6.
      */
     private fun RequestBody.sentOnce(): RequestBody {

@@ -107,7 +107,7 @@ class AdminGatewayRulesTest : AdminGatewayTestBase() {
 
     /**
      * The same rule when the action goes out on a kept-alive connection that the server then drops: OkHttp's own
-     * `retryOnConnectionFailure` must not resend it (ServerApi marks a `retry = false` body one-shot).
+     * `retryOnConnectionFailure` must not resend it (ServerApi marks a `sendOnce` body one-shot).
      */
     @Test fun anActionOnAPooledConnectionIsSentOnce() {
         for ((name, call) in actions) {
@@ -122,6 +122,24 @@ class AdminGatewayRulesTest : AdminGatewayTestBase() {
             val expected = if (name == "setUserDisabled") 2 else 1
             assertEquals("$name was sent more than once", expected, web.requestCount - before)
             assertEquals(name, AppError.Kind.NETWORK, (outcome.exceptionOrNull() as? AppError)?.kind)
+        }
+    }
+
+    /**
+     * A 503 with `Retry-After: 0` (a proxy, or a server still starting) is an answer: OkHttp's follow-up must not send the action a
+     * second time, whatever its body (review 1-6 M1).
+     */
+    @Test fun anActionAnswered503WithRetryAfterZeroIsNotResent() {
+        for ((name, call) in actions) {
+            web.dispatcher = QueueDispatcher()
+            if (name == "setUserDisabled") web.enqueue(fixture("user-policy.json"))
+            web.enqueue(MockResponse().setResponseCode(503).setHeader("Retry-After", "0"))
+            web.enqueue(noContent()) // what a resend would get
+            val before = web.requestCount
+            val outcome = runCatching { runBlocking { call() } }
+            val expected = if (name == "setUserDisabled") 2 else 1
+            assertEquals("$name was sent again after a 503", expected, web.requestCount - before)
+            assertEquals(name, AppError.Kind.SERVER_ERROR, (outcome.exceptionOrNull() as? AppError)?.kind)
         }
     }
 
