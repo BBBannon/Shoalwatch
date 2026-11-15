@@ -525,6 +525,9 @@
     <string name="dl_downloading">Downloading</string>
     <string name="dl_downloaded">Downloaded</string>
     <string name="dl_download_season">Download season %1$s</string>
+    <string name="dl_download_specials">Download Specials</string>
+    <string name="dl_download_this_season">Download this season</string>
+    <string name="dl_download_title">Download %1$s</string>
     <string name="dl_download_series">Download whole series</string>
     <string name="dl_download_unwatched">Download unwatched episodes</string>
     <string name="dl_download_menu_cd">Download options</string>

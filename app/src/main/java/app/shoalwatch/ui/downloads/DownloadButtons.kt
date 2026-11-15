@@ -88,7 +88,13 @@ fun SeriesDownloadMenu(seasonId: String?, seasonLabel: String?, controls: Downlo
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             val item = Modifier.heightIn(min = 56.dp)
             if (seasonId != null && seasonLabel != null) {
-                DropdownMenuItem(text = { Text(stringResource(R.string.dl_download_season, seasonLabel)) }, onClick = { open = false; controls.onSeason(seasonId) }, modifier = item)
+                // Specials and a season with no number get their own words (Tasks 13-16 review M-6).
+                val label = when (seasonLabel) {
+                    "0" -> stringResource(R.string.dl_download_specials)
+                    "" -> stringResource(R.string.dl_download_this_season)
+                    else -> stringResource(R.string.dl_download_season, seasonLabel)
+                }
+                DropdownMenuItem(text = { Text(label) }, onClick = { open = false; controls.onSeason(seasonId) }, modifier = item)
             }
             DropdownMenuItem(text = { Text(stringResource(R.string.dl_download_series)) }, onClick = { open = false; controls.onSeries() }, modifier = item)
             DropdownMenuItem(text = { Text(stringResource(R.string.dl_download_unwatched)) }, onClick = { open = false; controls.onUnwatched() }, modifier = item)
@@ -102,16 +108,20 @@ fun EpisodeDownloadControl(episode: Item, controls: DownloadControls) {
     val d = controls.statuses[episode.id]
     val season = (episode.parentIndexNumber ?: 0).toString()
     val number = (episode.indexNumber ?: 0).toString()
+    // A special or an episode with no numbers is named by its title instead (Tasks 13-16 review M-6).
+    val numbered = episode.parentIndexNumber != null && episode.parentIndexNumber != 0 && episode.indexNumber != null
+    val title = episode.name?.ifBlank { null } ?: stringResource(R.string.untitled)
     val target = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
     when (d?.state) {
         null -> IconButton(onClick = { controls.onDownload(episode.id) }, modifier = target) {
-            Icon(DownloadIcon, contentDescription = stringResource(R.string.dl_episode_download, season, number))
+            val label = if (numbered) stringResource(R.string.dl_episode_download, season, number) else stringResource(R.string.dl_download_title, title)
+            Icon(DownloadIcon, contentDescription = label)
         }
         DownloadState.COMPLETE -> IconButton(onClick = controls.onOpenDownloads, modifier = target) {
             Icon(Icons.Filled.Check, contentDescription = stringResource(R.string.dl_downloaded))
         }
         DownloadState.FAILED -> IconButton(onClick = { if (DownloadText.canRetry(d.failure)) controls.onRetry(episode.id) else controls.onOpenDownloads() }, modifier = target) {
-            Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.dl_episode_retry, season, number))
+            Icon(Icons.Filled.Refresh, contentDescription = if (numbered) stringResource(R.string.dl_episode_retry, season, number) else stringResource(R.string.dl_retry_cd, title))
         }
         else -> IconButton(onClick = controls.onOpenDownloads, modifier = target) {
             val percent = DownloadText.percent(d.progress.takeIf { d.state == DownloadState.RUNNING }) ?: "0"

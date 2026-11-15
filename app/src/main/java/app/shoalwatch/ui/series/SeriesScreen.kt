@@ -272,7 +272,7 @@ private fun SeriesActionsRow(state: SeriesUiState, actions: SeriesActions, downl
     }
     if (download != null) {
         val season = state.selectedSeason
-        Box(Modifier.padding(horizontal = Gutter)) { SeriesDownloadMenu(season?.item?.id, season?.item?.let { (it.indexNumber ?: 0).toString() }, download) }
+        Box(Modifier.padding(horizontal = Gutter)) { SeriesDownloadMenu(season?.item?.id, season?.item?.let { it.indexNumber?.toString().orEmpty() }, download) }
     }
 }
 

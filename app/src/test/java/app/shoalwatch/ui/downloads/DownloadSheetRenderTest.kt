@@ -162,6 +162,24 @@ abstract class DownloadSheetRenderBase : RenderBase() {
         assertEquals(listOf("download:${e5.id}", "unwatched"), calls)
     }
 
+    /** Tasks 13-16 review M-6: Specials, an unnumbered season and an episode with no numbers get their own words. */
+    @Test fun specialsAndUnnumberedItemsAreNamedPlainly() {
+        val special = episode(120, season = 0, number = 1, name = "Behind the Scenes").item
+        val loose = episode(121, name = "Odd One").item.copy(parentIndexNumber = null, indexNumber = null)
+        val c = controls(emptyMap())
+        show {
+            androidx.compose.foundation.layout.Column {
+                SeriesDownloadMenu("2".repeat(32), "0", c)
+                EpisodeDownloadControl(special, c); EpisodeDownloadControl(loose, c)
+            }
+        }
+        assertTrue(described(text(R.string.dl_download_title, "Behind the Scenes")))
+        assertTrue(described(text(R.string.dl_download_title, "Odd One")))
+        rule.onAllNodesWithText(text(R.string.dl_download))[0].performClick()
+        assertTrue(rule.onAllNodesWithText(text(R.string.dl_download_specials)).fetchSemanticsNodes().isNotEmpty())
+        assertTrue("never season 0", rule.onAllNodesWithText(text(R.string.dl_download_season, "0")).fetchSemanticsNodes().isEmpty())
+    }
+
     @Test fun theDetailButtonFollowsItsState() {
         val id = "7".repeat(32)
         var statuses by androidx.compose.runtime.mutableStateOf(emptyMap<String, DownloadInfo>())
