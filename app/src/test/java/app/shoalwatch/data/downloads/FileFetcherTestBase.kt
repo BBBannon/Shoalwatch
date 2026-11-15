@@ -44,12 +44,12 @@ abstract class FileFetcherTestBase : ServerApiTestBase() {
         channels = { f -> FetchSupport.appendChannel(f).let { if (record) RecordingChannel(it, f).also { c -> channel = c } else it } },
     )
 
-    /** One fetch, resuming from what the log last saved (as the queue would, from Room). */
+    /** One fetch, resuming from what the log last saved (as the queue would, from Room: the count, validator, total and restarts). */
     internal fun fetch(
         expected: Long? = server.body.size.toLong(), resume: Boolean = true, f: FileFetcher = fetcher(),
     ): FetchResult = runBlocking {
         val last = log.saves.lastOrNull()?.takeIf { resume }
-        f.fetch(route(), item, part, target, last?.done ?: 0, last?.validator, expected, last?.restarts ?: 0, log)
+        f.fetch(route(), item, part, target, last?.done ?: 0, last?.validator, expected, last?.total, last?.restarts ?: 0, log)
     }
 
     protected fun assertComplete() {

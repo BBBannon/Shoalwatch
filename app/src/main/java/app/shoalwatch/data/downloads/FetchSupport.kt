@@ -15,12 +15,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.Request
 import okhttp3.Response
+import okio.Timeout
 import java.io.File
 import java.io.IOException
 import java.nio.channels.FileChannel
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
+import java.util.concurrent.TimeUnit
 
 /** What one fetch step came to. Never carries anything from the server. */
 internal sealed interface FetchResult {
@@ -33,6 +35,32 @@ internal sealed interface FetchResult {
     data object Unauthorised : FetchResult
     /** A converted download's play session can no longer be trusted: drop it and start that item's conversion from segment 0. */
     data object RestartConversion : FetchResult
+}
+
+/**
+ * A body must bring at least [minBytes] in every [windowMs], or the read fails as a timeout (Tasks 5-8 review Minor 5: the
+ * client's per-read timeout alone lets a server trickle one byte inside each window for ever).
+ */
+internal data class StallRule(val windowMs: Long = 60_000, val minBytes: Long = 64L * 1024)
+
+/**
+ * Enforces a [StallRule] on one body through its source's own timeout (no new client): a deadline [StallRule.windowMs] ahead,
+ * moved on each time another [StallRule.minBytes] have arrived. A read past it fails with `SocketTimeoutException` (TIMEOUT).
+ */
+internal class StallGuard(private val timeout: Timeout, private val rule: StallRule) {
+    private var since = 0L
+
+    init { arm() }
+
+    fun counted(n: Int) {
+        since += n
+        if (since >= rule.minBytes) {
+            since = 0
+            arm()
+        }
+    }
+
+    private fun arm() { timeout.deadline(rule.windowMs, TimeUnit.MILLISECONDS) }
 }
 
 /** The shared rules of the two fetchers (media files and HLS segments): requests, statuses, errors and file writes. */
@@ -49,10 +77,14 @@ internal object FetchSupport {
     /**
      * Sends [request] through [route]'s guarded call factory on [io] and hands the response to [handle], closing it afterwards.
      * Cancelling the caller cancels the call, including while the body is being read (a watchdog, as in `ServerApi`).
+     * [deadlineMs]: an overall deadline for the call (review Minor 5), for small bodies only; large ones use a [StallGuard].
      */
     @OptIn(DelicateCoroutinesApi::class)
-    suspend fun <T> exchange(route: MediaRoute, request: Request, io: CoroutineDispatcher, handle: suspend (Response) -> T): T = withContext(io) {
+    suspend fun <T> exchange(
+        route: MediaRoute, request: Request, io: CoroutineDispatcher, deadlineMs: Long? = null, handle: suspend (Response) -> T,
+    ): T = withContext(io) {
         val call = route.callFactory.newCall(request)
+        deadlineMs?.let { call.timeout().timeout(it, TimeUnit.MILLISECONDS) } // the whole call, body included (a playlist)
         val response = call.await()
         val watchdog = launch(Dispatchers.Unconfined, start = CoroutineStart.ATOMIC) {
             try { awaitCancellation() } finally { call.cancel() }

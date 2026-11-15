@@ -24,11 +24,13 @@ class FileFetcherHostileTest : FileFetcherTestBase() {
 
     private fun answer(response: MockResponse) = web.enqueue(response)
 
+    /** A 206 carries the validator these tests send as If-Range (`"a"`), so only what each test changes is wrong. */
     private fun ok(code: Int = 200, type: String? = "video/mp4", bytes: ByteArray = body) =
         MockResponse().setResponseCode(code).setBody(Buffer().write(bytes)).also { r -> type?.let { r.setHeader("Content-Type", it) } }
+            .also { r -> if (code == 206) r.setHeader("ETag", "\"a\"") }
 
     private fun fetchFrom(resumeFrom: Long, validator: String? = null, expected: Long? = body.size.toLong()) =
-        runBlocking { fetcher().fetch(route(), item, part, target, resumeFrom, validator, expected, 0, log) }
+        runBlocking { fetcher().fetch(route(), item, part, target, resumeFrom, validator, expected, null, 0, log) }
 
     @Test fun anHtmlPageIsRefusedBeforeAnythingIsWritten() {
         answer(ok(type = "text/html; charset=utf-8"))
@@ -80,7 +82,7 @@ class FileFetcherHostileTest : FileFetcherTestBase() {
         assertEquals(FetchResult.Done, fetchFrom(0))
         answer(MockResponse().setChunkedBody(Buffer().write(body), 1_000).setHeader("Content-Type", "video/mp4"))
         assertEquals(FetchResult.Failed(DownloadFailure.SERVER_ERROR), runBlocking {
-            target.delete(); fetcher().fetch(route(), item, part, target, 0, null, null, 0, log)
+            target.delete(); fetcher().fetch(route(), item, part, target, 0, null, null, null, 0, log)
         })
     }
 
@@ -144,7 +146,7 @@ class FileFetcherHostileTest : FileFetcherTestBase() {
                 it.failWrite = IOException("write failed", ErrnoException("write", OsConstants.ENOSPC))
             }
         })
-        assertEquals(FetchResult.Failed(DownloadFailure.NO_SPACE), runBlocking { f.fetch(route(), item, part, target, 0, null, body.size.toLong(), 0, log) })
+        assertEquals(FetchResult.Failed(DownloadFailure.NO_SPACE), runBlocking { f.fetch(route(), item, part, target, 0, null, body.size.toLong(), null, 0, log) })
     }
 
     @Test fun aReservationThatFailsIsNoSpace() {
@@ -153,21 +155,21 @@ class FileFetcherHostileTest : FileFetcherTestBase() {
             override fun reserve(file: java.io.File, bytes: Long) = throw IOException("no space")
         }
         assertEquals(FetchResult.Failed(DownloadFailure.NO_SPACE), runBlocking {
-            FileFetcher(kotlinx.coroutines.Dispatchers.IO, full).fetch(route(), item, part, target, 0, null, body.size.toLong(), 0, log)
+            FileFetcher(kotlinx.coroutines.Dispatchers.IO, full).fetch(route(), item, part, target, 0, null, body.size.toLong(), null, 0, log)
         })
     }
 
     @Test fun aSignedOutRouteIsSignInNeededAndAStaleOneIsRetriedOffline() {
         val r = route()
         runBlocking { store.removeAccount(app.shoalwatch.S1, app.shoalwatch.U1) }
-        assertEquals(FetchResult.Failed(DownloadFailure.SIGN_IN_NEEDED), runBlocking { fetcher().fetch(r, item, part, target, 0, null, null, 0, log) })
+        assertEquals(FetchResult.Failed(DownloadFailure.SIGN_IN_NEEDED), runBlocking { fetcher().fetch(r, item, part, target, 0, null, null, null, 0, log) })
         assertEquals(0, web.requestCount)
     }
 
     @Test fun aStaleRouteIsRetriedOffline() {
         val r = route()
         selector.state.value = app.shoalwatch.data.servers.Connection.Checking(previous = online())
-        assertEquals(FetchResult.Retry(AppError.Kind.OFFLINE), runBlocking { fetcher().fetch(r, item, part, target, 0, null, null, 0, log) })
+        assertEquals(FetchResult.Retry(AppError.Kind.OFFLINE), runBlocking { fetcher().fetch(r, item, part, target, 0, null, null, null, 0, log) })
         assertEquals(0, web.requestCount)
     }
 }

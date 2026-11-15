@@ -28,27 +28,30 @@ internal class FileFetcher(
     private val chunk: Int = 256 * 1024,
     private val clock: MonotonicClock = SystemMonotonicClock,
     private val channels: (File) -> FileChannel = FetchSupport::appendChannel,
+    private val stall: StallRule = StallRule(),
 ) {
     /** One request's facts, carried through the handling. */
     private class Job(
-        val part: File, val target: File, val from: Long, val validator: String?, val expected: Long?, val restarts: Int, val progress: Progress,
+        val part: File, val target: File, val from: Long, val validator: String?, val expected: Long?, val storedTotal: Long?,
+        val restarts: Int, val progress: Progress,
     ) { val ranged get() = from > 0 }
 
     /**
      * GET <route base>/Items/<itemId>/Download into [part]. It resumes from [resumeFrom] (the last fsync'd byte count in Room; the
      * file is truncated to it first; a part shorter than that starts again from zero) with `Range: bytes=<resumeFrom>-`, plus
      * `If-Range: <validator>` when one is known ([validator] must be one an earlier response for this file sent, never the media
-     * source's ETag). On success the part file is renamed to [target]. [expectedBytes]: MediaSourceInfo.Size when known.
-     * [restarts]: validator-change restarts so far.
+     * source's ETag). On success the part file is renamed to [target]. [expectedBytes]: MediaSourceInfo.Size when known;
+     * [storedTotal]: the total Room holds from an earlier response for this file (with [expectedBytes] unknown, a resume must
+     * find the same total). [restarts]: validator-change restarts so far.
      */
     suspend fun fetch(
         route: MediaRoute, itemId: String, part: File, target: File, resumeFrom: Long, validator: String?,
-        expectedBytes: Long?, restarts: Int, progress: Progress,
+        expectedBytes: Long?, storedTotal: Long?, restarts: Int, progress: Progress,
     ): FetchResult {
         val onDisk = if (part.exists()) part.length() else 0L
         val from = if (resumeFrom in 1..onDisk) resumeFrom else 0L
         if (onDisk > from) FetchSupport.truncate(part, from) // a torn tail, or more than Room ever claimed
-        val job = Job(part, target, from, validator.takeIf { from > 0 }, expectedBytes, restarts, progress)
+        val job = Job(part, target, from, validator.takeIf { from > 0 }, expectedBytes, storedTotal.takeIf { from > 0 }, restarts, progress)
         val request = Request.Builder()
             .url(route.url(StreamSource("/Items/$itemId/Download", emptyList(), hls = false)))
             .header("Accept-Encoding", "identity")
@@ -83,6 +86,7 @@ internal class FileFetcher(
             restarts = if (job.validator != null && validator != job.validator) job.restarts + 1 else 0
             if (restarts >= MAX_RESTARTS) return FetchResult.Failed(DownloadFailure.CHANGED_ON_SERVER)
             FetchSupport.truncate(job.part, 0)
+            job.progress.saved(0, total, validator, restarts) // Room never claims bytes the cut part no longer holds (review Minor 2)
         } else {
             try {
                 volumes.reserve(job.part, total) // INTERNAL only; by volume, the file's length is unchanged
@@ -93,25 +97,36 @@ internal class FileFetcher(
         return write(job, response, 0, total, validator, restarts)
     }
 
-    /** 206: the rest, only with an exact `Content-Range: bytes <from>-<total-1>/<total>`. */
+    /**
+     * 206: the rest, only with an exact `Content-Range: bytes <from>-<total-1>/<total>`, from the same version of the file: its
+     * validator must be the If-Range sent, and with Size unknown its total the stored one; otherwise the part is cut and that
+     * counts as a change on the server (Tasks 5-8 review I-2: a date If-Range is "not modified since", so a replacement dated
+     * earlier is served as a 206, and appending it would join two files).
+     */
     private suspend fun rest(job: Job, response: Response): FetchResult {
         if (!job.ranged) return restart(job) // a 206 to a request that asked for no range
         refusal(response)?.let { return it }
+        if (job.validator != null && FetchSupport.validatorOf(response) != job.validator) return changed(job)
         val range = CONTENT_RANGE.matchEntire(response.header("Content-Range")?.trim().orEmpty())
         val start = range?.groupValues?.get(1)?.toLongOrNull()
         val end = range?.groupValues?.get(2)?.toLongOrNull()
         val total = range?.groupValues?.get(3)?.toLongOrNull()
         if (start != job.from || total == null || total !in 1..FetchSupport.MAX_TOTAL || end != total - 1) return restart(job)
         if (job.expected != null && total != job.expected) return FetchResult.Failed(DownloadFailure.CHANGED_ON_SERVER)
+        if (job.expected == null && job.storedTotal != null && total != job.storedTotal) return changed(job)
         val length = response.body.contentLength()
         if (length >= 0 && length != total - job.from) return restart(job)
         return write(job, response, job.from, total, FetchSupport.validatorOf(response) ?: job.validator, 0)
     }
 
-    /** 416: the range is past the end. A part that is already the whole file is done; anything else starts again. */
+    /**
+     * 416: the range is past the end. A part that is already the whole file is done (by Size, else the stored total, else the
+     * header's; a header total that disagrees with the known one is another file); anything else starts again.
+     */
     private suspend fun satisfied(job: Job, response: Response): FetchResult {
-        val total = job.expected ?: UNSATISFIED.matchEntire(response.header("Content-Range")?.trim().orEmpty())?.groupValues?.get(1)?.toLongOrNull()
-        if (!job.ranged || total == null || job.part.length() != total) return restart(job)
+        val header = UNSATISFIED.matchEntire(response.header("Content-Range")?.trim().orEmpty())?.groupValues?.get(1)?.toLongOrNull()
+        val total = job.expected ?: job.storedTotal ?: header
+        if (!job.ranged || total == null || (header != null && header != total) || job.part.length() != total) return restart(job)
         job.progress.saved(total, total, job.validator, job.restarts)
         FetchSupport.rename(job.part, job.target)
         return FetchResult.Done
@@ -121,6 +136,15 @@ internal class FileFetcher(
     private suspend fun restart(job: Job): FetchResult {
         if (job.part.exists()) FetchSupport.truncate(job.part, 0)
         job.progress.saved(0, null, null, job.restarts)
+        return FetchResult.Retry(AppError.Kind.SERVER_ERROR)
+    }
+
+    /** Another version of the file answered a resume: cut to zero and count it; the third in a row is CHANGED_ON_SERVER. */
+    private suspend fun changed(job: Job): FetchResult {
+        val restarts = job.restarts + 1
+        if (restarts >= MAX_RESTARTS) return FetchResult.Failed(DownloadFailure.CHANGED_ON_SERVER)
+        FetchSupport.truncate(job.part, 0)
+        job.progress.saved(0, null, null, restarts)
         return FetchResult.Retry(AppError.Kind.SERVER_ERROR)
     }
 
@@ -135,6 +159,7 @@ internal class FileFetcher(
      */
     private suspend fun write(job: Job, response: Response, start: Long, total: Long, validator: String?, restarts: Int): FetchResult {
         val source = response.body.source()
+        val guard = StallGuard(source.timeout(), stall)
         val buffer = ByteArray(chunk)
         var written = start
         var savedBytes = start
@@ -150,6 +175,7 @@ internal class FileFetcher(
                 while (true) {
                     val n = source.read(buffer, 0, minOf(chunk.toLong(), total + 1 - written).toInt())
                     if (n == -1) break
+                    guard.counted(n)
                     if (written + n > total) return FetchResult.Failed(DownloadFailure.CHANGED_ON_SERVER)
                     val bytes = ByteBuffer.wrap(buffer, 0, n)
                     while (bytes.hasRemaining()) channel.write(bytes)
