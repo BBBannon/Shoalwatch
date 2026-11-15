@@ -292,6 +292,7 @@ class PlaybackController internal constructor(
         phase = Phase.ENDED
         if (sleep is SleepState.EndOfItem) {
             sleep = SleepState.Off
+            c.upNextShown = true // the sleep wins: no Up next from the credits on the next tick either
             engine.pause()
             return
         }
@@ -302,21 +303,12 @@ class PlaybackController internal constructor(
         val resolved = c.resolved ?: return
         val plan = resolved.plan
         positionOf(c)
-        when (failure) {
-            EngineFailure.DECODER, EngineFailure.FORMAT_UNSUPPORTED ->
-                if (!c.fellBack && plan.method != PlayMethod.TRANSCODE) {
-                    c.fellBack = true
-                    reload(c, Stop.FAILED) { resolver.fallBack(session, plan) }
-                } else fail(c, AppError.Kind.PLAYBACK_FAILED)
-            EngineFailure.NETWORK, EngineFailure.HTTP_UNAUTHORISED ->
-                if (!c.reResolved) {
-                    c.reResolved = true
-                    reload(c, Stop.NORMAL) { resolver.resolve(session, plan.request, TrackRules.burnInFormat(plan)) }
-                } else fail(c, if (failure == EngineFailure.NETWORK) AppError.Kind.NETWORK else AppError.Kind.UNAUTHORISED)
-            EngineFailure.ROUTE_STALE ->
-                if (c.reroutes++ < MAX_REROUTES) reload(c, Stop.NONE) { resolver.reroute(resolved) } else fail(c, AppError.Kind.OFFLINE)
-            EngineFailure.NOT_SIGNED_IN -> return end(EndReason.SIGNED_OUT)
-            EngineFailure.HTTP_OTHER, EngineFailure.BEHIND_LIVE_WINDOW, EngineFailure.OTHER -> fail(c, AppError.Kind.PLAYBACK_FAILED)
+        when (val r = PlaybackRules.recovery(failure, plan.method, c.fellBack, c.reResolved, c.reroutes)) {
+            Recovery.FallBack -> { c.fellBack = true; reload(c, Stop.FAILED) { resolver.fallBack(session, plan) } }
+            Recovery.ReResolve -> { c.reResolved = true; reload(c, Stop.NORMAL) { resolver.resolve(session, plan.request, TrackRules.burnInFormat(plan)) } }
+            Recovery.Reroute -> { c.reroutes++; reload(c, Stop.NONE) { resolver.reroute(resolved) } }
+            Recovery.SignedOut -> return end(EndReason.SIGNED_OUT)
+            is Recovery.Fail -> fail(c, r.kind)
         }
         publish()
     }
@@ -394,7 +386,5 @@ class PlaybackController internal constructor(
         const val CUE_TICK_MS = 50L
         const val ITEM_WAIT_MS = 5_000L
         const val RESTART_WINDOW_MS = 5_000L
-        /** New routes in a row without the engine getting ready, before giving up as offline. */
-        const val MAX_REROUTES = 3
     }
 }
