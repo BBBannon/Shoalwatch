@@ -225,8 +225,11 @@ class PlayerViewModel(
     /** The activity stopped: pause and report (no background playback in this milestone). */
     fun onHostStopped() { controller?.onHostStopped() }
 
-    /** Back in front: the controls show (playback stays paused until the user plays). */
-    fun onHostStarted() = showControls()
+    /** Back in front: the controls show (playback stays paused until the user plays); a headset may play again. */
+    fun onHostStarted() {
+        controller?.onHostStarted()
+        showControls()
+    }
 
     override fun onCleared() {
         controller?.end(null)

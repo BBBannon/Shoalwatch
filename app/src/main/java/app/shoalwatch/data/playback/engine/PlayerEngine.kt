@@ -35,6 +35,11 @@ interface PlayerEngine {
     fun selectPictureSubtitle(ordinal: Int?)
     /** For the media session (headset, Bluetooth, Assistant); null clears. */
     fun setMediaMetadata(title: String?, subtitle: String?)
+    /**
+     * While [stopped] (the activity is stopped: screen off, Home), a media-session controller (headset, Bluetooth, Assistant)
+     * cannot start playback; pause and seek still work, and the app's own [play] is not affected (final review N-4).
+     */
+    fun setHostStopped(stopped: Boolean)
     /** At once: stops every load, releases the media session. The engine is not used again. */
     fun release()
 }

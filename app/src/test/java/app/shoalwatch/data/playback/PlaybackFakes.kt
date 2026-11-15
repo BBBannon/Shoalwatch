@@ -127,6 +127,11 @@ internal class FakePlayerEngine : PlayerEngine {
     var metadataSubtitle: String? = null
     var audioOrdinal: Int? = null
     var pictureOrdinal: Int? = null
+    /** [setHostStopped]: what the real engine's session player refuses a controller while true. */
+    var stoppedHost = false
+
+    /** A headset or Bluetooth "play" through the media session, refused while the host is stopped (as `SessionPlayer` does). */
+    fun controllerPlay() { if (!stoppedHost) play() }
 
     fun emit(event: EngineEvent) = check(flow.tryEmit(event)) { "event buffer full" }
 
@@ -148,6 +153,7 @@ internal class FakePlayerEngine : PlayerEngine {
     override fun selectAudio(ordinal: Int?) { audioOrdinal = ordinal }
     override fun selectPictureSubtitle(ordinal: Int?) { pictureOrdinal = ordinal }
     override fun setMediaMetadata(title: String?, subtitle: String?) { metadataTitle = title; metadataSubtitle = subtitle }
+    override fun setHostStopped(stopped: Boolean) { stoppedHost = stopped }
     override fun release() { if (!released) log?.add("$name release"); released = true; isPlaying = false; video.holder = null; video.released = true }
 }
 

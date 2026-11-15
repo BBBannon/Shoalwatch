@@ -7,6 +7,7 @@ import android.view.SurfaceHolder
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -152,13 +153,27 @@ class ExoPlayerEngine(context: Context) : PlayerEngine {
         check(!released) { "Engine released." }
         route = item.route
         if (session == null) {
-            session = MediaSession.Builder(appContext, player).setId(SESSION_ID + "-" + sessions.incrementAndGet()).setCallback(ControllerRules)
+            session = MediaSession.Builder(appContext, sessionPlayer).setId(SESSION_ID + "-" + sessions.incrementAndGet()).setCallback(ControllerRules)
                 .setBitmapLoader(NoArtwork).build()
         }
         player.setMediaItem(MediaItems.build(item, title, subtitle), startMs)
         player.prepare()
         player.playWhenReady = playWhenReady
     }
+
+    @Volatile private var hostStopped = false
+
+    /**
+     * What the media session drives, so every controller command (a headset, Bluetooth, the Assistant, a media button) goes
+     * through it: `play` and `playWhenReady = true` are refused while the host is stopped (final review N-4); the app's own
+     * calls go to [player] directly.
+     */
+    internal val sessionPlayer: Player = object : ForwardingPlayer(player) {
+        override fun play() { if (!hostStopped) super.play() }
+        override fun setPlayWhenReady(playWhenReady: Boolean) { if (!playWhenReady || !hostStopped) super.setPlayWhenReady(playWhenReady) }
+    }
+
+    override fun setHostStopped(stopped: Boolean) { hostStopped = stopped }
 
     override fun play() = player.play()
     override fun pause() = player.pause()

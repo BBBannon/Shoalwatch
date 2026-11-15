@@ -55,6 +55,15 @@ internal class PlayingItem(val itemId: String) {
     /** The engine's duration once known, else the plan's runtime, else the library's. */
     fun durationMs(engineMs: Long?): Long? = engineMs ?: resolved?.plan?.runtimeMs ?: entry?.item?.runtimeMs
 
+    /** What a report says about this item now (it has been resolved). */
+    fun report(positionMs: Long, paused: Boolean): PlaybackReport {
+        val plan = checkNotNull(resolved).plan
+        return PlaybackReport(
+            plan.itemId, plan.mediaSourceId, plan.playSessionId, plan.method, positionMs, paused = paused,
+            audioIndex = plan.audioIndex, subtitleIndex = (subtitle as? SubtitleChoice.On)?.index,
+        )
+    }
+
     override fun toString() = "PlayingItem(<redacted>)"
 }
 

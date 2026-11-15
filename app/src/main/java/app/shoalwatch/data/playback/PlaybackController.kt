@@ -172,13 +172,17 @@ class PlaybackController internal constructor(
 
     fun setSleep(choice: SleepChoice) { sleep.set(choice); publish() }
 
-    /** The activity stopped (screen off, app left): pause, report, and no Up next plays on its own. */
+    /** The activity stopped (screen off, app left): pause, report, no Up next plays on its own, and no headset can play (N-4). */
     fun onHostStopped() {
+        engine.setHostStopped(true)
         val c = current ?: return
         if (phase == Phase.PLAYING) pauseAndReport(c) else engine.pause()
         c.upNext?.cancel()
         publish()
     }
+
+    /** Back in front: a media-session controller may start playback again (the film itself stays paused). */
+    fun onHostStarted() = engine.setHostStopped(false)
 
     /**
      * Ends at once: engine and media session released, state emptied. [reason] null is a normal close (the stop is sent and the
@@ -370,13 +374,7 @@ class PlaybackController internal constructor(
         return c.knownMs
     }
 
-    private fun snapshot(c: PlayingItem): PlaybackReport {
-        val plan = checkNotNull(c.resolved).plan
-        return PlaybackReport(
-            plan.itemId, plan.mediaSourceId, plan.playSessionId, plan.method, positionOf(c), paused = phase != Phase.PLAYING,
-            audioIndex = plan.audioIndex, subtitleIndex = (c.subtitle as? SubtitleChoice.On)?.index,
-        )
-    }
+    private fun snapshot(c: PlayingItem): PlaybackReport = c.report(positionOf(c), paused = phase != Phase.PLAYING)
 
     private fun durationOf(c: PlayingItem): Long? = c.durationMs(engine.durationMs)
 

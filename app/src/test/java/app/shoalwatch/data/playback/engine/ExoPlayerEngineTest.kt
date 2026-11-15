@@ -30,6 +30,27 @@ class ExoPlayerEngineTest {
         second.release()
     }
 
+    @Test fun aMediaSessionControllerCannotStartPlaybackWhileTheHostIsStopped() {
+        // Final review N-4: the session is built over [ExoPlayerEngine.sessionPlayer]; the app's own play is not affected.
+        val engine = ExoPlayerEngine(context)
+        engine.load(item(), 0, playWhenReady = false)
+        engine.setHostStopped(true)
+        engine.sessionPlayer.play()
+        engine.sessionPlayer.playWhenReady = true
+        assertFalse("a headset's play is refused", engine.playWhenReady)
+        engine.sessionPlayer.pause()
+        assertFalse(engine.playWhenReady)
+        engine.setHostStopped(false)
+        engine.sessionPlayer.play()
+        assertTrue("allowed again once the host starts", engine.playWhenReady)
+        engine.sessionPlayer.pause()
+        assertFalse("pause always works", engine.playWhenReady)
+        engine.setHostStopped(true)
+        engine.play()
+        assertTrue("the app's own play is not a controller's", engine.playWhenReady)
+        engine.release()
+    }
+
     @Test fun theMediaSessionLoadsNoArtwork() {
         val loader = ExoPlayerEngine.NoArtwork
         assertFalse(loader.supportsMimeType("image/png"))

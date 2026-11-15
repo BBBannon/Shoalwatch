@@ -308,4 +308,14 @@ internal class PlayerViewModelTest : PlaybackControllerTestBase() {
         engine.startPlaying(); runCurrent()
         assertEquals(Phase.PLAYING, vm.state.value.playback.phase)
     }
+
+    @Test fun theHostStoppingRefusesAHeadsetsPlayUntilItStartsAgain() = runTest(dispatcher) {
+        val vm = vm(); playing(vm)
+        vm.onHostStopped(); runCurrent()
+        engine.controllerPlay(); runCurrent()
+        assertEquals("final review N-4: no background playback", Phase.PAUSED, vm.state.value.playback.phase)
+        vm.onHostStarted(); runCurrent()
+        engine.controllerPlay(); runCurrent()
+        assertEquals(Phase.PLAYING, vm.state.value.playback.phase)
+    }
 }
