@@ -101,11 +101,13 @@ class FakeAdmin : Admin {
     override suspend fun shutDown(s: Session) = call("shutDown", s) {}
 }
 
-/** [DashboardOpener] that answers [result] and records the sessions it was asked for. */
+/** [DashboardOpener] that answers [result] and records the sessions (and contexts) it was asked for. */
 class FakeDashboardOpener(var result: DashboardResult = DashboardResult.OPENED) : DashboardOpener {
     val opened = mutableListOf<Session>()
+    val contexts = mutableListOf<Context>()
     override suspend fun open(session: Session, context: Context): DashboardResult {
         opened += session
+        contexts += context
         return result
     }
 }

@@ -28,6 +28,7 @@ import kotlinx.coroutines.test.advanceTimeBy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -114,6 +115,16 @@ class DashboardViewModelTest {
         assertFalse(vm.state.value.frame.online)
         assertFalse(vm.state.value.frame.canAct)
         assertEquals(emptyList<String>(), admin.calls)
+    }
+
+    /** The job can wait for the address: it must hold the application, never the screen's Activity (a rotation would leak it). */
+    @Test fun theBrowserDashboardIsOpenedFromTheApplicationNotTheScreen() = main.adminTest(models) {
+        val vm = vm()
+        vm.setVisible(true)
+        val screen = android.content.ContextWrapper(context)
+        vm.openDashboard(screen)
+        assertSame(context.applicationContext, opener.contexts.single())
+        vm.setVisible(false)
     }
 
     @Test fun theBrowserDashboardOpensAsTheGatesSession() = main.adminTest(models) {

@@ -113,10 +113,14 @@ class DashboardViewModel(
 
     fun refresh() = poll.kick()
 
-    /** [context] is used for this call only and never kept. */
+    /**
+     * Only [context]'s application is kept, for this call: the job can wait for the address, and must not hold the screen's
+     * Activity across a rotation (the opener then starts the browser as a new task).
+     */
     fun openDashboard(context: Context) {
+        val app = context.applicationContext
         work.run(KEY_DASHBOARD, { session ->
-            when (opener.open(session, context)) {
+            when (opener.open(session, app)) {
                 DashboardResult.OFFLINE -> throw AppError.of(AppError.Kind.OFFLINE)
                 DashboardResult.NO_BROWSER -> notify(AdminNotice(R.string.admin_no_browser))
                 DashboardResult.OPENED -> Unit
