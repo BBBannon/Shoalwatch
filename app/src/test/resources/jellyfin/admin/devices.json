@@ -1,0 +1,11 @@
+{
+  "Items": [
+    {"Name": "Living room TV", "CustomName": null, "AccessToken": "MOCKDEVICETOKEN-tv0001", "Id": "tv-living-room-1", "LastUserName": "kid", "AppName": "Jellyfin Android TV", "AppVersion": "0.17.0", "LastUserId": "1d5e1f3b2a4c4e6f8a9b0c1d2e3f4a5b", "DateLastActivity": "2026-11-15T18:55:00.0000000Z", "Capabilities": {"PlayableMediaTypes": ["Video"]}, "IconUrl": "https://example.invalid/icon.png"},
+    {"Name": "Ben's laptop", "CustomName": "Study laptop", "AccessToken": "MOCKDEVICETOKEN-web0001", "Id": "web-ben-laptop", "LastUserName": "ben", "AppName": "Jellyfin Web", "AppVersion": "10.10.7", "LastUserId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "DateLastActivity": "2026-11-15T17:00:00.0000000Z"},
+    {"Name": "Pixel 8", "AccessToken": "MOCKDEVICETOKEN-phone01", "Id": "this-phone-device", "LastUserName": "ben", "AppName": "Shoalwatch", "AppVersion": "0.5.0", "LastUserId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "DateLastActivity": "2026-11-15T16:00:00.0000000Z"},
+    {"Name": "Pixel 8", "AccessToken": "MOCKDEVICETOKEN-phone02", "Id": "this-phone-device", "LastUserName": "kid", "AppName": "Shoalwatch", "AppVersion": "0.6.0", "LastUserId": "1d5e1f3b2a4c4e6f8a9b0c1d2e3f4a5b", "DateLastActivity": "2026-11-15T18:58:00.0000000Z"},
+    {"Name": "Kid's tablet", "CustomName": "   ", "AccessToken": "MOCKDEVICETOKEN-tab001", "Id": "tablet-kid", "LastUserName": "kid", "AppName": "Jellyfin Android", "AppVersion": "2.6.2", "DateLastActivity": "2026-11-12T19:00:00.0000000Z"}
+  ],
+  "TotalRecordCount": 5,
+  "StartIndex": 0
+}

@@ -1,0 +1,15 @@
+{
+  "Items": [
+    {"Id": 118, "Name": "kid is playing Harbour Lights on Living room TV", "Overview": "Played from 192.168.1.20", "Type": "VideoPlayback", "ItemId": "6c0e2b0f4f2d4d8b9a4f3c0f4e6f7a8b", "Date": "2026-11-15T15:00:00.0000000Z", "UserId": "1d5e1f3b2a4c4e6f8a9b0c1d2e3f4a5b", "Severity": "Information"},
+    {"Id": 120, "Name": "ben has signed in", "ShortOverview": "IP address: 192.168.1.20", "Type": "SessionStarted", "Date": "2026-11-15T19:00:00.0000000Z", "UserId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "UserPrimaryImageTag": "abc", "Severity": "Information"},
+    {"Id": 119, "Name": "Scan Media Library failed", "ShortOverview": "", "Type": "TaskFailed", "Date": "2026-11-15T17:00:00.0000000Z", "Severity": "Error"},
+    {"Id": 117, "Name": "Low disk space", "Type": "Warning", "Date": "2026-11-15T13:00:00Z", "Severity": "Warning"},
+    {"Id": 116, "Name": "Server crashed", "Type": "Critical", "Date": "2026-11-15T11:00:00Z", "Severity": "Critical"},
+    {"Id": 115, "Name": "Trace entry", "Date": "2026-11-15T09:00:00Z", "Severity": "Trace"},
+    {"Id": 114, "Name": "Debug entry", "Date": "2026-11-15T07:00:00Z", "Severity": "Debug"},
+    {"Id": 113, "Name": "None entry", "Date": "2026-11-15T05:00:00Z", "Severity": "None"},
+    {"Id": 112, "Name": "Unknown severity", "Date": "not a date", "Severity": "Loud"}
+  ],
+  "TotalRecordCount": 120,
+  "StartIndex": 0
+}

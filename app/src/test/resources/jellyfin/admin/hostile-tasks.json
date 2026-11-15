@@ -1,0 +1,172 @@
+[
+ null,
+ "bare",
+ 7,
+ {
+  "Id": "good1",
+  "Key": "Kgood1",
+  "Name": "task good1",
+  "Description": "d",
+  "Category": "Cat",
+  "State": "Idle",
+  "IsHidden": false
+ },
+ {
+  "Id": "numbername",
+  "Key": "Knumbername",
+  "Name": 12,
+  "Description": "d",
+  "Category": "Cat",
+  "State": "Idle",
+  "IsHidden": false
+ },
+ {
+  "Id": "../x",
+  "Key": "K../x",
+  "Name": "task ../x",
+  "Description": "d",
+  "Category": "Cat",
+  "State": "Idle",
+  "IsHidden": false
+ },
+ {
+  "Id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "Key": "Kbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "Name": "task bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "Description": "d",
+  "Category": "Cat",
+  "State": "Idle",
+  "IsHidden": false
+ },
+ {
+  "Id": "",
+  "Key": "K",
+  "Name": "task ",
+  "Description": "d",
+  "Category": "Cat",
+  "State": "Idle",
+  "IsHidden": false
+ },
+ {
+  "Id": "dup",
+  "Key": "Kdup",
+  "Name": "first",
+  "Description": "d",
+  "Category": "Cat",
+  "State": "Idle",
+  "IsHidden": false
+ },
+ {
+  "Id": "dup",
+  "Key": "Kdup",
+  "Name": "second",
+  "Description": "d",
+  "Category": "Cat",
+  "State": "Idle",
+  "IsHidden": false
+ },
+ {
+  "Id": "badkey",
+  "Key": "bad key!",
+  "Name": "task badkey",
+  "Description": "d",
+  "Category": "Cat",
+  "State": "Idle",
+  "IsHidden": false
+ },
+ {
+  "Id": "minus",
+  "Key": "Kminus",
+  "Name": "task minus",
+  "Description": "d",
+  "Category": "Cat",
+  "State": "Running",
+  "IsHidden": false,
+  "CurrentProgressPercentage": -5
+ },
+ {
+  "Id": "over",
+  "Key": "Kover",
+  "Name": "task over",
+  "Description": "d",
+  "Category": "Cat",
+  "State": "Running",
+  "IsHidden": false,
+  "CurrentProgressPercentage": 100.5
+ },
+ {
+  "Id": "nan",
+  "Key": "Knan",
+  "Name": "task nan",
+  "Description": "d",
+  "Category": "Cat",
+  "State": "Running",
+  "IsHidden": false,
+  "CurrentProgressPercentage": "NaN"
+ },
+ {
+  "Id": "idleprogress",
+  "Key": "Kidleprogress",
+  "Name": "task idleprogress",
+  "Description": "d",
+  "Category": "Cat",
+  "State": "Idle",
+  "IsHidden": false,
+  "CurrentProgressPercentage": 40
+ },
+ {
+  "Id": "weirdstate",
+  "Key": "Kweirdstate",
+  "Name": "task weirdstate",
+  "Description": "d",
+  "Category": "Cat",
+  "State": "running",
+  "IsHidden": false
+ },
+ {
+  "Id": "badresult",
+  "Key": "Kbadresult",
+  "Name": "task badresult",
+  "Description": "d",
+  "Category": "Cat",
+  "State": "Idle",
+  "IsHidden": false,
+  "LastExecutionResult": {
+   "Status": "Exploded",
+   "ErrorMessage": "x"
+  }
+ },
+ {
+  "Id": "stringresult",
+  "Key": "Kstringresult",
+  "Name": "task stringresult",
+  "Description": "d",
+  "Category": "Cat",
+  "State": "Idle",
+  "IsHidden": false,
+  "LastExecutionResult": "Completed"
+ },
+ {
+  "Id": "emptyerror",
+  "Key": "Kemptyerror",
+  "Name": "task emptyerror",
+  "Description": "d",
+  "Category": "Cat",
+  "State": "Idle",
+  "IsHidden": false,
+  "LastExecutionResult": {
+   "Status": "Failed",
+   "ErrorMessage": "\u200b",
+   "EndTimeUtc": "yesterday"
+  }
+ },
+ {
+  "Id": "hidden",
+  "Key": "Khidden",
+  "Name": "task hidden",
+  "Description": "d",
+  "Category": "Cat",
+  "State": "Idle",
+  "IsHidden": true
+ }
+]
