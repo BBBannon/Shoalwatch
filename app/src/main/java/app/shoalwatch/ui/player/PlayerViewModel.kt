@@ -34,7 +34,8 @@ import kotlinx.coroutines.launch
  * - **Owner:** the first active session seen owns playback. Any later different value (another profile, or nobody) ends the
  *   controller at once ([EndReason.SESSION_CHANGED] only while the old account is still signed in, otherwise
  *   [EndReason.SIGNED_OUT], as `ActivePlayback` decides) and sets [PlayerUiState.leave]. A closed controller leaves too.
- * - **Saved state** holds only the owner's ids and the position, never a title. Restored for a different session: nothing plays.
+ * - **Saved state** holds only the owner's ids, the playing item's id and its position, never a title. Restored for a different
+ *   session: nothing plays; for the same one, that item at that position.
  * - **Controls** hide 4 s after the last touch while playing, never with touch exploration on, a sheet open, or paused.
  */
 class PlayerViewModel(
@@ -54,6 +55,8 @@ class PlayerViewModel(
     private var infoJob: Job? = null
     private var lastSleep: SleepState = SleepState.Off
     private var pendingSeekMs: Long? = null
+    /** Restored after the process was ended: the episode that was playing (it may not be the route's), and so where to seek. */
+    private var restoredItem: String? = null
 
     /** The engine's video output, for `VideoSurface` only; null before playback starts or once it has ended. */
     internal val video: VideoOutput? get() = controller?.takeUnless { _state.value.leave }?.video
@@ -88,7 +91,8 @@ class PlayerViewModel(
     private fun restoredOwner(): Session? {
         val server = saved.get<String>(KEY_SERVER) ?: return null
         val user = saved.get<String>(KEY_USER) ?: return null
-        pendingSeekMs = saved.get<Long>(KEY_POSITION)?.takeIf { it > 0 }
+        restoredItem = saved.get<String>(KEY_ITEM)
+        pendingSeekMs = saved.get<Long>(KEY_POSITION)?.takeIf { it > 0 && restoredItem != null }
         return Session(server, user)
     }
 
@@ -99,7 +103,8 @@ class PlayerViewModel(
         controller = c
         _state.update { it.copy(session = s) }
         viewModelScope.launch { c.state.collect(::onPlayback) }
-        c.open(itemId, from)
+        // Restored: the episode that was playing (after Up next it is not the route's), back at its own position below.
+        restoredItem?.let { c.open(it, StartFrom.RESUME) } ?: c.open(itemId, from)
     }
 
     private fun leave() {
@@ -114,9 +119,14 @@ class PlayerViewModel(
         val fired = lastSleep != SleepState.Off && p.sleep == SleepState.Off
         lastSleep = p.sleep
         _state.update { it.copy(playback = p, sleepFired = it.sleepFired || fired) }
+        // The position saved is always the saved item's own (Task 8 review I-3): a new item starts with none.
+        if (p.itemId != null && p.itemId != saved.get<String>(KEY_ITEM)) {
+            saved[KEY_ITEM] = p.itemId
+            saved.remove<Long>(KEY_POSITION)
+        }
         val ready = p.phase == Phase.BUFFERING || p.phase == Phase.PLAYING || p.phase == Phase.PAUSED
         if (ready && p.method != null) {
-            pendingSeekMs?.let { pendingSeekMs = null; controller?.seekTo(it) }
+            if (p.itemId == restoredItem) pendingSeekMs?.let { pendingSeekMs = null; controller?.seekTo(it) }
             if (p.positionMs > 0) saved[KEY_POSITION] = p.positionMs
         }
         if (before.method == null && p.method != null) showStreamInfo()
@@ -214,6 +224,8 @@ class PlayerViewModel(
         const val KEY_SERVER = "player_server"
         const val KEY_USER = "player_user"
         const val KEY_POSITION = "player_position"
+        /** The episode playing now (an id, never a title): after Up next, Next or Previous it is not the route's. */
+        const val KEY_ITEM = "player_item"
         private const val SHOWN_MS = 4_000L
     }
 }

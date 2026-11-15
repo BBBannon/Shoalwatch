@@ -172,7 +172,28 @@ internal class PlayerViewModelTest : PlaybackControllerTestBase() {
         assertEquals(BEN.serverId, saved.get<String>(PlayerViewModel.KEY_SERVER))
         assertEquals(BEN.userId, saved.get<String>(PlayerViewModel.KEY_USER))
         assertEquals(42_000L, saved.get<Long>(PlayerViewModel.KEY_POSITION))
-        assertEquals(setOf(PlayerViewModel.KEY_SERVER, PlayerViewModel.KEY_USER, PlayerViewModel.KEY_POSITION), saved.keys())
+        assertEquals(ep1, saved.get<String>(PlayerViewModel.KEY_ITEM))
+        assertEquals(setOf(PlayerViewModel.KEY_SERVER, PlayerViewModel.KEY_USER, PlayerViewModel.KEY_ITEM, PlayerViewModel.KEY_POSITION), saved.keys())
+    }
+
+    @Test fun afterNextTheSavedPositionIsTheNewEpisodesAndNotTheOldOnes() = runTest(dispatcher) {
+        val saved = SavedStateHandle()
+        val vm = vm(saved); playing(vm); at(500_000)
+        vm.next(); runCurrent()
+        assertEquals(ep2, saved.get<String>(PlayerViewModel.KEY_ITEM))
+        assertNull("the old episode's position is not kept for the new one", saved.get<Long>(PlayerViewModel.KEY_POSITION))
+        engine.startPlaying(); runCurrent(); at(600_000)
+        assertEquals(600_000L, saved.get<Long>(PlayerViewModel.KEY_POSITION))
+    }
+
+    @Test fun restoredAfterUpNextReopensTheEpisodeThatWasPlayingAtItsPosition() = runTest(dispatcher) {
+        val saved = SavedStateHandle(mapOf(
+            PlayerViewModel.KEY_SERVER to BEN.serverId, PlayerViewModel.KEY_USER to BEN.userId,
+            PlayerViewModel.KEY_ITEM to ep2, PlayerViewModel.KEY_POSITION to 600_000L,
+        ))
+        val vm = vm(saved) // the route still names ep1, the episode first opened
+        assertEquals(ep2, vm.state.value.playback.itemId)
+        assertEquals(listOf(600_000L), engine.seeks)
     }
 
     @Test fun restoredForAnotherSessionPlaysNothingAndLeaves() = runTest(dispatcher) {
@@ -183,7 +204,7 @@ internal class PlayerViewModelTest : PlaybackControllerTestBase() {
     }
 
     @Test fun restoredForTheSameSessionGoesBackToTheSavedPosition() = runTest(dispatcher) {
-        val saved = SavedStateHandle(mapOf(PlayerViewModel.KEY_SERVER to BEN.serverId, PlayerViewModel.KEY_USER to BEN.userId, PlayerViewModel.KEY_POSITION to 90_000L))
+        val saved = SavedStateHandle(mapOf(PlayerViewModel.KEY_SERVER to BEN.serverId, PlayerViewModel.KEY_USER to BEN.userId, PlayerViewModel.KEY_ITEM to ep1, PlayerViewModel.KEY_POSITION to 90_000L))
         vm(saved)
         assertEquals(listOf(90_000L), engine.seeks)
     }
