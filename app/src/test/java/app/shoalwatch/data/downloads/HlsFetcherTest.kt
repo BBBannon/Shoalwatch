@@ -78,14 +78,15 @@ class HlsFetcherTest : FileFetcherTestBase() {
     @Before fun serveHls() {
         web.dispatcher = hls
         folder = part.parentFile!!
+        fake.free[null] = 1L shl 40
     }
 
     private fun session(n: Int) = "%032x".format(n)
 
-    private fun resolved(sid: String, shape: List<Double> = List(5) { 2.0 }): Resolved {
+    private fun resolved(sid: String, shape: List<Double> = List(5) { 2.0 }, quality: Quality = Quality.MBPS_8): Resolved {
         hls.shapes[sid] = shape
         val plan = PlaybackPlan(
-            request = PlaybackRequest(item, Quality.MBPS_8), mediaSourceId = "src1", playSessionId = sid, method = PlayMethod.TRANSCODE,
+            request = PlaybackRequest(item, quality), mediaSourceId = "src1", playSessionId = sid, method = PlayMethod.TRANSCODE,
             source = StreamSource("/videos/$item/master.m3u8", listOf("PlaySessionId" to sid), hls = true),
             audioTracks = emptyList(), subtitleTracks = emptyList(), audioIndex = null, runtimeMs = 10_000, videoRange = VideoRange.SDR,
             transcodeReasons = emptySet(), hasSegments = false, eTag = null,
@@ -93,9 +94,11 @@ class HlsFetcherTest : FileFetcherTestBase() {
         return Resolved(plan, runBlocking { api.mediaRoute(session) })
     }
 
-    private fun hlsFetcher(maxSegment: Long = 64L * 1024 * 1024) = HlsFetcher(Dispatchers.IO, clock, paths, maxSegment)
+    private fun hlsFetcher(maxSegment: Long = 64L * 1024 * 1024, stall: StallRule = StallRule(), playlistMs: Long = 60_000) =
+        HlsFetcher(Dispatchers.IO, clock, paths, fake.volumes, maxSegment, stall, playlistMs)
 
-    private fun open(f: HlsFetcher, r: Resolved, runtimeMs: Long? = 10_000) = runBlocking { f.open(r, folder, runtimeMs) }
+    private fun open(f: HlsFetcher, r: Resolved, runtimeMs: Long? = 10_000, space: ConversionSpace = ConversionSpace(StorageKind.INTERNAL, null, null)) =
+        runBlocking { f.open(r, folder, runtimeMs, space) }
 
     private fun fetch(f: HlsFetcher, live: LiveConversion, from: Int) = runBlocking { f.fetch(live, folder, from) { d, t -> done += d to t } }
 
@@ -218,5 +221,86 @@ class HlsFetcherTest : FileFetcherTestBase() {
         val direct = Resolved(r.plan.copy(method = PlayMethod.DIRECT_PLAY, source = StreamSource("/Videos/$item/stream", emptyList(), hls = false)), r.route)
         assertEquals(FetchResult.Failed(DownloadFailure.SERVER_ERROR), open(hlsFetcher(), direct).second)
         assertEquals(0, hls.all.size)
+    }
+
+    // Tasks 5-8 review I-3: a conversion has a total budget, a per-segment cap from its bitrate, a free-space check before every
+    // segment that keeps the reserve, and a reservation on internal storage. 1.5 Mbps over 5 x 2 s: 2 x 187,500 B/s x 10 s plus
+    // 8 MiB of allowance = 12,138,608 bytes; the per-segment cap is max(4 MiB, 2 x bitrate x duration) = 4 MiB.
+
+    private fun bytes(n: Int) = MockResponse().setHeader("Content-Type", "video/mp2t").setBody(Buffer().write(ByteArray(n) { 0x47 }))
+
+    @Test fun aConversionThatOverrunsItsBudgetFailsBeforeTheDiskFills() {
+        val f = hlsFetcher()
+        val live = open(f, resolved(session(1), quality = Quality.MBPS_1_5)).first!!
+        hls.segment = { bytes(3 shl 20) }
+        assertEquals(FetchResult.Failed(DownloadFailure.SERVER_ERROR), fetch(f, live, 0))
+        assertEquals("three of 3 MiB fit; the fourth would pass the budget", 3, segmentFiles().size)
+    }
+
+    @Test fun theBudgetIsNeverAboveThePlannedSizeTimesThree() {
+        val f = hlsFetcher()
+        val live = open(f, resolved(session(1), quality = Quality.MBPS_1_5), space = ConversionSpace(StorageKind.INTERNAL, null, 100_000)).first!!
+        hls.segment = { bytes(3 shl 20) }
+        assertEquals(FetchResult.Failed(DownloadFailure.SERVER_ERROR), fetch(f, live, 0))
+        assertEquals("300,000 + 8 MiB: two fit", 2, segmentFiles().size)
+    }
+
+    @Test fun theBudgetCountsSegmentsAlreadySavedWhenResuming() {
+        val f = hlsFetcher()
+        val live = open(f, resolved(session(1), quality = Quality.MBPS_1_5)).first!!
+        hls.segment = { n -> if (n < 2) bytes(3 shl 20) else null }
+        hls.dropAt = 2
+        assertEquals(FetchResult.Retry(AppError.Kind.NETWORK), fetch(f, live, 0))
+        hls.segment = { bytes(3 shl 20) }
+        assertEquals(FetchResult.Failed(DownloadFailure.SERVER_ERROR), fetch(f, live, 2))
+        assertEquals(3, segmentFiles().size)
+    }
+
+    @Test fun aSegmentOverItsBitratesCapIsRefused() {
+        val f = hlsFetcher()
+        val live = open(f, resolved(session(1), List(5) { 6.0 }, Quality.MBPS_1_5), runtimeMs = null).first!!
+        hls.segment = { bytes(5 shl 20) } // within the budget (30 s), over the 4 MiB cap; the old flat cap was 64 MiB
+        assertEquals(FetchResult.Failed(DownloadFailure.SERVER_ERROR), fetch(f, live, 0))
+        assertEquals(emptyList<String>(), segmentFiles())
+    }
+
+    @Test fun tooLittleFreeSpaceAboveTheReserveIsNoSpaceBeforeTheSegmentIsAskedFor() {
+        val f = hlsFetcher()
+        val live = open(f, resolved(session(1))).first!!
+        fake.free[null] = (1L shl 30) + (1L shl 20) // the 1 GiB internal reserve plus less than one segment's cap
+        assertEquals(FetchResult.Failed(DownloadFailure.NO_SPACE), fetch(f, live, 0))
+        assertTrue(hls.segmentRequests.isEmpty())
+    }
+
+    @Test fun aCardKeepsItsOwnReserve() {
+        val card = tmp.newFolder("card")
+        fake.card("CARD-1", card)
+        fake.free["CARD-1"] = (256L shl 20) + (1L shl 20)
+        val f = hlsFetcher()
+        val live = open(f, resolved(session(1)), space = ConversionSpace(StorageKind.REMOVABLE, "CARD-1", null)).first!!
+        assertEquals(FetchResult.Failed(DownloadFailure.NO_SPACE), fetch(f, live, 0))
+        assertEquals("no reservation on a card", emptyList<Pair<File, Long>>(), fake.reserved)
+    }
+
+    @Test fun openingOnInternalStorageReservesTheBudget() {
+        open(hlsFetcher(), resolved(session(1), quality = Quality.MBPS_1_5))
+        assertEquals(1, fake.reserved.size)
+        assertEquals(File(hlsDir, "local.m3u8"), fake.reserved.single().first)
+        assertEquals(3_750_000L + (8L shl 20), fake.reserved.single().second)
+    }
+
+    @Test fun aPlaylistOrASegmentThatTricklesIsCut() {
+        hls.media = { sid -> hls.playlist(hls.shapes.getValue(sid)) }
+        val slowPlaylists = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest) = hls.dispatch(request).throttleBody(16, 200, java.util.concurrent.TimeUnit.MILLISECONDS)
+        }
+        web.dispatcher = slowPlaylists
+        val result = open(hlsFetcher(playlistMs = 500), resolved(session(1))).second
+        assertTrue("a playlist past its deadline is a retry: $result", result is FetchResult.Retry)
+        web.dispatcher = hls
+        val f = hlsFetcher(stall = StallRule(windowMs = 500, minBytes = 1_024))
+        val live = open(f, resolved(session(2))).first!!
+        hls.segment = { bytes(64 * 1024).throttleBody(64, 200, java.util.concurrent.TimeUnit.MILLISECONDS) }
+        assertEquals(FetchResult.Retry(AppError.Kind.TIMEOUT), fetch(f, live, 0))
     }
 }
