@@ -71,6 +71,7 @@ class PlaybackController internal constructor(
     private var error: AppError.Kind? = null
     private var quality = Quality.MAXIMUM
     private var speed = 1f
+    private var hostStopped = false // every load starts paused while it is set (see onHostStopped)
     private val sleep = SleepControl(clock)
 
     private val trackControl = TrackControl(session, engine, resolver, tracks, subtitles, captions, work, appScope, object : TrackControl.Host {
@@ -172,18 +173,18 @@ class PlaybackController internal constructor(
 
     fun setSleep(choice: SleepChoice) { sleep.set(choice); publish() }
 
-    /** The activity stopped (screen off, app left): pause, report, no Up next plays on its own, and no headset can play (N-4). */
+    /** The screen went off or the app was left: pause, report, no Up next, no headset play (N-4), every load starts paused (I-3). */
     fun onHostStopped() {
+        hostStopped = true
         engine.setHostStopped(true)
         val c = current ?: return
-        if (loading?.isActive == true) c.startPaused = true // a load in flight would start it behind the lock screen (I-3)
         if (phase == Phase.PLAYING) pauseAndReport(c) else engine.pause()
         c.upNext?.cancel()
         publish()
     }
 
     /** Back in front: a media-session controller may start playback again (the film itself stays paused). */
-    fun onHostStarted() = engine.setHostStopped(false)
+    fun onHostStarted() { hostStopped = false; engine.setHostStopped(false) }
 
     /**
      * Ends at once: engine and media session released, state emptied. [reason] null is a normal close (the stop is sent and the
@@ -252,7 +253,7 @@ class PlaybackController internal constructor(
         phase = Phase.BUFFERING
         trackControl.prepare(c, resolved.plan)
         c.entry?.item?.let { engine.setMediaMetadata(it.name, it.seriesName) } // only now: never the next title over the old stream (m-7)
-        engine.load(EngineItem(resolved.route, resolved.plan.source), atMs, playWhenReady = !c.startPaused.also { c.startPaused = false })
+        engine.load(EngineItem(resolved.route, resolved.plan.source), atMs, playWhenReady = !(c.startPaused.also { c.startPaused = false } || hostStopped))
         publish()
         if (first && resolved.plan.hasSegments) work.launch { gateway.segmentsOrNull(session, c.itemId)?.let { if (current === c) { c.segments = it; publish() } } }
     }
