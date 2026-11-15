@@ -62,3 +62,20 @@ private fun WatchingPreview() =
 private fun StopConfirmPreview() = Dashboard(
     DashboardUiState(open, ServerStatus("Den", "12.4.0", false, false), playing = listOf(watching), confirm = SessionConfirm.Stop("a1", "kid", "Living room TV", "Title")),
 )
+
+@Preview(showBackground = true, widthDp = 360, heightDp = 760, name = "Libraries, scanning") @Composable
+private fun LibrariesPreview() = ShoalwatchTheme {
+    LibrariesScreen(
+        LibrariesUiState(open, listOf(LibraryFolder("f", "Films", LibraryKind.FILMS, true, 30), LibraryFolder("t", "TV", LibraryKind.TV, false, null))),
+        LibrariesActions({}, {}, {}, {}),
+    )
+}
+
+@Preview(showBackground = true, widthDp = 360, heightDp = 760, name = "Scheduled tasks") @Composable
+private fun TasksPreview() = ShoalwatchTheme {
+    val run = TaskRun(TaskOutcome.FAILED, Instant.parse("2026-11-15T03:00:00Z"), "ffmpeg exited with code 1")
+    TasksScreen(
+        TasksUiState(open, listOf(TaskGroup("Library", listOf(ServerTask("a", "RefreshLibrary", "Scan Media Library", "Scans for new files.", "Library", TaskState.RUNNING, 40, run))))),
+        TasksActions({}, {}, {}, {}, {}, {}),
+    )
+}

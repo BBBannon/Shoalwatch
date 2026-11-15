@@ -121,4 +121,37 @@
     <string name="admin_message_sent">Message sent to %1$s.</string>
     <string name="admin_paused_done">Paused %1$s’s playback.</string>
     <string name="admin_stopped_done">Stopped %1$s’s playback.</string>
+    <!-- Libraries -->
+    <string name="admin_libraries_title">Libraries</string>
+    <string name="admin_scan_all">Scan all libraries</string>
+    <string name="admin_scan_all_running">Scanning all libraries: %1$s%%</string>
+    <string name="admin_scan_all_running_unknown">Scanning all libraries…</string>
+    <string name="admin_scan">Scan</string>
+    <string name="admin_scan_cd">Scan %1$s</string>
+    <string name="admin_library_scanning">Scanning: %1$s%%</string>
+    <string name="admin_library_scanning_unknown">Scanning…</string>
+    <string name="admin_library_idle">Not scanning</string>
+    <string name="admin_scan_started_all">Scan of all libraries started.</string>
+    <string name="admin_scan_started">Scan of %1$s started.</string>
+    <string name="admin_libraries_empty">This server has no libraries yet.</string>
+
+    <!-- Scheduled tasks -->
+    <string name="admin_tasks_title">Scheduled tasks</string>
+    <string name="admin_task_idle">Not running</string>
+    <string name="admin_task_running">Running: %1$s%%</string>
+    <string name="admin_task_running_unknown">Running…</string>
+    <string name="admin_task_cancelling">Stopping…</string>
+    <string name="admin_task_last">Last run %1$s: %2$s</string>
+    <string name="admin_task_never">Not run yet</string>
+    <string name="admin_task_error">The server said: %1$s</string>
+    <string name="admin_task_run">Run now</string>
+    <string name="admin_task_run_cd">Run %1$s now</string>
+    <string name="admin_task_stop">Stop</string>
+    <string name="admin_task_stop_cd">Stop %1$s</string>
+    <string name="admin_confirm_task_stop_title">Stop %1$s?</string>
+    <string name="admin_confirm_task_stop_body">The task stops part way. It runs again at its next scheduled time, or you can run it now.</string>
+    <string name="admin_confirm_task_stop_action">Stop task</string>
+    <string name="admin_task_started">%1$s started.</string>
+    <string name="admin_task_category_other">Other</string>
+    <string name="admin_tasks_empty">This server reported no scheduled tasks.</string>
 </resources>

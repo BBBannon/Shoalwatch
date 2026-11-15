@@ -35,8 +35,8 @@ internal object AdminRoutes {
 internal fun NavGraphBuilder.adminDestinations(graph: AppGraph, nav: NavHostController) = adminDestinations(
     dashboard = { DashboardRoute(graph, nav) },
     // The other screens come in Tasks 8 to 11; until then their links lead straight back.
-    libraries = { NotBuiltYet(nav) },
-    tasks = { NotBuiltYet(nav) },
+    libraries = { LibrariesRoute(graph, nav) },
+    tasks = { TasksRoute(graph, nav) },
     users = { NotBuiltYet(nav) },
     activity = { NotBuiltYet(nav) },
     devices = { NotBuiltYet(nav) },
@@ -110,6 +110,28 @@ private fun DashboardRoute(graph: AppGraph, nav: NavHostController) {
         )
     }
     DashboardScreen(state, actions, vm.messageText)
+}
+
+@Composable
+private fun LibrariesRoute(graph: AppGraph, nav: NavHostController) {
+    val vm = graphViewModel { LibrariesViewModel(graph.serverCatalog, graph.adminRights, graph.addressSelector, graph.admin) }
+    val state by vm.state.collectAsStateWithLifecycle()
+    AdminRouteEffects(vm, state.frame.gate, nav)
+    val actions = remember(vm, nav) {
+        LibrariesActions({ nav.popBackStack() }, vm::refresh, vm::scanAll, vm::scanLibrary, vm::dismissProblem, vm::dismissNotice)
+    }
+    LibrariesScreen(state, actions)
+}
+
+@Composable
+private fun TasksRoute(graph: AppGraph, nav: NavHostController) {
+    val vm = graphViewModel { TasksViewModel(graph.serverCatalog, graph.adminRights, graph.addressSelector, graph.admin) }
+    val state by vm.state.collectAsStateWithLifecycle()
+    AdminRouteEffects(vm, state.frame.gate, nav)
+    val actions = remember(vm, nav) {
+        TasksActions({ nav.popBackStack() }, vm::refresh, vm::run, vm::askStop, vm::confirmStop, vm::dismissConfirm, vm::dismissProblem, vm::dismissNotice)
+    }
+    TasksScreen(state, actions)
 }
 
 /** Stand-in for an admin screen a later task builds: it shows nothing and goes straight back. */

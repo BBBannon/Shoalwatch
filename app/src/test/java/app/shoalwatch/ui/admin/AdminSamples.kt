@@ -61,4 +61,29 @@ object AdminSamples {
         id = "sesstablet", userName = "kid", deviceName = "Kid's tablet", client = "Jellyfin Android", clientVersion = "2.6.0",
         lastActivity = Instant.parse("2026-11-12T09:00:00Z"), nowPlaying = null, canControl = true, canMessage = true, isThisDevice = false,
     )
+
+    val films = LibraryFolder("films", "Films", LibraryKind.FILMS, scanning = false, progressPercent = null)
+    val tv = LibraryFolder("tv", "TV", LibraryKind.TV, scanning = false, progressPercent = null)
+
+    val fullScanIdle = ServerTask(
+        id = "scantask", key = FULL_SCAN_TASK_KEY, name = "Scan Media Library", description = "Scans your media library for new files.",
+        category = "Library", state = TaskState.IDLE, progressPercent = null,
+        lastRun = TaskRun(TaskOutcome.COMPLETED, Instant.parse("2026-11-15T03:00:00Z"), null),
+    )
+
+    val cleanCache = ServerTask(
+        id = "cleantask", key = "DeleteCacheFiles", name = "Clean Cache Directory", description = "Deletes cache files no longer needed.",
+        category = "Maintenance", state = TaskState.IDLE, progressPercent = null, lastRun = null,
+    )
+
+    val failedTask = ServerTask(
+        id = "failtask", key = "RefreshChapterImages", name = "Extract Chapter Images", description = "Creates thumbnails for chapters.",
+        category = "Library", state = TaskState.IDLE, progressPercent = null,
+        lastRun = TaskRun(TaskOutcome.FAILED, Instant.parse("2026-11-15T03:00:00Z"), "ffmpeg exited with code 1"),
+    )
+
+    val uncategorised = ServerTask(
+        id = "othertask", key = null, name = "Plugin Task", description = "", category = "", state = TaskState.IDLE,
+        progressPercent = null, lastRun = null,
+    )
 }
