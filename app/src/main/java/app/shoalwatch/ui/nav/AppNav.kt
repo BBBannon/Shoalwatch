@@ -21,6 +21,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.background
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavBackStackEntry
+import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -123,27 +124,44 @@ private fun AppNavHost(graph: AppGraph, start: String) {
         }
         composable(Routes.SEARCH) { SearchRoute(graph, nav) }
         composable(Routes.DOWNLOADS) { DownloadsRoute(graph, nav) }
-        composable(Routes.LIBRARY, listOf(navArgument(Routes.ARG_VIEW) { type = NavType.StringType })) {
-            LibraryRoute(graph, nav, it.arguments?.getString(Routes.ARG_VIEW).orEmpty())
-        }
-        composable(
-            Routes.SERIES,
-            listOf(
-                navArgument(Routes.ARG_SERIES) { type = NavType.StringType },
-                navArgument(Routes.ARG_SEASON) { type = NavType.StringType; nullable = true; defaultValue = null },
-                navArgument(Routes.ARG_EPISODE) { type = NavType.StringType; nullable = true; defaultValue = null },
-            ),
-        ) {
-            val args = it.arguments
-            SeriesRoute(
-                graph, nav, args?.getString(Routes.ARG_SERIES).orEmpty(),
-                season = args?.getString(Routes.ARG_SEASON)?.ifEmpty { null }, episode = args?.getString(Routes.ARG_EPISODE)?.ifEmpty { null },
-            )
-        }
-        composable(Routes.ITEM, listOf(navArgument(Routes.ARG_ITEM) { type = NavType.StringType })) {
-            DetailRoute(graph, nav, it.arguments?.getString(Routes.ARG_ITEM).orEmpty())
-        }
+        browsingDestinations(
+            library = { viewId -> LibraryRoute(graph, nav, viewId) },
+            series = { id, season, episode -> SeriesRoute(graph, nav, id, season, episode) },
+            item = { id -> DetailRoute(graph, nav, id) },
+        )
         composable(Routes.SERVERS) { ServersRoute(graph, nav) }
         composable(Routes.SERVER_EDIT, serverArg) { ServerEditRoute(graph, nav, it.arguments?.getString(Routes.ARG_SERVER).orEmpty()) }
+    }
+}
+
+/**
+ * The library, series and item destinations: their routes, argument names, and how an argument that is not there arrives (as
+ * null, never as an empty id). The screens are passed in so a test can drive this exact graph with recorders.
+ */
+internal fun NavGraphBuilder.browsingDestinations(
+    library: @Composable (viewId: String) -> Unit,
+    series: @Composable (seriesId: String, seasonId: String?, episodeId: String?) -> Unit,
+    item: @Composable (itemId: String) -> Unit,
+) {
+    composable(Routes.LIBRARY, listOf(navArgument(Routes.ARG_VIEW) { type = NavType.StringType })) {
+        library(it.arguments?.getString(Routes.ARG_VIEW).orEmpty())
+    }
+    composable(
+        Routes.SERIES,
+        listOf(
+            navArgument(Routes.ARG_SERIES) { type = NavType.StringType },
+            navArgument(Routes.ARG_SEASON) { type = NavType.StringType; nullable = true; defaultValue = null },
+            navArgument(Routes.ARG_EPISODE) { type = NavType.StringType; nullable = true; defaultValue = null },
+        ),
+    ) {
+        val args = it.arguments
+        series(
+            args?.getString(Routes.ARG_SERIES).orEmpty(),
+            args?.getString(Routes.ARG_SEASON)?.ifEmpty { null },
+            args?.getString(Routes.ARG_EPISODE)?.ifEmpty { null },
+        )
+    }
+    composable(Routes.ITEM, listOf(navArgument(Routes.ARG_ITEM) { type = NavType.StringType })) {
+        item(it.arguments?.getString(Routes.ARG_ITEM).orEmpty())
     }
 }
