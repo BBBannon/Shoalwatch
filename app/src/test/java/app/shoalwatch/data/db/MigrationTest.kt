@@ -225,7 +225,7 @@ class MigrationTest {
         context.deleteDatabase("fresh-test.db")
     }
 
-    // ---- 3 to 4: the seven download tables
+    // ---- 3 to 4: the eight download tables
 
     /** A real version-3 database: the v2 rows plus a track choice. */
     private fun createVersion3() = createVersion(3) { db ->
@@ -243,7 +243,7 @@ class MigrationTest {
         }).build(),
     )
 
-    @Test fun theVersion4SchemaIsExportedAndAddsOnlyTheSevenDownloadTables() {
+    @Test fun theVersion4SchemaIsExportedAndAddsOnlyTheEightDownloadTables() {
         val tables = schema(4)["entities"]!!.jsonArray.map { it.jsonObject["tableName"]!!.jsonPrimitive.content }.toSet()
         assertEquals(V3_TABLES.toSet() + DownloadRows.TABLES, tables)
     }
@@ -268,11 +268,12 @@ class MigrationTest {
         DownloadRows.settings(raw, S1)
         assertEquals(DownloadRows.TABLES.associateWith { 1 }, DownloadRows.TABLES.associateWith { DownloadRows.count(raw, it) })
         raw.execSQL("DELETE FROM downloads")
-        assertEquals(listOf(0, 0, 0), listOf("download_owners", "download_tracks", "download_segments").map { DownloadRows.count(raw, it) })
+        assertEquals(listOf(0, 0, 0, 0), listOf("download_owners", "download_tracks", "download_segments", "download_permissions").map { DownloadRows.count(raw, it) })
         DownloadRows.download(raw, S1, item)
         DownloadRows.owner(raw, S1, U1, item)
+        DownloadRows.permission(raw, S1, U1, item)
         ServerStore(db, box).removeAccount(S1, U1)
-        assertEquals(listOf(0, 0, 1), listOf("download_owners", "offline_plays", "downloads").map { DownloadRows.count(raw, it) })
+        assertEquals(listOf(0, 0, 1, 0), listOf("download_owners", "offline_plays", "downloads", "download_permissions").map { DownloadRows.count(raw, it) })
         ServerStore(db, box).removeServer(S1)
         assertEquals(DownloadRows.TABLES.associateWith { 0 }, DownloadRows.TABLES.associateWith { DownloadRows.count(raw, it) })
     }
@@ -283,7 +284,7 @@ class MigrationTest {
         val fresh = openWithMigration("fresh-test.db")
         assertEquals(schemaOf(fresh), schemaOf(migrated))
         for (table in DownloadRows.TABLES) assertTrue("$table is in it", schemaOf(migrated).any { it.startsWith("table $table:") })
-        assertEquals(3, schemaOf(migrated).count { it.startsWith("index index_download") })
+        assertEquals(4, schemaOf(migrated).count { it.startsWith("index index_download") })
         context.deleteDatabase("fresh-test.db")
     }
 

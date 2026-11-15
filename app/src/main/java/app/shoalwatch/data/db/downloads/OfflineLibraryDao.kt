@@ -90,10 +90,17 @@ abstract class OfflineLibraryDao {
     internal abstract suspend fun getPlayable(serverId: String, userId: String, itemId: String): DownloadEntity?
 
     companion object {
-        /** The user owns the download, or the server shares downloads between profiles and it is ready (`d` = downloads). */
+        /**
+         * The user owns the download, or the server shares downloads between profiles, it is ready, AND the server confirmed this
+         * user may download the item ([CONFIRMED]: the strict sharing rule; unknown or false is not shared) (`d` = downloads).
+         */
         const val MINE_OR_SHARED =
             "(EXISTS (SELECT 1 FROM download_owners o WHERE o.serverId = d.serverId AND o.itemId = d.itemId AND o.userId = :userId) " +
-                "OR (d.state = 'COMPLETE' AND EXISTS (SELECT 1 FROM download_settings x WHERE x.serverId = d.serverId AND x.shareBetweenProfiles = 1)))"
+                "OR (d.state = 'COMPLETE' AND EXISTS (SELECT 1 FROM download_settings x WHERE x.serverId = d.serverId AND x.shareBetweenProfiles = 1) " +
+                "AND EXISTS (SELECT 1 FROM download_permissions p WHERE p.serverId = d.serverId AND p.itemId = d.itemId AND p.userId = :userId)))"
+
+        /** The server confirmed this user may download the item. */
+        const val CONFIRMED = "EXISTS (SELECT 1 FROM download_permissions p WHERE p.serverId = d.serverId AND p.itemId = d.itemId AND p.userId = :userId)"
 
         const val MINE = "EXISTS (SELECT 1 FROM download_owners o WHERE o.serverId = d.serverId AND o.itemId = d.itemId AND o.userId = :userId)"
 

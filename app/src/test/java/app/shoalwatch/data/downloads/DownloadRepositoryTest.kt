@@ -34,7 +34,7 @@ class DownloadRepositoryTest : DownloadHousekeepingTestBase() {
     }
 
     private fun plan(s: app.shoalwatch.data.servers.Session, vararg items: app.shoalwatch.data.library.Item, shareOnly: Boolean = false) = DownloadPlan(
-        session = s, requested = DownloadQuality.ORIGINAL, items = items.map { PlannedItem(it.id, DownloadQuality.ORIGINAL, 10, shareOnly) }, skipped = emptyList(),
+        session = s, requested = DownloadQuality.ORIGINAL, items = items.map { PlannedItem(it.id, DownloadQuality.ORIGINAL, 10, shareOnly, confirmed = shareOnly) }, skipped = emptyList(),
         convertedInstead = 0, totalBytes = 10, freeBytes = 1L shl 40, enoughSpace = true, storage = StorageKind.INTERNAL, volumeId = null, mobileData = false,
     )
 
@@ -68,7 +68,8 @@ class DownloadRepositoryTest : DownloadHousekeepingTestBase() {
 
     @Test fun removeGivesEachOutcome() = runBlocking {
         queued(a, f1)
-        queued(b, f1)
+        seen(b, f1)
+        store.add(b, listOf(shareDownload(f1)))
         val files = filesOf(f1)
         assertEquals(RemoveOutcome.KeptForOthers, repo.remove(a, f1.id))
         assertTrue(files.exists())

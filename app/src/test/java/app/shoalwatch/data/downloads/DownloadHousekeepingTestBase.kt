@@ -57,7 +57,7 @@ abstract class DownloadHousekeepingTestBase : DownloadQueueTestBase() {
         fake.card(CARD, card)
         fake.free[CARD] = 1L shl 40
         scheduler = DownloadScheduler(workManager, DownloadPrefs(context.getSharedPreferences("housekeeping-test", 0).also { it.edit().clear().commit() }))
-        housekeeping = DownloadHousekeeping(store, paths, queue(), scheduler, fakeLibrary, scope, Dispatchers.Unconfined) { clock }
+        housekeeping = DownloadHousekeeping(store, paths, queue(), scheduler, fakeLibrary, facts, scope, Dispatchers.Unconfined) { clock }
         hooked = ServerStore(
             db, SecretBox { key },
             onServerRemoved = { jobs += housekeeping.onServerRemoved(it) },

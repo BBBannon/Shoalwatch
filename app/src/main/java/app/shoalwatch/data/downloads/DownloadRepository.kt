@@ -97,7 +97,10 @@ class DownloadRepository internal constructor(
             val news = plan.items.mapNotNull { planned ->
                 // As stored now and visible to [s]: an item the server has since hidden from this profile is skipped.
                 val item = items.getItem(s.serverId, s.userId, planned.itemId)?.toModel()?.item ?: return@mapNotNull null
-                DownloadStore.NewDownload(item.id, item.kind, item.seriesId, item.seasonId, planned.quality, plan.storage, plan.volumeId, item.runtimeMs, null)
+                DownloadStore.NewDownload(
+                    item.id, item.kind, item.seriesId, item.seasonId, planned.quality, plan.storage, plan.volumeId, item.runtimeMs, null,
+                    confirmed = planned.confirmed, shareOnly = planned.shareOnly,
+                )
             }
             val added = store.add(s, news)
             if (added.values.any { it == DownloadStore.Added.Queued }) scheduler.kick()

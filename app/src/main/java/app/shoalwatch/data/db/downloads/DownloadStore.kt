@@ -44,6 +44,10 @@ internal class DownloadStore(private val db: AppDatabase, private val now: () ->
     class NewDownload(
         val itemId: String, val kind: ItemKind, val seriesId: String?, val seasonId: String?, val quality: DownloadQuality,
         val storage: StorageKind, val volumeId: String?, val runtimeMs: Long?, val audioIndex: Int?,
+        /** The server confirmed this profile's own CanDownload (true) for the item. */
+        val confirmed: Boolean = false,
+        /** Planned as "already here": only then may an existing copy gain this profile as an owner. */
+        val shareOnly: Boolean = false,
     )
 
     sealed interface Added {
@@ -89,7 +93,11 @@ internal class DownloadStore(private val db: AppDatabase, private val now: () ->
         if (stored.kind != new.kind || stored.seriesId != new.seriesId || stored.seasonId != new.seasonId) return Added.Skipped
         val at = now()
         if (dao.get(s.serverId, new.itemId) != null) {
+            // A copy that appeared after a plan for a new download is not shared by the back door: the user plans again, and
+            // a share needs this profile's own confirmed permission (Tasks 9-10 review I-2 b).
+            if (!new.shareOnly || !new.confirmed) return Added.Skipped
             dao.insertOwner(DownloadOwnerEntity(s.serverId, s.userId, new.itemId, at))
+            dao.insertPermission(DownloadPermissionEntity(s.serverId, s.userId, new.itemId, at))
             return Added.OwnerAdded
         }
         dao.insert(
@@ -102,6 +110,7 @@ internal class DownloadStore(private val db: AppDatabase, private val now: () ->
             ),
         )
         dao.insertOwner(DownloadOwnerEntity(s.serverId, s.userId, new.itemId, at))
+        if (new.confirmed) dao.insertPermission(DownloadPermissionEntity(s.serverId, s.userId, new.itemId, at))
         repin(s.serverId, listOfNotNull(new.itemId, new.seasonId, new.seriesId))
         return Added.Queued
     }
@@ -176,6 +185,31 @@ internal class DownloadStore(private val db: AppDatabase, private val now: () ->
         if (row.state !in expected) return@withTransaction Written.MOVED
         update(key, change)
         Written.DONE
+    }
+
+    /** The server confirmed [userId] may download the item (its CanDownload was true, or `/Download` served it to that sign-in). */
+    suspend fun confirm(key: DownloadKey, userId: String) { dao.insertPermission(DownloadPermissionEntity(key.serverId, userId, key.itemId, now())) }
+
+    /** The server said [userId] may not (or did not say): no shared copy, no inheritance. */
+    suspend fun unconfirm(key: DownloadKey, userId: String) { dao.deletePermission(key.serverId, userId, key.itemId) }
+
+    suspend fun isConfirmed(key: DownloadKey, userId: String): Boolean = dao.hasPermission(key.serverId, userId, key.itemId)
+
+    /**
+     * Before a copy fetched by [fetcher] is marked COMPLETE: every other owner whose own permission was never confirmed stops
+     * owning it (Tasks 9-10 review I-2 a), so nobody keeps a copy fetched under another profile's permission. Pins are unchanged
+     * (the row stays). Returns how many were dropped.
+     */
+    suspend fun dropUnconfirmedOwners(key: DownloadKey, fetcher: String): Int = db.withTransaction {
+        dao.unconfirmedOwners(key.serverId, key.itemId).filter { it != fetcher }.sumOf { dao.deleteOwner(key.serverId, it, key.itemId) }
+    }
+
+    /** [userId]'s own fetch was refused: it stops owning the copy (another owner may fetch it). False if it was the last owner. */
+    suspend fun dropRefusedOwner(key: DownloadKey, userId: String): Boolean = db.withTransaction {
+        if (dao.owners(key.serverId, key.itemId).size <= 1) return@withTransaction false
+        dao.deleteOwner(key.serverId, userId, key.itemId)
+        dao.deletePermission(key.serverId, userId, key.itemId)
+        true
     }
 
     /** The queue takes a QUEUED row: true only if it was still QUEUED. */

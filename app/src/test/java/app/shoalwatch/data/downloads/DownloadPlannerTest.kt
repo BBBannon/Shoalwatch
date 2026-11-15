@@ -192,7 +192,7 @@ class DownloadPlannerTest : DownloadTestBase() {
         seen(s1u2, series, season1, *eps.toTypedArray())
         store.add(s1u2, listOf(newDownload(eps[0])))
         val plan = planner().plan(a, DownloadTarget.Season(series.id, season1.id), DownloadQuality.ORIGINAL)
-        assertEquals(listOf(PlannedItem(eps[0].id, DownloadQuality.ORIGINAL, 0, shareOnly = true)), plan.items.filter { it.shareOnly })
+        assertEquals(listOf(PlannedItem(eps[0].id, DownloadQuality.ORIGINAL, 0, shareOnly = true, confirmed = true)), plan.items.filter { it.shareOnly })
         assertFalse("nothing to check for a copy already here", eps[0].id in checked)
         assertEquals(1_234_567_890L, plan.totalBytes)
         gateway.allow(eps[0].id, canDownload = false)

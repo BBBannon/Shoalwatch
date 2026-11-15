@@ -10,6 +10,7 @@ import app.shoalwatch.data.db.downloads.DownloadDao
 import app.shoalwatch.data.db.downloads.DownloadEntity
 import app.shoalwatch.data.db.downloads.DownloadOwnerEntity
 import app.shoalwatch.data.db.downloads.DownloadSegmentEntity
+import app.shoalwatch.data.db.downloads.DownloadPermissionEntity
 import app.shoalwatch.data.db.downloads.DownloadSettingsEntity
 import app.shoalwatch.data.db.downloads.DownloadTrackEntity
 import app.shoalwatch.data.db.downloads.OfflineLibraryDao
@@ -39,7 +40,7 @@ import app.shoalwatch.data.db.playback.TrackChoiceEntity
         ItemEntity::class, UserDataEntity::class, ViewEntity::class, ListEntryEntity::class, ListStateEntity::class, VisibleItemEntity::class,
         TrackChoiceEntity::class,
         DownloadEntity::class, DownloadOwnerEntity::class, DownloadTrackEntity::class, DownloadSegmentEntity::class, PinnedArtworkEntity::class,
-        DownloadSettingsEntity::class, OfflinePlayEntity::class,
+        DownloadSettingsEntity::class, OfflinePlayEntity::class, DownloadPermissionEntity::class,
     ],
     version = 4,
     exportSchema = true,

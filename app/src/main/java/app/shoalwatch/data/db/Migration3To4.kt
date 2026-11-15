@@ -4,8 +4,9 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 /**
- * Version 3 to 4: the seven download tables (`downloads`, `download_owners`, `download_tracks`, `download_segments`,
- * `pinned_artwork`, `download_settings`, `offline_plays`) and their three indices. Nothing existing is touched. The
+ * Version 3 to 4: the eight download tables (`downloads`, `download_owners`, `download_tracks`, `download_segments`,
+ * `pinned_artwork`, `download_settings`, `offline_plays`, `download_permissions`) and their four indices. (v4 had not shipped
+ * when `download_permissions` was added for the strict sharing rule, so v4 itself was amended.) Nothing existing is touched. The
  * statements are Room's own generated SQL for version 4, copied verbatim from `app/schemas/.../4.json` (Room validates the
  * migrated database against it when it opens); `MigrationTest` checks that a migrated database and a fresh one have
  * identical schemas, from version 3 and from version 1. Plain `CREATE TABLE` and `CREATE INDEX`: nothing newer than SQLite 3.22.
@@ -19,9 +20,11 @@ object Migration3To4 : Migration(3, 4) {
         "CREATE TABLE IF NOT EXISTS `pinned_artwork` (`serverId` TEXT NOT NULL, `itemId` TEXT NOT NULL, `slot` TEXT NOT NULL, `tag` TEXT NOT NULL, `bytes` INTEGER NOT NULL, `savedAt` INTEGER NOT NULL, PRIMARY KEY(`serverId`, `itemId`, `slot`), FOREIGN KEY(`serverId`) REFERENCES `servers`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "CREATE TABLE IF NOT EXISTS `download_settings` (`serverId` TEXT NOT NULL, `shareBetweenProfiles` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`serverId`), FOREIGN KEY(`serverId`) REFERENCES `servers`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "CREATE TABLE IF NOT EXISTS `offline_plays` (`serverId` TEXT NOT NULL, `userId` TEXT NOT NULL, `itemId` TEXT NOT NULL, `positionMs` INTEGER NOT NULL, `played` INTEGER NOT NULL, `playedAt` INTEGER, `lastPlayedAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`serverId`, `userId`, `itemId`), FOREIGN KEY(`serverId`, `userId`) REFERENCES `accounts`(`serverId`, `userId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "CREATE TABLE IF NOT EXISTS `download_permissions` (`serverId` TEXT NOT NULL, `userId` TEXT NOT NULL, `itemId` TEXT NOT NULL, `confirmedAt` INTEGER NOT NULL, PRIMARY KEY(`serverId`, `userId`, `itemId`), FOREIGN KEY(`serverId`, `userId`) REFERENCES `accounts`(`serverId`, `userId`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`serverId`, `itemId`) REFERENCES `downloads`(`serverId`, `itemId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "CREATE INDEX IF NOT EXISTS `index_downloads_serverId_seriesId` ON `downloads` (`serverId`, `seriesId`)",
         "CREATE INDEX IF NOT EXISTS `index_downloads_state_queuePosition` ON `downloads` (`state`, `queuePosition`)",
         "CREATE INDEX IF NOT EXISTS `index_download_owners_serverId_itemId` ON `download_owners` (`serverId`, `itemId`)",
+        "CREATE INDEX IF NOT EXISTS `index_download_permissions_serverId_itemId` ON `download_permissions` (`serverId`, `itemId`)",
     )
 
     override fun migrate(db: SupportSQLiteDatabase) {

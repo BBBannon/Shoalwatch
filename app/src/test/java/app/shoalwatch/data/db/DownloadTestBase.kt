@@ -33,6 +33,14 @@ abstract class DownloadTestBase : LibraryTestBase() {
 
     protected fun key(item: Item, serverId: String = s1u1.serverId) = DownloadKey(serverId, item.id)
 
+    /** The server confirmed [s]'s own CanDownload for [items] (the strict sharing rule: needed to see or inherit a shared copy). */
+    protected fun confirm(s: Session, vararg items: Item) = runBlocking { for (it in items) store.confirm(DownloadKey(s.serverId, it.id), s.userId) }
+
+    /** [s] adds a copy already here, as a share-only plan with its own permission confirmed. */
+    internal fun shareDownload(item: Item) = newDownload(item).let { n ->
+        DownloadStore.NewDownload(n.itemId, n.kind, n.seriesId, n.seasonId, n.quality, n.storage, n.volumeId, n.runtimeMs, null, confirmed = true, shareOnly = true)
+    }
+
     protected fun pinned(label: String, serverId: String = s1u1.serverId): Boolean =
         count("items", "serverId = '$serverId' AND itemId = '${id(label)}' AND pinned = 1") == 1
 

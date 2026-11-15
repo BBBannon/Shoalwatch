@@ -69,6 +69,7 @@ class SharingTest : DownloadHousekeepingTestBase() {
 
     @Test fun bSharingOnTheChildSeesItOnlyOnceCompleteAndNeverAsItsOwn() {
         aDownloads(complete = false)
+        confirm(b, film, e1) // the strict sharing rule: the child's own permission is confirmed
         seen(b, film, series, season1, e1)
         runBlocking { repo.setSharing(b, true) }
         assertEquals("not while it is being downloaded", emptySet<String>(), seenBy(b))
@@ -88,6 +89,7 @@ class SharingTest : DownloadHousekeepingTestBase() {
 
     @Test fun dTheEpisodesRecordWithoutTheSeriessGivesNoSeries() {
         aDownloads()
+        confirm(b, film, e1) // the strict sharing rule: the child's own permission is confirmed
         runBlocking { repo.setSharing(a, true) }
         seen(b, e1, season1)
         assertEquals(setOf("episodeStatus"), seenBy(b))
@@ -107,11 +109,32 @@ class SharingTest : DownloadHousekeepingTestBase() {
 
     @Test fun gTheWatchedStateShownIsTheChildsOwn() = runBlocking {
         aDownloads()
+        confirm(b, film, e1) // the strict sharing rule: the child's own permission is confirmed
         repo.setSharing(a, true)
         seen(b, film, series, season1, e1)
         db.itemDao().setPlayed(S1, a.userId, film.id, true, 0, 5)
         assertEquals(true, repo.library(a).first().films.single().item.userData?.played)
         assertNull(repo.library(b).first().films.single().item.userData)
+    }
+
+    /**
+     * The strict sharing rule (controller decision on the Tasks 9-10 review): with sharing on, a child shown the item sees a
+     * shared copy only once the server has confirmed the child's OWN CanDownload; reconfirm asks, and a later "no" hides it again.
+     */
+    @Test fun hSharingOnTheChildSeesNothingUntilItsOwnPermissionIsConfirmed() = runBlocking {
+        aDownloads()
+        repo.setSharing(a, true)
+        seen(b, film, series, season1, e1)
+        assertEquals("unknown is not shared", emptySet<String>(), seenBy(b))
+        facts.allow(film.id, canDownload = true)
+        facts.allow(e1.id, canDownload = null)
+        housekeeping.reconfirm(b)
+        assertEquals(setOf("films", "filmStatus"), seenBy(b))
+        facts.allow(film.id, canDownload = false)
+        clock += 8L * 24 * 60 * 60 * 1_000 // asked again once its confirmation is a week old
+        housekeeping.reconfirm(b)
+        assertEquals("a later no hides it again", emptySet<String>(), seenBy(b))
+        assertEquals("the owner always sees its own", everything, seenBy(a))
     }
 
     @Test fun setSharingEmits() = runBlocking {

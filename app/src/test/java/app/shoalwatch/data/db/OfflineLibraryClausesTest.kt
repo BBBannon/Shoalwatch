@@ -79,6 +79,7 @@ class OfflineLibraryClausesTest : DownloadTestBase() {
     @Test fun hBWithTheSeriesAndEpisodeButNotTheSeasonGetsNothingOnTheSeriesScreens() = runBlocking {
         seen(a, series, season1, e1)
         downloads(a, e1)
+        confirm(b, e1)
         store.setSharing(S1, true)
         seen(b, series, e1) // the server hid season 1 from B
         assertEquals(setOf("one", "playable"), seenBy(b, e1))
@@ -99,6 +100,7 @@ class OfflineLibraryClausesTest : DownloadTestBase() {
     @Test fun iSharingOnForAnotherServerDoesNotShareThisOnesDownloads() = runBlocking {
         seen(a, film)
         downloads(a, film)
+        confirm(b, film)
         store.setSharing(S2, true)
         seen(b, film)
         assertEquals(emptySet<String>(), seenBy(b, film))
@@ -119,6 +121,7 @@ class OfflineLibraryClausesTest : DownloadTestBase() {
     @Test fun kTheSeriesAndSeasonWatchedStateShownIsTheSessionUsersOwn() = runBlocking {
         seen(a, series, season1, e1)
         downloads(a, e1)
+        confirm(b, e1)
         store.setSharing(S1, true)
         seen(b, series, season1, e1)
         db.itemDao().setPlayed(S1, a.userId, series.id, true, 0, 5)
@@ -158,6 +161,7 @@ class OfflineLibraryClausesTest : DownloadTestBase() {
     @Test fun nAnOwnerRowOnAnotherServerGivesNoOwnerControlsOrQueueHere() = runBlocking {
         seen(b, film)
         downloads(b, film)
+        confirm(a, film)
         store.setSharing(S1, true)
         seen(s2u1, film)
         downloads(s2u1, film, state = DownloadState.RUNNING)

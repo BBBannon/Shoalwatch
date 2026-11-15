@@ -71,8 +71,11 @@ enum class SkipReason {
 
 data class Skipped(val itemId: String, val reason: SkipReason)
 
-/** [shareOnly]: already on this phone; confirming only adds this profile as an owner ([estimatedBytes] 0). */
-data class PlannedItem(val itemId: String, val quality: DownloadQuality, val estimatedBytes: Long, val shareOnly: Boolean)
+/**
+ * [shareOnly]: already on this phone; confirming only adds this profile as an owner ([estimatedBytes] 0). [confirmed]: the
+ * server said this profile's own CanDownload is true (a share needs it; recorded as the profile's permission).
+ */
+data class PlannedItem(val itemId: String, val quality: DownloadQuality, val estimatedBytes: Long, val shareOnly: Boolean, val confirmed: Boolean = false)
 
 data class DownloadPlan(
     val session: Session, val requested: DownloadQuality, val items: List<PlannedItem>, val skipped: List<Skipped>,

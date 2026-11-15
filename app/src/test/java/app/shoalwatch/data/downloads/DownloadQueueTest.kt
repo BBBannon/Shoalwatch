@@ -118,7 +118,8 @@ class DownloadQueueTest : DownloadQueueTestBase() {
         playable()
         drain()
         val before = files.calls.size
-        queued(s1u2, f1) // another profile adds the copy that is already here
+        seen(s1u2, f1)
+        runBlocking { store.add(s1u2, listOf(shareDownload(f1))) } // another profile adds the copy that is already here
         assertEquals(QueueRun.Drained, drain())
         assertEquals(before, files.calls.size)
         assertEquals(setOf(a.userId, s1u2.userId), runBlocking { store.owners(DownloadKey(a.serverId, f1.id)) }.toSet())

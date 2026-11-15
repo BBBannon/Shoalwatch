@@ -115,10 +115,10 @@ internal class DownloadPlanner(
             // Already on this phone: confirming only adds this profile as an owner, and nothing asks /Download, so only an
             // explicit yes for THIS profile counts (Tasks 5-8 review I-1): unknown is not a confirmation.
             if (!conversionsAllowed) return skip(SkipReason.PERMISSION_UNCONFIRMED)
-            return Outcome.Planned(PlannedItem(item.id, here, 0, shareOnly = true))
+            return Outcome.Planned(PlannedItem(item.id, here, 0, shareOnly = true, confirmed = true))
         }
         if (quality != DownloadQuality.ORIGINAL) {
-            return if (conversionsAllowed) Outcome.Planned(PlannedItem(item.id, quality, estimate(quality, item.runtimeMs), false))
+            return if (conversionsAllowed) Outcome.Planned(PlannedItem(item.id, quality, estimate(quality, item.runtimeMs), false, confirmed = true))
             else skip(SkipReason.CONVERSION_UNCONFIRMED)
         }
         val check = try {
@@ -133,11 +133,11 @@ internal class DownloadPlanner(
         }
         return when (check) {
             is OriginalCheck.Playable -> Outcome.Planned(
-                PlannedItem(item.id, DownloadQuality.ORIGINAL, facts.sizeBytes ?: check.sizeBytes ?: originalEstimate(item.runtimeMs), false),
+                PlannedItem(item.id, DownloadQuality.ORIGINAL, facts.sizeBytes ?: check.sizeBytes ?: originalEstimate(item.runtimeMs), false, confirmed = conversionsAllowed),
             )
             OriginalCheck.NotPlayableHere ->
                 if (!conversionsAllowed) skip(SkipReason.CONVERSION_UNCONFIRMED)
-                else Outcome.Planned(PlannedItem(item.id, DownloadQuality.HIGH, estimate(DownloadQuality.HIGH, item.runtimeMs), false), converted = true)
+                else Outcome.Planned(PlannedItem(item.id, DownloadQuality.HIGH, estimate(DownloadQuality.HIGH, item.runtimeMs), false, confirmed = true), converted = true)
         }
     }
 

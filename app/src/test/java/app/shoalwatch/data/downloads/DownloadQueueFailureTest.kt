@@ -1,5 +1,6 @@
 package app.shoalwatch.data.downloads
 
+import app.shoalwatch.S1
 import app.shoalwatch.core.AppError
 import app.shoalwatch.data.db.downloads.DownloadKey
 import app.shoalwatch.data.playback.fixtureInfo
@@ -20,6 +21,46 @@ class DownloadQueueFailureTest : DownloadQueueTestBase() {
 
     private fun failure(item: app.shoalwatch.data.library.Item) = download(item)!!.let { it.state to it.failure }
 
+    /**
+     * Tasks 9-10 review I-2 (a). C (U2) queued the original with its CanDownload unknown; P (U1) then shared it with a confirmed
+     * yes. C's sign-in is gone, so P fetches: C must not keep a copy fetched under P's permission.
+     */
+    @Test fun anUnconfirmedOwnerDoesNotKeepACopyFetchedUnderAnotherProfilesPermission() {
+        val c = s1u2
+        queued(c, f1) // newDownload: not confirmed
+        seen(a, f1)
+        runBlocking { store.add(a, listOf(shareDownload(f1))) }
+        tokens -= c
+        playable()
+        assertEquals(QueueRun.Drained, drain())
+        assertEquals(DownloadState.COMPLETE, download(f1)!!.state)
+        assertEquals(listOf(a.userId), runBlocking { store.owners(DownloadKey(S1, f1.id)) })
+    }
+
+    /** The converse: C fetches first and the server refuses C; P, whose permission was confirmed, then fetches it for P alone. */
+    @Test fun aRefusedOwnerIsDroppedAndTheNextOwnerFetchesUnderItsOwnPermission() {
+        val c = s1u2
+        queued(c, f1)
+        seen(a, f1)
+        clock += 10
+        runBlocking { store.add(a, listOf(shareDownload(f1))) }
+        playable(2)
+        files.steps += FakeFiles.answer(FetchResult.Failed(DownloadFailure.NOT_ALLOWED))
+        assertEquals(QueueRun.Drained, drain())
+        assertEquals(DownloadState.COMPLETE, download(f1)!!.state)
+        assertEquals(listOf(a.userId), runBlocking { store.owners(DownloadKey(S1, f1.id)) })
+        assertEquals(2, files.calls.size)
+    }
+
+    @Test fun anOriginalServedToTheOwnersOwnSignInConfirmsItsPermission() {
+        val c = s1u2
+        queued(c, f1)
+        playable()
+        drain()
+        assertEquals(DownloadState.COMPLETE, download(f1)!!.state)
+        assertTrue(runBlocking { store.isConfirmed(DownloadKey(S1, f1.id), c.userId) })
+    }
+
     @Test fun noOwnerThatCanStillSendIsSignInNeededAndTheNextItemRuns() {
         queued(a, f1)
         queued(s1u2, f2)
@@ -34,7 +75,8 @@ class DownloadQueueFailureTest : DownloadQueueTestBase() {
     @Test fun theEarliestOwnerWithATokenFetches() {
         queued(a, f1)
         clock += 10
-        queued(s1u2, f1)
+        seen(s1u2, f1)
+        runBlocking { store.add(s1u2, listOf(shareDownload(f1))) }
         tokens -= a
         playable()
         drain()

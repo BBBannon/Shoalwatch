@@ -2,7 +2,7 @@ package app.shoalwatch.data.db
 
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-/** Raw rows for the seven download tables (schema v4), written with plain SQL so the tests do not depend on the DAOs. */
+/** Raw rows for the eight download tables (schema v4), written with plain SQL so the tests do not depend on the DAOs. */
 internal object DownloadRows {
     fun download(db: SupportSQLiteDatabase, serverId: String, itemId: String, state: String = "QUEUED", seriesId: String? = null, position: Long = 1) =
         db.execSQL(
@@ -38,6 +38,9 @@ internal object DownloadRows {
             arrayOf(serverId, userId, itemId),
         )
 
+    fun permission(db: SupportSQLiteDatabase, serverId: String, userId: String, itemId: String) =
+        db.execSQL("INSERT INTO download_permissions (serverId, userId, itemId, confirmedAt) VALUES (?, ?, ?, 10)", arrayOf(serverId, userId, itemId))
+
     /** One of each for (serverId, userId, itemId): a download with an owner, a track and a segment, artwork, settings and an offline play. */
     fun fullSet(db: SupportSQLiteDatabase, serverId: String, userId: String, itemId: String) {
         download(db, serverId, itemId)
@@ -46,9 +49,10 @@ internal object DownloadRows {
         segment(db, serverId, itemId)
         artwork(db, serverId, itemId)
         offlinePlay(db, serverId, userId, itemId)
+        permission(db, serverId, userId, itemId)
     }
 
-    val TABLES = listOf("downloads", "download_owners", "download_tracks", "download_segments", "pinned_artwork", "download_settings", "offline_plays")
+    val TABLES = listOf("downloads", "download_owners", "download_tracks", "download_segments", "pinned_artwork", "download_settings", "offline_plays", "download_permissions")
 
     fun count(db: SupportSQLiteDatabase, table: String, where: String = "1=1"): Int =
         db.query("SELECT COUNT(*) FROM $table WHERE $where").use { it.moveToFirst(); it.getInt(0) }

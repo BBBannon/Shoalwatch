@@ -64,7 +64,8 @@ class RemovalRulesTest : DownloadHousekeepingTestBase() {
 
     @Test fun twoOwnersRemoveOneAndItIsKeptForTheOther() {
         queued(a, film)
-        queued(b, film)
+        seen(b, film)
+        runBlocking { store.add(b, listOf(shareDownload(film))) }
         val files = filesOf(film)
         runBlocking { hooked.removeAccount(S1, a.userId) }
         settle()
@@ -77,11 +78,25 @@ class RemovalRulesTest : DownloadHousekeepingTestBase() {
         complete(film)
         runBlocking { store.setSharing(S1, true) }
         seen(b, film)
+        confirm(b, film)
         val files = filesOf(film)
         runBlocking { hooked.removeAccount(S1, a.userId) }
         settle()
         assertEquals(listOf(b.userId), runBlocking { store.owners(DownloadKey(S1, film.id)) })
         assertTrue(files.exists())
+    }
+
+    /** The strict sharing rule: B was shown the film but the server never confirmed B may download it, so B does not inherit it. */
+    @Test fun sharingOnAndBHasARecordButNoConfirmedPermissionSoItIsDeleted() {
+        queued(a, film)
+        complete(film)
+        runBlocking { store.setSharing(S1, true) }
+        seen(b, film)
+        val files = filesOf(film)
+        runBlocking { hooked.removeAccount(S1, a.userId) }
+        settle()
+        assertNull(download(film))
+        assertFalse(files.exists())
     }
 
     @Test fun sharingOnButTheChildHasNoRecordSoItIsDeleted() {

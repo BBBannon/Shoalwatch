@@ -4,6 +4,7 @@ import app.shoalwatch.S1
 import app.shoalwatch.U1
 import app.shoalwatch.U2
 import app.shoalwatch.data.db.downloads.DownloadKey
+import app.shoalwatch.data.db.downloads.DownloadStore
 import app.shoalwatch.data.db.downloads.DownloadStore.Added
 import app.shoalwatch.data.db.downloads.RemoveOutcome
 import app.shoalwatch.data.db.downloads.toEntry
@@ -43,9 +44,21 @@ class DownloadStoreTest : DownloadTestBase() {
         seen(s1u1, a)
         seen(s1u2, a)
         store.add(s1u1, listOf(newDownload(a)))
-        assertEquals(mapOf(a.id to Added.OwnerAdded), store.add(s1u2, listOf(newDownload(a))))
+        assertEquals(mapOf(a.id to Added.OwnerAdded), store.add(s1u2, listOf(shareDownload(a))))
         assertEquals(1, count("downloads"))
         assertEquals(listOf(U1, U2).sorted(), store.owners(key(a)).sorted())
+        assertTrue("the share records the profile's own permission", store.isConfirmed(key(a), U2))
+    }
+
+    /** Tasks 9-10 review I-2 (b): a copy that appeared between a plan for a new download and its confirm is not shared by the back door. */
+    @Test fun aNewDownloadThatFindsACopyAlreadyHereIsSkippedAndAShareNeedsAConfirmedPermission() = runBlocking {
+        seen(s1u1, a)
+        seen(s1u2, a)
+        store.add(s1u1, listOf(newDownload(a)))
+        assertEquals(mapOf(a.id to Added.Skipped), store.add(s1u2, listOf(newDownload(a))))
+        val unconfirmedShare = shareDownload(a).let { n -> DownloadStore.NewDownload(n.itemId, n.kind, n.seriesId, n.seasonId, n.quality, n.storage, n.volumeId, n.runtimeMs, null, confirmed = false, shareOnly = true) }
+        assertEquals(mapOf(a.id to Added.Skipped), store.add(s1u2, listOf(unconfirmedShare)))
+        assertEquals(listOf(U1), store.owners(key(a)))
     }
 
     @Test fun anItemTheSessionWasNeverShownIsSkippedWithNothingWritten() = runBlocking {
@@ -71,7 +84,7 @@ class DownloadStoreTest : DownloadTestBase() {
         seen(s1u1, a)
         seen(s1u2, a)
         store.add(s1u1, listOf(newDownload(a)))
-        store.add(s1u2, listOf(newDownload(a)))
+        store.add(s1u2, listOf(shareDownload(a)))
         assertEquals(RemoveOutcome.KeptForOthers, store.removeOwner(s1u1, a.id))
         assertEquals(RemoveOutcome.NotYours, store.removeOwner(s1u1, a.id))
         assertEquals(1, count("downloads"))
@@ -184,12 +197,24 @@ class DownloadStoreTest : DownloadTestBase() {
         seen(s1u2, a)
         store.add(s1u1, listOf(newDownload(a), newDownload(b)))
         store.setSharing(S1, true)
+        confirm(s1u2, a)
         servers.removeAccount(S1, U1)
         assertEquals(listOf(key(b)), store.afterAccountGone(S1))
         assertEquals(listOf(U2), store.owners(key(a)))
         assertNull(db.downloadDao().get(S1, b.id))
         assertFalse(pinned("b"))
         assertTrue(pinned("a"))
+    }
+
+    /** The strict sharing rule: with sharing on, a profile shown the item but never confirmed by the server does not inherit it. */
+    @Test fun afterAccountGoneNeverHandsADownloadToAProfileWhosePermissionWasNotConfirmed() = runBlocking {
+        seen(s1u1, a)
+        seen(s1u2, a)
+        store.add(s1u1, listOf(newDownload(a)))
+        store.setSharing(S1, true)
+        servers.removeAccount(S1, U1)
+        assertEquals(listOf(key(a)), store.afterAccountGone(S1))
+        assertEquals(0, count("downloads"))
     }
 
     @Test fun afterAccountGoneWithSharingOffDeletesEveryOwnerlessDownload() = runBlocking {

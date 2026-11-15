@@ -1,7 +1,9 @@
 package app.shoalwatch.data.downloads
 
 import app.shoalwatch.core.AppLog
+import app.shoalwatch.data.db.downloads.DownloadKey
 import app.shoalwatch.data.db.downloads.DownloadStore
+import app.shoalwatch.data.downloads.api.DownloadGateway
 import app.shoalwatch.data.library.Library
 import app.shoalwatch.data.library.RefreshTarget
 import app.shoalwatch.data.servers.Session
@@ -29,6 +31,7 @@ internal class DownloadHousekeeping(
     private val queue: DownloadQueue,
     private val scheduler: DownloadScheduler,
     private val library: Library,
+    private val gateway: DownloadGateway,
     private val scope: CoroutineScope,
     private val io: CoroutineDispatcher = Dispatchers.IO,
     private val now: () -> Long = System::currentTimeMillis,
@@ -65,14 +68,24 @@ internal class DownloadHousekeeping(
 
     /**
      * When a profile opens Downloads online: re-asks the server about up to 50 shared items (and their series) this profile
-     * has not had confirmed for 7 days. A 403 or 404 revokes that profile's record (the library's rule), so the item is hidden
-     * from it at once; the owner still sees it. Stops at the first failure (offline, say): it is asked again next time.
+     * has not had confirmed for 7 days, or whose download permission it never confirmed. A 403 or 404 revokes that profile's
+     * record (the library's rule), so the item is hidden from it at once; the owner still sees it. Then ONE `facts` call
+     * records this profile's own CanDownload: true is a confirmed permission (the strict sharing rule), anything else removes
+     * it. Stops at the first failure (offline, say): it is asked again next time.
      */
     suspend fun reconfirm(s: Session) = withContext(io) {
         val stale = store.unconfirmedShared(s, now() - WEEK_MS, LIMIT)
         val ids = (stale.map { it.first } + stale.mapNotNull { it.second }).distinct().take(LIMIT)
         try {
             for (id in ids) library.refresh(s, RefreshTarget.Item(id))
+            val asked = stale.map { it.first }
+            if (asked.isNotEmpty()) {
+                val answers = gateway.facts(s, asked).associateBy { it.itemId }
+                for (id in asked) {
+                    val key = DownloadKey(s.serverId, id)
+                    if (answers[id]?.canDownload == true) store.confirm(key, s.userId) else store.unconfirm(key, s.userId)
+                }
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

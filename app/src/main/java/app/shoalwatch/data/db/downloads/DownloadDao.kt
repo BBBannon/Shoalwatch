@@ -42,11 +42,15 @@ abstract class DownloadDao {
     @Query("SELECT itemId FROM download_owners WHERE serverId = :serverId AND userId = :userId ORDER BY addedAt, itemId")
     internal abstract suspend fun ownedItems(serverId: String, userId: String): List<String>
 
-    /** Shared COMPLETE downloads [userId] does not own, whose visibility record is older than [cutoff] (oldest first). */
+    /**
+     * Shared COMPLETE downloads [userId] does not own but was shown, whose visibility record is older than [cutoff] or whose
+     * download permission is not confirmed (oldest first): what `reconfirm` asks the server about.
+     */
     @Query(
         "SELECT d.itemId AS itemId, d.seriesId AS seriesId FROM downloads d " +
             "JOIN visible_items v ON v.serverId = d.serverId AND v.userId = :userId AND v.itemId = d.itemId " +
-            "WHERE d.serverId = :serverId AND d.state = 'COMPLETE' AND v.seenAt < :cutoff " +
+            "WHERE d.serverId = :serverId AND d.state = 'COMPLETE' AND (v.seenAt < :cutoff OR NOT EXISTS " +
+            "(SELECT 1 FROM download_permissions p WHERE p.serverId = d.serverId AND p.userId = :userId AND p.itemId = d.itemId)) " +
             "AND EXISTS (SELECT 1 FROM download_settings x WHERE x.serverId = d.serverId AND x.shareBetweenProfiles = 1) " +
             "AND NOT EXISTS (SELECT 1 FROM download_owners o WHERE o.serverId = d.serverId AND o.itemId = d.itemId AND o.userId = :userId) " +
             "ORDER BY v.seenAt LIMIT :limit",
@@ -59,6 +63,22 @@ abstract class DownloadDao {
             "(SELECT 1 FROM items i WHERE i.serverId = p.serverId AND i.itemId = p.itemId AND i.pinned = 1)",
     )
     internal abstract suspend fun unpinnedArtworkRows(): List<ArtworkRow>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    internal abstract suspend fun insertPermission(row: DownloadPermissionEntity): Long
+
+    @Query("DELETE FROM download_permissions WHERE serverId = :serverId AND userId = :userId AND itemId = :itemId")
+    internal abstract suspend fun deletePermission(serverId: String, userId: String, itemId: String): Int
+
+    @Query("SELECT EXISTS (SELECT 1 FROM download_permissions WHERE serverId = :serverId AND userId = :userId AND itemId = :itemId)")
+    internal abstract suspend fun hasPermission(serverId: String, userId: String, itemId: String): Boolean
+
+    /** Owners of the download with no confirmed permission. */
+    @Query(
+        "SELECT o.userId FROM download_owners o WHERE o.serverId = :serverId AND o.itemId = :itemId AND NOT EXISTS " +
+            "(SELECT 1 FROM download_permissions p WHERE p.serverId = o.serverId AND p.userId = o.userId AND p.itemId = o.itemId)",
+    )
+    internal abstract suspend fun unconfirmedOwners(serverId: String, itemId: String): List<String>
 
     @Query("SELECT COUNT(*) FROM downloads WHERE state = 'QUEUED'")
     internal abstract suspend fun queuedCount(): Int
@@ -105,8 +125,15 @@ abstract class DownloadDao {
     @Query("SELECT EXISTS (SELECT 1 FROM download_owners WHERE serverId = :serverId AND userId = :userId AND itemId = :itemId)")
     internal abstract suspend fun isOwner(serverId: String, userId: String, itemId: String): Boolean
 
-    /** The accounts on the server that the server has shown [itemId] (the ownership rule hands a shared download to them). */
-    @Query("SELECT a.userId FROM accounts a JOIN visible_items v ON v.serverId = a.serverId AND v.userId = a.userId AND v.itemId = :itemId WHERE a.serverId = :serverId ORDER BY a.userId")
+    /**
+     * The accounts on the server that the server has shown [itemId] AND confirmed may download it (the ownership rule hands a
+     * shared download only to them: the strict sharing rule).
+     */
+    @Query(
+        "SELECT a.userId FROM accounts a JOIN visible_items v ON v.serverId = a.serverId AND v.userId = a.userId AND v.itemId = :itemId " +
+            "JOIN download_permissions p ON p.serverId = a.serverId AND p.userId = a.userId AND p.itemId = :itemId " +
+            "WHERE a.serverId = :serverId ORDER BY a.userId",
+    )
     internal abstract suspend fun accountsShown(serverId: String, itemId: String): List<String>
 
     // ---- pins: `items.pinned` has one writer, this statement

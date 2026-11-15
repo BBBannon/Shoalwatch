@@ -83,6 +83,7 @@ class OfflineLibraryVisibilityTest : DownloadTestBase() {
 
     @Test fun bSharingOnBSeesItOnceCompleteAndNotWhileRunning() = runBlocking {
         aDownloads(DownloadState.RUNNING)
+        confirm(b, film, e1) // the strict sharing rule: B's own permission is confirmed
         seen(b, film, series, season1, e1)
         store.setSharing(S1, true)
         assertEquals(emptySet<String>(), seenBy(b, film) + seenBy(b, e1))
@@ -94,6 +95,7 @@ class OfflineLibraryVisibilityTest : DownloadTestBase() {
 
     @Test fun cSharingOnBWithNoRecordNeverSeesIt() = runBlocking {
         aDownloads()
+        confirm(b, film, e1) // the strict sharing rule: B's own permission is confirmed
         store.setSharing(S1, true)
         seen(b, series, season1) // the series is shown to B, but not the film or the episode
         assertEquals(emptySet<String>(), seenBy(b, film) + seenBy(b, e1))
@@ -104,6 +106,7 @@ class OfflineLibraryVisibilityTest : DownloadTestBase() {
 
     @Test fun dBWithTheEpisodesRecordButNotTheSeriessDoesNotGetTheSeries() = runBlocking {
         aDownloads()
+        confirm(b, film, e1) // the strict sharing rule: B's own permission is confirmed
         store.setSharing(S1, true)
         seen(b, e1, season1)
         assertEquals(setOf("one", "playable"), seenBy(b, e1))
@@ -127,6 +130,7 @@ class OfflineLibraryVisibilityTest : DownloadTestBase() {
 
     @Test fun gTheWatchedStateShownIsTheSessionUsersOwn() = runBlocking {
         aDownloads()
+        confirm(b, film, e1) // the strict sharing rule: B's own permission is confirmed
         store.setSharing(S1, true)
         seen(b, film, series, season1, e1)
         db.itemDao().setPlayed(S1, a.userId, e1.id, true, 0, 5)

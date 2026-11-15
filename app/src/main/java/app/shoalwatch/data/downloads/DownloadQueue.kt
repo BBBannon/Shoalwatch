@@ -59,25 +59,6 @@ internal class DownloadQueue(
     private val starts = Mutex()
     private val live = ConcurrentHashMap<DownloadKey, LiveConversion>()
 
-    /** What one item's run ends in: the next item, or the end of this drain. */
-    private sealed interface Step {
-        data object Next : Step
-        data class Halt(val run: QueueRun) : Step
-    }
-
-    /** Ends an item's run from anywhere in it (a fetcher only catches IOException, so these pass through). */
-    private class Ends(val step: Step) : RuntimeException(null, null, false, false)
-    private class RowGone : RuntimeException(null, null, false, false)
-    /** The row left RUNNING meanwhile (paused): it is left as it is, with its part file and live conversion. */
-    private class Moved : RuntimeException(null, null, false, false)
-
-    private class Job(val key: DownloadKey, val position: Int, val of: Int, val report: suspend (QueueStatus) -> Unit, val stop: () -> Boolean) {
-        suspend fun status(progress: Float?) = report(QueueStatus.Running(position, of, progress))
-    }
-
-    /** What was fetched: what the verifier needs to know about it. */
-    private class Fetched(val entry: File, val hls: Boolean, val shape: List<Long>?, val audioListed: Boolean)
-
     /** RUNNING and VERIFYING back to QUEUED, only while no drain runs in this process (at start-up, after process death). */
     suspend fun requeueIfIdle() {
         if (drains.tryLock()) try { store.requeueInterrupted() } finally { drains.unlock() }
@@ -99,9 +80,9 @@ internal class DownloadQueue(
             }
             val (row, claimed) = taken
             if (!claimed) continue // paused or removed between the read and the claim
-            when (val step = run(Job(row.key, done + 1, done + 1 + store.queuedCount(), onProgress, shouldStop))) {
-                Step.Next -> done++
-                is Step.Halt -> return@withLock step.run
+            when (val step = run(QueueJob(row.key, done + 1, done + 1 + store.queuedCount(), onProgress, shouldStop))) {
+                QueueStep.Next -> done++
+                is QueueStep.Halt -> return@withLock step.run
             }
         }
         @Suppress("UNREACHABLE_CODE") QueueRun.Drained
@@ -119,7 +100,7 @@ internal class DownloadQueue(
         }
     }
 
-    private suspend fun run(j: Job): Step {
+    private suspend fun run(j: QueueJob): QueueStep {
         var folder: File? = null
         return try {
             val row = current(j.key)
@@ -131,15 +112,15 @@ internal class DownloadQueue(
             val fetched = if (row.quality == DownloadQuality.ORIGINAL) original(j, s, dir) else conversion(j, s, dir)
             bestEffort { extras.segments(s, j.key) }
             bestEffort { extras.artwork(s, listOfNotNull(row.itemId, row.seasonId, row.seriesId)) }
-            verify(j, dir, fetched)
-        } catch (e: Ends) {
+            verify(j, s, dir, fetched)
+        } catch (e: QueueEnds) {
             e.step
-        } catch (e: RowGone) {
+        } catch (e: QueueRowGone) {
             live.remove(j.key)
             folder?.let(paths::deleteInside)
-            Step.Next
-        } catch (e: Moved) {
-            Step.Next
+            QueueStep.Next
+        } catch (e: QueueMoved) {
+            QueueStep.Next
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -154,19 +135,19 @@ internal class DownloadQueue(
     private suspend fun fetcherOf(key: DownloadKey): Session? =
         store.owners(key).map { Session(key.serverId, it) }.firstOrNull(hasToken)
 
-    private suspend fun original(j: Job, s: Session, folder: File): Fetched {
+    private suspend fun original(j: QueueJob, s: Session, folder: File): QueueFetched {
         val key = j.key
         val info = server(key) { resolver.checkOriginal(s, key.itemId) }
         val check = server(key) { OriginalChecks.of(info, key.itemId) }
         // The user chose the original: a server change since planning is NOT_PLAYABLE, never a silent conversion.
-        val playable = check as? OriginalCheck.Playable ?: throw Ends(failed(key, DownloadFailure.NOT_PLAYABLE))
+        val playable = check as? OriginalCheck.Playable ?: throw QueueEnds(failed(key, DownloadFailure.NOT_PLAYABLE))
         val before = current(key)
-        playable.sizeBytes?.let { if (!QueueSpace.fits(volumes, before, it - before.doneBytes)) throw Ends(failed(key, DownloadFailure.NO_SPACE)) }
+        playable.sizeBytes?.let { if (!QueueSpace.fits(volumes, before, it - before.doneBytes)) throw QueueEnds(failed(key, DownloadFailure.NO_SPACE)) }
         write(key) { it.copy(mediaSourceId = playable.sourceId, container = playable.container) }
         extras.tracks(s, key, folder, playable.sourceId, playable.audio, playable.subtitles, DownloadQuality.ORIGINAL)
         val part = paths.partFile(folder, playable.container)
         val target = paths.mediaFile(folder, playable.container)
-        val fetched = Fetched(target, hls = false, shape = null, audioListed = playable.audio.isNotEmpty())
+        val fetched = QueueFetched(target, hls = false, shape = null, audioListed = playable.audio.isNotEmpty())
         if (target.exists() && !part.exists()) return fetched // renamed before the process died: only the check is left
         var route = server(key) { downloadRoute(s, key.itemId) }
         var rerouted = false
@@ -174,12 +155,22 @@ internal class DownloadQueue(
             val row = current(key)
             val result = files.fetch(route, key.itemId, part, target, row.doneBytes, row.validator, playable.sizeBytes, row.totalBytes, row.restarts, fileProgress(j, row.doneBytes))
             when (result) {
-                FetchResult.Done -> return fetched
-                is FetchResult.Failed -> throw Ends(failed(key, result.failure))
-                FetchResult.Unauthorised -> throw Ends(unauthorised(key, s))
-                FetchResult.RestartConversion -> throw Ends(retry(key, AppError.Kind.SERVER_ERROR))
+                FetchResult.Done -> {
+                    store.confirm(key, s.userId) // /Download served it to this sign-in: the server's own permission check passed
+                    return fetched
+                }
+                is FetchResult.Failed -> {
+                    // Refused for this owner: another owner may still fetch it under their own permission (review I-2 a).
+                    if (result.failure == DownloadFailure.NOT_ALLOWED && store.dropRefusedOwner(key, s.userId)) {
+                        store.updateIf(key, ACTIVE) { it.copy(state = DownloadState.QUEUED) }
+                        throw QueueEnds(QueueStep.Next)
+                    }
+                    throw QueueEnds(failed(key, result.failure))
+                }
+                FetchResult.Unauthorised -> throw QueueEnds(unauthorised(key, s))
+                FetchResult.RestartConversion -> throw QueueEnds(retry(key, AppError.Kind.SERVER_ERROR))
                 is FetchResult.Retry -> {
-                    if (result.kind != AppError.Kind.OFFLINE || rerouted) throw Ends(retry(key, result.kind))
+                    if (result.kind != AppError.Kind.OFFLINE || rerouted) throw QueueEnds(retry(key, result.kind))
                     rerouted = true // a stale route: one new route, then the same file again
                     route = server(key) { downloadRoute(s, key.itemId) }
                 }
@@ -188,20 +179,20 @@ internal class DownloadQueue(
     }
 
     /** Saves all four values; a cut to zero after bytes were held (a 200 to a resume) is an attempt. */
-    private fun fileProgress(j: Job, resumedFrom: Long): Progress {
+    private fun fileProgress(j: QueueJob, resumedFrom: Long): Progress {
         var last = resumedFrom
         return Progress { done, total, validator, restarts ->
             val restarted = done == 0L && last > 0 && total != null
             last = done
             var attempts = 0
             write(j.key) { r -> r.copy(doneBytes = done, totalBytes = total, validator = validator, restarts = restarts, attempts = (if (restarted) r.attempts + 1 else r.attempts).also { attempts = it }) }
-            if (attempts >= maxAttempts) throw Ends(failed(j.key, DownloadFailure.SERVER_ERROR))
+            if (attempts >= maxAttempts) throw QueueEnds(failed(j.key, DownloadFailure.SERVER_ERROR))
             j.status(total?.takeIf { it > 0 }?.let { done.toFloat() / it })
-            if (j.stop()) throw Ends(stopped(j.key))
+            if (j.stop()) throw QueueEnds(stopped(j.key))
         }
     }
 
-    private suspend fun conversion(j: Job, s: Session, folder: File): Fetched {
+    private suspend fun conversion(j: QueueJob, s: Session, folder: File): QueueFetched {
         val key = j.key
         var rerouted = false
         while (true) {
@@ -218,14 +209,14 @@ internal class DownloadQueue(
             when (val result = hls.fetch(conv, folder, from, segmentProgress(j))) {
                 FetchResult.Done -> {
                     live.remove(key)
-                    return Fetched(paths.localPlaylist(paths.hlsFolder(folder)), hls = true, shape = conv.segments.map { it.durationMs }, audioListed = audioListed)
+                    return QueueFetched(paths.localPlaylist(paths.hlsFolder(folder)), hls = true, shape = conv.segments.map { it.durationMs }, audioListed = audioListed)
                 }
-                is FetchResult.Failed -> { live.remove(key); throw Ends(failed(key, result.failure)) }
-                FetchResult.Unauthorised -> { live.remove(key); throw Ends(unauthorised(key, s)) }
+                is FetchResult.Failed -> { live.remove(key); throw QueueEnds(failed(key, result.failure)) }
+                FetchResult.Unauthorised -> { live.remove(key); throw QueueEnds(unauthorised(key, s)) }
                 FetchResult.RestartConversion -> { live.remove(key); restartConversion(key) }
                 is FetchResult.Retry -> {
                     // The live conversion stays in memory, so a network blip resumes the same session.
-                    if (result.kind != AppError.Kind.OFFLINE || rerouted) throw Ends(retry(key, result.kind))
+                    if (result.kind != AppError.Kind.OFFLINE || rerouted) throw QueueEnds(retry(key, result.kind))
                     rerouted = true
                     val again = server(key) { resolver.reroute(conv.resolved) }
                     live[key] = LiveConversion(conv.itemId, again, conv.segments, conv.startedAtMs, conv.space, conv.budgetBytes, conv.bytesPerSecond)
@@ -247,15 +238,15 @@ internal class DownloadQueue(
         val quality = checkNotNull(row.quality.quality) { "Not a conversion." }
         val resolved = server(key) { resolver.resolve(s, PlaybackRequest(key.itemId, quality, audioIndex = audio, forceTranscode = true)) }
         val plan = resolved.plan
-        if (plan.method != PlayMethod.TRANSCODE || !plan.source.hls) throw Ends(failed(key, DownloadFailure.SERVER_ERROR))
+        if (plan.method != PlayMethod.TRANSCODE || !plan.source.hls) throw QueueEnds(failed(key, DownloadFailure.SERVER_ERROR))
         val own: List<AudioTrack> = plan.audioTracks.filter { it.index == (plan.audioIndex ?: audio) }.ifEmpty { plan.audioTracks.take(1) }
         extras.tracks(s, key, folder, plan.mediaSourceId, own, plan.subtitleTracks, row.quality)
         val (opened, result) = hls.open(resolved, folder, row.runtimeMs, ConversionSpace(row.storage, row.volumeId, QueueSpace.estimate(row)))
         if (opened == null) {
             when (result) {
-                is FetchResult.Failed -> throw Ends(failed(key, result.failure))
-                FetchResult.Unauthorised -> throw Ends(unauthorised(key, s))
-                is FetchResult.Retry -> throw Ends(retry(key, result.kind))
+                is FetchResult.Failed -> throw QueueEnds(failed(key, result.failure))
+                FetchResult.Unauthorised -> throw QueueEnds(unauthorised(key, s))
+                is FetchResult.Retry -> throw QueueEnds(retry(key, result.kind))
                 else -> { restartConversion(key); return open(key, s, folder) }
             }
         }
@@ -271,25 +262,27 @@ internal class DownloadQueue(
     private suspend fun restartConversion(key: DownloadKey) {
         var attempts = 0
         write(key) { it.copy(segmentsDone = 0, attempts = (it.attempts + 1).also { a -> attempts = a }) }
-        if (attempts >= maxAttempts) throw Ends(failed(key, DownloadFailure.SERVER_ERROR))
+        if (attempts >= maxAttempts) throw QueueEnds(failed(key, DownloadFailure.SERVER_ERROR))
     }
 
-    private fun segmentProgress(j: Job): suspend (Int, Int) -> Unit = { done, total ->
+    private fun segmentProgress(j: QueueJob): suspend (Int, Int) -> Unit = { done, total ->
         write(j.key) { it.copy(segmentsDone = done, segmentsTotal = total) }
         j.status(if (total > 0) done.toFloat() / total else null)
-        if (j.stop()) throw Ends(stopped(j.key))
+        if (j.stop()) throw QueueEnds(stopped(j.key))
     }
 
     /** VERIFYING, then COMPLETE; a first bad check deletes the media (the extras stay) and queues it from 0; a second is CHECK_FAILED with nothing left. */
-    private suspend fun verify(j: Job, folder: File, fetched: Fetched): Step {
+    private suspend fun verify(j: QueueJob, s: Session, folder: File, fetched: QueueFetched): QueueStep {
         write(j.key) { it.copy(state = DownloadState.VERIFYING) }
         val row = current(j.key)
         val media = SavedMedia(j.key.serverId, j.key.itemId, folder, fetched.entry, fetched.hls, row.quality, row.mediaSourceId.orEmpty())
         val verdict = verifier.verify(media, if (fetched.hls) null else row.totalBytes, row.runtimeMs, fetched.shape, fetched.audioListed)
         val at = store.stamp()
         when (verdict) {
-            is Verdict.Good -> write(j.key) {
-                it.copy(state = DownloadState.COMPLETE, failure = null, sha256 = verdict.sha256, completedAt = at, verifiedAt = at, attempts = 0)
+            is Verdict.Good -> {
+                // Nobody keeps a copy fetched under another profile's permission (review I-2 a).
+                store.dropUnconfirmedOwners(j.key, s.userId)
+                write(j.key) { it.copy(state = DownloadState.COMPLETE, failure = null, sha256 = verdict.sha256, completedAt = at, verifiedAt = at, attempts = 0) }
             }
             is Verdict.Bad -> {
                 AppLog.w(TAG, "download check failed: ${verdict.reason}")
@@ -306,11 +299,11 @@ internal class DownloadQueue(
                 }
             }
         }
-        return Step.Next
+        return QueueStep.Next
     }
 
     /** Task 1's rule: ONE ServerApi call tells a dead token (it signs the account out) from a server refusing it for media. */
-    private suspend fun unauthorised(key: DownloadKey, s: Session): Step = try {
+    private suspend fun unauthorised(key: DownloadKey, s: Session): QueueStep = try {
         gateway.facts(s, listOf(key.itemId))
         failed(key, DownloadFailure.SERVER_AUTH_REFUSED)
     } catch (e: CancellationException) {
@@ -327,10 +320,10 @@ internal class DownloadQueue(
         block()
     } catch (e: CancellationException) {
         throw e
-    } catch (e: Ends) {
+    } catch (e: QueueEnds) {
         throw e
     } catch (e: Exception) {
-        throw Ends(
+        throw QueueEnds(
             when (val kind = AppError.from(e).kind) {
                 AppError.Kind.UNAUTHORISED, AppError.Kind.NOT_SIGNED_IN -> failed(key, DownloadFailure.SIGN_IN_NEEDED)
                 AppError.Kind.FORBIDDEN, AppError.Kind.PLAYBACK_NOT_ALLOWED -> failed(key, DownloadFailure.NOT_ALLOWED)
@@ -341,45 +334,41 @@ internal class DownloadQueue(
         )
     }
 
-    private suspend fun failed(key: DownloadKey, failure: DownloadFailure): Step {
+    private suspend fun failed(key: DownloadKey, failure: DownloadFailure): QueueStep {
         live.remove(key)
         if (store.updateIf(key, ACTIVE) { it.copy(state = DownloadState.FAILED, failure = failure) } == DownloadStore.Written.DONE) {
             AppLog.w(TAG, "download failed: ${failure.name}")
         }
-        return Step.Next
+        return QueueStep.Next
     }
 
     /** One more attempt used: back in the queue and this drain stops (the worker backs off), or SERVER_ERROR at [maxAttempts]. */
-    private suspend fun retry(key: DownloadKey, kind: AppError.Kind): Step {
+    private suspend fun retry(key: DownloadKey, kind: AppError.Kind): QueueStep {
         var attempts = 0
-        if (store.updateIf(key, ACTIVE) { it.copy(attempts = (it.attempts + 1).also { a -> attempts = a }) } != DownloadStore.Written.DONE) return Step.Next
+        if (store.updateIf(key, ACTIVE) { it.copy(attempts = (it.attempts + 1).also { a -> attempts = a }) } != DownloadStore.Written.DONE) return QueueStep.Next
         if (attempts >= maxAttempts) return failed(key, DownloadFailure.SERVER_ERROR)
         store.updateIf(key, ACTIVE) { it.copy(state = DownloadState.QUEUED) }
-        return Step.Halt(QueueRun.Retry(kind))
+        return QueueStep.Halt(QueueRun.Retry(kind))
     }
 
-    private suspend fun stopped(key: DownloadKey): Step {
+    private suspend fun stopped(key: DownloadKey): QueueStep {
         store.updateIf(key, ACTIVE) { it.copy(state = DownloadState.QUEUED) }
-        return Step.Halt(QueueRun.Stopped)
+        return QueueStep.Halt(QueueRun.Stopped)
     }
 
-    private suspend fun current(key: DownloadKey): DownloadEntity = store.get(key) ?: throw RowGone()
+    private suspend fun current(key: DownloadKey): DownloadEntity = store.get(key) ?: throw QueueRowGone()
 
     /** Writes only while the item is still this queue's (RUNNING or VERIFYING); a pause stops it, a removal cleans it up. */
     private suspend fun write(key: DownloadKey, change: (DownloadEntity) -> DownloadEntity) {
         when (store.updateIf(key, ACTIVE, change)) {
             DownloadStore.Written.DONE -> Unit
-            DownloadStore.Written.MOVED -> throw Moved()
-            DownloadStore.Written.GONE -> throw RowGone()
+            DownloadStore.Written.MOVED -> throw QueueMoved()
+            DownloadStore.Written.GONE -> throw QueueRowGone()
         }
     }
 
-    private suspend fun bestEffort(block: suspend () -> Unit) = try {
-        block()
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        AppLog.w(TAG, "download extras skipped: ${e.javaClass.simpleName}")
+    private suspend fun bestEffort(block: suspend () -> Unit) {
+        try { block() } catch (e: CancellationException) { throw e } catch (e: Exception) { AppLog.w(TAG, "download extras skipped: ${e.javaClass.simpleName}") }
     }
 
     private val DownloadEntity.key get() = DownloadKey(serverId, itemId)
