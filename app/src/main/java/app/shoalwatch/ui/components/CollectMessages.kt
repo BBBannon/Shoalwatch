@@ -7,7 +7,7 @@ import app.shoalwatch.data.servers.Session
 import kotlinx.coroutines.flow.Flow
 
 /**
- * Shows each message from a ViewModel (a failed action, "Playback arrives in the next update") in the snackbar, one after another.
+ * Shows each message from a ViewModel (a failed action, such as marking an item watched) in the snackbar, one after another.
  * Material announces them to screen readers. A message belongs to the [session] that caused it: the one on screen goes as soon as
  * the session changes (see [DismissOnSessionChange]).
  */
