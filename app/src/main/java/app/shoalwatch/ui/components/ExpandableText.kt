@@ -1,5 +1,7 @@
 package app.shoalwatch.ui.components
 
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.MaterialTheme
@@ -17,7 +19,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import app.shoalwatch.R
 
 /**
- * Plain text cut to [collapsedLines] lines with "More" to read the rest and "Less" to fold it again. The button only appears when
+ * Plain text cut to [collapsedLines] lines with "Show more" to read the rest and "Show less" to fold it again; the button says whether the text is expanded. The button only appears when
  * something is actually hidden. Left-aligned, never interpreted as markup or as links.
  */
 @Composable
@@ -33,7 +35,8 @@ fun ExpandableText(text: String, modifier: Modifier = Modifier, collapsedLines: 
             onTextLayout = { if (!expanded) overflows = it.hasVisualOverflow },
         )
         if (overflows || expanded) {
-            TextButton(onClick = { expanded = !expanded }) {
+            val state = stringResource(if (expanded) R.string.state_expanded else R.string.state_collapsed)
+            TextButton(onClick = { expanded = !expanded }, modifier = Modifier.semantics { stateDescription = state }) {
                 Text(stringResource(if (expanded) R.string.action_less else R.string.action_more), style = MaterialTheme.typography.labelLarge)
             }
         }

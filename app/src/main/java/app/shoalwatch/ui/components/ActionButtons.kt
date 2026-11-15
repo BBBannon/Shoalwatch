@@ -1,5 +1,6 @@
 package app.shoalwatch.ui.components
 
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.heightIn
@@ -31,7 +32,11 @@ import app.shoalwatch.R
  */
 @Composable
 fun WatchedButton(label: String, watched: Boolean, working: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    FilledTonalButton(onClick = onClick, enabled = !working, modifier = modifier.heightIn(min = 56.dp)) {
+    val workingText = stringResource(R.string.cd_working)
+    FilledTonalButton(
+        onClick = onClick, enabled = !working,
+        modifier = modifier.heightIn(min = 56.dp).semantics { if (working) stateDescription = workingText },
+    ) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             if (working) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onSecondaryContainer)
             else Icon(if (watched) Icons.Filled.Refresh else Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(20.dp))
@@ -44,7 +49,11 @@ fun WatchedButton(label: String, watched: Boolean, working: Boolean, onClick: ()
 @Composable
 fun FavouriteButton(favourite: Boolean, working: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val label = stringResource(if (favourite) R.string.sheet_unfavourite else R.string.sheet_favourite)
-    IconButton(onClick = onClick, enabled = !working, modifier = modifier.size(56.dp).semantics { contentDescription = label }) {
+    val workingText = stringResource(R.string.cd_working)
+    IconButton(
+        onClick = onClick, enabled = !working,
+        modifier = modifier.size(56.dp).semantics { contentDescription = label; if (working) stateDescription = workingText },
+    ) {
         if (working) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
         else Icon(
             if (favourite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,

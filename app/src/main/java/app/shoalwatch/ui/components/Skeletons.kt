@@ -82,7 +82,7 @@ fun SkeletonEpisodes(modifier: Modifier = Modifier, count: Int = 4) {
 @Composable
 private fun SkeletonPreview() = ShoalwatchTheme {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        SkeletonRow(16f / 9f, 264.dp)
+        SkeletonRow(16f / 9f, PhoneWideCardWidth)
         SkeletonRow(2f / 3f, 128.dp)
         SkeletonEpisodes()
     }

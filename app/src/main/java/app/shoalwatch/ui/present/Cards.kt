@@ -33,6 +33,10 @@ data class CardUi(
 /** The name to show for an item. */
 fun Item.displayName(strings: Strings): String = name.ifBlank { strings.get(R.string.untitled) }
 
+/** The title of the actions sheet: an episode says which series and which episode ("Harbour Lights · S2 E2 · Episode 2"); anything else its name. */
+fun Item.sheetTitle(strings: Strings): String =
+    if (kind == ItemKind.EPISODE) joinAll(strings, listOfNotNull(seriesName, episodeCode(strings, this), name)) ?: displayName(strings) else displayName(strings)
+
 private fun join(strings: Strings, first: String?, second: String?): String? = when {
     first == null -> second
     second == null -> first
@@ -85,7 +89,9 @@ fun wideCard(entry: ItemWithUserData, session: Session, strings: Strings): CardU
         unwatchedCount = null,
         label = speak(
             listOf(
-                title, subtitle,
+                title,
+                if (isEpisode) episodeSpoken(strings, item) else null,
+                if (isEpisode) name.takeIf { item.name.isNotBlank() } else subtitle,
                 percentText,
                 if (watched) strings.get(R.string.state_watched) else null,
             ),
@@ -118,6 +124,7 @@ fun episodeRow(entry: ItemWithUserData, session: Session, strings: Strings): Epi
     val data = entry.userData
     val name = item.displayName(strings)
     val number = item.indexNumber?.let { strings.get(R.string.episode_code_episode, it.toString()) }
+    val spokenNumber = item.indexNumber?.let { strings.get(R.string.episode_spoken_episode, it.toString()) }
     val title = join(strings, number, name) ?: name
     val runtime = item.runtimeMs?.takeIf { it > 0 }?.let { formatDuration(strings, it) }
     val percent = percentWatched(item, data)
@@ -126,7 +133,7 @@ fun episodeRow(entry: ItemWithUserData, session: Session, strings: Strings): Epi
     return EpisodeUi(
         id = item.id, title = title, runtime = runtime, overview = plainOverview(item.overview), artwork = wideArtwork(item, session),
         progress = percent?.let { it / 100f }, percentText = percentText, watched = watched,
-        label = speak(listOf(title, runtime, percentText, if (watched) strings.get(R.string.state_watched) else null)),
+        label = speak(listOf(spokenNumber, name, runtime, percentText, if (watched) strings.get(R.string.state_watched) else null)),
         menuLabel = strings.get(R.string.cd_more_actions, name),
     )
 }
@@ -142,7 +149,11 @@ fun searchRow(entry: ItemWithUserData, session: Session, strings: Strings): Sear
         ItemKind.SERIES -> join(strings, strings.get(R.string.search_series_label), item.year?.toString())
         else -> item.year?.toString()
     }
-    return SearchRowUi(item.id, title, subtitle, item.primaryArtwork(session), speak(listOf(title, subtitle)))
+    val spoken = when (item.kind) {
+        ItemKind.EPISODE -> listOf(title, item.seriesName?.ifBlank { null }, episodeSpoken(strings, item))
+        else -> listOf(title, subtitle)
+    }
+    return SearchRowUi(item.id, title, subtitle, item.primaryArtwork(session), speak(spoken))
 }
 
 /** "Films", "TV shows"... */

@@ -4,6 +4,11 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.remember
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.widthIn
@@ -28,6 +33,10 @@ val ReadableWidth = 840.dp
 /** The smallest touch target, which every button here meets. */
 val TouchTarget = 48.dp
 
+/** A Continue Watching or Next Up card: narrow enough on a phone that the next card shows beside it, wider on a tablet. */
+val PhoneWideCardWidth = 220.dp
+val TabletWideCardWidth = 320.dp
+
 /** From this width a navigation rail replaces the bottom bar and rows and grids show more. */
 val WideBreakpoint = 600.dp
 
@@ -37,9 +46,17 @@ fun screenWidth(): Dp = LocalConfiguration.current.screenWidthDp.dp
 @Composable
 fun isWideScreen(): Boolean = screenWidth() >= WideBreakpoint
 
+@Composable
+fun wideCardWidth(): Dp = if (isWideScreen()) TabletWideCardWidth else PhoneWideCardWidth
+
 /** Titles may wrap to more lines when the reader has asked for larger text, so nothing is cut to one word. */
 @Composable
 fun titleLines(normal: Int = 2): Int = if (LocalDensity.current.fontScale > 1.3f) normal + 2 else normal
+
+/** A full-size column that scrolls when its content is taller than the space (large text, a landscape phone). Not for use inside a lazy list. */
+@Composable
+fun ScrollingColumn(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) =
+    Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()), content = content)
 
 /** Centres its content and never lets it grow wider than [ReadableWidth]. */
 @Composable

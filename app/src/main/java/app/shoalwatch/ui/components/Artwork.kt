@@ -16,6 +16,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
@@ -60,11 +61,12 @@ fun Artwork(
     modifier: Modifier = Modifier,
     aspect: ArtworkAspect = ArtworkAspect.POSTER,
     title: String? = null,
+    shape: Shape = ArtworkShape,
 ) {
     val context = LocalContext.current
     val loader = LocalArtworkLoader.current
     val fade = remember(context) { crossfadeMillis(animationsEnabled(context)) }
-    val frame = modifier.aspectRatio(aspect.ratio).clip(RoundedCornerShape(CORNER))
+    val frame = modifier.aspectRatio(aspect.ratio).clip(shape)
     if (ref != null && loader == null) {
         check(!BuildConfig.DEBUG) { "Artwork needs a LocalArtworkLoader provided at the root of the app." }
         AppLog.w("Artwork", "no artwork loader provided")
@@ -89,7 +91,8 @@ fun Artwork(
     }
 }
 
-private val CORNER = 8.dp
+/** The rounded corners every picture has; a progress bar laid over a picture's foot is clipped to the same shape. */
+val ArtworkShape: Shape = RoundedCornerShape(8.dp)
 
 /** False when the system's "remove animations" setting (animator duration scale 0) is on. */
 private fun animationsEnabled(context: Context): Boolean = try {

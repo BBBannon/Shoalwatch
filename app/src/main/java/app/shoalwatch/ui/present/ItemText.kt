@@ -4,7 +4,8 @@ import app.shoalwatch.R
 import app.shoalwatch.data.library.Item
 import java.util.Locale
 
-private fun joinAll(strings: Strings, parts: List<String>): String? =
+/** The parts that have text, joined with the shared " · " resource; null when none have. */
+fun joinAll(strings: Strings, parts: List<String>): String? =
     parts.filter { it.isNotBlank() }.reduceOrNull { acc, next -> strings.get(R.string.line_join, acc, next) }
 
 /** "Season 2", "Specials" (season number 0), or the season's own name when it has no number; "Season" when it has neither. */

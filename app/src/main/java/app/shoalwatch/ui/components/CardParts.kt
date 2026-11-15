@@ -1,5 +1,6 @@
 package app.shoalwatch.ui.components
 
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
@@ -23,14 +24,15 @@ import androidx.compose.ui.unit.dp
 
 /**
  * Makes a card one focusable, labelled element: a tap opens it, a long press (or the "more actions" custom action for a screen
- * reader) opens its actions. The separate [ItemMenuButton] sits beside it, never inside, so it stays its own control.
+ * reader) opens its actions. [state] is spoken after the label ("Working", "Up next for you"). The separate [ItemMenuButton] sits beside it, never inside, so it stays its own control.
  */
 @OptIn(ExperimentalFoundationApi::class)
-fun Modifier.cardAction(label: String, menuLabel: String, onClick: () -> Unit, onMenu: () -> Unit): Modifier =
+fun Modifier.cardAction(label: String, menuLabel: String, onClick: () -> Unit, onMenu: () -> Unit, state: String? = null): Modifier =
     this
         .combinedClickable(onClick = onClick, onLongClick = onMenu, onLongClickLabel = menuLabel, role = Role.Button)
         .semantics(mergeDescendants = true) {
             contentDescription = label
+            if (state != null) stateDescription = state
             customActions = listOf(CustomAccessibilityAction(menuLabel) { onMenu(); true })
         }
 

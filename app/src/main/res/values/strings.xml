@@ -193,14 +193,19 @@
     <!-- Browsing: shared -->
     <string name="untitled">Untitled</string>
     <string name="action_sign_in">Sign in</string>
-    <string name="action_review">Review</string>
+    <string name="action_review">Check certificate</string>
+    <string name="action_refresh">Refresh</string>
     <string name="action_clear_filters">Clear filters</string>
-    <string name="action_more">More</string>
-    <string name="action_less">Less</string>
+    <string name="action_more">Show more</string>
+    <string name="action_less">Show less</string>
+    <string name="state_expanded">Expanded</string>
+    <string name="state_collapsed">Collapsed</string>
+    <string name="state_menu_open">Menu open</string>
+    <string name="state_menu_closed">Menu closed</string>
     <string name="cd_more_actions">More actions for %1$s</string>
     <string name="cd_working">Working</string>
     <string name="cd_loading_content">Loading</string>
-    <string name="banner_offline">You’re offline — showing what’s saved on this phone</string>
+    <string name="banner_offline">You’re offline. Showing what’s saved on this phone.</string>
     <string name="banner_signin">Your sign-in has expired</string>
     <string name="banner_certificate">This server’s security certificate needs checking</string>
     <string name="banner_generic">Couldn’t refresh</string>
@@ -223,7 +228,7 @@
     <string name="home_libraries">Libraries</string>
     <string name="home_empty_title">Nothing to show yet</string>
     <string name="home_empty_body">Your library hasn’t loaded. Check your connection and try again.</string>
-    <string name="account_menu_cd">Account and settings</string>
+    <string name="account_menu_cd">Account menu</string>
     <string name="account_switch_title">Switch account</string>
     <string name="account_current">%1$s (current)</string>
     <string name="library_kind_movies">Films</string>
@@ -231,6 +236,11 @@
     <string name="library_kind_collections">Collections</string>
     <string name="library_kind_mixed">Folders and more</string>
     <string name="library_card_cd">%1$s, %2$s</string>
+    <string name="unwatched_many">99+</string>
+    <string name="state_up_next">Up next for you</string>
+    <string name="episode_spoken_full">Season %1$s, episode %2$s</string>
+    <string name="episode_spoken_episode">Episode %1$s</string>
+    <string name="episode_spoken_season">Season %1$s</string>
 
     <!-- Browsing: item actions and labels -->
     <string name="sheet_remove_resume">Remove from Continue Watching</string>
@@ -263,8 +273,12 @@
     <string name="sort_date_added">Date added</string>
     <string name="sort_release">Release date</string>
     <string name="sort_rating">Rating</string>
-    <string name="sort_ascending">Ascending</string>
-    <string name="sort_descending">Descending</string>
+    <string name="sort_name_up">A to Z</string>
+    <string name="sort_name_down">Z to A</string>
+    <string name="sort_date_up">Oldest first</string>
+    <string name="sort_date_down">Newest first</string>
+    <string name="sort_rating_up">Lowest first</string>
+    <string name="sort_rating_down">Highest first</string>
     <string name="sort_current">Sort: %1$s, %2$s</string>
     <string name="filter_unwatched">Unwatched</string>
     <string name="filter_favourites">Favourites</string>
@@ -307,12 +321,17 @@
     <string name="detail_overview_heading">About</string>
 
     <!-- Browsing: search -->
-    <string name="search_hint">Search films, series and episodes</string>
+    <string name="search_hint">Search</string>
+    <string name="search_searching">Searching…</string>
+    <plurals name="search_results_count">
+        <item quantity="one">%1$d result</item>
+        <item quantity="other">%1$d results</item>
+    </plurals>
     <string name="search_clear">Clear search</string>
     <string name="search_heading_films">Films</string>
     <string name="search_heading_series">Series</string>
     <string name="search_heading_episodes">Episodes</string>
-    <string name="search_offline">You’re offline — searching what’s saved on this phone</string>
+    <string name="search_offline">You’re offline. Searching what’s saved on this phone.</string>
     <string name="search_empty_title">No results</string>
     <string name="search_empty_body">Nothing matched “%1$s”. Check the spelling, or try a shorter word.</string>
     <string name="search_prompt">Type at least 2 letters to search.</string>

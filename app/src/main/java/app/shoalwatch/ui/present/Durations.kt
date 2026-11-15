@@ -41,6 +41,19 @@ fun percentWatched(item: Item, data: UserData?): Int? {
 }
 
 /** "S2 E5", "E5", "S2", or null. Locale-independent digits. */
+/** The same as [episodeCode] for a screen reader: "Season 2, episode 5", never "S two E five". */
+fun episodeSpoken(strings: Strings, item: Item): String? {
+    val season = item.parentIndexNumber
+    val episode = item.indexNumber
+    return when {
+        item.kind != ItemKind.EPISODE -> null
+        season != null && episode != null -> strings.get(R.string.episode_spoken_full, season.toString(), episode.toString())
+        episode != null -> strings.get(R.string.episode_spoken_episode, episode.toString())
+        season != null -> strings.get(R.string.episode_spoken_season, season.toString())
+        else -> null
+    }
+}
+
 fun episodeCode(strings: Strings, item: Item): String? {
     val season = item.parentIndexNumber
     val episode = item.indexNumber

@@ -35,7 +35,7 @@ class BannerActions(val onRetry: () -> Unit, val onSignIn: () -> Unit, val onRev
 /**
  * The compact notice shown above saved content when a refresh failed: what happened, in one plain line, and one button.
  * Offline (and network or timeout) says what is on screen is saved and offers a retry; an expired sign-in offers Sign in; a
- * certificate problem offers Review; anything else says "Couldn't refresh" with a retry. Icon and words, never colour alone, and
+ * certificate problem offers Check certificate; anything else says "Couldn't refresh" with a retry. Icon and words, never colour alone, and
  * it is announced politely when it appears.
  */
 @Composable
@@ -53,7 +53,7 @@ fun FreshnessBanner(kind: BannerKind, actions: BannerActions, modifier: Modifier
         else -> colours.tertiaryContainer to colours.onTertiaryContainer
     }
     Surface(
-        modifier.fillMaxWidth().padding(horizontal = if (padded) Gutter else 0.dp, vertical = 4.dp).semantics { liveRegion = LiveRegionMode.Polite },
+        modifier.fillMaxWidth().padding(horizontal = if (padded) Gutter else 0.dp, vertical = 4.dp),
         shape = CardShape,
         color = container,
         contentColor = content,
@@ -65,7 +65,8 @@ fun FreshnessBanner(kind: BannerKind, actions: BannerActions, modifier: Modifier
                 modifier = Modifier.padding(top = 12.dp).size(20.dp),
             )
             Column(Modifier.weight(1f)) {
-                Text(stringResource(text), Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodyMedium)
+                // The live region is on the message alone: the banner is not merged, so its button stays a control of its own.
+                Text(stringResource(text), Modifier.padding(top = 8.dp).semantics { liveRegion = LiveRegionMode.Polite }, style = MaterialTheme.typography.bodyMedium)
                 TextButton(onClick = onClick) { Text(stringResource(button), style = MaterialTheme.typography.labelLarge) }
             }
         }

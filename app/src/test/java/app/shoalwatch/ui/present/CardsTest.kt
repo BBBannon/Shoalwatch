@@ -127,7 +127,7 @@ class CardsTest {
         assertEquals("S2 E5 · The Tide", card.subtitle)
         assertEquals("42% watched", card.percentText)
         assertEquals(0.42f, card.progress!!, 0.001f)
-        assertEquals("Series 50, S2 E5 · The Tide, 42% watched", card.label)
+        assertEquals("Series 50, Season 2, episode 5, The Tide, 42% watched", card.label)
     }
 
     @Test fun aFilmWideCardShowsTimeLeft() {
@@ -156,7 +156,7 @@ class CardsTest {
         assertEquals("E5 · The Tide", row.title)
         assertEquals("47 min", row.runtime)
         assertEquals("Waves\nand tides & more", row.overview)
-        assertEquals("E5 · The Tide, 47 min", row.label)
+        assertEquals("Episode 5, The Tide, 47 min", row.label)
         assertEquals("More actions for The Tide", row.menuLabel)
     }
 
@@ -171,6 +171,7 @@ class CardsTest {
         assertEquals("Series 50 · S1 E3", searchRow(episode(3, number = 3), BEN, strings).subtitle)
         assertEquals("Series · 2019", searchRow(entry(2, ItemKind.SERIES), BEN, strings).subtitle)
         assertEquals("Item 1, 2019", searchRow(entry(1), BEN, strings).label)
+        assertEquals("Episode 3, Series 50, Season 1, episode 3", searchRow(episode(3, number = 3), BEN, strings).label)
     }
 
     @Test fun libraryKindsAndTotalsReadPlainly() {
@@ -214,5 +215,29 @@ class CardsTest {
         assertFalse(Freshness.Stale(AppError.Kind.SERVER_NOT_FOUND).isGone(hasItem = true))
         assertFalse(Freshness.Stale(AppError.Kind.OFFLINE).isGone(hasItem = false))
         assertFalse(Freshness.Refreshing.isGone(hasItem = false))
+    }
+
+    // --- spoken wording, sheet titles ---------------------------------------------------------------------------
+
+    @Test fun spokenEpisodeCodesAreWordsNotLetters() {
+        val ep = episode(7, season = 2, number = 5).item
+        assertEquals("Season 2, episode 5", episodeSpoken(strings, ep))
+        assertEquals("Episode 5", episodeSpoken(strings, ep.copy(parentIndexNumber = null)))
+        assertEquals("Season 2", episodeSpoken(strings, ep.copy(indexNumber = null)))
+        assertNull(episodeSpoken(strings, entry(1).item))
+    }
+
+    @Test fun noSpokenLabelEverContainsACodeLikeS2E5() {
+        val ep = episode(7, season = 2, number = 5, name = "The Tide")
+        for (label in listOf(wideCard(ep, BEN, strings).label, episodeRow(ep, BEN, strings).label, searchRow(ep, BEN, strings).label)) {
+            assertTrue(label, !Regex("""\bS\d+ ?E?\d*\b|\bE\d+\b""").containsMatchIn(label))
+        }
+    }
+
+    @Test fun anEpisodeSheetTitleNamesTheSeriesTheCodeAndTheEpisode() {
+        val ep = episode(7, season = 2, number = 2, name = "Episode 2")
+        assertEquals("Series 50 · S2 E2 · Episode 2", ep.item.sheetTitle(strings))
+        assertEquals("Item 1", entry(1).item.sheetTitle(strings))
+        assertEquals("Untitled", entry(1, name = "").item.sheetTitle(strings))
     }
 }

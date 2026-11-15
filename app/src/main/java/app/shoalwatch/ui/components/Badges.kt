@@ -1,5 +1,7 @@
 package app.shoalwatch.ui.components
 
+import app.shoalwatch.R
+import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -68,7 +70,7 @@ fun UnwatchedBadge(count: Int, modifier: Modifier = Modifier) {
         contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
     ) {
         Text(
-            if (count > 99) "99+" else count.toString(),
+            if (count > 99) stringResource(R.string.unwatched_many) else count.toString(),
             Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
             style = MaterialTheme.typography.labelMedium,
             textAlign = TextAlign.Center,

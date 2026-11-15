@@ -11,6 +11,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import app.shoalwatch.R
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -36,7 +38,7 @@ fun PosterCard(
 ) {
     Box(if (width != null) modifier.width(width) else modifier.fillMaxWidth()) {
         Column(
-            Modifier.fillMaxWidth().clip(CardShape).cardAction(card.label, card.menuLabel, onClick, onMenu),
+            Modifier.fillMaxWidth().clip(CardShape).cardAction(card.label, card.menuLabel, onClick, onMenu, if (working) stringResource(R.string.cd_working) else null),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Box {
@@ -49,7 +51,7 @@ fun PosterCard(
             }
             Text(card.title, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold), maxLines = titleLines(), overflow = TextOverflow.Ellipsis)
             if (card.subtitle != null) {
-                Text(card.subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                Text(card.subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
         ItemMenuButton(card.menuLabel, onMenu, Modifier.align(Alignment.TopEnd))

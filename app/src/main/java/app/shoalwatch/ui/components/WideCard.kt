@@ -12,6 +12,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import app.shoalwatch.R
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -32,15 +34,16 @@ fun WideCard(
     onClick: () -> Unit,
     onMenu: () -> Unit,
     modifier: Modifier = Modifier,
-    width: Dp = 264.dp,
+    width: Dp = PhoneWideCardWidth,
     working: Boolean = false,
 ) {
     Box(modifier.width(width)) {
         Column(
-            Modifier.fillMaxWidth().clip(CardShape).cardAction(card.label, card.menuLabel, onClick, onMenu),
+            Modifier.fillMaxWidth().clip(CardShape).cardAction(card.label, card.menuLabel, onClick, onMenu, if (working) stringResource(R.string.cd_working) else null),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Box {
+            // The bar is drawn inside the picture's rounded corners, along its foot.
+            Box(Modifier.clip(ArtworkShape)) {
                 Artwork(card.artwork, contentDescription = null, aspect = ArtworkAspect.WIDE, title = card.title, modifier = Modifier.fillMaxWidth())
                 if (card.progress != null) ProgressBarThin(card.progress, Modifier.align(Alignment.BottomCenter))
                 when {

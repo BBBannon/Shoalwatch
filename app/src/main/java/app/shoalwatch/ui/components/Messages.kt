@@ -1,5 +1,8 @@
 package app.shoalwatch.ui.components
 
+import app.shoalwatch.ui.present.BannerKind
+import androidx.compose.ui.res.stringResource
+import app.shoalwatch.R
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -48,6 +51,7 @@ fun NoticeCard(
     modifier: Modifier = Modifier,
     tone: Tone = Tone.Caution,
     icon: ImageVector = if (tone == Tone.Info) Icons.Filled.Info else Icons.Filled.Warning,
+    announce: Boolean = false,
     content: @Composable () -> Unit = {},
 ) {
     val colours = MaterialTheme.colorScheme
@@ -56,7 +60,9 @@ fun NoticeCard(
         Tone.Caution -> colours.tertiaryContainer to colours.onTertiaryContainer
         Tone.Info -> colours.secondaryContainer to colours.onSecondaryContainer
     }
-    Card(modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = container, contentColor = onContainer)) {
+    // [announce]: the notice is read out when it appears (merged into one element, as a live region needs).
+    val live = if (announce) Modifier.semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite } else Modifier
+    Card(modifier.fillMaxWidth().then(live), colors = CardDefaults.cardColors(containerColor = container, contentColor = onContainer)) {
         Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp))
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -66,4 +72,18 @@ fun NoticeCard(
             }
         }
     }
+}
+
+/**
+ * What a screen shows when it has nothing to show and loading failed: ONE message with the button that fits the failure (Try
+ * again, Sign in or Check certificate). The screen leaves out its banner while this is up, so the user never reads two messages.
+ */
+@Composable
+fun ErrorState(kind: BannerKind, actions: BannerActions, modifier: Modifier = Modifier) {
+    val (body, button, onClick) = when (kind) {
+        BannerKind.OFFLINE, BannerKind.GENERIC -> Triple(R.string.error_body, R.string.action_retry, actions.onRetry)
+        BannerKind.SIGN_IN -> Triple(R.string.banner_signin, R.string.action_sign_in, actions.onSignIn)
+        BannerKind.CERTIFICATE -> Triple(R.string.banner_certificate, R.string.action_review, actions.onReview)
+    }
+    EmptyState(stringResource(R.string.error_title), stringResource(body), modifier, actionLabel = stringResource(button), onAction = onClick)
 }

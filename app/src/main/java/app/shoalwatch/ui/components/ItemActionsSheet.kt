@@ -1,5 +1,8 @@
 package app.shoalwatch.ui.components
 
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -15,7 +18,6 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -67,7 +69,8 @@ class SheetActions(
 @Composable
 fun ItemActionsSheet(target: SheetTarget, actions: SheetActions, onDismiss: () -> Unit) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        Column(Modifier.navigationBarsPadding().padding(bottom = 16.dp)) {
+        // Scrolls: at a large text size, or on a phone held sideways, the last rows would otherwise be out of reach.
+        Column(Modifier.verticalScroll(rememberScrollState()).navigationBarsPadding().padding(bottom = 16.dp)) {
             Text(
                 target.title,
                 Modifier.padding(horizontal = 24.dp, vertical = 8.dp).semantics { heading() },
@@ -89,7 +92,7 @@ fun ItemActionsSheet(target: SheetTarget, actions: SheetActions, onDismiss: () -
                 onDismiss()
             }
             if (target.seriesId != null) {
-                SheetRow(R.string.sheet_go_series, Icons.Filled.PlayArrow) { actions.onGoToSeries(target.seriesId); onDismiss() }
+                SheetRow(R.string.sheet_go_series, Icons.AutoMirrored.Filled.ArrowForward) { actions.onGoToSeries(target.seriesId); onDismiss() }
             }
             SheetRow(R.string.sheet_details, Icons.Filled.Info) { actions.onDetails(target.itemId); onDismiss() }
         }
