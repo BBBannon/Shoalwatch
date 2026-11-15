@@ -36,6 +36,30 @@ abstract class DownloadDao {
     @Query("SELECT COUNT(*) FROM downloads WHERE state = 'COMPLETE' AND completedAt >= :since")
     internal abstract suspend fun completedSince(since: Long): Int
 
+    @Query("SELECT COUNT(*) FROM downloads WHERE state IN ('QUEUED', 'RUNNING', 'VERIFYING')")
+    internal abstract suspend fun waitingCount(): Int
+
+    @Query("SELECT itemId FROM download_owners WHERE serverId = :serverId AND userId = :userId ORDER BY addedAt, itemId")
+    internal abstract suspend fun ownedItems(serverId: String, userId: String): List<String>
+
+    /** Shared COMPLETE downloads [userId] does not own, whose visibility record is older than [cutoff] (oldest first). */
+    @Query(
+        "SELECT d.itemId AS itemId, d.seriesId AS seriesId FROM downloads d " +
+            "JOIN visible_items v ON v.serverId = d.serverId AND v.userId = :userId AND v.itemId = d.itemId " +
+            "WHERE d.serverId = :serverId AND d.state = 'COMPLETE' AND v.seenAt < :cutoff " +
+            "AND EXISTS (SELECT 1 FROM download_settings x WHERE x.serverId = d.serverId AND x.shareBetweenProfiles = 1) " +
+            "AND NOT EXISTS (SELECT 1 FROM download_owners o WHERE o.serverId = d.serverId AND o.itemId = d.itemId AND o.userId = :userId) " +
+            "ORDER BY v.seenAt LIMIT :limit",
+    )
+    internal abstract suspend fun unconfirmedShared(serverId: String, userId: String, cutoff: Long, limit: Int): List<SharedRow>
+
+    /** Pinned pictures whose item no download pins any more (its row is not pinned, or gone). */
+    @Query(
+        "SELECT serverId, itemId, slot, tag FROM pinned_artwork p WHERE NOT EXISTS " +
+            "(SELECT 1 FROM items i WHERE i.serverId = p.serverId AND i.itemId = p.itemId AND i.pinned = 1)",
+    )
+    internal abstract suspend fun unpinnedArtworkRows(): List<ArtworkRow>
+
     @Query("SELECT COUNT(*) FROM downloads WHERE state = 'QUEUED'")
     internal abstract suspend fun queuedCount(): Int
 
@@ -198,3 +222,6 @@ internal data class TrackRow(
 internal data class SegmentRow(val serverId: String, val itemId: String, val kind: String, val startMs: Long, val endMs: Long) {
     override fun toString() = "SegmentRow(<redacted>)"
 }
+
+/** A shared download's item and series, for reconfirming visibility. Never printed. */
+class SharedRow(val itemId: String, val seriesId: String?) { override fun toString() = "SharedRow(<redacted>)" }

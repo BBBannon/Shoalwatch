@@ -27,6 +27,7 @@ class ShoalwatchApp : Application(), SingletonImageLoader.Factory, Configuration
         graph.tokensWarmed // start loading saved sign-ins
         graph.activePlayback // start following the active session now: playback is refused until it is known
         graph.watchDownloads() // WorkManager itself is reached only once something is queued (see MainActivity.onStart)
+        graph.downloadHousekeeping.onStart() // requeue what a dead process left, sweep orphans, kick if anything waits
     }
 
     override val workManagerConfiguration: Configuration

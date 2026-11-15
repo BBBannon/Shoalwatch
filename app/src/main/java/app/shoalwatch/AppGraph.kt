@@ -12,7 +12,11 @@ import app.shoalwatch.data.images.PinnedArtwork
 import app.shoalwatch.data.db.downloads.DownloadStore
 import app.shoalwatch.data.db.downloads.LibraryWriteLock
 import app.shoalwatch.data.downloads.AndroidVolumes
+import app.shoalwatch.data.downloads.DownloadHousekeeping
 import app.shoalwatch.data.downloads.DownloadNotifications
+import app.shoalwatch.data.downloads.DownloadPlanner
+import app.shoalwatch.data.downloads.DownloadRepository
+import app.shoalwatch.data.downloads.Downloads
 import app.shoalwatch.data.downloads.DownloadPaths
 import app.shoalwatch.data.downloads.DownloadPrefs
 import app.shoalwatch.data.downloads.DownloadQueue
@@ -93,10 +97,12 @@ class AppGraph(private val appContext: Context) {
         onServerRemoved = {
             activePlayback.end(it); playbackReports.forget(it)
             addressSelector.forget(it); libraryRepository.forget(it); artworkEviction.onServerRemoved(it)
+            downloadHousekeeping.onServerRemoved(it)
         },
         onAccountGone = { server, user ->
             activePlayback.end(server, user); playbackReports.forget(server, user)
             libraryRepository.forget(server, user); artworkEviction.onAccountGone(server)
+            downloadHousekeeping.onAccountGone(server, user) // the ownership rule; a 401 keeps the account row, so nothing goes
         },
         onAccountSignedIn = { server, user -> libraryRepository.forget(server, user) },
     ) }
@@ -142,6 +148,17 @@ class AppGraph(private val appContext: Context) {
         )
     }
     internal val downloadNotifications: DownloadNotifications by lazy { DownloadNotifications(appContext) }
+    internal val downloadPlanner: DownloadPlanner by lazy {
+        DownloadPlanner(library, database.itemDao(), downloadGateway, { s, id -> playbackResolver.checkOriginal(s, id) }, database.downloadDao(), downloadVolumes, downloadPrefs)
+    }
+    /** What screens use for downloads (see "Downloads seam" in docs/ARCHITECTURE.md). */
+    val downloads: Downloads by lazy {
+        DownloadRepository(downloadStore, database.offlineLibraryDao(), database.itemDao(), downloadPlanner, downloadScheduler, downloadPrefs, downloadVolumes, downloadPaths, appScope)
+    }
+    /** The removal rules and the start-up tidy-up (see "Removal rules" in docs/ARCHITECTURE.md). */
+    internal val downloadHousekeeping: DownloadHousekeeping by lazy {
+        DownloadHousekeeping(downloadStore, downloadPaths, downloadQueue, downloadScheduler, library, appScope)
+    }
     /** WorkManager is reached only from here, on first use (initialised on demand with `ShoalwatchWorkerFactory`). */
     val downloadScheduler: DownloadScheduler by lazy { DownloadScheduler({ WorkManager.getInstance(appContext) }, downloadPrefs) }
 

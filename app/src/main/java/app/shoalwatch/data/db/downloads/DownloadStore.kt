@@ -170,6 +170,23 @@ internal class DownloadStore(private val db: AppDatabase, private val now: () ->
     /** How many downloads wait in the queue (QUEUED), on every server. */
     suspend fun queuedCount(): Int = dao.queuedCount()
 
+    /** Downloads waiting or interrupted (QUEUED, RUNNING, VERIFYING), on every server. */
+    suspend fun waitingCount(): Int = dao.waitingCount()
+
+    /** The items [s] owns on its server. */
+    suspend fun owned(s: Session): List<String> = dao.ownedItems(s.serverId, s.userId)
+
+    /** Up to [limit] shared downloads [s] does not own whose visibility for [s] was last confirmed before [cutoff]: (item, series). */
+    suspend fun unconfirmedShared(s: Session, cutoff: Long, limit: Int): List<Pair<String, String?>> =
+        dao.unconfirmedShared(s.serverId, s.userId, cutoff, limit).map { it.itemId to it.seriesId }
+
+    /** Pinned pictures no download pins any more (an unknown slot is left out). */
+    suspend fun unpinnedArtwork(): List<ArtworkKey> = Converters().let { c ->
+        dao.unpinnedArtworkRows().mapNotNull { r -> c.toSlot(r.slot)?.let { ArtworkKey(r.serverId, r.itemId, it, r.tag) } }
+    }
+
+    suspend fun unpinArtwork(art: ArtworkKey) = dao.unpinArtwork(art.serverId, art.itemId, art.slot)
+
     /** The store's clock (epoch ms), for the times the queue writes. */
     fun stamp(): Long = now()
 

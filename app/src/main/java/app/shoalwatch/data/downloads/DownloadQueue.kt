@@ -76,6 +76,11 @@ internal class DownloadQueue(
     /** What was fetched: what the verifier needs to know about it. */
     private class Fetched(val entry: File, val hls: Boolean, val shape: List<Long>?, val audioListed: Boolean)
 
+    /** RUNNING and VERIFYING back to QUEUED, only while no drain runs in this process (at start-up, after process death). */
+    suspend fun requeueIfIdle() {
+        if (drains.tryLock()) try { store.requeueInterrupted() } finally { drains.unlock() }
+    }
+
     /** Runs [block] while no download can start: Task 12 reads `DownloadStore.sweepInputs()` and sweeps inside it. */
     suspend fun <T> whileNoneStarts(block: suspend () -> T): T = starts.withLock { block() }
 

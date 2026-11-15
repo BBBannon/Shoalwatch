@@ -288,6 +288,24 @@ WorkManager only drains the queue in Room; it holds no state of its own that mat
 
 Tests: `DownloadWorkerTest` (`TestListenableWorkerBuilder` with `ShoalwatchWorkerFactory` over a fake queue), `DownloadSchedulerTest` (`WorkManagerTestInitHelper`, `SynchronousExecutor`), `DownloadNotificationsTest` (Robolectric), `ManifestSecurityTest`, `verifyManifestRuleFixtures`.
 
+## Downloads seam (`Downloads`, `DownloadRepository`)
+
+What screens use (`AppGraph.downloads`). Every read takes a `Session` and goes through `OfflineLibraryDao`, so a profile sees a download only with its own `visible_items` record for the item (and its season and series on the series screens) AND either its own ownership or, with the server's "Share downloads between profiles" on, a COMPLETE copy ("Session and sharing rule"). Flows never throw: a malformed id is an empty value at once, a database failure is logged by class and an empty value. A copy on a card that is out is listed with `available = false`.
+- **`library(s)`**: the profile's own unfinished downloads (queue order), films and series summaries. **`series(s, id)`**: the seasons (season order) with their ready episodes (the library's order), and a last group for episodes with no visible season. **`status`/`seriesStatus`**: any state, for badges, under the same rule.
+- **Actions** run in the app scope on IO, so they finish if the screen goes; anything not an `AppError` is `UNKNOWN`. `start(s, plan)` refuses a plan made for another session (`IllegalArgumentException`, nothing added), re-reads each item as stored and visible to `s` now (anything hidden since is skipped), adds them (`DownloadStore.add`: a copy already here only gains an owner) and kicks the worker only if something new was queued. `pause`, `resume`, `retry`, `remove` and `pauseAll`/`resumeAll` act on the caller's own downloads only (the store checks ownership). `remove` deletes the item's folder on every mounted root when no owner is left. `setMobileData` makes the scheduler replace the work (`watchSettings`). `setSharing` is per server, any signed-in profile may change it, and turning it off deletes nothing.
+
+Tests: `DownloadRepositoryTest`, `SharingTest` (the visibility cases a to g through the seam, and `reconfirm`).
+
+## Removal rules (`DownloadHousekeeping`)
+
+Wired to `ServerStore`'s hooks in `AppGraph`; each runs in the app scope on IO.
+- **Server removed:** its rows, owners, extras, settings and pinned-artwork rows cascade with the server; housekeeping deletes `<root>/<serverId>` on every mounted root. A running item of that server finds its row gone at its next write, stops and deletes its folder. A card that was out is cleaned by the next start's orphan sweep (the server is no longer saved).
+- **Account removed** (sign-out removes it here): its owners and offline plays cascade; then `DownloadStore.afterAccountGone`: with sharing on, each download left with no owner passes to every remaining account on the server that has a `visible_items` record for it (it was already in their offline library, and their own permission was already proved); otherwise, or with no such account, it is deleted, rows and files on every root. Nothing of the removed account's is left on disk that another profile could not already see. **An expired sign-in** (`invalidateToken`, a 401) calls the same hook but keeps the account row, so its owners stay and nothing is deleted.
+- **Start** (`ShoalwatchApp.onCreate`, once per process): interrupted rows back to QUEUED only while no drain runs (`DownloadQueue.requeueIfIdle`); the orphan sweep with `DownloadStore.sweepInputs()` inside `DownloadQueue.whileNoneStarts` (null, so no sweep, while anything is RUNNING or VERIFYING); pinned pictures whose item no download pins any more, row and file; then a kick if anything waits.
+- **`reconfirm(s)`** (for the Downloads tab, online): up to 50 shared downloads (and their series) this profile does not own and whose record is older than 7 days, oldest first, are asked again (`Library.refresh(s, Item(id))`); a 403 or 404 revokes that profile's record, so the item is hidden from it at once while the owner still sees it. It stops at the first failure (offline).
+
+Tests: `RemovalRulesTest` (a real `ServerStore` whose hooks call housekeeping, in-memory Room, an internal root and a card in temporary folders, a test WorkManager).
+
 ## Download extras (`ExtrasFetcher`)
 
 Best effort per part; a failure leaves that part out and never fails the download.
