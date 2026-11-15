@@ -197,6 +197,7 @@
     <string name="admin_device_remove">Remove</string>
     <string name="admin_device_remove_cd">Remove %1$s</string>
     <string name="admin_device_this_phone_note">This phone. To sign it out, use Sign out in Servers and accounts.</string>
+    <string name="admin_device_not_removable">This device can’t be removed from here. Use the full dashboard in your browser.</string>
     <string name="admin_confirm_device_title">Remove %1$s?</string>
     <string name="admin_confirm_device_body">The sign-in for %1$s on this device ends, and they’ll need to sign in on it again.</string>
     <string name="admin_confirm_device_action">Remove device</string>

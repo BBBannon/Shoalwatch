@@ -108,6 +108,7 @@ abstract class ActivityDevicesRenderBase : RenderBase() {
         devices(DevicesUiState(open, listOf(commaDevice)))
         assertShown("Junk")
         assertFalse(described(text(R.string.admin_device_remove_cd, "Junk")))
+        assertShown(text(R.string.admin_device_not_removable))
     }
 
     @Test fun offlineSwitchesRemoveOff() {

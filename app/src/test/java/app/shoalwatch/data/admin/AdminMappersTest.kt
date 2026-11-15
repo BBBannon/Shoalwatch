@@ -1,6 +1,7 @@
 package app.shoalwatch.data.admin
 
 import app.shoalwatch.data.admin.api.ActivityResultDto
+import app.shoalwatch.data.admin.api.AdminLimits
 import app.shoalwatch.data.admin.api.DeviceResultDto
 import app.shoalwatch.data.admin.api.SystemInfoDto
 import app.shoalwatch.data.admin.api.UserMeDto
@@ -198,6 +199,28 @@ class AdminMappersTest {
         assertFalse(devices.getValue("Odd").removable)
         assertTrue(devices.getValue("TV").removable)
         assertTrue(devices.getValue("Phone").isThisDevice)
+    }
+
+    /**
+     * jellyfin-web's id is base64 of the user agent plus a timestamp, so a long user agent passes 256 characters. Such a device is
+     * listed (the screen must not under-report what is signed in) but never removable, and its id is never one a removal accepts.
+     */
+    @Test fun aDeviceIdOverTheLengthCapIsListedButNeverRemovable() {
+        val long = "QmFzZTY0".repeat(40) + "|1731700000000"
+        val json = """{"Items":[
+            {"Id":"$long","Name":"Long","LastUserName":"anna","DateLastActivity":"2026-11-15T18:00:00Z"},
+            {"Id":"$long","Name":"Long","LastUserName":"bob","DateLastActivity":"2026-11-15T19:00:00Z"},
+            {"Id":"${long}x","Name":"Other long","LastUserName":"kid"}]}"""
+        val devices = JsonBodies.JSON.decodeFromString(DeviceResultDto.serializer(), json).toDevices(AdminFixtures.THIS_PHONE)
+        assertEquals("one row per id, even a long one", listOf("Long", "Other long"), devices.map { it.name })
+        assertEquals(listOf("anna", "bob"), devices[0].userNames)
+        for (d in devices) {
+            assertFalse(d.removable)
+            assertFalse(d.isThisDevice)
+            assertFalse("the listed id is not one a removal accepts", AdminLimits.REMOVABLE_DEVICE_ID.matches(d.id))
+            assertTrue("bounded in memory", d.id.length <= 256)
+        }
+        assertTrue(devices[0].id != devices[1].id)
     }
 
     @Test fun devicesMergeByIdAndPreferTheCustomName() {

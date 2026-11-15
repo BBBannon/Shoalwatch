@@ -75,6 +75,9 @@ private fun DeviceCard(device: ServerDevice, text: AdminText, now: Instant, canA
             Text(stringResource(R.string.admin_device_this_phone_note), style = body, color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else if (device.removable) {
             AdminAction(stringResource(R.string.admin_device_remove), stringResource(R.string.admin_device_remove_cd, name), canAct, caution = true, onClick = onRemove)
+        } else {
+            // Its id could name a second device in a removal, or is too long to send: the browser dashboard can remove it.
+            Text(stringResource(R.string.admin_device_not_removable), style = body, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

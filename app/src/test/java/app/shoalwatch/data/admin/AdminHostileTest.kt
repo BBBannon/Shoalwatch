@@ -127,6 +127,8 @@ class AdminHostileTest {
 
     @Test fun badDeviceIdsAreDropped() {
         for (bad in listOf("has space", "ctrl\u0007char", "x".repeat(300), "", "café")) assertFalse(bad, bad in devices)
+        val long = devices.values.single { it.name.startsWith("d xxxxxxxx") }
+        assertFalse("an over-long id is listed, under a digest, and never removable", long.removable || long.id.length > 256)
         val shared = devices.getValue("shared")
         assertEquals(listOf("anna", "bob"), shared.userNames)
         assertEquals("New", shared.appName)

@@ -26,6 +26,7 @@ import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.doubleOrNull
+import java.security.MessageDigest
 import java.time.Instant
 import java.time.OffsetDateTime
 import java.time.format.DateTimeParseException
@@ -57,7 +58,9 @@ internal object AdminLimits {
     val SESSION_ID = Regex("[A-Za-z0-9]{1,64}")
     val TASK_ID = Regex("[A-Za-z0-9]{1,64}")
     val TASK_KEY = Regex("[A-Za-z0-9_.-]{1,64}")
-    val DEVICE_ID = Regex("[\\x21-\\x7E]{1,256}")
+    /** A device id that is listed: printable ASCII, any length (one over [DEVICE_ID_MAX] is listed under a digest, below). */
+    val DEVICE_ID = Regex("[\\x21-\\x7E]+")
+    const val DEVICE_ID_MAX = 256
     /**
      * A device id a removal may name: no comma, semicolon or other separator, because `DELETE /Devices` takes `id` as an array
      * (12.4.0 reference) that the server may split. A listed device outside this set is shown but never offered for removal.
@@ -325,7 +328,10 @@ internal fun DeviceResultDto.toDevices(thisDeviceId: String): List<ServerDevice>
     val rows = LinkedHashMap<String, ServerDevice>()
     for (element in items.orEmpty()) {
         val dto = element.decodeAs(DeviceDto.serializer()) ?: continue
-        val deviceId = dto.id?.takeIf { AdminLimits.DEVICE_ID.matches(it) } ?: continue
+        val raw = dto.id?.takeIf { AdminLimits.DEVICE_ID.matches(it) } ?: continue
+        // jellyfin-web's id (base64 of the user agent and a time) can pass the cap: such a device is still listed, under a short
+        // digest that holds `#`, which no removal accepts (it is never removable, and the screen says why).
+        val deviceId = if (raw.length <= AdminLimits.DEVICE_ID_MAX) raw else "#" + sha256(raw)
         val user = displayText(dto.lastUserName, AdminLimits.NAME)
         val row = ServerDevice(
             id = deviceId,
@@ -334,8 +340,8 @@ internal fun DeviceResultDto.toDevices(thisDeviceId: String): List<ServerDevice>
             appName = displayText(dto.appName, AdminLimits.CLIENT),
             appVersion = displayText(dto.appVersion, AdminLimits.VERSION),
             lastSeen = instant(dto.dateLastActivity),
-            isThisDevice = deviceId == thisDeviceId,
-            removable = AdminLimits.REMOVABLE_DEVICE_ID.matches(deviceId),
+            isThisDevice = raw == thisDeviceId,
+            removable = AdminLimits.REMOVABLE_DEVICE_ID.matches(raw),
         )
         val earlier = rows[deviceId]
         if (earlier == null) {
@@ -348,3 +354,6 @@ internal fun DeviceResultDto.toDevices(thisDeviceId: String): List<ServerDevice>
     }
     return rows.values.sortedWith(Comparator<ServerDevice> { a, b -> compareValues(b.lastSeen, a.lastSeen) }.thenBy(String.CASE_INSENSITIVE_ORDER, ServerDevice::name))
 }
+
+private fun sha256(text: String): String =
+    MessageDigest.getInstance("SHA-256").digest(text.toByteArray(Charsets.US_ASCII)).joinToString("") { "%02x".format(it) }
