@@ -88,7 +88,7 @@ class ServerApi(
         retry: Boolean = false,
     ) {
         val body = jsonBody?.toRequestBody(JSON) ?: ByteArray(0).toRequestBody(null)
-        execute(session, "POST", path, query, body, retry) { }
+        execute(session, "POST", path, query, if (retry) body else body.sentOnce(), retry) { }
     }
 
     /**
@@ -162,7 +162,21 @@ class ServerApi(
         query: List<Pair<String, String>> = emptyList(),
         retry: Boolean = false,
     ) {
-        execute(session, "DELETE", path, query, null, retry) { }
+        execute(session, "DELETE", path, query, if (retry) null else ByteArray(0).toRequestBody(null).sentOnce(), retry) { }
+    }
+
+    /**
+     * `retry = false` must hold below this class too: OkHttp's own `retryOnConnectionFailure` silently resends a request on a fresh
+     * connection when a kept-alive one fails, unless its body is one-shot. Marking it so means it is never resent once sending began.
+     */
+    private fun RequestBody.sentOnce(): RequestBody {
+        val inner = this
+        return object : RequestBody() {
+            override fun contentType() = inner.contentType()
+            override fun contentLength() = inner.contentLength()
+            override fun writeTo(sink: okio.BufferedSink) = inner.writeTo(sink)
+            override fun isOneShot() = true
+        }
     }
 
     /**
