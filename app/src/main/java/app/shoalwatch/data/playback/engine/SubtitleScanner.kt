@@ -224,10 +224,11 @@ internal object Times {
 
     /**
      * `[H:]M:S` then one of [fractionSeparators] and 1 to 3 fraction digits (a decimal fraction: `.5` is 500 ms), from [from]
-     * in [s]; null when it is not that. Leading zeros do not count, and a group of more than 9 significant digits is
-     * unreadable (no overflow: the result is at most about 10^15 ms).
+     * in [s]; the fraction may be left out unless [fractionRequired] (SubRip and WebVTT allow whole seconds; review m-3); null
+     * when it is not that. Leading zeros do not count, and a group of more than 9 significant digits is unreadable (no
+     * overflow: the result is at most about 10^15 ms).
      */
-    fun read(s: String, from: Int, fractionSeparators: String): Read? {
+    fun read(s: String, from: Int, fractionSeparators: String, fractionRequired: Boolean = true): Read? {
         val groups = LongArray(3)
         var count = 0
         var i = from
@@ -241,7 +242,10 @@ internal object Times {
             if (count < 3 && i + 1 < s.length && s[i] == ':' && s[i + 1] in '0'..'9') { i++; continue }
             break
         }
-        if (count < 2 || i + 1 >= s.length || s[i] !in fractionSeparators || s[i + 1] !in '0'..'9') return null
+        if (count < 2) return null
+        val (h, m, sec) = if (count == 3) Triple(groups[0], groups[1], groups[2]) else Triple(0L, groups[0], groups[1])
+        val whole = ((h * 60 + m) * 60 + sec) * 1_000
+        if (i + 1 >= s.length || s[i] !in fractionSeparators || s[i + 1] !in '0'..'9') return if (fractionRequired) null else Read(whole, i)
         i++
         val fractionStart = i
         while (i < s.length && s[i] in '0'..'9' && i - fractionStart < 4) i++
@@ -249,23 +253,28 @@ internal object Times {
         if (digits > 3) return null
         var fraction = s.substring(fractionStart, i).toLong()
         repeat(3 - digits) { fraction *= 10 }
-        val (h, m, sec) = if (count == 3) Triple(groups[0], groups[1], groups[2]) else Triple(0L, groups[0], groups[1])
-        return Read(((h * 60 + m) * 60 + sec) * 1_000 + fraction, i)
+        return Read(whole + fraction, i)
     }
 }
 
 /**
  * The ASS override tags this phone cannot draw (karaoke `\k`, `\K`, `\kf`, `\ko`; `\t(`, `\move(`, `\fad(`, `\fade(`; drawings
- * `\p1`..`\p9`; `\clip(`, `\iclip(`; `\fn`), on one tag's text after its backslash: the rule the app has used since Task 7.
+ * `\p1`..`\p9`; `\clip(`, `\iclip(`; `\fn`; since subtitle-parsers review m-5 also a non-zero rotation `\fr`, `\frx`, `\fry`,
+ * `\frz` and its origin `\org(`), on one tag's text after its backslash. Cosmetic tags (`\fsc`, `\bord`, `\shad`, `\blur`,
+ * `\be`) are not flagged.
  */
 internal object AssEffects {
-    private val PREFIXES = listOf("t(", "move(", "fad(", "fade(", "clip(", "iclip(", "fn")
+    private val PREFIXES = listOf("t(", "move(", "fad(", "fade(", "clip(", "iclip(", "fn", "org(")
 
     fun undrawable(tag: String): Boolean {
         val c = tag.getOrNull(0) ?: return false
         val next = tag.getOrNull(1)
         if ((c == 'k' || c == 'K') && next != null && (next.isDigit() || next == 'f' || next == 'o')) return true
         if (c == 'p' && next != null && next in '1'..'9') return true
+        if (tag.startsWith("fr")) {
+            val angle = tag.substring(if (tag.getOrNull(2)?.let { it in "xyz" } == true) 3 else 2).toFloatOrNull()
+            if (angle != null && angle != 0f) return true
+        }
         return PREFIXES.any { tag.startsWith(it) }
     }
 }

@@ -91,8 +91,10 @@ class SubtitleHostileTest {
         val cue = t.frameAt(1_500).cues.single()
         assertEquals("Bold text", cue.text.toString())
         assertTrue("still bold", spans(cue).any { it is StyleSpan })
-        val lines = parse("1\n00:00:01,000 --> 00:00:02,000\n" + (1..1_000).joinToString("\n") { "<b>".repeat(700) } + "\nEnd\n", "srt")
-        assertTrue(lines.size > 0)
+        val lines = parse("1\n00:00:01,000 --> 00:00:02,000\n" + (1..1_000).joinToString("\n") { "<b>".repeat(700) + "L$it" } + "\nEnd\n", "srt")
+        val shown = lines.frameAt(1_500).cues.single()
+        assertEquals("cut at 16 lines, End dropped", (1..SubtitleFiles.MAX_CUE_LINES).joinToString("\n") { "L$it" }, shown.text.toString())
+        assertTrue("bold", spans(shown).any { it is StyleSpan })
     }
 
     // ---- subtitle-parsers review I-2 and m-2: styled runs, and what one frame hands the view
@@ -303,9 +305,14 @@ class SubtitleHostileTest {
     }
 
     @Test fun moreThanTwoHundredAndFiftySixAssStylesKeepTheFirst() {
-        val styles = (1..10_000).joinToString("\n") { "Style: S$it,-1,0,&H000000FF,8" } + "\nStyle: S1,0,0,&H00FFFFFF,2\nStyle: ${"L".repeat(65)},-1,0,&H000000FF,8\n"
+        val long = "L".repeat(SubtitleFiles.MAX_TOKEN + 1)
+        val styles = "Style: $long,-1,0,&H000000FF,8\n" + (1..10_000).joinToString("\n") { "Style: S$it,-1,0,&H000000FF,8" } + "\nStyle: S1,0,0,&H00FFFFFF,2\n"
         val ass = "[Script Info]\n\n[V4+ Styles]\nFormat: Name, Bold, Italic, PrimaryColour, Alignment\n$styles\n[Events]\nFormat: Layer, Start, End, Style, Text\n" +
-            "Dialogue: 0,0:00:01.00,0:00:02.00,S1,First style\nDialogue: 0,0:00:03.00,0:00:04.00,S300,Past the cap\n"
+            "Dialogue: 0,0:00:01.00,0:00:02.00,S1,First style\nDialogue: 0,0:00:03.00,0:00:04.00,S300,Past the cap\n" +
+            "Dialogue: 0,0:00:05.00,0:00:06.00,$long,Over-long style name\n"
+        val unknown = parse(ass, "ass").frameAt(5_500).cues.single()
+        assertEquals("Over-long style name", unknown.text.toString())
+        assertFalse("a 65-character style name is never read, though it came first", spans(unknown).any { it is StyleSpan })
         val t = parse(ass, "ass")
         val first = t.frameAt(1_500).cues.single()
         assertEquals("the first S1 wins", Cue.ANCHOR_TYPE_START, first.lineAnchor)

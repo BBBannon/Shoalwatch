@@ -106,10 +106,12 @@ class SubtitleCuesTest {
     @Test fun eachUndrawableTagIsFoundAndOrdinaryTagsAreNot() {
         fun ass(tags: String) = ("[Script Info]\nScriptType: v4.00+\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n" +
             "Dialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,{$tags}Hello\n").toByteArray()
-        for (tag in listOf("\\k20", "\\K20", "\\kf20", "\\ko20", "\\t(0,1,\\fs9)", "\\move(1,2,3,4)", "\\fad(1,2)", "\\fade(1,2,3,4,5,6,7)", "\\p1", "\\p9", "\\clip(1,2,3,4)", "\\iclip(1,2,3,4)", "\\fnArial")) {
+        for (tag in listOf("\\k20", "\\K20", "\\kf20", "\\ko20", "\\t(0,1,\\fs9)", "\\move(1,2,3,4)", "\\fad(1,2)", "\\fade(1,2,3,4,5,6,7)", "\\p1", "\\p9", "\\clip(1,2,3,4)", "\\iclip(1,2,3,4)", "\\fnArial",
+            // rotation and its origin (subtitle-parsers review m-5): signs would be drawn flat and in the wrong place
+            "\\fr20", "\\frz-12.5", "\\frx1", "\\fry90", "\\org(10,20)")) {
             assertTrue(tag, SubtitleFiles.parse(ass(tag), "ass").usesEffectsThePhoneCannotDraw)
         }
-        for (tag in listOf("\\b1", "\\i1", "\\an8", "\\pos(1,2)", "\\c&H0000FF&", "\\fs20", "\\p0")) {
+        for (tag in listOf("\\b1", "\\i1", "\\an8", "\\pos(1,2)", "\\c&H0000FF&", "\\fs20", "\\p0", "\\frz0", "\\fr0.0", "\\fscx120", "\\bord2", "\\shad1", "\\blur3", "\\be1")) {
             assertFalse(tag, SubtitleFiles.parse(ass(tag), "ass").usesEffectsThePhoneCannotDraw)
         }
     }

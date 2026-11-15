@@ -28,6 +28,27 @@ class SubtitleFormatsTest {
         assertEquals(listOf("Dot"), texts(srt, "srt", 3_500))
     }
 
+    @Test fun subRipAndWebVttTimesMayHaveNoFraction() {
+        // subtitle-parsers review m-3: hand-made files often leave out the milliseconds.
+        assertEquals(listOf("Whole seconds"), texts("1\n00:00:01 --> 00:00:03\nWhole seconds\n", "srt", 2_000))
+        assertEquals(emptyList<String>(), texts("1\n00:00:01 --> 00:00:03\nWhole seconds\n", "srt", 3_000))
+        assertEquals(listOf("Vtt"), texts("WEBVTT\n\n00:01 --> 00:02.500 align:end\nVtt\n", "vtt", 2_000))
+    }
+
+    // ---- subtitle-parsers review m-1: a header line is bounded before it is split
+
+    @Test fun anOverLongAssFormatOrHeaderLineIsRefused() {
+        val wide = "Format: " + "a,".repeat(4_000_000) + "Start,End,Text"
+        for (ass in listOf("[Events]\n$wide\nDialogue: 0,0:00:01.00,0:00:02.00,x\n", "[V4+ Styles]\n$wide\n", "[V4+ Styles]\nFormat: Name\nStyle: " + "n".repeat(5_000) + "\n")) {
+            val started = System.nanoTime()
+            val e = runCatching { SubtitleFiles.parse(ass.toByteArray(), "ass") }.exceptionOrNull()
+            assertTrue("refused: $e", e is IllegalArgumentException)
+            assertTrue((System.nanoTime() - started) / 1_000_000 < 2_000)
+        }
+        val ordinary = "[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,," + "x".repeat(10_000) + "\n"
+        assertEquals("a long Dialogue line is text, not a header", SubtitleFiles.MAX_CUE_CHARS, texts(ordinary, "ass", 1_500).single().length)
+    }
+
     @Test fun aReversedSubRipCueIsDroppedAndTheNextStillShows() {
         val srt = "1\n00:00:05,000 --> 00:00:04,000\nReversed\n\n2\n00:00:06,000 --> 00:00:07,000\nAfter\n"
         assertEquals(emptyList<String>(), texts(srt, "srt", 4_500))
@@ -78,7 +99,7 @@ class SubtitleFormatsTest {
     }
 
     @Test fun aWebVttCueWithAnUnreadableTimeIsSkipped() {
-        val vtt = "WEBVTT\n\n00:01 --> 00:02.000\nNo fraction\n\n00:03.000 --> 00:04.000\nFine\n"
+        val vtt = "WEBVTT\n\n0x:01.000 --> 00:02.000\nNot a time\n\n00:03.000 --> 00:04.000\nFine\n"
         assertEquals(emptyList<String>(), texts(vtt, "vtt", 1_500))
         assertEquals(listOf("Fine"), texts(vtt, "vtt", 3_500))
     }

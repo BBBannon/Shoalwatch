@@ -22,6 +22,8 @@ internal object SubtitleFiles {
     const val MAX_CUE_CHARS = 2_000
     /** Lines of one cue: the rest of that cue is dropped. */
     const val MAX_CUE_LINES = 16
+    /** Characters of an ASS header line (`[Script Info]`, styles, any `Format:`), checked before it is split: over it, refused. */
+    const val MAX_HEADER_LINE = 4_096
     /** ASS styles read: later ones are ignored. */
     const val MAX_STYLES = 256
     /** Characters of any id, style name or setting: a longer one is ignored (an unknown style, an unread setting). */
