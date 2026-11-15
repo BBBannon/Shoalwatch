@@ -48,7 +48,7 @@ internal class PlaystateLocal(private val store: LibraryStore, private val clock
         val position = store.entryIds(s, ListKey.RESUME).indexOf(itemId)
         if (position < 0) return
         removed += RemovedEntry(ListKey.RESUME, itemId, position)
-        store.removeEntry(s, ListKey.RESUME, itemId)
+        store.removeEntryForAction(s, ListKey.RESUME, itemId)
     }
 
     // ---- the actions
@@ -136,6 +136,9 @@ internal class PlaystateLocal(private val store: LibraryStore, private val clock
 
     // ---- after the server has answered
 
+    /** This user has no action running (the queue is idle), so no marker left on their rows can be live: clear them. */
+    suspend fun clearLeftovers(s: Session) = store.clearPendingFor(s)
+
     /** The server agrees: the next refresh may overwrite these rows again (the local value stays). */
     suspend fun clearPending(s: Session, itemIds: Collection<String>) = itemIds.forEach { store.clearPending(s, it) }
 
@@ -158,7 +161,7 @@ internal class PlaystateLocal(private val store: LibraryStore, private val clock
         for (e in t.removed.asReversed()) {
             if (store.visibleItem(s, e.itemId) == null) continue
             val now = store.entryIds(s, e.listKey)
-            if (e.itemId !in now) store.insertEntryAt(s, e.listKey, e.position.coerceAtMost(now.size), e.itemId)
+            if (e.itemId !in now) store.restoreEntry(s, e.listKey, e.position.coerceAtMost(now.size), e.itemId)
         }
     }
 

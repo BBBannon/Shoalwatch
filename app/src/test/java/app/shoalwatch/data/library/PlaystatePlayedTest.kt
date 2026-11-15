@@ -16,6 +16,7 @@ class PlaystatePlayedTest : PlaystateTestBase() {
     @Test fun markingAFilmWatchedMatchesWhatTheServerRecords() {
         saveResume(film("a"), film("b", ud(positionMs = 60_000, playCount = 0)))
         gateway.resumeFor = { listOf(film("a")) }
+        val started = now
         played("b", true)
         drain()
         val d = userData("b")!!
@@ -23,7 +24,7 @@ class PlaystatePlayedTest : PlaystateTestBase() {
         assertEquals(0, d.positionMs)
         assertNull(d.playedPercentage)
         assertEquals(1, d.playCount)
-        assertEquals(now, d.lastPlayed)
+        assertTrue(d.lastPlayed!! in started..now)
         assertEquals(ids("a"), resumeIds())
         assertEquals(listOf("setPlayed:${id("b")}:true"), gateway.calls.filter { it.startsWith("setPlayed") })
         assertNoPending()

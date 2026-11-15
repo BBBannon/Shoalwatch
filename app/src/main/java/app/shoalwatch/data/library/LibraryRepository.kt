@@ -3,13 +3,13 @@ package app.shoalwatch.data.library
 import app.shoalwatch.core.AppError
 import app.shoalwatch.data.db.AppDatabase
 import app.shoalwatch.data.db.library.LibraryStore
+import app.shoalwatch.data.db.library.LocalChangeLog
 import app.shoalwatch.data.db.library.ListStateEntity
 import app.shoalwatch.data.db.library.toModel
 import app.shoalwatch.data.library.api.LibraryGateway
 import app.shoalwatch.data.servers.JellyfinId
 import app.shoalwatch.data.servers.Session
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -29,7 +29,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import java.time.Duration
 
 /**
@@ -53,7 +52,8 @@ class LibraryRepository(
     private val views = db.viewDao()
     private val refresher = Refresher(scope, io, clock, beforeWork = ::ensureSwept)
     private val cache: ListCache
-    private val store = LibraryStore(db)
+    /** The one store (and so the one record of local changes) this repository and the tidy-up actions share. */
+    internal val store = LibraryStore(db, LocalChangeLog(clock))
 
     init {
         cache = ListCache(db, store, refresher, LibraryMaintenance(store, maintenanceLog, clock, scope, io, writeGate, onCleared = refresher::forgetFinished), clock, io, writeGate, beforeUse = ::ensureSwept)
@@ -70,7 +70,10 @@ class LibraryRepository(
     }
 
     private fun wholeList(s: Session, key: String, window: Duration, fetch: suspend () -> List<ItemWithUserData>) =
-        Recipe(key, window) { cache.writeWhole(s, key, fetch()) }
+        Recipe(key, window) {
+            val startedAt = clock()
+            cache.writeWhole(s, key, fetch(), startedAt)
+        }
 
     private fun resumeRecipe(s: Session) = wholeList(s, ListKey.RESUME, HOME_WINDOW) { gateway.resume(s, RESUME_LIMIT) }
 
@@ -84,6 +87,7 @@ class LibraryRepository(
         wholeList(s, ListKey.episodes(seriesId, seasonId), SERIES_WINDOW) { gateway.episodes(s, seriesId, seasonId) }
 
     private fun itemRecipe(s: Session, itemId: String, window: Duration) = Recipe(ListKey.item(itemId), window) {
+        val startedAt = clock()
         val fetched = try {
             gateway.item(s, itemId)
         } catch (e: AppError) {
@@ -95,7 +99,7 @@ class LibraryRepository(
             }
             throw e
         }
-        cache.writeItems(s, listOf(fetched), authoritative = true) // a detail fetch asks for every field, so a missing overview is really gone
+        cache.writeItems(s, listOf(fetched), authoritative = true, fetchStartedAtMs = startedAt) // a detail fetch asks for every field, so a missing overview is really gone
         cache.markLoaded(s, ListKey.item(itemId))
     }
 
@@ -114,8 +118,9 @@ class LibraryRepository(
     private fun childrenRecipe(s: Session, parentId: String, shape: ListShape, sort: Sort, filter: ItemFilter): Recipe {
         val key = ListKey.children(parentId, shape, sort, filter)
         return Recipe(key, LISTING_WINDOW) {
+            val startedAt = clock()
             val page = gateway.children(s, parentId, 0, PAGE_SIZE, sort, filter, shape.kinds, shape.recursive)
-            cache.writePage(s, key, 0, page.items, page.total, page.nextStartIndex, 1, page.endReached)
+            cache.writePage(s, key, 0, page.items, page.total, page.nextStartIndex, 1, page.endReached, fetchStartedAtMs = startedAt)
         }
     }
 
@@ -167,10 +172,11 @@ class LibraryRepository(
         val state = lists.getState(s.serverId, s.userId, key)?.takeIf { canLoadMore(it) } ?: return
         // Read before fetching: if a refresh replaces the list while this page is on its way, the page is for the old list and is dropped.
         val stored = lists.entryIds(s.serverId, s.userId, key)
+        val startedAt = clock()
         val page = gateway.children(s, parentId, state.nextStartIndex, PAGE_SIZE, sort, filter, shape.kinds, shape.recursive)
         val have = stored.toHashSet()
         val added = page.items.filter { have.add(it.item.id) }
-        cache.writePage(s, key, stored.size, added, page.total ?: state.total, page.nextStartIndex, state.pagesLoaded + 1, page.endReached, basedOn = state)
+        cache.writePage(s, key, stored.size, added, page.total ?: state.total, page.nextStartIndex, state.pagesLoaded + 1, page.endReached, basedOn = state, fetchStartedAtMs = startedAt)
     }
 
     // ---- series and items
@@ -214,11 +220,13 @@ class LibraryRepository(
     }
 
     private suspend fun searchOnIo(s: Session, text: String): SearchResult {
+        ensureSwept()
         return try {
+            val startedAt = clock()
             val found = gateway.search(s, text, SEARCH_LIMIT)
             // Saved so a detail screen opens at once. A failure to save must not lose the results the user is waiting for.
             try {
-                cache.writeItems(s, found)
+                cache.writeItems(s, found, fetchStartedAtMs = startedAt)
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
@@ -285,38 +293,10 @@ class LibraryRepository(
         writeGate.withLock { block() }
     }
 
-    private val sweep: CompletableDeferred<Unit> by lazy {
-        CompletableDeferred<Unit>().also { done ->
-            scope.launch(io) {
-                try {
-                    writeGate.withLock { store.clearAllPending(STALE_SHIFT_MS) }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (_: Exception) {
-                    // Nothing more can be done here; the library still works, and a stuck marker only holds one row's local value.
-                } finally {
-                    done.complete(Unit)
-                }
-            }.invokeOnCompletion { done.complete(Unit) }
-        }
-    }
+    private val startupSweep = StartupSweep(store, writeGate, clock)
 
-    /**
-     * The start-up sweep, once per process, before any refresh, any list is judged fresh, or any action changes anything:
-     * a marker with no live action means the app died mid-action, and left alone it would hide the server's copy of that
-     * row for ever. Every marker is cleared; the local value stays until the next refresh from the server decides, and each
-     * affected user's lists are aged so that refresh comes promptly. In this milestone an unconfirmed change may therefore
-     * be reverted. **Milestone 5 owns recovery:** a marker with no live action will then mean "send this change", not "discard it".
-     */
-    internal suspend fun ensureSwept() = sweep.await()
-
-    /**
-     * Waits (at most [timeoutMs]) for every refresh running now for this user, of any list: one that began before the server
-     * heard about a change carries the old answer, and must have landed (and been ignored, the rows being pending) before the
-     * markers are cleared. True when everything finished in time.
-     */
-    internal suspend fun awaitSessionRefreshes(s: Session, timeoutMs: Long): Boolean =
-        withTimeoutOrNull(timeoutMs) { refresher.inFlightFor(s.serverId, s.userId).forEach { it.join() }; true } ?: false
+    /** See [StartupSweep]: every entry point waits for it, once per process (and again after a failure, a bounded number of times). */
+    internal suspend fun ensureSwept() = startupSweep.ensure()
 
     private fun recipeFor(s: Session, list: Recompute): Recipe = when (list) {
         Recompute.Resume -> resumeRecipe(s)
@@ -326,14 +306,15 @@ class LibraryRepository(
         is Recompute.Item -> itemRecipe(s, list.itemId, ITEM_WINDOW)
     }
 
-    /** Starts a refresh of each list (joining one already running) without waiting for it; a failure shows as the list's freshness, never as an error here. */
+    /**
+     * Starts a refresh of each list without waiting for it. One already running is NOT joined: it may have been asked for before
+     * the change that made this necessary, so a new one begins when it has finished. A failure shows as the list's freshness, never as an error here.
+     */
     internal fun refreshInBackground(s: Session, lists: Set<Recompute>) {
-        lists.map { recipeFor(s, it) }.forEach { refresher.launch(ListId(s, it.key), Refresher.Mode.REFRESH, it.run) }
+        lists.map { recipeFor(s, it) }.forEach { refresher.launchAfterCurrent(ListId(s, it.key), it.run) }
     }
 
     private companion object {
-        /** More than the longest freshness window (15 minutes), so an aged list always reads as stale, yet far under the 30 days after which a list is cleared out. */
-        const val STALE_SHIFT_MS = 60L * 60 * 1000
         const val PAGE_SIZE = 100
         const val MAX_PAGES = 200
         const val MAX_ROWS = PAGE_SIZE * MAX_PAGES

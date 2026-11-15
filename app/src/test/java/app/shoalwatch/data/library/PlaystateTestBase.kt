@@ -22,16 +22,17 @@ abstract class PlaystateTestBase : LibraryRepositoryTestBase() {
     protected val listDao get() = db.listDao()
 
     @Before fun openPlaystate() {
-        playstate = PlaystateRepository(gateway, db, repo, appScope, Dispatchers.IO, { now })
+        gateway.clockTick = { now += 1 } // a server round trip takes a moment, so what is asked after an action is strictly later than it
+        playstate = PlaystateRepository(gateway, repo, appScope, Dispatchers.IO, { now })
     }
 
     protected fun ud(played: Boolean = false, positionMs: Long = 0, favourite: Boolean = false, playCount: Int = if (played) 1 else 0, unplayed: Int? = null, lastPlayed: Long? = null) =
         UserData(played, positionMs, null, playCount, favourite, lastPlayed?.let(java.time.Instant::ofEpochMilli), unplayed)
 
-    protected fun save(vararg rows: ItemWithUserData, s: Session = s1u1) = runBlocking { library.writeItems(s, rows.toList(), t0) }
+    protected fun save(vararg rows: ItemWithUserData, s: Session = s1u1) = runBlocking { library.writeItems(s, rows.toList(), t0, fetchStartedAtMs = 0) }
 
     protected fun saveList(key: String, vararg rows: ItemWithUserData, s: Session = s1u1) =
-        runBlocking { library.writePage(s, key, 0, rows.toList(), rows.size, t0) }
+        runBlocking { library.writePage(s, key, 0, rows.toList(), rows.size, t0, fetchStartedAtMs = 0) }
 
     protected fun saveResume(vararg rows: ItemWithUserData) = saveList(ListKey.RESUME, *rows)
 
@@ -41,7 +42,7 @@ abstract class PlaystateTestBase : LibraryRepositoryTestBase() {
         row(item(label, ItemKind.SEASON, "Season $label", seriesId = series, indexNumber = number, childCount = 3), data)
 
     protected fun ep(label: String, season: String, number: Int, data: UserData? = ud(), series: String = "show") =
-        row(item(label, ItemKind.EPISODE, "Episode $label", seriesId = series, seasonId = season, indexNumber = number, parentIndexNumber = 1), data)
+        row(item(label, ItemKind.EPISODE, "Episode $label", seriesId = series, seasonId = season, indexNumber = number, parentIndexNumber = season.filter { it.isDigit() }.toIntOrNull() ?: 1), data)
 
     protected fun film(label: String, data: UserData? = ud(positionMs = 60_000)) = row(item(label), data)
 
@@ -70,6 +71,9 @@ abstract class PlaystateTestBase : LibraryRepositoryTestBase() {
     protected fun holdMutation(): Latch = latch().also { latch ->
         gateway.onCall = { call -> if (MUTATIONS.any { call.startsWith(it) }) latch.await() }
     }
+
+    /** Holds only the gateway calls whose name starts with [prefix], until the returned latch is released. */
+    protected fun holdCalls(prefix: String): Latch = latch().also { l -> gateway.onCall = { call -> if (call.startsWith(prefix)) l.await() } }
 
     private val callers = CoroutineScope(Dispatchers.Default)
 

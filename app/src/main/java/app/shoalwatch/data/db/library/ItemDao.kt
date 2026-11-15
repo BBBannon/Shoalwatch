@@ -133,6 +133,10 @@ abstract class ItemDao {
     @Query("SELECT * FROM user_data WHERE pendingSyncAt IS NOT NULL")
     internal abstract suspend fun pendingRows(): List<UserDataEntity>
 
+    /** Clears every marker of one user (the local values stay); returns how many rows had one. */
+    @Query("UPDATE user_data SET pendingSyncAt = NULL WHERE serverId = :serverId AND userId = :userId AND pendingSyncAt IS NOT NULL")
+    internal abstract suspend fun clearPendingFor(serverId: String, userId: String): Int
+
     /** Clears every marker (the local values stay); returns how many rows had one. */
     @Query("UPDATE user_data SET pendingSyncAt = NULL WHERE pendingSyncAt IS NOT NULL")
     internal abstract suspend fun clearAllPending(): Int
@@ -183,7 +187,7 @@ abstract class ItemDao {
     internal abstract suspend fun setUnplayedCount(serverId: String, userId: String, itemId: String, count: Int?, nowMs: Long, pending: Boolean)
 
     /**
-     * Puts a row back EXACTLY as it was (its marker included): the undo of an optimistic action. Not for data the server
+     * Puts a row back EXACTLY as the caller gives it: the undo of an optimistic action (the caller clears the marker; a restore never writes one). Not for data the server
      * sent (that is [writeServerUserData], which respects pending rows).
      */
     internal suspend fun restoreUserData(row: UserDataEntity) = upsertUserRows(listOf(row))

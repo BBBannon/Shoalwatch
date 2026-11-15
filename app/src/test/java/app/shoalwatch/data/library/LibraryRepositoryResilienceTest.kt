@@ -144,7 +144,7 @@ class LibraryRepositoryResilienceTest : LibraryRepositoryTestBase() {
     @Test fun aFailedLibrariesRefreshIsVisibleAndTheSavedLibrariesStay() {
         runBlocking {
             library.replaceViews(s1u1, listOf(view("a")))
-            library.writePage(s1u1, ListKey.VIEWS, 0, emptyList(), 0, t0)
+            library.writePage(s1u1, ListKey.VIEWS, 0, emptyList(), 0, t0, fetchStartedAtMs = 0)
         }
         advance(Duration.ofMinutes(10))
         gateway.failOps["views"] = AppError.Kind.OFFLINE
@@ -164,8 +164,8 @@ class LibraryRepositoryResilienceTest : LibraryRepositoryTestBase() {
         val show = id("show")
         fun season(label: String, n: Int) = row(item(label, ItemKind.SEASON, "Season $label", seriesId = "show", indexNumber = n))
         runBlocking {
-            library.writePage(s1u1, ListKey.seasons(show), 0, listOf(season("season1", 1), season("season2", 2)), 2, t0)
-            library.writeItems(s1u1, listOf(row(episode("e11", 1, 1), watched(played = true)), row(episode("e21", 2, 1), watched(played = true))), t0)
+            library.writePage(s1u1, ListKey.seasons(show), 0, listOf(season("season1", 1), season("season2", 2)), 2, t0, fetchStartedAtMs = 0)
+            library.writeItems(s1u1, listOf(row(episode("e11", 1, 1), watched(played = true)), row(episode("e21", 2, 1), watched(played = true))), t0, fetchStartedAtMs = 0)
         }
         gateway.failAll = AppError.Kind.OFFLINE
         assertEquals(id("season1"), repo.series(s1u1, show).await { it.selectedSeasonId != null }.selectedSeasonId)
@@ -174,7 +174,7 @@ class LibraryRepositoryResilienceTest : LibraryRepositoryTestBase() {
     // ---- an item the server says is gone
 
     @Test fun anItemThatIsNoLongerOnTheServerStaysVisibleAsStaleServerNotFound() {
-        runBlocking { library.writeItems(s1u1, listOf(row(item("a", overview = "Plot"))), t0) }
+        runBlocking { library.writeItems(s1u1, listOf(row(item("a", overview = "Plot"))), t0, fetchStartedAtMs = 0) }
         advance(Duration.ofMinutes(10))
         gateway.failOps["item"] = AppError.Kind.SERVER_NOT_FOUND
         val detail = repo.item(s1u1, id("a")).await { it.freshness is Freshness.Stale }
@@ -227,7 +227,7 @@ class LibraryRepositoryResilienceTest : LibraryRepositoryTestBase() {
 
     @Test fun aClockThatWentBackwardsMakesTheClearOutDueNotSkipped() = runBlocking {
         now = t0.toEpochMilli() + Duration.ofDays(40).toMillis()
-        library.writePage(s1u1, "old-list", 0, films("x"), 1, t0)
+        library.writePage(s1u1, "old-list", 0, films("x"), 1, t0, fetchStartedAtMs = 0)
         log.last = now + Duration.ofHours(1).toMillis() // "the last run" is in the future: the clock moved back
         gateway.failAll = AppError.Kind.OFFLINE
         repo.home(s1u1).first5s()

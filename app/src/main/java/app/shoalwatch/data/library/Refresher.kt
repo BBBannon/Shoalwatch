@@ -82,23 +82,21 @@ internal class Refresher(
     /** Drops the record of successful attempts (everything saved for them may have been cleared out); failures and work in flight stay. */
     fun forgetFinished() = attempts.update { cur -> cur.filterNot { it.value == Attempt.Done } }
 
-    /** The work running for [id] right now, if any (a caller can wait for it to finish; it never completes exceptionally). */
-    fun inFlight(id: ListId): Job? = synchronized(lock) { flights[id]?.job }
-
-    /** Everything running now for one user (any list). The jobs never complete exceptionally. */
-    fun inFlightFor(serverId: String, userId: String): List<Job> =
-        synchronized(lock) { flights.filterKeys { it.serverId == serverId && it.userId == userId }.values.map { it.job } }
-
     fun attempt(id: ListId): Flow<Attempt> = attempts.map { it[id] ?: Attempt.Idle }.distinctUntilChanged()
 
     /**
      * Starts [work] for [id], or joins/declines as described above. The returned job completes when the work has finished
      * (it never completes exceptionally: a failure becomes [Attempt.Failed]). Null means it was declined.
      */
-    fun launch(id: ListId, mode: Mode, work: suspend () -> Unit): Job? = synchronized(lock) {
+    fun launch(id: ListId, mode: Mode, work: suspend () -> Unit): Job? = start(id, mode, again = false, work)
+
+    /** A refresh that begins AFTER whatever is running for [id] has finished, instead of joining it: what the running one fetched may be older than a change just made. */
+    fun launchAfterCurrent(id: ListId, work: suspend () -> Unit): Job = start(id, Mode.REFRESH, again = true, work)!!
+
+    private fun start(id: ListId, mode: Mode, again: Boolean, work: suspend () -> Unit): Job? = synchronized(lock) {
         val current = flights[id]
         if (current != null && mode == Mode.MORE) return null
-        if (current != null && current.mode == mode) return current.job
+        if (current != null && current.mode == mode && !again) return current.job
         val flight = Flight(mode)
         val waitFor = current?.job
         flight.job = scope.launch(context, start = CoroutineStart.LAZY) {

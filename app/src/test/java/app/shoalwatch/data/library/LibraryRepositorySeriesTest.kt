@@ -37,10 +37,10 @@ class LibraryRepositorySeriesTest : LibraryRepositoryTestBase() {
     private fun settled(seasonId: String? = null, test: (SeriesDetail) -> Boolean = { true }) =
         detail(seasonId).await { it.freshness == Freshness.Fresh && it.selectedSeasonId != null && it.series != null && test(it) }
 
-    private fun saveEpisodes(vararg rows: ItemWithUserData) = runBlocking { library.writeItems(s1u1, rows.toList(), t0) }
+    private fun saveEpisodes(vararg rows: ItemWithUserData) = runBlocking { library.writeItems(s1u1, rows.toList(), t0, fetchStartedAtMs = 0) }
 
     private fun saveSeasons(vararg rows: ItemWithUserData) =
-        runBlocking { library.writePage(s1u1, ListKey.seasons(show), 0, rows.toList(), rows.size, t0) }
+        runBlocking { library.writePage(s1u1, ListKey.seasons(show), 0, rows.toList(), rows.size, t0, fetchStartedAtMs = 0) }
 
     @Test fun withNothingKnownItOpensOnTheFirstNumberedSeason() {
         serve(season1, season2, specials) { id -> if (id == season1.item.id) listOf(ep("e11", 1, 1), ep("e12", 1, 2)) else emptyList() }
@@ -145,10 +145,10 @@ class LibraryRepositorySeriesTest : LibraryRepositoryTestBase() {
 
     @Test fun twoUsersKeepTheirOwnWatchedStateInTheSameSeries() {
         saveSeasons(season1)
-        runBlocking { library.writePage(s1u2, ListKey.seasons(show), 0, listOf(season1), 1, t0) }
+        runBlocking { library.writePage(s1u2, ListKey.seasons(show), 0, listOf(season1), 1, t0, fetchStartedAtMs = 0) }
         saveEpisodes(ep("e11", 1, 1, played = true))
         gateway.failAll = AppError.Kind.OFFLINE
-        runBlocking { library.writePage(s1u1, ListKey.episodes(show, season1.item.id), 0, listOf(ep("e11", 1, 1, played = true)), 1, t0) }
+        runBlocking { library.writePage(s1u1, ListKey.episodes(show, season1.item.id), 0, listOf(ep("e11", 1, 1, played = true)), 1, t0, fetchStartedAtMs = 0) }
         val ann = detail().await { it.episodes.isNotEmpty() }
         val bob = repo.series(s1u2, show).await { it.selectedSeasonId != null }
         assertTrue(ann.episodes.single().userData!!.played)

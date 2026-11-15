@@ -30,7 +30,7 @@ class LibraryOrderAndJoinTest : LibraryTestBase() {
         for (seed in 1..5) {
             val rows = episodes().map { row(it) }.shuffled(Random(seed))
             db.openHelper.writableDatabase.execSQL("DELETE FROM items")
-            library.writeItems(s1u1, rows, t0)
+            library.writeItems(s1u1, rows, t0, fetchStartedAtMs = 0)
             val expected = rows.inEpisodeOrder().map { it.item.id }
             assertEquals("seed $seed", expected, items.getEpisodes(S1, U1, id("show"), null).map { it.item.itemId })
         }
@@ -40,7 +40,7 @@ class LibraryOrderAndJoinTest : LibraryTestBase() {
     }
 
     @Test fun oneSeasonKeepsTheSameOrder() = runBlocking {
-        library.writeItems(s1u1, episodes().map { row(it) }.shuffled(Random(9)), t0)
+        library.writeItems(s1u1, episodes().map { row(it) }.shuffled(Random(9)), t0, fetchStartedAtMs = 0)
         val expected = episodes().map { row(it) }.filter { it.item.seasonId == id("s1") }.inEpisodeOrder().map { it.item.id }
         assertEquals(expected, items.getEpisodes(S1, U1, id("show"), id("s1")).map { it.item.itemId })
     }
@@ -48,16 +48,16 @@ class LibraryOrderAndJoinTest : LibraryTestBase() {
     // ---- the join: another user's data must never decide whether a row is returned
 
     @Test fun aListRowWithNoUserDataForThisUserIsStillReturned() = runBlocking {
-        library.writePage(s1u2, "resume", 0, listOf(row(item("a"), watched(played = true))), 1, t0) // only bob has data
-        library.writePage(s1u1, "resume", 0, listOf(row(item("a"))), 1, t0)
+        library.writePage(s1u2, "resume", 0, listOf(row(item("a"), watched(played = true))), 1, t0, fetchStartedAtMs = 0) // only bob has data
+        library.writePage(s1u1, "resume", 0, listOf(row(item("a"))), 1, t0, fetchStartedAtMs = 0)
         val ann = db.listDao().getList(S1, U1, "resume", 10).single()
         assertNull(ann.userData)
         assertTrue(db.listDao().getList(S1, U2, "resume", 10).single().userData!!.played)
     }
 
     @Test fun anEpisodeWithNoUserDataForThisUserIsStillReturned() = runBlocking {
-        library.writeItems(s1u2, listOf(row(episode("e1", 1, 1), watched(played = true))), t0)
-        library.writeItems(s1u1, listOf(row(episode("e1", 1, 1)), row(episode("e2", 1, 2))), t0)
+        library.writeItems(s1u2, listOf(row(episode("e1", 1, 1), watched(played = true))), t0, fetchStartedAtMs = 0)
+        library.writeItems(s1u1, listOf(row(episode("e1", 1, 1)), row(episode("e2", 1, 2))), t0, fetchStartedAtMs = 0)
         val ann = items.getEpisodes(S1, U1, id("show"), null)
         assertEquals(2, ann.size)
         assertTrue(ann.all { it.userData == null })
@@ -65,8 +65,8 @@ class LibraryOrderAndJoinTest : LibraryTestBase() {
     }
 
     @Test fun aSearchHitWithNoUserDataForThisUserIsStillReturned() = runBlocking {
-        library.writeItems(s1u2, listOf(row(item("a", name = "Match"), watched(played = true))), t0)
-        library.writeItems(s1u1, listOf(row(item("a", name = "Match"))), t0)
+        library.writeItems(s1u2, listOf(row(item("a", name = "Match"), watched(played = true))), t0, fetchStartedAtMs = 0)
+        library.writeItems(s1u1, listOf(row(item("a", name = "Match"))), t0, fetchStartedAtMs = 0)
         assertNull(items.searchByName(S1, U1, "match", emptySet(), 5).single().userData)
         assertNull(items.getItem(S1, U1, id("a"))!!.userData)
     }

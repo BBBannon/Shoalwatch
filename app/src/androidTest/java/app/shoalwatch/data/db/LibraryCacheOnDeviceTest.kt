@@ -75,42 +75,42 @@ class LibraryCacheOnDeviceTest {
 
     @Test fun aPageWritesAndReadsBackThroughTheJoin() = runBlocking {
         val rows = listOf("a", "b", "c").map { ItemWithUserData(item(it), UserData(it == "a", 0, null, 0, false, null, null)) }
-        assertEquals(PageResult.Written, store.writePage(session, "resume", 0, rows, 3, t0))
+        assertEquals(PageResult.Written, store.writePage(session, "resume", 0, rows, 3, t0, fetchStartedAtMs = 0))
         val read = db.listDao().getList(server, user, "resume", 10)
         assertEquals(listOf("Film a", "Film b", "Film c"), read.map { it.item.name })
         assertTrue(read.first().userData!!.played)
-        assertEquals(PageResult.Stale, store.writePage(session, "resume", 9, rows, 3, t0))
+        assertEquals(PageResult.Stale, store.writePage(session, "resume", 9, rows, 3, t0, fetchStartedAtMs = 0))
     }
 
     @Test fun upsertTwiceKeepsPinnedAndOverviewAndAuthoritativeClearsIt() = runBlocking {
-        store.writeItems(session, listOf(ItemWithUserData(item("a", overview = "Plot"), null)), t0)
+        store.writeItems(session, listOf(ItemWithUserData(item("a", overview = "Plot"), null)), t0, fetchStartedAtMs = 0)
         db.openHelper.writableDatabase.execSQL("UPDATE items SET pinned = 1")
-        store.writeItems(session, listOf(ItemWithUserData(item("a", name = "Again", overview = null), null)), t0.plusSeconds(1))
+        store.writeItems(session, listOf(ItemWithUserData(item("a", name = "Again", overview = null), null)), t0.plusSeconds(1), fetchStartedAtMs = 0)
         val kept = db.itemDao().getItemEntity(server, id("a"))!!
         assertEquals("Plot", kept.overview)
         assertTrue(kept.pinned)
         assertEquals("Again", kept.name)
-        store.writeItems(session, listOf(ItemWithUserData(item("a", overview = null), null)), t0.plusSeconds(2), authoritative = true)
+        store.writeItems(session, listOf(ItemWithUserData(item("a", overview = null), null)), t0.plusSeconds(2), authoritative = true, fetchStartedAtMs = 0)
         assertNull(db.itemDao().getItemEntity(server, id("a"))!!.overview)
     }
 
     @Test fun aServerRefreshDoesNotOverwriteAPendingRow() = runBlocking {
         db.itemDao().setPlayed(server, user, id("a"), true, 0, t0.toEpochMilli(), pending = true)
-        store.writeItems(session, listOf(ItemWithUserData(item("a"), UserData(false, 800, null, 0, false, null, null))), t0.plusSeconds(5))
+        store.writeItems(session, listOf(ItemWithUserData(item("a"), UserData(false, 800, null, 0, false, null, null))), t0.plusSeconds(5), fetchStartedAtMs = 0)
         assertTrue(db.itemDao().getUserData(server, user, id("a"))!!.played)
         store.clearPending(session, id("a"))
-        store.writeItems(session, listOf(ItemWithUserData(item("a"), UserData(false, 800, null, 0, false, null, null))), t0.plusSeconds(6))
+        store.writeItems(session, listOf(ItemWithUserData(item("a"), UserData(false, 800, null, 0, false, null, null))), t0.plusSeconds(6), fetchStartedAtMs = 0)
         assertFalse(db.itemDao().getUserData(server, user, id("a"))!!.played)
     }
 
     @Test fun searchFindsAccentedNamesAndEscapesWildcards() = runBlocking {
-        store.writeItems(session, listOf(ItemWithUserData(item("a", name = "Élite 100%"), null), ItemWithUserData(item("b", name = "Elite 100x"), null)), t0)
+        store.writeItems(session, listOf(ItemWithUserData(item("a", name = "Élite 100%"), null), ItemWithUserData(item("b", name = "Elite 100x"), null)), t0, fetchStartedAtMs = 0)
         assertEquals(listOf("Élite 100%"), db.itemDao().searchByName(server, user, "ELITE 100%", emptySet(), 10).map { it.item.name })
     }
 
     @Test fun removeAndReinsertAnEntryThenEvict() = runBlocking {
         val rows = listOf("a", "b", "c").map { ItemWithUserData(item(it), null) }
-        store.writePage(session, "resume", 0, rows, 3, t0)
+        store.writePage(session, "resume", 0, rows, 3, t0, fetchStartedAtMs = 0)
         assertTrue(store.removeEntry(session, "resume", id("b")))
         assertEquals(listOf(id("a"), id("c")), db.listDao().entryIds(server, user, "resume"))
         assertTrue(store.insertEntryAt(session, "resume", 1, id("b")))
@@ -126,11 +126,11 @@ class LibraryCacheOnDeviceTest {
     @Test fun anItemOnlyOneUserWasShownIsAbsentForTheOther() = runBlocking {
         val other = "33333333333333333333333333333333"
         db.accountDao().upsert(AccountEntity(server, other, "bob", ByteArray(1)))
-        store.writePage(session, "resume", 0, listOf(ItemWithUserData(item("a"), null)), 1, t0)
+        store.writePage(session, "resume", 0, listOf(ItemWithUserData(item("a"), null)), 1, t0, fetchStartedAtMs = 0)
         assertNotNull(db.itemDao().getItem(server, user, id("a")))
         assertNull(db.itemDao().getItem(server, other, id("a")))
         assertTrue(db.itemDao().searchByName(server, other, "film", emptySet(), 10).isEmpty())
-        store.writeItems(Session(server, other), listOf(ItemWithUserData(item("a"), null)), t0)
+        store.writeItems(Session(server, other), listOf(ItemWithUserData(item("a"), null)), t0, fetchStartedAtMs = 0)
         assertNotNull(db.itemDao().getItem(server, other, id("a")))
     }
 
@@ -138,8 +138,8 @@ class LibraryCacheOnDeviceTest {
         val other = "33333333333333333333333333333333"
         db.accountDao().upsert(AccountEntity(server, other, "bob", ByteArray(1)))
         val bob = Session(server, other)
-        store.writePage(session, "resume", 0, listOf("a", "b").map { ItemWithUserData(item(it), null) }, 2, t0)
-        store.writePage(bob, "resume", 0, listOf("a", "b").map { ItemWithUserData(item(it), null) }, 2, t0)
+        store.writePage(session, "resume", 0, listOf("a", "b").map { ItemWithUserData(item(it), null) }, 2, t0, fetchStartedAtMs = 0)
+        store.writePage(bob, "resume", 0, listOf("a", "b").map { ItemWithUserData(item(it), null) }, 2, t0, fetchStartedAtMs = 0)
         // the server refused "a" for Bob: gone from his reads and his list, untouched for the first user
         store.revokeVisibility(bob, id("a"))
         assertNull(db.itemDao().getItem(server, other, id("a")))
@@ -148,7 +148,7 @@ class LibraryCacheOnDeviceTest {
         assertEquals(listOf(id("a"), id("b")), db.listDao().entryIds(server, user, "resume"))
         // a record the server has not re-confirmed for 31 days goes, unless the item is in that user's current lists
         db.openHelper.writableDatabase.execSQL("UPDATE visible_items SET seenAt = ?", arrayOf<Any>(t0.minus(Duration.ofDays(31)).toEpochMilli()))
-        store.writeItems(bob, listOf(ItemWithUserData(item("a"), null)), t0) // keeps the shared row recent; makes Bob's record fresh again
+        store.writeItems(bob, listOf(ItemWithUserData(item("a"), null)), t0, fetchStartedAtMs = 0) // keeps the shared row recent; makes Bob's record fresh again
         store.evict(t0)
         assertNotNull("in the user's current list", db.itemDao().getItem(server, user, id("a")))
         assertNotNull("re-confirmed", db.itemDao().getItem(server, other, id("a")))

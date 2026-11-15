@@ -10,9 +10,6 @@ import org.junit.Test
 
 /** A refresh of ANY list that began before the server heard cannot revert a change after its marker is cleared; and a failed clear does not fail the action. */
 class PlaystateRefreshRaceTest : PlaystateTestBase() {
-    /** Holds only the gateway calls whose name starts with [prefix], until the returned latch is released. */
-    private fun holdCalls(prefix: String): Latch = latch().also { l -> gateway.onCall = { call -> if (call.startsWith(prefix)) l.await() } }
-
     @Test fun anItemRefreshInFlightWithOldDataCannotRevertAFavourite() = runBlocking {
         save(film("a", ud(favourite = false)))
         gateway.itemFor = { film("a", ud(favourite = false)) } // the detail answer the server gave before it heard
@@ -44,18 +41,6 @@ class PlaystateRefreshRaceTest : PlaystateTestBase() {
         assertNoPending()
     }
 
-    @Test fun aStuckRefreshIsWaitedForOnlyBrieflyThenTheActionCompletesAndAsksForTheItemAgain() = runBlocking {
-        save(film("a", ud()))
-        val quick = PlaystateRepository(gateway, db, repo, appScope, Dispatchers.IO, { now }, settleTimeoutMs = 200)
-        holdCalls("item") // never released during the test body
-        val refreshing = background { repo.refresh(s1u1, RefreshTarget.Item(id("a"))) }
-        until { gateway.count("item") == 1 }
-        withTimeout(5_000) { quick.setFavourite(s1u1, id("a"), true) }
-        assertTrue(userData("a")!!.favourite)
-        assertNoPending()
-        refreshing.cancel()
-    }
-
     // ---- M1: the server accepted the change, so a failed clear is not the caller's failure
 
     private fun failClearingMarkerOf(label: String) = sql(
@@ -71,6 +56,18 @@ class PlaystateRefreshRaceTest : PlaystateTestBase() {
         settle()
         assertEquals("the follow-up refresh still ran", 1, gateway.count("resume"))
         assertEquals(1, pendingRows()) // left for the start-up sweep
+    }
+
+    @Test fun aMarkerLeftByAFailedClearIsClearedOnceTheQueueIsIdleAgain() = runBlocking {
+        saveResume(film("a"))
+        save(film("b", ud()))
+        failClearingMarkerOf("a")
+        playstate.removeFromContinueWatching(s1u1, id("a"))
+        assertEquals("stuck for now", 1, pendingRows())
+        sql("DROP TRIGGER stuck")
+        playstate.setFavourite(s1u1, id("b"), true) // the queue is busy and then idle again
+        settle()
+        assertNoPending()
     }
 
     @Test fun oneUnclearableRowDoesNotKeepTheOthersPending() = runBlocking {

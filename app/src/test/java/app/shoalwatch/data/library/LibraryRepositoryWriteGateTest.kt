@@ -34,7 +34,7 @@ class LibraryRepositoryWriteGateTest : LibraryRepositoryTestBase() {
     @Test fun theClearOutWaitsForTheLockToo() = runBlocking {
         held.ensureSwept()
         now = t0.toEpochMilli() + Duration.ofDays(40).toMillis()
-        library.writePage(s1u1, "old-list", 0, films("x"), 1, t0)
+        library.writePage(s1u1, "old-list", 0, films("x"), 1, t0, fetchStartedAtMs = 0)
         gateway.failAll = AppError.Kind.OFFLINE
         gate.withLock {
             held.home(s1u1).first5s()

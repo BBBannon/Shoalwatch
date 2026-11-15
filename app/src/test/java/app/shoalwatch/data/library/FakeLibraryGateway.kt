@@ -28,6 +28,14 @@ class FakeLibraryGateway : LibraryGateway {
     /** Runs inside every call after the gate is open and before a programmed failure, so a test can act "while the server is answering". */
     @Volatile var onCall: suspend (String) -> Unit = {}
 
+    /** Called once in every call after the gate and before [onCall] (so before a call is held): a test's clock can move on as a real server round trip would. */
+    @Volatile var clockTick: () -> Unit = {}
+
+    /** When true the programmed answer is worked out when the call ARRIVES, not when it is released: a held call then carries the state of the moment it was asked. */
+    @Volatile var answerAtRequest = false
+
+    private fun <T> answerNow(f: () -> T): Lazy<T> = if (answerAtRequest) lazyOf(f()) else lazy(f)
+
     /** Calls that were cancelled while waiting at the gate. */
     val cancelled = CopyOnWriteArrayList<String>()
 
@@ -56,6 +64,7 @@ class FakeLibraryGateway : LibraryGateway {
         synchronized(this) { maxRunning = maxOf(maxRunning, now) }
         try {
             gate?.await()
+            clockTick()
             onCall(name)
             throwOps[op]?.let { throw it }
             (failOps[op] ?: failAll)?.let { throw AppError.of(it) }
@@ -73,11 +82,12 @@ class FakeLibraryGateway : LibraryGateway {
     override suspend fun children(
         s: Session, parentId: String, start: Int, limit: Int, sort: Sort, filter: ItemFilter, kinds: Set<ItemKind>, recursive: Boolean,
     ): Page<ItemWithUserData> {
+        val answer = answerNow { childPage(parentId, start, limit) }
         enter("children", "$start:$limit:${ListShape(kinds, recursive).key}")
-        return childPage(parentId, start, limit)
+        return answer.value
     }
 
-    override suspend fun item(s: Session, itemId: String): ItemWithUserData { enter("item", itemId); return itemBySession?.invoke(s, itemId) ?: itemFor(itemId) }
+    override suspend fun item(s: Session, itemId: String): ItemWithUserData { val a = answerNow { itemBySession?.invoke(s, itemId) ?: itemFor(itemId) }; enter("item", itemId); return a.value }
 
     override suspend fun seasons(s: Session, seriesId: String): List<ItemWithUserData> { enter("seasons"); return seasonsFor(seriesId) }
 
@@ -86,13 +96,13 @@ class FakeLibraryGateway : LibraryGateway {
         return episodesFor(seriesId, seasonId)
     }
 
-    override suspend fun resume(s: Session, limit: Int): List<ItemWithUserData> { enter("resume", "$limit"); return resumeFor(s) }
+    override suspend fun resume(s: Session, limit: Int): List<ItemWithUserData> { val a = answerNow { resumeFor(s) }; enter("resume", "$limit"); return a.value }
 
-    override suspend fun nextUp(s: Session, limit: Int): List<ItemWithUserData> { enter("nextUp", "$limit"); return nextUpFor(s) }
+    override suspend fun nextUp(s: Session, limit: Int): List<ItemWithUserData> { val a = answerNow { nextUpFor(s) }; enter("nextUp", "$limit"); return a.value }
 
     override suspend fun latest(s: Session, viewId: String, limit: Int): List<ItemWithUserData> { enter("latest", "$limit"); return latestFor(s, viewId) }
 
-    override suspend fun search(s: Session, term: String, limit: Int): List<ItemWithUserData> { enter("search", term); return searchFor(term) }
+    override suspend fun search(s: Session, term: String, limit: Int): List<ItemWithUserData> { val a = answerNow { searchFor(term) }; enter("search", term); return a.value }
 
     override suspend fun setPlayed(s: Session, itemId: String, played: Boolean) { enter("setPlayed", "$itemId:$played") }
 

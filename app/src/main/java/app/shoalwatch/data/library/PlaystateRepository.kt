@@ -1,9 +1,7 @@
 package app.shoalwatch.data.library
 
 import app.shoalwatch.core.AppError
-import app.shoalwatch.data.db.AppDatabase
 import app.shoalwatch.data.db.library.ItemRow
-import app.shoalwatch.data.db.library.LibraryStore
 import app.shoalwatch.data.library.api.LibraryGateway
 import app.shoalwatch.data.servers.JellyfinId
 import app.shoalwatch.data.servers.Session
@@ -23,7 +21,7 @@ import java.util.concurrent.ConcurrentHashMap
  *  1. snapshot what will change;
  *  2. change Room in ONE transaction under the library write gate, marking every `user_data` row `pendingSyncAt`;
  *  3. call the server, exactly once (the gateway's mutations already retry once; nothing here loops);
- *  4. on success, wait (briefly) for every refresh running for this user, clear the markers, then refresh what the server recomputes (not waited for);
+ *  4. on success, clear the markers, then refresh what the server recomputes (not waited for; a slow older answer cannot undo the change, see `LocalChangeLog`);
  *  5. on failure, put the snapshot back exactly and throw the gateway's [AppError].
  *
  * **Milestone 5** replaces step 3 with a durable outbox: on failure it will KEEP the change and its `pendingSyncAt` marker
@@ -31,20 +29,20 @@ import java.util.concurrent.ConcurrentHashMap
  * today the start-up sweep (`LibraryRepository`) discards it. The marker is the hook; this class is what changes.
  *
  * The work runs in [scope] (the app scope) and the caller awaits it: a caller that is cancelled after step 2 stops waiting,
- * and the action still finishes, so no marker is ever left behind by a screen that went away. **One action runs at a time per
+ * and the action still finishes, so a screen that went away leaves no marker behind. (Two residual cases: the app scope itself
+ * cancelled after the optimistic write, and a clear that fails; the queue clears leftovers when it next goes idle, the start-up sweep at the latest.)
+ * **One action runs at a time per
  * user** (calls queue in the order they were made): sibling episodes share the season and series badges, so per-item
  * ordering would not be enough. Another user's actions do not wait.
  */
 class PlaystateRepository(
     private val gateway: LibraryGateway,
-    db: AppDatabase,
     private val library: LibraryRepository,
     private val scope: CoroutineScope,
     private val io: CoroutineDispatcher,
     clock: () -> Long,
-    private val settleTimeoutMs: Long = 15_000,
 ) : Playstate {
-    private val local = PlaystateLocal(LibraryStore(db), clock)
+    private val local = PlaystateLocal(library.store, clock)
 
     /** The end of each user's queue of actions: the next call waits for it. Swapped atomically, in the caller, so the order is the order of the calls. */
     private val tails = ConcurrentHashMap<Session, CompletableDeferred<Unit>>()
@@ -74,8 +72,14 @@ class PlaystateRepository(
                 before?.await() // never fails: a queue entry is only ever completed normally
                 done.completeWith(runCatching { perform(s, id, change, send) })
             } finally {
-                mine.complete(Unit)
-                tails.remove(s, mine)
+                // Last in the queue means the queue is about to go idle: nothing can be live, so any marker still set (a clear that
+                // failed) is cleared now. Anything queued behind us waits for [mine], so it cannot have set a marker yet.
+                try {
+                    if (tails[s] === mine) withContext(NonCancellable) { clearLeftovers(s) }
+                } finally {
+                    mine.complete(Unit)
+                    tails.remove(s, mine)
+                }
             }
         }
         work.invokeOnCompletion {
@@ -116,8 +120,6 @@ class PlaystateRepository(
             throw if (e is Exception && e !is CancellationException) AppError.from(e) else e // an Error or a cancellation goes on as it is
         }
         withContext(NonCancellable) {
-            // A refresh of ANY list that began before the server heard carries the old answer: let it land (and be ignored, the rows being pending) first.
-            val settled = library.awaitSessionRefreshes(s, settleTimeoutMs)
             try {
                 library.writeGated { local.transaction { local.clearPending(s, touched.markedIds) } }
             } catch (_: Exception) {
@@ -125,7 +127,15 @@ class PlaystateRepository(
                 // cannot be cleared is cleaned up by the start-up sweep.
                 clearOneByOne(s, touched)
             }
-            library.refreshInBackground(s, if (settled) touched.recompute else touched.recompute + Recompute.Item(id))
+            library.refreshInBackground(s, touched.recompute)
+        }
+    }
+
+    private suspend fun clearLeftovers(s: Session) {
+        try {
+            library.writeGated { local.transaction { local.clearLeftovers(s) } }
+        } catch (_: Exception) {
+            // Still stuck: the next idle moment, or the next start, tries again.
         }
     }
 

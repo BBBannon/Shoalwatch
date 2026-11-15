@@ -16,7 +16,7 @@ class LibraryCascadeTest : LibraryTestBase() {
 
     private fun fill() = runBlocking {
         for (s in listOf(s1u1, s1u2, s2u1)) {
-            library.writePage(s, "resume", 0, listOf(row(item("a"), watched(played = true)), row(item("b"), watched(favourite = true))), 2, t0)
+            library.writePage(s, "resume", 0, listOf(row(item("a"), watched(played = true)), row(item("b"), watched(favourite = true))), 2, t0, fetchStartedAtMs = 0)
             library.replaceViews(s, listOf(LibraryView(id("v"), "Films", LibraryKind.MOVIES)))
         }
     }

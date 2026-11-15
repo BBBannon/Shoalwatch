@@ -36,13 +36,13 @@ class LibraryPendingTest : LibraryTestBase() {
     }
 
     @Test fun aRefreshDoesNotOverwriteAPendingRowButUpdatesTheOthersInTheSamePage() = runBlocking {
-        library.writePage(s1u1, "resume", 0, listOf(row(item("a"), watched()), row(item("b"), watched()), row(item("c"), watched())), 3, t0)
+        library.writePage(s1u1, "resume", 0, listOf(row(item("a"), watched()), row(item("b"), watched()), row(item("c"), watched())), 3, t0, fetchStartedAtMs = 0)
         items.setPlayed(S1, U1, id("a"), true, 0, now, pending = true)
         items.setPosition(S1, U1, id("c"), 4_000, now, pending = true)
         library.writePage(
             s1u1, "resume", 0,
             listOf(row(item("a"), watched(positionMs = 500)), row(item("b"), watched(positionMs = 9_000, favourite = true)), row(item("c"), watched(positionMs = 0))),
-            3, t0.plusSeconds(60),
+            3, t0.plusSeconds(60), fetchStartedAtMs = 0,
         )
         val a = data("a")!!
         assertTrue("played stays", a.played)
@@ -57,7 +57,7 @@ class LibraryPendingTest : LibraryTestBase() {
 
     @Test fun writeItemsAlsoRespectsPending() = runBlocking {
         items.setFavourite(S1, U1, id("a"), true, now, pending = true)
-        library.writeItems(s1u1, listOf(row(item("a"), watched(favourite = false))), t0.plusSeconds(60))
+        library.writeItems(s1u1, listOf(row(item("a"), watched(favourite = false))), t0.plusSeconds(60), fetchStartedAtMs = 0)
         assertTrue(data("a")!!.favourite)
     }
 
@@ -66,7 +66,7 @@ class LibraryPendingTest : LibraryTestBase() {
         library.clearPending(s1u1, id("a"))
         assertNull(data("a")!!.pendingSyncAt)
         assertTrue("clearing the marker keeps the local value", data("a")!!.played)
-        library.writeItems(s1u1, listOf(row(item("a"), watched(played = false, positionMs = 700))), t0.plusSeconds(60))
+        library.writeItems(s1u1, listOf(row(item("a"), watched(played = false, positionMs = 700))), t0.plusSeconds(60), fetchStartedAtMs = 0)
         assertFalse(data("a")!!.played)
         assertEquals(700L, data("a")!!.positionMs)
     }
@@ -77,14 +77,14 @@ class LibraryPendingTest : LibraryTestBase() {
         items.setFavourite(S1, U1, id("a"), true, now)
         assertTrue(library.markPending(s1u1, id("a"), t0.plusSeconds(99)))
         assertEquals(t0.plusSeconds(99).toEpochMilli(), data("a")!!.pendingSyncAt)
-        library.writeItems(s1u1, listOf(row(item("a"), watched(favourite = false))), t0.plusSeconds(200))
+        library.writeItems(s1u1, listOf(row(item("a"), watched(favourite = false))), t0.plusSeconds(200), fetchStartedAtMs = 0)
         assertTrue(data("a")!!.favourite)
     }
 
     @Test fun pendingIsPerUser() = runBlocking {
         items.setPlayed(S1, U1, id("a"), true, 0, now, pending = true)
-        library.writeItems(s1u2, listOf(row(item("a"), watched(positionMs = 123))), t0)
-        library.writeItems(s1u1, listOf(row(item("a"), watched(positionMs = 456))), t0)
+        library.writeItems(s1u2, listOf(row(item("a"), watched(positionMs = 123))), t0, fetchStartedAtMs = 0)
+        library.writeItems(s1u1, listOf(row(item("a"), watched(positionMs = 456))), t0, fetchStartedAtMs = 0)
         assertEquals("the other user has nothing pending, so the server's value applies", 123L, data("a", U2)!!.positionMs)
         assertEquals(0L, data("a", U1)!!.positionMs)
         library.clearPending(s1u2, id("a")) // clearing for the other user changes nothing for this one

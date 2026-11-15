@@ -7,6 +7,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
+import java.time.Duration
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -56,7 +57,7 @@ class PlaystateSweepTest : PlaystateTestBase() {
         repo.home(s1u1).first5s { it.resume.freshness == Freshness.Fresh }
         settle()
         val first = gateway.count("resume")
-        val other = PlaystateRepository(gateway, db, repo, appScope, Dispatchers.IO, { now })
+        val other = PlaystateRepository(gateway, repo, appScope, Dispatchers.IO, { now })
         other.setFavourite(s1u1, id("a"), true)
         assertNoPending()
         assertEquals(first, gateway.count("resume"))
@@ -65,7 +66,7 @@ class PlaystateSweepTest : PlaystateTestBase() {
     @Test fun itRunsOncePerProcess() = runBlocking {
         save(film("a", ud()))
         repo.refresh(s1u1, RefreshTarget.Item(id("a"))) // the first use: the sweep happens
-        leaveMarker("b") // a marker that appears afterwards belongs to a live action as far as this process knows
+        leaveMarker("b", s1u2) // appears after the sweep: not swept again (a user whose queue goes idle clears only their own)
         repo.refresh(s1u1, RefreshTarget.Item(id("a")))
         playstate.setFavourite(s1u1, id("a"), true)
         assertEquals(1, pendingRows())
@@ -76,7 +77,7 @@ class PlaystateSweepTest : PlaystateTestBase() {
         save(film("live", ud()))
         val gate = Mutex()
         val lib = LibraryRepository(gateway, db, appScope, Dispatchers.IO, { now }, log, gate)
-        val gated = PlaystateRepository(gateway, db, lib, appScope, Dispatchers.IO, { now })
+        val gated = PlaystateRepository(gateway, lib, appScope, Dispatchers.IO, { now })
         val held = holdMutation()
         gate.withLock {
             val call = background { gated.setFavourite(s1u1, id("live"), true) }
@@ -92,6 +93,39 @@ class PlaystateSweepTest : PlaystateTestBase() {
             withTimeout(5_000) { call.await() }
             gate.lock()
         }
+        assertNoPending()
+    }
+
+    @Test fun aSweepThatFailedIsTriedAgainAfterThirtySecondsButNotBefore() = runBlocking {
+        leaveMarker("a")
+        gateway.failAll = AppError.Kind.OFFLINE
+        sql("CREATE TRIGGER nope BEFORE UPDATE ON user_data BEGIN SELECT RAISE(ABORT, 'no'); END")
+        repo.refresh(s1u1, RefreshTarget.Item(id("a"))) // the sweep fails
+        sql("DROP TRIGGER nope")
+        repo.refresh(s1u1, RefreshTarget.Item(id("a")))
+        assertEquals("not tried again at once", 1, pendingRows())
+        advance(Duration.ofSeconds(31))
+        repo.refresh(s1u1, RefreshTarget.Item(id("a")))
+        assertNoPending()
+    }
+
+    @Test fun aSweepThatKeepsFailingIsTriedAtMostFiveTimes() = runBlocking {
+        leaveMarker("a")
+        gateway.failAll = AppError.Kind.OFFLINE
+        sql("CREATE TRIGGER nope BEFORE UPDATE ON user_data BEGIN SELECT RAISE(ABORT, 'no'); END")
+        repeat(6) {
+            repo.refresh(s1u1, RefreshTarget.Item(id("a")))
+            advance(Duration.ofSeconds(31))
+        }
+        sql("DROP TRIGGER nope")
+        repo.refresh(s1u1, RefreshTarget.Item(id("a"))) // a sixth attempt would clear it now
+        assertEquals(1, pendingRows())
+    }
+
+    @Test fun aSearchWaitsForTheSweepLikeEveryOtherEntryPoint() = runBlocking {
+        leaveMarker("a")
+        gateway.searchFor = { listOf(film("a", ud(favourite = false))) }
+        repo.search(s1u1, "film")
         assertNoPending()
     }
 

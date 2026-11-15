@@ -22,7 +22,11 @@ enum class PageResult { Written, Stale }
  * The writes that span more than one table, each one transaction. Screens never call this; they observe the DAOs.
  * Reads go through `db.itemDao()`, `db.listDao()` and `db.viewDao()`.
  */
-class LibraryStore(private val db: AppDatabase) {
+class LibraryStore(
+    private val db: AppDatabase,
+    /** What was changed locally and when: a server answer asked for before a change never overwrites it (see [LocalChangeLog]). */
+    private val changes: LocalChangeLog = LocalChangeLog(System::currentTimeMillis),
+) {
     private val items = db.itemDao()
     private val lists = db.listDao()
     private val views = db.viewDao()
@@ -54,6 +58,7 @@ class LibraryStore(private val db: AppDatabase) {
         pagesLoaded: Int = 1,
         endReached: Boolean = true,
         basedOn: ListStateEntity? = null,
+        fetchStartedAtMs: Long,
     ): PageResult {
         require(start >= 0) { "A page cannot start before the first item." }
         require(listKey.isNotEmpty() && listKey.length <= ListEntryEntity.MAX_LIST_KEY) { "A list key is 1 to 200 characters." }
@@ -64,11 +69,14 @@ class LibraryStore(private val db: AppDatabase) {
             }
             val stored = if (start == 0) 0 else repacked(s, listKey)
             if (start > stored) return@withTransaction PageResult.Stale
-            writeItems(s, page, now)
+            writeItems(s, page, now, fetchStartedAtMs = fetchStartedAtMs)
+            // An item a local action took out of this list after this page was asked for stays out: the page is older than that.
+            val entries = page.filterNot { changes.removedFrom(s, it.item.id, listKey) && changes.newerThan(s, it.item.id, fetchStartedAtMs) }
             lists.deleteEntriesFrom(s.serverId, s.userId, listKey, start)
-            lists.insertEntries(page.mapIndexed { i, row -> ListEntryEntity(s.serverId, s.userId, listKey, start + i, row.item.id) })
-            val loaded = start + page.size
-            lists.upsertState(ListStateEntity(s.serverId, s.userId, listKey, total?.coerceAtLeast(loaded), loaded, nextStartIndex, pagesLoaded, endReached, now.toEpochMilli()))
+            lists.insertEntries(entries.mapIndexed { i, row -> ListEntryEntity(s.serverId, s.userId, listKey, start + i, row.item.id) })
+            val loaded = start + entries.size
+            val knownTotal = total?.minus(page.size - entries.size)
+            lists.upsertState(ListStateEntity(s.serverId, s.userId, listKey, knownTotal?.coerceAtLeast(loaded), loaded, nextStartIndex, pagesLoaded, endReached, now.toEpochMilli()))
             PageResult.Written
         }
     }
@@ -128,11 +136,13 @@ class LibraryStore(private val db: AppDatabase) {
      * provided, [ItemDao.writeServerUserData]: a row with an unconfirmed local change (`pendingSyncAt`) is ignored. In the same
      * transaction every item written is recorded as shown to this user by the server ([VisibleItemEntity]).
      */
-    suspend fun writeItems(s: Session, rows: List<ItemWithUserData>, now: Instant, authoritative: Boolean = false) {
+    suspend fun writeItems(s: Session, rows: List<ItemWithUserData>, now: Instant, authoritative: Boolean = false, fetchStartedAtMs: Long) {
         db.withTransaction {
             items.upsertItems(s.serverId, rows.map { it.item.toEntity(s.serverId, now) }, authoritative)
             items.markVisible(s.serverId, s.userId, rows.map { it.item.id }, now.toEpochMilli())
-            items.writeServerUserData(rows.mapNotNull { r -> r.userData?.toEntity(s.serverId, s.userId, r.item.id, now) })
+            // The one way server user data is written. Skipped, besides pending rows (in the DAO): any item changed locally at or
+            // after the moment this answer was asked for. The shared item row and visibility above are still written.
+            items.writeServerUserData(rows.filterNot { changes.newerThan(s, it.item.id, fetchStartedAtMs) }.mapNotNull { r -> r.userData?.toEntity(s.serverId, s.userId, r.item.id, now) })
         }
     }
 
@@ -153,7 +163,10 @@ class LibraryStore(private val db: AppDatabase) {
     suspend fun clearPending(s: Session, itemId: String) = items.clearPending(s.serverId, s.userId, itemId)
 
     /** Deletes this user's row for the item (even if pending), to roll back an optimistic action on a row that did not exist. */
-    suspend fun deleteUserData(s: Session, itemId: String) = items.deleteUserData(s.serverId, s.userId, itemId)
+    suspend fun deleteUserData(s: Session, itemId: String) {
+        items.deleteUserData(s.serverId, s.userId, itemId)
+        changes.record(s, itemId)
+    }
 
     // ---- what the tidy-up actions (PlaystateLocal) read and write: the one place their rules are applied
 
@@ -174,20 +187,53 @@ class LibraryStore(private val db: AppDatabase) {
     suspend fun savedEpisodes(s: Session, seriesId: String, seasonId: String?): List<ItemRow> = items.getEpisodes(s.serverId, s.userId, seriesId, seasonId)
 
     /** An optimistic watched/unwatched change: position 0, row created if missing, marker set (see [ItemDao.setPlayed]). */
-    suspend fun setPlayedPending(s: Session, itemId: String, played: Boolean, nowMs: Long) = items.setPlayed(s.serverId, s.userId, itemId, played, 0, nowMs, pending = true)
+    suspend fun setPlayedPending(s: Session, itemId: String, played: Boolean, nowMs: Long) {
+        changes.record(s, itemId)
+        items.setPlayed(s.serverId, s.userId, itemId, played, 0, nowMs, pending = true)
+    }
 
-    suspend fun setFavouritePending(s: Session, itemId: String, favourite: Boolean, nowMs: Long) = items.setFavourite(s.serverId, s.userId, itemId, favourite, nowMs, pending = true)
+    suspend fun setFavouritePending(s: Session, itemId: String, favourite: Boolean, nowMs: Long) {
+        changes.record(s, itemId)
+        items.setFavourite(s.serverId, s.userId, itemId, favourite, nowMs, pending = true)
+    }
 
     /** An optimistic "start again": position 0, `played` untouched, marker set. */
-    suspend fun clearPositionPending(s: Session, itemId: String, nowMs: Long) = items.setPosition(s.serverId, s.userId, itemId, 0, nowMs, pending = true)
+    suspend fun clearPositionPending(s: Session, itemId: String, nowMs: Long) {
+        changes.record(s, itemId)
+        items.setPosition(s.serverId, s.userId, itemId, 0, nowMs, pending = true)
+    }
 
-    suspend fun setUnplayedCountPending(s: Session, itemId: String, count: Int?, nowMs: Long) = items.setUnplayedCount(s.serverId, s.userId, itemId, count, nowMs, pending = true)
+    suspend fun setUnplayedCountPending(s: Session, itemId: String, count: Int?, nowMs: Long) {
+        changes.record(s, itemId)
+        items.setUnplayedCount(s.serverId, s.userId, itemId, count, nowMs, pending = true)
+    }
 
     /** The badge back without a marker (rolling back a change to it). */
-    suspend fun setUnplayedCount(s: Session, itemId: String, count: Int?, nowMs: Long) = items.setUnplayedCount(s.serverId, s.userId, itemId, count, nowMs, pending = false)
+    suspend fun setUnplayedCount(s: Session, itemId: String, count: Int?, nowMs: Long) {
+        changes.record(s, itemId)
+        items.setUnplayedCount(s.serverId, s.userId, itemId, count, nowMs, pending = false)
+    }
 
     /** Puts a row back exactly as it was (see [ItemDao.restoreUserData]): the undo of an optimistic change only. */
-    suspend fun restoreUserData(row: UserDataEntity) = items.restoreUserData(row)
+    suspend fun restoreUserData(row: UserDataEntity) {
+        changes.record(Session(row.serverId, row.userId), row.itemId)
+        items.restoreUserData(row)
+    }
+
+    /** Takes the item out of a list because of an action, and remembers it, so an older server answer cannot put it back (see [LocalChangeLog.removedFrom]). */
+    suspend fun removeEntryForAction(s: Session, listKey: String, itemId: String): Boolean {
+        changes.record(s, itemId, removedFrom = listKey)
+        return removeEntry(s, listKey, itemId)
+    }
+
+    /** The undo of [removeEntryForAction]: the entry back at its position, and the server's own answers about that list are authoritative for it again. */
+    suspend fun restoreEntry(s: Session, listKey: String, position: Int, itemId: String): Boolean {
+        changes.forgetRemoval(s, itemId, listKey)
+        return insertEntryAt(s, listKey, position, itemId)
+    }
+
+    /** Clears the markers of one user (the local values stay): used when that user has no action running, so none can be live. Returns how many were cleared. */
+    suspend fun clearPendingFor(s: Session): Int = items.clearPendingFor(s.serverId, s.userId)
 
     /**
      * The start-up sweep: clears EVERY pending marker (all servers and users; the local values stay), and makes every list of

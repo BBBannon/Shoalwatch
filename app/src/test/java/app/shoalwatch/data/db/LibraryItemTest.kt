@@ -22,7 +22,7 @@ class LibraryItemTest : LibraryTestBase() {
 
     @Test fun anItemRoundTripsThroughTheDatabaseAsTheModel() = runBlocking {
         val film = item("a", overview = "Plot", childCount = 3, sortName = "A, Film")
-        library.writeItems(s1u1, listOf(row(film, watched(played = true, favourite = true))), t0)
+        library.writeItems(s1u1, listOf(row(film, watched(played = true, favourite = true))), t0, fetchStartedAtMs = 0)
         val back = items.getItem(S1, U1, film.id)!!.toModel()
         assertEquals(film, back.item)
         assertEquals(watched(played = true, favourite = true), back.userData)
@@ -35,7 +35,7 @@ class LibraryItemTest : LibraryTestBase() {
         )
         val other = episode("other-series", 1, 1, series = "other")
         val season = item("season1", ItemKind.SEASON, seriesId = "show", indexNumber = 1)
-        library.writeItems(s1u1, (episodes + other + season).shuffled().map { row(it) }, t0)
+        library.writeItems(s1u1, (episodes + other + season).shuffled().map { row(it) }, t0, fetchStartedAtMs = 0)
         val order = items.getEpisodes(S1, U1, id("show"), null).map { it.item.name }
         assertEquals(listOf("s1e1", "s1e2", "s1x", "s2e0", "s2e1", "noseason-e1", "none").map { "Episode $it" }, order)
         val seasonOne = items.getEpisodes(S1, U1, id("show"), id("season1")).map { it.item.name }
@@ -44,8 +44,8 @@ class LibraryItemTest : LibraryTestBase() {
 
     @Test fun twoUsersShareItemRowsButKeepTheirOwnUserData() = runBlocking {
         val film = item("a")
-        library.writeItems(s1u1, listOf(row(film, watched(played = true))), t0)
-        library.writeItems(s1u2, listOf(row(film, watched(positionMs = 5_000, favourite = true))), t0)
+        library.writeItems(s1u1, listOf(row(film, watched(played = true))), t0, fetchStartedAtMs = 0)
+        library.writeItems(s1u2, listOf(row(film, watched(positionMs = 5_000, favourite = true))), t0, fetchStartedAtMs = 0)
         assertEquals(1, items.countItems(S1))
         val ann = items.getItem(S1, U1, film.id)!!
         val bob = items.getItem(S1, U2, film.id)!!
@@ -57,23 +57,23 @@ class LibraryItemTest : LibraryTestBase() {
     }
 
     @Test fun theSameItemIdOnTwoServersIsTwoRows() = runBlocking {
-        library.writeItems(s1u1, listOf(row(item("a", name = "On one"))), t0)
-        library.writeItems(s2u1, listOf(row(item("a", name = "On two"))), t0)
+        library.writeItems(s1u1, listOf(row(item("a", name = "On one"))), t0, fetchStartedAtMs = 0)
+        library.writeItems(s2u1, listOf(row(item("a", name = "On two"))), t0, fetchStartedAtMs = 0)
         assertEquals("On one", items.getItem(S1, U1, id("a"))!!.item.name)
         assertEquals("On two", items.getItem(S2, U1, id("a"))!!.item.name)
     }
 
     @Test fun anItemWithNoUserDataForTheUserHasNull() = runBlocking {
-        library.writeItems(s1u1, listOf(row(item("a"), watched(played = true))), t0)
-        library.writeItems(s1u2, listOf(row(item("a"))), t0) // the server showed Bob the item, with nothing of his own
+        library.writeItems(s1u1, listOf(row(item("a"), watched(played = true))), t0, fetchStartedAtMs = 0)
+        library.writeItems(s1u2, listOf(row(item("a"))), t0, fetchStartedAtMs = 0) // the server showed Bob the item, with nothing of his own
         assertNull(items.getItem(S1, U2, id("a"))!!.userData)
     }
 
     // ---- the upsert rules
 
     @Test fun aListResponseDoesNotEraseAStoredOverviewButChildCountIsTakenAsSent() = runBlocking {
-        library.writeItems(s1u1, listOf(row(item("a", overview = "Long plot", childCount = 4))), t0)
-        library.writeItems(s1u1, listOf(row(item("a", name = "Renamed", overview = null, childCount = null))), t0.plusSeconds(60))
+        library.writeItems(s1u1, listOf(row(item("a", overview = "Long plot", childCount = 4))), t0, fetchStartedAtMs = 0)
+        library.writeItems(s1u1, listOf(row(item("a", name = "Renamed", overview = null, childCount = null))), t0.plusSeconds(60), fetchStartedAtMs = 0)
         val stored = items.getItemEntity(S1, id("a"))!!
         assertEquals("Long plot", stored.overview)
         assertNull("a count from another user's write must never be shown: null means unknown", stored.childCount)
@@ -82,33 +82,33 @@ class LibraryItemTest : LibraryTestBase() {
     }
 
     @Test fun aNewOverviewReplacesTheOldOne() = runBlocking {
-        library.writeItems(s1u1, listOf(row(item("a", overview = "Old", childCount = 1))), t0)
-        library.writeItems(s1u1, listOf(row(item("a", overview = "New", childCount = 2))), t0)
+        library.writeItems(s1u1, listOf(row(item("a", overview = "Old", childCount = 1))), t0, fetchStartedAtMs = 0)
+        library.writeItems(s1u1, listOf(row(item("a", overview = "New", childCount = 2))), t0, fetchStartedAtMs = 0)
         val stored = items.getItemEntity(S1, id("a"))!!
         assertEquals("New", stored.overview)
         assertEquals(2, stored.childCount)
     }
 
     @Test fun otherColumnsTakeTheIncomingValueEvenWhenNull() = runBlocking {
-        library.writeItems(s1u1, listOf(row(item("a", primaryTag = "tag1", sortName = "A"))), t0)
-        library.writeItems(s1u1, listOf(row(item("a", primaryTag = null, sortName = null))), t0)
+        library.writeItems(s1u1, listOf(row(item("a", primaryTag = "tag1", sortName = "A"))), t0, fetchStartedAtMs = 0)
+        library.writeItems(s1u1, listOf(row(item("a", primaryTag = null, sortName = null))), t0, fetchStartedAtMs = 0)
         val stored = items.getItemEntity(S1, id("a"))!!
         assertNull(stored.primaryTag)
         assertNull(stored.sortName)
     }
 
     @Test fun anUpsertNeverClobbersPinned() = runBlocking {
-        library.writeItems(s1u1, listOf(row(item("a"))), t0)
+        library.writeItems(s1u1, listOf(row(item("a"))), t0, fetchStartedAtMs = 0)
         sql("UPDATE items SET pinned = 1 WHERE serverId = ? AND itemId = ?", S1, id("a"))
-        library.writeItems(s1u1, listOf(row(item("a", name = "Again"))), t0.plusSeconds(1))
+        library.writeItems(s1u1, listOf(row(item("a", name = "Again"))), t0.plusSeconds(1), fetchStartedAtMs = 0)
         val stored = items.getItemEntity(S1, id("a"))!!
         assertTrue(stored.pinned)
         assertEquals("Again", stored.name)
     }
 
     @Test fun anItemWithoutUserDataLeavesStoredUserDataUntouched() = runBlocking {
-        library.writeItems(s1u1, listOf(row(item("a"), watched(played = true, positionMs = 0, favourite = true))), t0)
-        library.writeItems(s1u1, listOf(row(item("a", name = "Again"), null)), t0.plusSeconds(60))
+        library.writeItems(s1u1, listOf(row(item("a"), watched(played = true, positionMs = 0, favourite = true))), t0, fetchStartedAtMs = 0)
+        library.writeItems(s1u1, listOf(row(item("a", name = "Again"), null)), t0.plusSeconds(60), fetchStartedAtMs = 0)
         val data = items.getUserData(S1, U1, id("a"))!!
         assertTrue(data.played)
         assertTrue(data.favourite)
@@ -116,8 +116,8 @@ class LibraryItemTest : LibraryTestBase() {
     }
 
     @Test fun userDataFromTheServerOverwritesTheStoredRow() = runBlocking {
-        library.writeItems(s1u1, listOf(row(item("a"), watched(positionMs = 10)), row(item("b"), watched(favourite = true))), t0)
-        library.writeItems(s1u1, listOf(row(item("a"), watched(played = true))), t0.plusSeconds(5))
+        library.writeItems(s1u1, listOf(row(item("a"), watched(positionMs = 10)), row(item("b"), watched(favourite = true))), t0, fetchStartedAtMs = 0)
+        library.writeItems(s1u1, listOf(row(item("a"), watched(played = true))), t0.plusSeconds(5), fetchStartedAtMs = 0)
         val data = items.getUserData(S1, U1, id("a"))!!
         assertTrue(data.played)
         assertEquals(0L, data.positionMs)
@@ -126,7 +126,7 @@ class LibraryItemTest : LibraryTestBase() {
     }
 
     @Test fun aBatchOfItemsForAnotherServerIsRefusedWhole() = runBlocking {
-        library.writeItems(s1u1, listOf(row(item("a"))), t0)
+        library.writeItems(s1u1, listOf(row(item("a"))), t0, fetchStartedAtMs = 0)
         val stored = items.getItemEntity(S1, id("a"))!!
         val failure = runCatching { items.upsertItems(S2, listOf(stored)) }.exceptionOrNull()
         assertTrue(failure is IllegalArgumentException)
@@ -135,22 +135,22 @@ class LibraryItemTest : LibraryTestBase() {
 
     @Test fun aLargeBatchIsMergedAcrossIdChunks() = runBlocking {
         val many = (1..1_200).map { row(item("m$it", overview = "plot $it")) }
-        library.writeItems(s1u1, many, t0)
-        library.writeItems(s1u1, many.map { row(it.item.copy(overview = null, name = "N")) }, t0.plusSeconds(1))
+        library.writeItems(s1u1, many, t0, fetchStartedAtMs = 0)
+        library.writeItems(s1u1, many.map { row(it.item.copy(overview = null, name = "N")) }, t0.plusSeconds(1), fetchStartedAtMs = 0)
         assertEquals(1_200, count("items", "overview IS NOT NULL AND name = 'N'"))
     }
 
     @Test fun anAuthoritativeWriteLetsOverviewAndChildCountBeCleared() = runBlocking {
-        library.writeItems(s1u1, listOf(row(item("a", overview = "Plot", childCount = 4))), t0)
+        library.writeItems(s1u1, listOf(row(item("a", overview = "Plot", childCount = 4))), t0, fetchStartedAtMs = 0)
         sql("UPDATE items SET pinned = 1 WHERE itemId = ?", id("a"))
-        library.writeItems(s1u1, listOf(row(item("a", name = "Detail", overview = null, childCount = null))), t0.plusSeconds(1), authoritative = true)
+        library.writeItems(s1u1, listOf(row(item("a", name = "Detail", overview = null, childCount = null))), t0.plusSeconds(1), authoritative = true, fetchStartedAtMs = 0)
         val stored = items.getItemEntity(S1, id("a"))!!
         assertNull(stored.overview)
         assertNull(stored.childCount)
         assertEquals("Detail", stored.name)
         assertTrue("pinned is still never touched", stored.pinned)
-        library.writeItems(s1u1, listOf(row(item("a", overview = "Again"))), t0.plusSeconds(2), authoritative = true)
-        library.writeItems(s1u1, listOf(row(item("a", overview = null))), t0.plusSeconds(3)) // a list write keeps it
+        library.writeItems(s1u1, listOf(row(item("a", overview = "Again"))), t0.plusSeconds(2), authoritative = true, fetchStartedAtMs = 0)
+        library.writeItems(s1u1, listOf(row(item("a", overview = null))), t0.plusSeconds(3), fetchStartedAtMs = 0) // a list write keeps it
         assertEquals("Again", items.getItemEntity(S1, id("a"))!!.overview)
     }
 
@@ -208,7 +208,7 @@ class LibraryItemTest : LibraryTestBase() {
     }
 
     @Test fun observingAnItemSeesLaterUserDataChanges() = runBlocking {
-        library.writeItems(s1u1, listOf(row(item("a"))), t0)
+        library.writeItems(s1u1, listOf(row(item("a"))), t0, fetchStartedAtMs = 0)
         items.observeItem(S1, U1, id("a")).test {
             assertNull(awaitItem()!!.userData)
             items.setFavourite(S1, U1, id("a"), true, t0.toEpochMilli())
@@ -220,7 +220,7 @@ class LibraryItemTest : LibraryTestBase() {
     // ---- kinds
 
     @Test fun anUnknownStoredKindReadsAsOther() = runBlocking {
-        library.writeItems(s1u1, listOf(row(item("a"))), t0)
+        library.writeItems(s1u1, listOf(row(item("a"))), t0, fetchStartedAtMs = 0)
         sql("UPDATE items SET kind = 'HOLOGRAM' WHERE itemId = ?", id("a"))
         assertEquals(ItemKind.OTHER, items.getItem(S1, U1, id("a"))!!.item.kind)
     }
@@ -231,7 +231,7 @@ class LibraryItemTest : LibraryTestBase() {
         items.searchByName(session.serverId, session.userId, query, kinds, limit).map { it.item.name }
 
     @Test fun searchIsCaseInsensitiveIncludingNonAsciiLetters() = runBlocking {
-        library.writeItems(s1u1, listOf("Alien", "Élite Squad", "Zoë", "Straße").map { row(item(it, name = it)) }, t0)
+        library.writeItems(s1u1, listOf("Alien", "Élite Squad", "Zoë", "Straße").map { row(item(it, name = it)) }, t0, fetchStartedAtMs = 0)
         assertEquals(listOf("Alien"), search("ALIEN"))
         assertEquals(listOf("Élite Squad"), search("élite"))
         assertEquals(listOf("Élite Squad"), search("ÉLITE"))
@@ -239,7 +239,7 @@ class LibraryItemTest : LibraryTestBase() {
     }
 
     @Test fun searchFoldsAccentsAndTheTurkishIs() = runBlocking {
-        library.writeItems(s1u1, listOf("Élite", "İstanbul", "Ångström", "Isparta", "Plain").map { row(item(it, name = it)) }, t0)
+        library.writeItems(s1u1, listOf("Élite", "İstanbul", "Ångström", "Isparta", "Plain").map { row(item(it, name = it)) }, t0, fetchStartedAtMs = 0)
         assertEquals(listOf("Élite"), search("elite"))
         assertEquals(listOf("İstanbul"), search("istanbul"))
         assertEquals(listOf("İstanbul"), search("İSTANBUL"))
@@ -250,20 +250,20 @@ class LibraryItemTest : LibraryTestBase() {
     }
 
     @Test fun anAllKindsSearchIncludesRowsWhoseStoredKindIsUnknown() = runBlocking {
-        library.writeItems(s1u1, listOf(row(item("a", name = "Mystery one")), row(item("b", name = "Mystery two"))), t0)
+        library.writeItems(s1u1, listOf(row(item("a", name = "Mystery one")), row(item("b", name = "Mystery two"))), t0, fetchStartedAtMs = 0)
         sql("UPDATE items SET kind = 'HOLOGRAM' WHERE itemId = ?", id("a"))
         assertEquals(listOf("Mystery one", "Mystery two"), search("mystery"))
         assertEquals("a search for named kinds still filters", listOf("Mystery two"), search("mystery", setOf(ItemKind.MOVIE)))
     }
 
     @Test fun searchMatchesInsideTheNameAndOrdersByName() = runBlocking {
-        library.writeItems(s1u1, listOf("The Lord", "Lord of Flies", "Other").map { row(item(it, name = it)) }, t0)
+        library.writeItems(s1u1, listOf("The Lord", "Lord of Flies", "Other").map { row(item(it, name = it)) }, t0, fetchStartedAtMs = 0)
         assertEquals(listOf("Lord of Flies", "The Lord"), search("lord"))
     }
 
     @Test fun searchTreatsPercentUnderscoreAndBackslashLiterally() = runBlocking {
         val names = listOf("100% Wolf", "100 Wolf", "a_b", "axb", "back\\slash", "backslash", "50%")
-        library.writeItems(s1u1, names.map { row(item(it, name = it)) }, t0)
+        library.writeItems(s1u1, names.map { row(item(it, name = it)) }, t0, fetchStartedAtMs = 0)
         assertEquals(listOf("100% Wolf"), search("100%"))
         assertEquals(listOf("a_b"), search("a_b"))
         assertEquals(listOf("back\\slash"), search("back\\s"))
@@ -279,7 +279,7 @@ class LibraryItemTest : LibraryTestBase() {
                 row(item("m1", name = "Star one")), row(item("m2", name = "Star two")),
                 row(item("sr", ItemKind.SERIES, name = "Star series")), row(item("ep", ItemKind.EPISODE, name = "Star episode")),
             ),
-            t0,
+            t0, fetchStartedAtMs = 0,
         )
         assertEquals(setOf("Star series"), search("star", setOf(ItemKind.SERIES)).toSet())
         assertEquals(setOf("Star one", "Star two", "Star series"), search("star", setOf(ItemKind.MOVIE, ItemKind.SERIES)).toSet())
@@ -291,9 +291,9 @@ class LibraryItemTest : LibraryTestBase() {
     }
 
     @Test fun searchIsPerServerAndJoinsTheGivenUsersData() = runBlocking {
-        library.writeItems(s1u1, listOf(row(item("a", name = "Match"), watched(played = true))), t0)
-        library.writeItems(s1u2, listOf(row(item("a", name = "Match"))), t0)
-        library.writeItems(s2u1, listOf(row(item("b", name = "Match elsewhere"))), t0)
+        library.writeItems(s1u1, listOf(row(item("a", name = "Match"), watched(played = true))), t0, fetchStartedAtMs = 0)
+        library.writeItems(s1u2, listOf(row(item("a", name = "Match"))), t0, fetchStartedAtMs = 0)
+        library.writeItems(s2u1, listOf(row(item("b", name = "Match elsewhere"))), t0, fetchStartedAtMs = 0)
         assertEquals(listOf("Match"), search("match"))
         val ann = items.searchByName(S1, U1, "match", emptySet(), 10).single()
         val bob = items.searchByName(S1, U2, "match", emptySet(), 10).single()
@@ -302,7 +302,7 @@ class LibraryItemTest : LibraryTestBase() {
     }
 
     @Test fun searchDoesNotConflateJapaneseVoicedAndUnvoicedKanaOrSplitHangul() = runBlocking {
-        library.writeItems(s1u1, listOf("かさ", "がさ", "한국어 영화", "ก็ได้", "กด").map { row(item(it, name = it)) }, t0)
+        library.writeItems(s1u1, listOf("かさ", "がさ", "한국어 영화", "ก็ได้", "กด").map { row(item(it, name = it)) }, t0, fetchStartedAtMs = 0)
         assertEquals(listOf("かさ"), search("か"))
         assertEquals(listOf("がさ"), search("が"))
         assertEquals(listOf("한국어 영화"), search("한국어"))

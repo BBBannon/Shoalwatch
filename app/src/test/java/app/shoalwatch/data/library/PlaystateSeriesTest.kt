@@ -65,8 +65,9 @@ class PlaystateSeriesTest : PlaystateTestBase() {
         assertTrue(userData("s1")!!.pendingSyncAt != null)
         release(held)
         assertEquals(AppError.Kind.TIMEOUT, (call.await().exceptionOrNull() as AppError).kind)
-        assertEquals(seasonBefore, userData("s1"))
-        assertEquals(seriesBefore, userData("show"))
+        // the badge moves back by what it was moved by; `updatedAt` is the time of that last write, so it is not compared
+        assertEquals(seasonBefore!!.unplayedItemCount, userData("s1")!!.unplayedItemCount)
+        assertEquals(seriesBefore!!.unplayedItemCount, userData("show")!!.unplayedItemCount)
         assertNoPending()
     }
 
@@ -147,7 +148,10 @@ class PlaystateSeriesTest : PlaystateTestBase() {
         gateway.failAll = AppError.Kind.OFFLINE
         assertEquals(AppError.Kind.OFFLINE, failure { playstate.setPlayed(s1u1, id("s1"), true) }.kind)
         names.forEach { assertEquals("row $it", before[it], userData(it)) }
+        assertEquals(ids("film", "b", "d"), resumeIds()) // b (season 1) sat before d (season 2): their order is part of the undo
         assertEquals(listBefore, resumeIds())
+        assertEquals(3, unplayed("s1"))
+        assertEquals(10, unplayed("show"))
         assertNoPending()
     }
 
@@ -208,7 +212,11 @@ class PlaystateSeriesTest : PlaystateTestBase() {
         gateway.failAll = AppError.Kind.UNAUTHORISED
         assertEquals(AppError.Kind.UNAUTHORISED, failure { playstate.setPlayed(s1u1, id("show"), true) }.kind)
         names.forEach { assertEquals("row $it", before[it], userData(it)) }
+        assertEquals(ids("film", "b", "d"), resumeIds())
         assertEquals(listBefore, resumeIds())
+        assertEquals(3, unplayed("s1"))
+        assertEquals(3, unplayed("s2"))
+        assertEquals(10, unplayed("show"))
         assertNoPending()
     }
 }

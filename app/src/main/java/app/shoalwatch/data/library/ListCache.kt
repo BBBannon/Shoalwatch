@@ -130,17 +130,18 @@ internal class ListCache(
         pagesLoaded: Int,
         endReached: Boolean,
         basedOn: ListStateEntity? = null,
+        fetchStartedAtMs: Long,
     ): PageResult {
-        return writeGate.withLock { store.writePage(s, key, start, rows, total, now(), nextStartIndex, pagesLoaded, endReached, basedOn) }
+        return writeGate.withLock { store.writePage(s, key, start, rows, total, now(), nextStartIndex, pagesLoaded, endReached, basedOn, fetchStartedAtMs) }
     }
 
     /** A list that is read in one go (resume, next up, latest, seasons, episodes). */
-    suspend fun writeWhole(s: Session, key: String, rows: List<ItemWithUserData>) =
-        writePage(s, key, 0, rows, rows.size, rows.size, 1, true)
+    suspend fun writeWhole(s: Session, key: String, rows: List<ItemWithUserData>, fetchStartedAtMs: Long) =
+        writePage(s, key, 0, rows, rows.size, rows.size, 1, true, fetchStartedAtMs = fetchStartedAtMs)
 
     /** Saves items without a list (a detail fetch, search results). */
-    suspend fun writeItems(s: Session, rows: List<ItemWithUserData>, authoritative: Boolean = false) {
-        writeGate.withLock { store.writeItems(s, rows, now(), authoritative) }
+    suspend fun writeItems(s: Session, rows: List<ItemWithUserData>, authoritative: Boolean = false, fetchStartedAtMs: Long) {
+        writeGate.withLock { store.writeItems(s, rows, now(), authoritative, fetchStartedAtMs) }
     }
 
     /** The server refused [itemId] for this user: it disappears for them (see `LibraryStore.revokeVisibility`). */
@@ -149,5 +150,5 @@ internal class ListCache(
     suspend fun replaceViews(s: Session, views: List<LibraryView>) = writeGate.withLock { store.replaceViews(s, views) }
 
     /** Records "loaded now" for a key that holds no entries (views, an item): a state row with nothing in it. */
-    suspend fun markLoaded(s: Session, key: String) = writePage(s, key, 0, emptyList(), 0, 0, 1, true)
+    suspend fun markLoaded(s: Session, key: String) = writePage(s, key, 0, emptyList(), 0, 0, 1, true, fetchStartedAtMs = clock())
 }

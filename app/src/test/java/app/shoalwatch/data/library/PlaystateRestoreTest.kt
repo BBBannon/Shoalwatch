@@ -41,6 +41,38 @@ class PlaystateRestoreTest : PlaystateTestBase() {
         assertEquals(before, resumeIds())
     }
 
+    // ---- the two other branches of the undo
+
+    @Test fun anEntryAlreadyBackInTheListByRestoreTimeIsNotInsertedTwice() = runBlocking {
+        saveResume(film("a"), film("b"))
+        val held = holdMutation()
+        gateway.failOps["clearResume"] = AppError.Kind.SERVER_ERROR
+        gateway.resumeFor = { listOf(film("a"), film("b")) } // the server still lists it, and this is asked for after the removal
+        val call = background { runCatching { playstate.removeFromContinueWatching(s1u1, id("a")) } }
+        until { gateway.count("clearResume") == 1 }
+        repo.refresh(s1u1, RefreshTarget.Home)
+        assertEquals("a refresh asked for after the removal puts it back", ids("a", "b"), resumeIds())
+        held.release()
+        withTimeout(5_000) { call.await() }
+        settle()
+        assertEquals(ids("a", "b"), resumeIds())
+    }
+
+    @Test fun aRecordedPositionBeyondTheCurrentListIsClamped() = runBlocking {
+        saveResume(film("x"), film("y"), film("z"), film("a"))
+        val held = holdMutation()
+        gateway.failOps["clearResume"] = AppError.Kind.SERVER_ERROR
+        gateway.resumeFor = { listOf(film("x")) } // the server's list has shrunk meanwhile
+        val call = background { runCatching { playstate.removeFromContinueWatching(s1u1, id("a")) } }
+        until { gateway.count("clearResume") == 1 }
+        repo.refresh(s1u1, RefreshTarget.Home)
+        assertEquals(ids("x"), resumeIds())
+        held.release()
+        withTimeout(5_000) { call.await() }
+        settle()
+        assertEquals("position 3 does not exist any more: it goes to the end", ids("x", "a"), resumeIds())
+    }
+
     // ---- I3: sibling episodes share the season and series rows
 
     private fun sibling(failing: String, other: String): Pair<Boolean, Boolean> = runBlocking {

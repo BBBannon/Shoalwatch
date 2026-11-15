@@ -140,7 +140,7 @@ class PlaystateConcurrencyTest : PlaystateTestBase() {
 
     @Test fun anActionOnADeadAppScopeEndsInsteadOfHanging() = runBlocking {
         saveResume(film("a"))
-        val dead = PlaystateRepository(gateway, db, repo, CoroutineScope(Job().apply { cancel() }), Dispatchers.IO, { now })
+        val dead = PlaystateRepository(gateway, repo, CoroutineScope(Job().apply { cancel() }), Dispatchers.IO, { now })
         try {
             withTimeout(5_000) { dead.removeFromContinueWatching(s1u1, id("a")) }
             fail("expected a cancellation")
@@ -153,7 +153,7 @@ class PlaystateConcurrencyTest : PlaystateTestBase() {
     @Test fun theAppScopeShuttingDownMidCallStillPutsTheRowsBack() = runBlocking {
         saveResume(film("a"), film("b"))
         val own = CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.Default)
-        val mine = PlaystateRepository(gateway, db, repo, own, Dispatchers.IO, { now })
+        val mine = PlaystateRepository(gateway, repo, own, Dispatchers.IO, { now })
         holdServer()
         val call = background { runCatching { mine.removeFromContinueWatching(s1u1, id("a")) } }
         until { gateway.count("clearResume") == 1 }
@@ -166,7 +166,7 @@ class PlaystateConcurrencyTest : PlaystateTestBase() {
 
     @Test fun theChangeAndItsUndoWaitForTheLibraryWriteGate() = runBlocking {
         val gate = Mutex()
-        val gated = PlaystateRepository(gateway, db, LibraryRepository(gateway, db, appScope, Dispatchers.IO, { now }, log, gate), appScope, Dispatchers.IO, { now })
+        val gated = PlaystateRepository(gateway, LibraryRepository(gateway, db, appScope, Dispatchers.IO, { now }, log, gate), appScope, Dispatchers.IO, { now })
         saveResume(film("a"))
         val held = holdMutation()
         gateway.failAll = AppError.Kind.NETWORK
