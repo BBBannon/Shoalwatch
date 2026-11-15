@@ -9,6 +9,7 @@ import app.shoalwatch.data.servers.QuickConnectProgress
 import app.shoalwatch.data.servers.Server
 import app.shoalwatch.data.servers.ServerCatalog
 import app.shoalwatch.data.servers.ServerConnections
+import app.shoalwatch.data.servers.ReadHealth
 import app.shoalwatch.data.servers.ServerInfo
 import app.shoalwatch.data.servers.ServerNetDraft
 import app.shoalwatch.data.servers.ServerSummary
@@ -24,6 +25,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
@@ -144,11 +147,26 @@ class FakeCatalog(servers: List<Server> = emptyList(), accounts: List<AccountSum
     var warmRetries = 0
     var warmStillFailing = false
 
-    override val servers: Flow<List<ServerSummary>> = serverList.map { list -> list.map { it.summary() } }
-    override fun observeServer(id: String): Flow<Server?> = serverList.map { list -> list.firstOrNull { it.id == id } }
-    override val activeAccount: Flow<AccountSummary?> = activeFlow
-    override fun activeSession(): Flow<Session?> = activeFlow.map { a -> a?.let { Session(it.serverId, it.userId) } }
-    override fun accounts(serverId: String): Flow<List<AccountSummary>> = accountList.map { l -> l.filter { it.serverId == serverId } }
+    /** The same guard the real store uses: a failing read gives a fail-closed value and waits for [retryWarmIfFailed]. */
+    private val reads = ReadHealth("FakeCatalog")
+    private val readsBroken = MutableStateFlow<Exception?>(null)
+    override val readFailed: StateFlow<Boolean> = reads.failed
+
+    /** Every read now throws into its collector, as Room does for a damaged database, until [healReads]. */
+    fun failReads(e: Exception = IllegalStateException("database disk image is malformed")) { readsBroken.value = e }
+
+    /** The database works again; reads that failed stay failed until [retryWarmIfFailed] subscribes them again, as in the app. */
+    fun healReads() { readsBroken.value = null }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun <T> read(empty: T, source: () -> Flow<T>): Flow<T> =
+        reads.guard("fake", empty) { readsBroken.flatMapLatest { e -> if (e != null) flow { throw e } else source() } }
+
+    override val servers: Flow<List<ServerSummary>> = read(emptyList()) { serverList.map { list -> list.map { it.summary() } } }
+    override fun observeServer(id: String): Flow<Server?> = read(null) { serverList.map { list -> list.firstOrNull { it.id == id } } }
+    override val activeAccount: Flow<AccountSummary?> = read(null) { activeFlow }
+    override fun activeSession(): Flow<Session?> = activeAccount.map { a -> a?.let { Session(it.serverId, it.userId) } }
+    override fun accounts(serverId: String): Flow<List<AccountSummary>> = read(emptyList()) { accountList.map { l -> l.filter { it.serverId == serverId } } }
     override suspend fun server(id: String): Server? = serverList.value.firstOrNull { it.id == id }
 
     override suspend fun upsertServer(s: Server) {
@@ -172,6 +190,7 @@ class FakeCatalog(servers: List<Server> = emptyList(), accounts: List<AccountSum
     override suspend fun awaitWarmed() = warmed.await()
 
     override suspend fun retryWarmIfFailed(): Boolean {
+        reads.retry()
         warmRetries++
         return warmStillFailing
     }

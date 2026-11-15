@@ -1,6 +1,7 @@
 package app.shoalwatch.data
 
 import app.shoalwatch.testId
+import kotlinx.coroutines.flow.flowOf
 import app.shoalwatch.data.servers.Account
 import app.shoalwatch.data.servers.AddressSelector
 import app.shoalwatch.data.servers.AuthRepository
@@ -82,7 +83,7 @@ class RevocationClientCacheTest {
         val key = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
         lateinit var selector: AddressSelector
         val store = ServerStore(db, SecretBox { key }, clients::evict, onServerRemoved = { selector.forget(it) })
-        selector = AddressSelector(gateway, object : NetworkMonitor { override val changes = emptyFlow<Unit>() }, scope, device, store)
+        selector = AddressSelector(gateway, object : NetworkMonitor { override val changes = emptyFlow<Unit>() }, scope, device, store, flowOf(true))
         runBlocking {
             store.upsertServer(server)
             // The account's stored token is the one to revoke.

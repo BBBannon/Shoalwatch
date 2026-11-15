@@ -184,6 +184,15 @@ abstract class HomeRenderBase : RenderBase() {
         assertShown(text(R.string.home_empty_title))
     }
 
+    @Test fun aLocalFailureIsOneMessageThatSaysSoWithRetryAndNoRefreshBanner() {
+        showHome(HomeUiState(phase = HomePhase.READY, session = BEN, serverId = SERVER_ID, serverName = "Den", localFailure = true))
+        assertShown(text(R.string.home_local_failure_title))
+        assertNotShown(text(R.string.banner_generic))
+        assertNotShown(text(R.string.home_empty_title))
+        rule.onAllNodes(hasText(text(R.string.action_retry))).onFirst().performClick()
+        assertEquals(1, refreshed)
+    }
+
     @Test fun aRowThatFailedAloneShowsItsBannerInlineAboveItsHeading() {
         showHome(content.copy(resume = RowUi(listOf(resumeFilm), banner = BannerKind.OFFLINE)))
         assertShown(text(R.string.banner_offline))

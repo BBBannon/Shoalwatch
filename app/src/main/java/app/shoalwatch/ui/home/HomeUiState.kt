@@ -39,6 +39,8 @@ data class HomeUiState(
     /** The user's own pull-to-refresh or Retry is running. */
     val pulling: Boolean = false,
     val working: Set<Work> = emptySet(),
+    /** What is saved on this phone could not be read (a damaged or full database): one error message with Try again, nothing else. */
+    val localFailure: Boolean = false,
 ) {
     val signedOut: Boolean get() = phase == HomePhase.SIGNED_OUT
     val loadFailed: Boolean get() = phase == HomePhase.LOAD_FAILED

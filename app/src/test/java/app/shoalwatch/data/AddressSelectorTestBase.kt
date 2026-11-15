@@ -102,7 +102,10 @@ abstract class AddressSelectorTestBase {
                 emit(it)
             }
         }
+        /** How many times a server has been read with [server]. */
+        var reads = 0
         override suspend fun server(id: String): Server? {
+            reads++
             failure?.let { throw it }
             return list.value.firstOrNull { it.id == id }
         }
@@ -114,7 +117,10 @@ abstract class AddressSelectorTestBase {
     protected val monitor = FakeMonitor()
     protected val source = FakeSource()
 
-    protected fun TestScope.selector() = AddressSelector(gateway, monitor, backgroundScope, device, source)
+    /** Whether the app is in the foreground, as the selector is told. */
+    protected val foreground = MutableStateFlow(true)
+
+    protected fun TestScope.selector() = AddressSelector(gateway, monitor, backgroundScope, device, source, foreground)
 
     /** Saves [s] (as the store would) and returns its live connection, which the selector keys by id only. */
     protected fun AddressSelector.connection(s: Server): StateFlow<Connection> {

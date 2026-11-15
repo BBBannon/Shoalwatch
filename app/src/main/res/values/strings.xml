@@ -227,6 +227,8 @@
     <string name="home_libraries">Libraries</string>
     <string name="home_empty_title">Nothing to show yet</string>
     <string name="home_empty_body">Your library hasn’t loaded. Check your connection and try again.</string>
+    <string name="home_local_failure_title">Your library couldn’t be opened</string>
+    <string name="home_local_failure_body">Something went wrong reading what’s saved on this phone. Try again, and if it keeps happening restart the app.</string>
     <string name="account_menu_cd">Account menu</string>
     <string name="account_switch_title">Switch account</string>
     <string name="account_current">%1$s (current)</string>

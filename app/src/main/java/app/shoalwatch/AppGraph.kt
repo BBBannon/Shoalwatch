@@ -1,6 +1,8 @@
 package app.shoalwatch
 
 import android.content.Context
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ProcessLifecycleOwner
 import app.shoalwatch.data.api.ServerApi
 import app.shoalwatch.data.db.AppDatabase
 import app.shoalwatch.data.images.ArtworkDiskCaches
@@ -44,7 +46,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -71,7 +75,12 @@ class AppGraph(private val appContext: Context) {
     val deviceIdentity: DeviceIdentity by lazy { DeviceIdentity.load(appContext) }
     val jellyfinGateway: JellyfinGateway by lazy { JellyfinGatewayImpl(serverClients) }
     val networkMonitor: NetworkMonitor by lazy { AndroidNetworkMonitor(appContext, appScope) }
-    val addressSelector: AddressSelector by lazy { AddressSelector(jellyfinGateway, networkMonitor, appScope, deviceIdentity, serverStore) }
+    val addressSelector: AddressSelector by lazy { AddressSelector(jellyfinGateway, networkMonitor, appScope, deviceIdentity, serverStore, foreground) }
+
+    /** True while one of the app's screens is started (the app is in the foreground); ends with the process like [appScope]. */
+    private val foreground: Flow<Boolean> by lazy {
+        ProcessLifecycleOwner.get().lifecycle.currentStateFlow.map { it.isAtLeast(Lifecycle.State.STARTED) }
+    }
     /** The one path for every signed-in request; nothing in the UI uses it yet. */
     val serverApi: ServerApi by lazy { ServerApi(serverStore, addressSelector, serverClients, deviceIdentity) }
     /** Saved pictures, one folder per server in `cacheDir/artwork` (so a removed server's pictures can go as a unit). */

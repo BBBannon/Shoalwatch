@@ -40,6 +40,8 @@ class StartupViewModel(private val catalog: ServerCatalog) : ViewModel() {
                 if (retryWarm) catalog.retryWarmIfFailed()
                 val active = catalog.awaitActive()
                 val anyServer = catalog.servers.first().isNotEmpty()
+                // A failed read gives "no servers": that must be the failure screen, never first-run Welcome.
+                check(!catalog.readFailed.value) { "Reading saved servers failed" }
                 if (active == null && !anyServer) StartupState.Welcome else StartupState.Home
             } catch (e: CancellationException) {
                 throw e

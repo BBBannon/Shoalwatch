@@ -47,6 +47,13 @@ interface ServerCatalog {
      */
     suspend fun retryWarmIfFailed(): Boolean
     suspend fun awaitActive(): AccountSummary?
+
+    /**
+     * True while a read of [servers], [activeAccount], [accounts] or [observeServer] has failed (a damaged or full database):
+     * those flows then show nothing (nobody active, empty lists, no server) instead of throwing into their collectors, and
+     * [retryWarmIfFailed] subscribes them again. A nobody caused by this is not a sign-out (see `ClearBrowsingOnSessionChange`).
+     */
+    val readFailed: StateFlow<Boolean>
 }
 
 /** Quick Connect progress for the UI; [Success] carries no token. */
@@ -100,6 +107,14 @@ interface ServerConnections {
     fun refresh(serverId: String)
 
     /**
+     * [refresh] for [serverId], but only if it is `Offline` right now: what a user's own refresh asks for first. A server whose
+     * connection nobody has asked for (or one that has been removed) is not probed, and no probing is started for it.
+     */
+    fun refreshIfOffline(serverId: String) {
+        if (connection(serverId).value is Connection.Offline) refresh(serverId)
+    }
+
+    /**
      * Re-probes [serverId] alone, but only if [failed] (the very `Online` instance a request used, as returned by
      * [awaitOnline]) is still its current state. A failure that arrives after the state has already moved on (a newer
      * probe, or `Checking`) says nothing about the new state and must not discard it.
@@ -126,6 +141,7 @@ class StoreCatalog(private val store: ServerStore) : ServerCatalog {
     override suspend fun awaitWarmed() = store.awaitWarmed()
     override suspend fun retryWarmIfFailed() = store.retryWarmIfFailed()
     override suspend fun awaitActive() = store.awaitActive()
+    override val readFailed = store.readFailed
 }
 
 class AuthenticatorImpl(private val repository: AuthRepository) : Authenticator {

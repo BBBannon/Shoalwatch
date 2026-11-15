@@ -29,7 +29,8 @@ import kotlinx.coroutines.launch
  * screen's lambdas to ViewModel functions and navigation. All logic is in the ViewModels.
  */
 
-private fun NavHostController.toHome() = navigate(Routes.home(fresh = true)) { popUpTo(graph.id) { inclusive = true } }
+/** Where a successful sign-in goes: a fresh Home, alone on the stack. */
+internal fun NavHostController.toHome() = navigate(Routes.home(fresh = true)) { popUpTo(graph.id) { inclusive = true } }
 
 @Composable
 internal fun AddServerRoute(graph: AppGraph, nav: NavHostController, firstRun: Boolean) {

@@ -1,6 +1,7 @@
 package app.shoalwatch.data
 
 import app.shoalwatch.data.db.AppDatabase
+import kotlinx.coroutines.flow.flowOf
 import app.shoalwatch.data.servers.Account
 import app.shoalwatch.data.servers.AddressSelector
 import app.shoalwatch.data.servers.AuthRepository
@@ -94,7 +95,7 @@ class RevocationOverNetworkTest {
         lateinit var selector: AddressSelector
         val store = ServerStore(db, SecretBox { key }, clients::evict, onServerRemoved = { selector.forget(it) })
         val monitor = object : NetworkMonitor { override val changes = emptyFlow<Unit>() }
-        selector = AddressSelector(gateway, monitor, scope, device, store)
+        selector = AddressSelector(gateway, monitor, scope, device, store, flowOf(true))
         val awayAddress = if (away != null) ServerAddress.parse("https://127.0.0.1:${awayWeb.port}") else ServerAddress.parse("https://127.0.0.1:1")
         runBlocking {
             store.upsertServer(Server(serverId, "Den", "10.10.3", ServerAddress.parse("http://127.0.0.1:${homeWeb.port}"), awayAddress, true, null, null, emptyMap()))
