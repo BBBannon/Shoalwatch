@@ -37,7 +37,7 @@ internal fun NavGraphBuilder.adminDestinations(graph: AppGraph, nav: NavHostCont
     // The other screens come in Tasks 8 to 11; until then their links lead straight back.
     libraries = { LibrariesRoute(graph, nav) },
     tasks = { TasksRoute(graph, nav) },
-    users = { NotBuiltYet(nav) },
+    users = { UsersRoute(graph, nav) },
     activity = { NotBuiltYet(nav) },
     devices = { NotBuiltYet(nav) },
     power = { NotBuiltYet(nav) },
@@ -132,6 +132,17 @@ private fun TasksRoute(graph: AppGraph, nav: NavHostController) {
         TasksActions({ nav.popBackStack() }, vm::refresh, vm::run, vm::askStop, vm::confirmStop, vm::dismissConfirm, vm::dismissProblem, vm::dismissNotice)
     }
     TasksScreen(state, actions)
+}
+
+@Composable
+private fun UsersRoute(graph: AppGraph, nav: NavHostController) {
+    val vm = graphViewModel { UsersViewModel(graph.serverCatalog, graph.adminRights, graph.addressSelector, graph.admin) }
+    val state by vm.state.collectAsStateWithLifecycle()
+    AdminRouteEffects(vm, state.frame.gate, nav)
+    val actions = remember(vm, nav) {
+        UsersActions({ nav.popBackStack() }, vm::refresh, vm::askDisable, vm::askEnable, vm::confirm, vm::dismissConfirm, vm::dismissProblem, vm::dismissNotice)
+    }
+    UsersScreen(state, actions)
 }
 
 /** Stand-in for an admin screen a later task builds: it shows nothing and goes straight back. */

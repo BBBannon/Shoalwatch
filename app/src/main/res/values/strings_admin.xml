@@ -154,4 +154,31 @@
     <string name="admin_task_started">%1$s started.</string>
     <string name="admin_task_category_other">Other</string>
     <string name="admin_tasks_empty">This server reported no scheduled tasks.</string>
+    <!-- Users -->
+    <string name="admin_users_title">Users</string>
+    <string name="admin_user_admin">Administrator</string>
+    <string name="admin_user_disabled">Disabled</string>
+    <string name="admin_user_last_seen">Last seen %1$s</string>
+    <string name="admin_user_never_seen">Not seen yet</string>
+    <string name="admin_user_downloads_yes">Can download: yes</string>
+    <string name="admin_user_downloads_no">Can download: no</string>
+    <string name="admin_user_libraries_all">Libraries: all</string>
+    <string name="admin_user_libraries_none">Libraries: none</string>
+    <string name="admin_user_libraries_some">Libraries: %1$s</string>
+    <string name="admin_user_libraries_more">%1$s and %2$s more</string>
+    <string name="admin_user_libraries_count">Libraries: %1$s chosen</string>
+    <string name="admin_user_policy_unknown">This account’s settings couldn’t be read.</string>
+    <string name="admin_user_disable">Disable account</string>
+    <string name="admin_user_disable_cd">Disable %1$s’s account</string>
+    <string name="admin_user_enable">Enable account</string>
+    <string name="admin_user_enable_cd">Enable %1$s’s account</string>
+    <string name="admin_user_you_note">This is you. You can’t disable your own account here.</string>
+    <string name="admin_confirm_disable_title">Disable %1$s’s account?</string>
+    <string name="admin_confirm_disable_body">%1$s won’t be able to sign in or watch anything until you enable the account again.</string>
+    <string name="admin_confirm_disable_admin">%1$s is an administrator.</string>
+    <string name="admin_confirm_enable_title">Enable %1$s’s account?</string>
+    <string name="admin_confirm_enable_body">%1$s will be able to sign in and watch again.</string>
+    <string name="admin_user_disabled_done">%1$s’s account is disabled.</string>
+    <string name="admin_user_enabled_done">%1$s’s account is enabled.</string>
+    <string name="admin_users_note_dashboard">Resetting passwords and adding users are done in the full dashboard.</string>
 </resources>

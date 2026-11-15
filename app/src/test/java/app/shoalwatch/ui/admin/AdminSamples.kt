@@ -86,4 +86,21 @@ object AdminSamples {
         id = "othertask", key = null, name = "Plugin Task", description = "", category = "", state = TaskState.IDLE,
         progressPercent = null, lastRun = null,
     )
+
+    val benUser = ServerUser(
+        id = "u-ben", name = "ben", lastSeen = Instant.parse("2026-11-15T14:02:00Z"), policyKnown = true, isAdministrator = true,
+        isDisabled = false, canDownload = true, allLibraries = true, libraryIds = emptyList(), isYou = true,
+    )
+    val kidUser = ServerUser(
+        id = "u-kid", name = "kid", lastSeen = Instant.parse("2026-11-15T13:30:00Z"), policyKnown = true, isAdministrator = false,
+        isDisabled = false, canDownload = false, allLibraries = false, libraryIds = listOf("tv", "films"), isYou = false,
+    )
+    val guestUser = ServerUser(
+        id = "u-guest", name = "guest", lastSeen = null, policyKnown = true, isAdministrator = false,
+        isDisabled = true, canDownload = false, allLibraries = false, libraryIds = emptyList(), isYou = false,
+    )
+    val unreadUser = ServerUser(
+        id = "u-odd", name = "odd", lastSeen = null, policyKnown = false, isAdministrator = false,
+        isDisabled = false, canDownload = false, allLibraries = false, libraryIds = emptyList(), isYou = false,
+    )
 }

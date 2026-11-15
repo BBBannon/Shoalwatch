@@ -79,3 +79,9 @@ private fun TasksPreview() = ShoalwatchTheme {
         TasksActions({}, {}, {}, {}, {}, {}),
     )
 }
+
+@Preview(showBackground = true, widthDp = 360, heightDp = 760, name = "Users") @Composable
+private fun UsersPreview() = ShoalwatchTheme {
+    val kid = ServerUser("k", "kid", Instant.parse("2026-11-15T13:30:00Z"), true, false, false, false, false, listOf("t"), false)
+    UsersScreen(UsersUiState(open, listOf(UserRow(kid, listOf("TV")))), UsersActions({}, {}, {}, {}, {}, {}))
+}
