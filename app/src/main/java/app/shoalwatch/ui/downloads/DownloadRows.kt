@@ -116,16 +116,19 @@ internal fun DownloadingRow(e: OfflineEntry, session: Session, actions: Download
     }
 }
 
-/** The 48dp "more" button of a ready copy: "Delete download", for its owners only (a non-owner gets no button at all). */
+/**
+ * The 48dp "more" button of a ready copy, a season or a series: "Delete download" ([label]), for its owners only (a non-owner
+ * gets no button at all).
+ */
 @Composable
-internal fun DeleteMenu(title: String, onDelete: () -> Unit, modifier: Modifier = Modifier) {
+internal fun DeleteMenu(title: String, onDelete: () -> Unit, modifier: Modifier = Modifier, label: Int = R.string.dl_delete) {
     var open by remember { mutableStateOf(false) }
     Box(modifier) {
         IconButton(onClick = { open = true }, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
             Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.cd_more_actions, title))
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            DropdownMenuItem(text = { Text(stringResource(R.string.dl_delete)) }, onClick = { open = false; onDelete() }, modifier = Modifier.heightIn(min = 48.dp))
+            DropdownMenuItem(text = { Text(stringResource(label)) }, onClick = { open = false; onDelete() }, modifier = Modifier.heightIn(min = 48.dp))
         }
     }
 }
@@ -149,27 +152,34 @@ internal fun FilmCard(e: OfflineEntry, session: Session, actions: DownloadsActio
     }
 }
 
-/** One card per downloaded series: "12 episodes · 9.8 GB"; opens the offline series screen. */
+/**
+ * One card per downloaded series: "12 episodes · 9.8 GB"; opens the offline series screen. "Delete downloaded series" (the
+ * profile's own episodes of it) only for a profile that owns any of it.
+ */
 @Composable
 internal fun SeriesCard(s: SeriesSummary, session: Session, actions: DownloadsActions, modifier: Modifier = Modifier) {
     val strings = rememberStrings()
     val title = s.series.item.displayName(strings)
-    Column(
-        modifier.semantics(mergeDescendants = true) { role = Role.Button }.clickable { actions.onOpenSeries(s.series.item.id) },
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        Artwork(s.series.item.primaryArtwork(session), null, aspect = ArtworkAspect.POSTER, title = title, modifier = Modifier.fillMaxWidth())
-        Text(title, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
-        Text(DownloadText.seriesSummary(strings, s.episodeCount, s.bytes), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Box(modifier) {
+        Column(
+            Modifier.fillMaxWidth().semantics(mergeDescendants = true) { role = Role.Button }.clickable { actions.onOpenSeries(s.series.item.id) },
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Artwork(s.series.item.primaryArtwork(session), null, aspect = ArtworkAspect.POSTER, title = title, modifier = Modifier.fillMaxWidth())
+            Text(title, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
+            Text(DownloadText.seriesSummary(strings, s.episodeCount, s.bytes), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (s.ownedCount > 0) DeleteMenu(title, { actions.onAskRemoveSeries(s.series.item.id) }, Modifier.align(Alignment.TopEnd), R.string.dl_delete_series)
     }
 }
 
 /**
  * A downloaded episode on the offline series screen: "S1 E3 · Title", runtime, a watched tick or "23 min left", and the
- * availability lines, as one element that opens the detail screen; then its own 48dp Play ("Play Season 1, episode 3, Title").
+ * availability lines, as one element that opens the detail screen; then its own 48dp Play ("Play Season 1, episode 3, Title")
+ * and, for its owners only, the "more" button with "Delete download" (Tasks 13-16 review I-2).
  */
 @Composable
-internal fun OfflineEpisodeRow(e: OfflineEntry, session: Session, onOpen: (String) -> Unit, onPlay: (String) -> Unit) {
+internal fun OfflineEpisodeRow(e: OfflineEntry, session: Session, onOpen: (String) -> Unit, onPlay: (String) -> Unit, onAskRemove: (String) -> Unit = {}) {
     val strings = rememberStrings()
     val item = e.item.item
     val name = item.displayName(strings)
@@ -200,5 +210,6 @@ internal fun OfflineEpisodeRow(e: OfflineEntry, session: Session, onOpen: (Strin
         IconButton(onClick = { onPlay(item.id) }, enabled = e.download.available, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
             Icon(Icons.Filled.PlayArrow, contentDescription = playLabel)
         }
+        if (e.download.ownedByMe) DeleteMenu(title, { onAskRemove(item.id) })
     }
 }

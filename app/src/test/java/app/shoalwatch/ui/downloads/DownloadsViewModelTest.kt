@@ -8,6 +8,7 @@ import app.shoalwatch.data.downloads.DownloadQuality
 import app.shoalwatch.data.downloads.DownloadState
 import app.shoalwatch.data.downloads.OfflineEntry
 import app.shoalwatch.data.downloads.OfflineLibrary
+import app.shoalwatch.data.downloads.OfflineSeason
 import app.shoalwatch.data.downloads.OfflineSeries
 import app.shoalwatch.data.downloads.StorageKind
 import app.shoalwatch.data.servers.Connection
@@ -90,7 +91,8 @@ class DownloadsViewModelTest {
         val job = launch { vm.messages.toList(messages) }
         val id = entry(1).item.id
         vm.askRemove(id)
-        assertEquals(id, vm.state.value.confirmRemove)
+        assertEquals(listOf(id), vm.state.value.confirmRemove?.itemIds)
+        assertEquals(1_800_000_000L, vm.state.value.confirmRemove?.bytes)
         assertTrue("nothing removed before the yes", downloads.calls.isEmpty())
         vm.cancelRemove()
         assertNull(vm.state.value.confirmRemove)
@@ -171,5 +173,71 @@ class DownloadsViewModelTest {
         assertEquals(AMY, vm.state.value.session)
         assertTrue("Amy has no such series", vm.state.value.gone)
         assertTrue(OfflineSeriesViewModel("../x", catalog, downloads).state.value.gone)
+    }
+
+    private fun ep(n: Int, owned: Boolean, bytes: Long = 1_000_000_000) = OfflineEntry(
+        entry(n),
+        DownloadInfo(entry(n).item.id, DownloadState.COMPLETE, null, DownloadQuality.ORIGINAL, 1f, bytes, owned, StorageKind.INTERNAL, available = true),
+    )
+
+    private val seriesId get() = entry(50).item.id
+    private val season1 get() = entry(61)
+
+    /** Season 1: Ben's episodes 101 and 102 and a shared 103; season 2: a shared 201 only. */
+    private fun bensSeries() = OfflineSeries(entry(50), listOf(
+        OfflineSeason(season1, 1, listOf(ep(101, true), ep(102, true, 2_000_000_000), ep(103, false))),
+        OfflineSeason(entry(62), 2, listOf(ep(201, false))),
+    ))
+
+    @Test fun anOwnerRemovesAnEpisodeFromTheOfflineSeries() = runTest(UnconfinedTestDispatcher()) {
+        downloads.seriesFlow(BEN, seriesId).value = bensSeries()
+        val vm = OfflineSeriesViewModel(seriesId, catalog, downloads)
+        val messages = mutableListOf<SessionMessage>()
+        val job = launch { vm.messages.toList(messages) }
+        vm.askRemove(entry(101).item.id)
+        assertEquals(1_000_000_000L, vm.state.value.confirmRemove?.bytes)
+        assertTrue("nothing before the yes", downloads.calls.isEmpty())
+        downloads.removeOutcome = { _, _ -> RemoveOutcome.KeptForOthers }
+        vm.confirmRemove()
+        assertEquals(listOf("remove:${entry(101).item.id}"), downloads.calls)
+        assertEquals(SessionMessage(BEN, R.string.dl_kept_for_others), messages.single())
+        assertNull(vm.state.value.confirmRemove)
+        job.cancel()
+    }
+
+    @Test fun anOwnerRemovesItsOwnEpisodesOfASeasonAndNeverAnotherProfiles() = runTest(UnconfinedTestDispatcher()) {
+        downloads.seriesFlow(BEN, seriesId).value = bensSeries()
+        val vm = OfflineSeriesViewModel(seriesId, catalog, downloads)
+        vm.askRemoveSeason(season1.item.id)
+        assertEquals(RemoveKind.SEASON, vm.state.value.confirmRemove?.kind)
+        assertEquals(3_000_000_000L, vm.state.value.confirmRemove?.bytes)
+        vm.confirmRemove()
+        assertEquals(listOf("remove:${entry(101).item.id}", "remove:${entry(102).item.id}"), downloads.calls)
+        vm.askRemoveSeason(entry(62).item.id)
+        assertNull("it owns nothing in season 2", vm.state.value.confirmRemove)
+    }
+
+    @Test fun anOwnerRemovesItsOwnEpisodesOfASeriesFromTheDownloadsTab() = runTest(UnconfinedTestDispatcher()) {
+        downloads.seriesFlow(BEN, seriesId).value = bensSeries()
+        val vm = vm()
+        vm.askRemoveSeries(seriesId)
+        assertEquals(RemoveKind.SERIES, vm.state.value.confirmRemove?.kind)
+        assertEquals(listOf(entry(101).item.id, entry(102).item.id), vm.state.value.confirmRemove?.itemIds)
+        vm.confirmRemove()
+        assertEquals(listOf("remove:${entry(101).item.id}", "remove:${entry(102).item.id}"), downloads.calls)
+        downloads.calls.clear()
+        downloads.seriesFlow(BEN, seriesId).value = OfflineSeries(entry(50), listOf(OfflineSeason(entry(62), 2, listOf(ep(201, false)))))
+        vm.askRemoveSeries(seriesId)
+        assertNull("a non-owner gets no remove", vm.state.value.confirmRemove)
+    }
+
+    @Test fun aSeasonConfirmLeftFromAnotherSessionDoesNothing() = runTest(UnconfinedTestDispatcher()) {
+        downloads.seriesFlow(BEN, seriesId).value = bensSeries()
+        val vm = OfflineSeriesViewModel(seriesId, catalog, downloads)
+        vm.askRemoveSeason(season1.item.id)
+        catalog.activeFlow.value = account(AMY, "amy")
+        assertNull(vm.state.value.confirmRemove)
+        vm.confirmRemove()
+        assertTrue(downloads.calls.isEmpty())
     }
 }

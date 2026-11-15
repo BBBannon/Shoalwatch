@@ -41,6 +41,7 @@ abstract class DownloadsRenderBase : RenderBase() {
         onPause = { calls += "pause:$it" }, onResume = { calls += "resume:$it" }, onRetry = { calls += "retry:$it" },
         onAskRemove = { calls += "ask:$it" }, onConfirmRemove = { calls += "confirm" }, onCancelRemove = { calls += "cancel" },
         onPauseAll = { calls += "pauseAll" }, onResumeAll = { calls += "resumeAll" }, onTryAgain = { calls += "tryAgain" },
+        onAskRemoveSeries = { calls += "askSeries:$it" },
     )
 
     private fun e(n: Int, name: String, state: DownloadState = DownloadState.COMPLETE, progress: Float? = 1f, failure: DownloadFailure? = null,
@@ -49,7 +50,7 @@ abstract class DownloadsRenderBase : RenderBase() {
         DownloadInfo(entry(n).item.id, state, failure, DownloadQuality.ORIGINAL, progress, 1_800_000_000, owned, StorageKind.INTERNAL, available),
     )
 
-    private fun screen(lib: OfflineLibrary, queue: QueueStatus = QueueStatus.Idle, confirm: String? = null, loading: Boolean = false, failed: Boolean = false) =
+    private fun screen(lib: OfflineLibrary, queue: QueueStatus = QueueStatus.Idle, confirm: RemoveRequest? = null, loading: Boolean = false, failed: Boolean = false) =
         show { DownloadsScreen(DownloadsUiState(BEN, lib, queue, online = false, loading = loading, localFailure = failed, confirmRemove = confirm), actions, emptyFlow(), SnackbarHostState(), onOpenSettings = { calls += "settings" }) }
 
     private val running = e(1, "Running Film", DownloadState.RUNNING, 0.45f)
@@ -128,11 +129,36 @@ abstract class DownloadsRenderBase : RenderBase() {
     }
 
     @Test fun theDeleteConfirmSaysWhatItFrees() {
-        screen(OfflineLibrary(emptyList(), listOf(e(2, "My Film")), emptyList()), confirm = entry(2).item.id)
+        screen(OfflineLibrary(emptyList(), listOf(e(2, "My Film")), emptyList()), confirm = RemoveRequest(RemoveKind.ONE, listOf(entry(2).item.id), 1_800_000_000))
         assertShown(text(R.string.dl_delete_confirm, "1.8 GB"))
         rule.onAllNodesWithText(text(R.string.dl_delete_action))[0].performClick()
         assertTrue(calls.contains("confirm"))
     }
+
+    @Test fun anOwnerCanDeleteASeriesAndANonOwnerCannot() {
+        val mine = SeriesSummary(entry(50, ItemKind.SERIES, "My Show"), 3, 3_000_000_000, ownedCount = 2)
+        val shared = SeriesSummary(entry(51, ItemKind.SERIES, "Their Show"), 2, 2_000_000_000, ownedCount = 0)
+        screen(OfflineLibrary(emptyList(), emptyList(), listOf(mine, shared)))
+        scrollToDescribed(text(R.string.cd_more_actions, "My Show"))
+        assertTarget(text(R.string.cd_more_actions, "My Show"))
+        assertTrue("no menu for the non-owner", !described(text(R.string.cd_more_actions, "Their Show")))
+        rule.onAllNodes(hasContentDescription(text(R.string.cd_more_actions, "My Show")))[0].performClick()
+        rule.onAllNodesWithText(text(R.string.dl_delete_series))[0].performClick()
+        assertEquals(listOf("askSeries:${entry(50).item.id}"), calls)
+    }
+
+    @Test fun aSeriesDeleteConfirmCountsTheProfilesOwnEpisodesAndAQueuedOneClaimsNoSize() {
+        screen(OfflineLibrary(emptyList(), emptyList(), emptyList()), confirm = RemoveRequest(RemoveKind.SERIES, listOf("a", "b"), 3_600_000_000))
+        assertShown(stringsPlural(R.plurals.dl_delete_episodes_confirm, 2, "3.6 GB"))
+    }
+
+    @Test fun cancellingAQueuedDownloadDoesNotClaimItsFullSize() {
+        screen(OfflineLibrary(listOf(running), emptyList(), emptyList()), confirm = removeOne(running.download.itemId, running))
+        assertShown(text(R.string.dl_delete_size_unknown))
+    }
+
+    private fun stringsPlural(id: Int, n: Int, vararg more: Any): String =
+        androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>().resources.getQuantityString(id, n, n.toString(), *more)
 
     @Test fun aLocalFailureOffersTryAgain() {
         screen(OfflineLibrary(emptyList(), emptyList(), emptyList()), failed = true)

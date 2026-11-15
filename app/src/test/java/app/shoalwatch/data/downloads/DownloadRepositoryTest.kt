@@ -82,6 +82,28 @@ class DownloadRepositoryTest : DownloadHousekeepingTestBase() {
         assertEquals("deleted: its remembered conversion is forgotten (review I-4)", listOf(DownloadKey(S1, f1.id)), forgotten)
     }
 
+    @Test fun anOwnerRemovingASeasonDeletesEachOfItsEpisodesFoldersAndNothingElse() = runBlocking {
+        val e1 = ep("e1", 1, 1); val e2 = ep("e2", 1, 2); val other = ep("e3", 2, 1)
+        seen(a, series, season1, e1, e2, other)
+        queued(a, e1, e2, other)
+        complete(e1, e2, other)
+        repo.setSharing(a, true)
+        seen(b, series, season1, e1); confirm(b, e1)
+        assertEquals("the owner's count, for its Delete (season 2 has no record here, so e3 is not listed)", 2, repo.library(a).first().series.single().ownedCount)
+        assertEquals("a profile that owns none gets no Delete", 0, repo.library(b).first().series.single().ownedCount)
+        val files = listOf(filesOf(e1), filesOf(e2))
+        val kept = filesOf(other)
+        val outside = java.io.File(tmp.root, "outside.txt").apply { writeText("x") }
+        val request = app.shoalwatch.ui.downloads.RemoveRequest(app.shoalwatch.ui.downloads.RemoveKind.SEASON, listOf(e1.id, e2.id), null)
+        assertNull("all deleted: no message", app.shoalwatch.ui.downloads.removeEach(repo, a, request))
+        files.forEach { assertFalse("${it.parentFile?.name} is gone", it.exists()); assertFalse(it.parentFile!!.exists()) }
+        assertTrue("another season's episode stays", kept.exists())
+        assertTrue("nothing outside the downloads root is touched", outside.exists())
+        assertNull(store.get(DownloadKey(S1, e1.id)))
+        assertEquals(app.shoalwatch.R.string.dl_not_yours, app.shoalwatch.ui.downloads.removeEach(repo, b, app.shoalwatch.ui.downloads.RemoveRequest(app.shoalwatch.ui.downloads.RemoveKind.ONE, listOf(other.id), null)))
+        assertTrue("a non-owner removes nothing", kept.exists())
+    }
+
     @Test fun pauseResumeRetryAndTheirAllFormsChangeOnlyTheCallersOwn() = runBlocking {
         queued(a, f1)
         queued(b, f2)

@@ -15,7 +15,6 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -78,8 +77,7 @@ fun DownloadsScreen(state: DownloadsUiState, actions: DownloadsActions, messages
             item { Spacer(Modifier.heightIn(min = 24.dp)) }
         }
     }
-    val asked = state.confirmRemove?.let { id -> state.library.inProgress.firstOrNull { it.download.itemId == id } ?: state.library.films.firstOrNull { it.download.itemId == id } }
-    if (state.confirmRemove != null) RemoveDialog(asked, actions)
+    state.confirmRemove?.let { RemoveDialog(it, actions.onConfirmRemove, actions.onCancelRemove) }
 }
 
 private fun LazyListScope.content(state: DownloadsUiState, session: Session, actions: DownloadsActions) {
@@ -129,17 +127,4 @@ private fun Grid(count: Int, cell: @Composable (Int, Modifier) -> Unit) {
             }
         }
     }
-}
-
-/** "Delete this download? This frees 1.8 GB on this phone." with Delete and Cancel. */
-@Composable
-private fun RemoveDialog(entry: OfflineEntry?, actions: DownloadsActions) {
-    val strings = rememberStrings()
-    val size = entry?.download?.totalBytes?.let { DownloadText.size(strings, it) }
-    AlertDialog(
-        onDismissRequest = actions.onCancelRemove,
-        text = { Text(size?.let { stringResource(R.string.dl_delete_confirm, it) } ?: stringResource(R.string.dl_delete_size_unknown)) },
-        confirmButton = { TextButton(onClick = actions.onConfirmRemove, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.dl_delete_action)) } },
-        dismissButton = { TextButton(onClick = actions.onCancelRemove, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.action_cancel)) } },
-    )
 }

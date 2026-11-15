@@ -40,7 +40,8 @@ data class OfflineSeason(val season: ItemWithUserData?, val seasonNumber: Int?, 
 
 data class OfflineSeries(val series: ItemWithUserData?, val seasons: List<OfflineSeason>)
 
-data class SeriesSummary(val series: ItemWithUserData, val episodeCount: Int, val bytes: Long)
+/** [ownedCount]: how many of the [episodeCount] the session's own profile downloaded (it may delete only those). */
+data class SeriesSummary(val series: ItemWithUserData, val episodeCount: Int, val bytes: Long, val ownedCount: Int = 0)
 
 data class OfflineLibrary(val inProgress: List<OfflineEntry>, val films: List<OfflineEntry>, val series: List<SeriesSummary>)
 

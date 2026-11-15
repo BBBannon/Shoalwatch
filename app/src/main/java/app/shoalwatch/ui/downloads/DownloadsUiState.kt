@@ -8,7 +8,8 @@ import app.shoalwatch.data.servers.Session
 
 /**
  * The Downloads tab, for the active [session] only (empty and [loading] until that session's first answer). [localFailure]:
- * reading the downloads failed on this phone (Try again). [confirmRemove]: the item whose "Delete download" waits for a yes.
+ * reading the downloads failed on this phone (Try again). [confirmRemove]: the Delete (one download, or the profile's own
+ * episodes of a series) that waits for a yes.
  */
 data class DownloadsUiState(
     val session: Session? = null,
@@ -17,7 +18,7 @@ data class DownloadsUiState(
     val online: Boolean = false,
     val loading: Boolean = true,
     val localFailure: Boolean = false,
-    val confirmRemove: String? = null,
+    val confirmRemove: RemoveRequest? = null,
 ) {
     val empty: Boolean get() = !loading && !localFailure && library.inProgress.isEmpty() && library.films.isEmpty() && library.series.isEmpty()
 
@@ -39,6 +40,8 @@ data class OfflineSeriesUiState(
     val session: Session? = null,
     val series: OfflineSeries? = null,
     val loading: Boolean = true,
+    /** The Delete (an episode, or the profile's own episodes of a season) that waits for a yes. */
+    val confirmRemove: RemoveRequest? = null,
 ) {
     /** The id was not a downloaded series this profile may see (or was malformed): "This is no longer available". */
     val gone: Boolean get() = !loading && (series == null || (series.series == null && series.seasons.isEmpty()))
@@ -58,4 +61,6 @@ data class DownloadsActions(
     val onPauseAll: () -> Unit,
     val onResumeAll: () -> Unit,
     val onTryAgain: () -> Unit,
+    /** "Delete downloaded series": the profile's own episodes of that series (owners only). */
+    val onAskRemoveSeries: (String) -> Unit = {},
 )

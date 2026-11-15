@@ -31,17 +31,21 @@ import org.robolectric.annotation.Config
 /** One downloaded series: seasons in order with Specials last, episodes in order, each with its own Play. */
 abstract class OfflineSeriesRenderBase : RenderBase() {
     private val calls = mutableListOf<String>()
-    private val actions = OfflineSeriesActions(onBack = { calls += "back" }, onOpenItem = { calls += "open:$it" }, onPlay = { calls += "play:$it" })
+    private val actions = OfflineSeriesActions(
+        onBack = { calls += "back" }, onOpenItem = { calls += "open:$it" }, onPlay = { calls += "play:$it" },
+        onAskRemove = { calls += "ask:$it" }, onAskRemoveSeason = { calls += "askSeason:$it" }, onConfirmRemove = { calls += "confirm" }, onCancelRemove = { calls += "cancel" },
+    )
 
-    private fun ep(n: Int, season: Int, number: Int, name: String, watched: Boolean = false, positionMs: Long = 0) = OfflineEntry(
+    private fun ep(n: Int, season: Int, number: Int, name: String, watched: Boolean = false, positionMs: Long = 0, owned: Boolean = true) = OfflineEntry(
         episode(n, season, number, name = name, data = userData(played = watched, positionMs = positionMs)).let { it.copy(item = it.item.copy(runtimeMs = 2_700_000)) },
-        DownloadInfo(episode(n).item.id, DownloadState.COMPLETE, null, DownloadQuality.ORIGINAL, 1f, 1_000_000_000, true, StorageKind.INTERNAL, true),
+        DownloadInfo(episode(n).item.id, DownloadState.COMPLETE, null, DownloadQuality.ORIGINAL, 1f, 1_000_000_000, owned, StorageKind.INTERNAL, true),
     )
 
     private fun season(n: Int, number: Int, vararg eps: OfflineEntry) =
         OfflineSeason(entry(60 + n, ItemKind.SEASON, "Season $number").let { it.copy(item = it.item.copy(indexNumber = number)) }, number, eps.toList())
 
-    private fun show(series: OfflineSeries?) = show { OfflineSeriesScreen(OfflineSeriesUiState(BEN, series, loading = false), actions) }
+    private fun show(series: OfflineSeries?, confirm: RemoveRequest? = null) =
+        show { OfflineSeriesScreen(OfflineSeriesUiState(BEN, series, loading = false, confirmRemove = confirm), actions) }
 
     private val sample = OfflineSeries(
         entry(50, ItemKind.SERIES, "The Show"),
@@ -80,6 +84,38 @@ abstract class OfflineSeriesRenderBase : RenderBase() {
         assertTrue(tree(), rule.onAllNodes(androidx.compose.ui.test.hasText("left", substring = true)).fetchSemanticsNodes().isNotEmpty())
         rule.onAllNodes(hasContentDescription("Play Season 1, episode 2, Next One"))[0].performClick()
         assertEquals(listOf("play:${episode(102).item.id}"), calls)
+    }
+
+    @Test fun anOwnerCanDeleteAnEpisodeAndASeasonAndANonOwnerGetsNeither() {
+        val mixed = OfflineSeries(
+            entry(50, ItemKind.SERIES, "The Show"),
+            listOf(
+                season(1, 1, ep(101, 1, 1, "Pilot"), ep(102, 1, 2, "Theirs", owned = false)),
+                season(2, 2, ep(210, 2, 1, "Shared Only", owned = false)),
+            ),
+        )
+        show(mixed)
+        val mine = text(R.string.cd_more_actions, "S1 E1 · Pilot")
+        scrollTo(mine)
+        val node = rule.onAllNodes(hasContentDescription(mine)).fetchSemanticsNodes().single()
+        assertTrue("under 48dp", node.size.height / node.layoutInfo.density.density >= 47.5f)
+        rule.onAllNodes(hasContentDescription(mine))[0].performClick()
+        rule.onAllNodes(androidx.compose.ui.test.hasText(text(R.string.dl_delete)))[0].performClick()
+        assertEquals(listOf("ask:${episode(101).item.id}"), calls)
+        assertTrue("no delete on a shared episode", rule.onAllNodes(hasContentDescription(text(R.string.cd_more_actions, "S1 E2 · Theirs"))).fetchSemanticsNodes().isEmpty())
+        scrollTo(text(R.string.cd_more_actions, "Season 1"))
+        rule.onAllNodes(hasContentDescription(text(R.string.cd_more_actions, "Season 1")))[0].performClick()
+        rule.onAllNodes(androidx.compose.ui.test.hasText(text(R.string.dl_delete_season)))[0].performClick()
+        assertEquals("askSeason:${entry(61).item.id}", calls.last())
+        scrollTo("Play Season 2, episode 1, Shared Only")
+        assertTrue("no season delete where it owns nothing", rule.onAllNodes(hasContentDescription(text(R.string.cd_more_actions, "Season 2"))).fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test fun theDeleteConfirmIsShownAndAsksForAYes() {
+        show(sample, confirm = RemoveRequest(RemoveKind.ONE, listOf(episode(101).item.id), 1_800_000_000))
+        assertShown(text(R.string.dl_delete_confirm, "1.8 GB"))
+        rule.onAllNodes(androidx.compose.ui.test.hasText(text(R.string.dl_delete_action)))[0].performClick()
+        assertEquals(listOf("confirm"), calls)
     }
 
     @Test fun aMalformedOrUnknownSeriesIsNoLongerAvailable() {

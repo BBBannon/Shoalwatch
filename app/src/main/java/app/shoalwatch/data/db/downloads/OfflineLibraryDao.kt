@@ -40,7 +40,7 @@ internal fun DownloadEntity.progress(): Float? = when {
     else -> null
 }
 
-fun SeriesSummaryRow.toModel() = SeriesSummary(ItemWithUserData(item.toModel(), userData?.toModel()), episodeCount, bytes)
+fun SeriesSummaryRow.toModel() = SeriesSummary(ItemWithUserData(item.toModel(), userData?.toModel()), episodeCount, bytes, ownedCount)
 
 /** A series with at least one ready episode this user may see, how many, and their size in bytes. */
 class SeriesSummaryRow(
@@ -48,6 +48,8 @@ class SeriesSummaryRow(
     @Embedded(prefix = "ud_") val userData: UserDataEntity?,
     val episodeCount: Int,
     val bytes: Long,
+    /** How many of them this user owns (only an owner gets "Delete downloaded series"). */
+    val ownedCount: Int,
 )
 
 /**
@@ -165,7 +167,7 @@ abstract class OfflineLibraryDao {
 
         /** One row per series (`i` is the series here, `e` the episode). */
         const val SERIES_SQL =
-            "SELECT $ROW_COLUMNS, COUNT(*) AS episodeCount, SUM(COALESCE(d.totalBytes, d.doneBytes)) AS bytes " +
+            "SELECT $ROW_COLUMNS, COUNT(*) AS episodeCount, SUM(COALESCE(d.totalBytes, d.doneBytes)) AS bytes, SUM(CASE WHEN $MINE THEN 1 ELSE 0 END) AS ownedCount " +
                 "FROM downloads d JOIN items e ON e.serverId = d.serverId AND e.itemId = d.itemId " + VISIBLE_JOIN +
                 "JOIN items i ON i.serverId = d.serverId AND i.itemId = d.seriesId " +
                 "LEFT JOIN user_data u ON u.serverId = d.serverId AND u.userId = :userId AND u.itemId = d.seriesId " +

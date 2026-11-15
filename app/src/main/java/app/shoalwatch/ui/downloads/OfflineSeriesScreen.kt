@@ -21,7 +21,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.platform.LocalContext
+import app.shoalwatch.ui.components.DismissOnSessionChange
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -37,17 +44,35 @@ import app.shoalwatch.ui.present.plainOverview
 import app.shoalwatch.ui.present.rememberStrings
 import app.shoalwatch.ui.present.wideArtwork
 
-/** What the offline series screen can do. */
-data class OfflineSeriesActions(val onBack: () -> Unit, val onOpenItem: (String) -> Unit, val onPlay: (String) -> Unit)
+/** What the offline series screen can do. The removes are for owners only (the controls are not shown to anyone else). */
+data class OfflineSeriesActions(
+    val onBack: () -> Unit,
+    val onOpenItem: (String) -> Unit,
+    val onPlay: (String) -> Unit,
+    val onAskRemove: (String) -> Unit = {},
+    /** A season's id, or null for the episodes with no season. */
+    val onAskRemoveSeason: (String?) -> Unit = {},
+    val onConfirmRemove: () -> Unit = {},
+    val onCancelRemove: () -> Unit = {},
+)
 
 /**
  * One downloaded series, offline: its header (artwork, overview), then each season as a heading ("Season 1", "Specials" last)
  * with its downloaded episodes in order. A row opens the detail screen (Room, so it works offline); Play opens the player,
- * which picks the saved copy.
+ * which picks the saved copy. An owner can delete an episode (its row's "more" button) or its own episodes of a season (the
+ * season's), after the same confirmation as the Downloads tab (Tasks 13-16 review I-2).
  */
 @Composable
-fun OfflineSeriesScreen(state: OfflineSeriesUiState, actions: OfflineSeriesActions) {
+fun OfflineSeriesScreen(state: OfflineSeriesUiState, actions: OfflineSeriesActions, messages: Flow<SessionMessage> = emptyFlow(), snackbar: SnackbarHostState? = null) {
     val strings = rememberStrings()
+    if (snackbar != null) {
+        val context = LocalContext.current
+        val current = rememberUpdatedState(state.session)
+        DismissOnSessionChange(snackbar, state.session)
+        LaunchedEffect(messages, snackbar) {
+            messages.collect { m -> if (m.session == current.value) snackbar.showSnackbar(m.text ?: context.getString(m.res)) }
+        }
+    }
     val series = state.series
     val session = state.session
     val title = series?.series?.item?.displayName(strings).orEmpty()
@@ -74,13 +99,22 @@ fun OfflineSeriesScreen(state: OfflineSeriesUiState, actions: OfflineSeriesActio
                     }
                 }
                 for (season in ordered(series.seasons)) {
-                    item { SectionHeader(seasonHeading(strings, season), Modifier.padding(vertical = 8.dp)) }
-                    items(season.episodes, key = { it.download.itemId }) { OfflineEpisodeRow(it, session, actions.onOpenItem, actions.onPlay) }
+                    item {
+                        val heading = seasonHeading(strings, season)
+                        Row(Modifier.fillMaxWidth().padding(end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            SectionHeader(heading, Modifier.weight(1f).padding(vertical = 8.dp))
+                            if (season.episodes.any { it.download.ownedByMe }) {
+                                DeleteMenu(heading, { actions.onAskRemoveSeason(season.season?.item?.id) }, label = R.string.dl_delete_season)
+                            }
+                        }
+                    }
+                    items(season.episodes, key = { it.download.itemId }) { OfflineEpisodeRow(it, session, actions.onOpenItem, actions.onPlay, actions.onAskRemove) }
                 }
                 item { Spacer(Modifier.heightIn(min = 24.dp)) }
             }
         }
     }
+    state.confirmRemove?.let { RemoveDialog(it, actions.onConfirmRemove, actions.onCancelRemove) }
 }
 
 /** Numbered seasons in order, then seasons with no number, then Specials (season 0), then episodes with no season at all. */

@@ -1,5 +1,7 @@
 package app.shoalwatch.ui.nav
 
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -211,7 +213,7 @@ internal fun DownloadsRoute(graph: AppGraph, nav: NavHostController) {
             onSignIn = { nav.navigate(Routes.signIn(it)) },
             onPause = vm::pause, onResume = vm::resume, onRetry = vm::retry,
             onAskRemove = vm::askRemove, onConfirmRemove = vm::confirmRemove, onCancelRemove = vm::cancelRemove,
-            onPauseAll = vm::pauseAll, onResumeAll = vm::resumeAll, onTryAgain = vm::tryAgain,
+            onPauseAll = vm::pauseAll, onResumeAll = vm::resumeAll, onTryAgain = vm::tryAgain, onAskRemoveSeries = vm::askRemoveSeries,
         )
     }
     AppShell(Tab.DOWNLOADS, nav::switchTab, snackbar) { DownloadsScreen(state, actions, vm.messages, snackbar, onOpenSettings = { nav.navigate(Routes.DOWNLOAD_SETTINGS) }) }
@@ -234,10 +236,17 @@ internal fun DownloadSettingsRoute(graph: AppGraph, nav: NavHostController) {
 internal fun OfflineSeriesRoute(graph: AppGraph, nav: NavHostController, seriesId: String) {
     val vm = graphViewModel(key = "downloads:$seriesId") { OfflineSeriesViewModel(seriesId, graph.serverCatalog, graph.downloads) }
     val state by vm.state.collectAsStateWithLifecycle()
-    val actions = remember(nav) {
-        OfflineSeriesActions(onBack = { nav.popBackStack() }, onOpenItem = { nav.navigate(Routes.item(it)) }, onPlay = { nav.navigate(Routes.player(it, StartFrom.RESUME)) })
+    val snackbar = remember { SnackbarHostState() }
+    val actions = remember(vm, nav) {
+        OfflineSeriesActions(
+            onBack = { nav.popBackStack() }, onOpenItem = { nav.navigate(Routes.item(it)) }, onPlay = { nav.navigate(Routes.player(it, StartFrom.RESUME)) },
+            onAskRemove = vm::askRemove, onAskRemoveSeason = vm::askRemoveSeason, onConfirmRemove = vm::confirmRemove, onCancelRemove = vm::cancelRemove,
+        )
     }
-    OfflineSeriesScreen(state, actions)
+    androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize()) {
+        OfflineSeriesScreen(state, actions, vm.messages, snackbar)
+        androidx.compose.material3.SnackbarHost(snackbar, androidx.compose.ui.Modifier.align(androidx.compose.ui.Alignment.BottomCenter).navigationBarsPadding())
+    }
 }
 
 /**
