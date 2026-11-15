@@ -44,6 +44,7 @@ class AppGraph(private val appContext: Context) {
         database, secretBox, serverClients::evict,
         onServerRemoved = { addressSelector.forget(it); libraryRepository.forget(it) },
         onAccountGone = { server, user -> libraryRepository.forget(server, user) },
+        onAccountSignedIn = { server, user -> libraryRepository.forget(server, user) },
     ) }
     val httpClientFactory: HttpClientFactory by lazy { HttpClientFactory(appContext) }
     val deviceIdentity: DeviceIdentity by lazy { DeviceIdentity.load(appContext) }

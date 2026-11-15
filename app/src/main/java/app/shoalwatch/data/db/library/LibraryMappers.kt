@@ -10,15 +10,17 @@ import java.text.Normalizer
 import java.time.Instant
 import java.util.Locale
 
-private val combiningMarks = Regex("\\p{M}+")
+private val accents = Regex("[\u0300-\u036F]+")
 
 /**
- * The key offline search compares against, built the same way for the stored name and for the query: accents and other
- * combining marks removed (so "elite" finds "Élite" and "angstrom" finds "Ångström"), Turkish dotted and dotless I both
- * read as i, then lower-cased for every script, locale-independent.
+ * The key offline search compares against, built the same way for the stored name and for the query: decomposed, ONLY the
+ * combining accents U+0300 to U+036F removed (so "elite" finds "Élite" and "angstrom" finds "Ångström"; the dot of Turkish İ is
+ * one of them), recomposed, Turkish dotless ı read as i, then lower-cased for every script, locale-independent. Other
+ * combining marks are part of their letters and stay (Japanese voiced kana, Indic and Thai vowel signs), and Hangul is recomposed.
  */
 internal fun searchKey(text: String): String =
-    Normalizer.normalize(text, Normalizer.Form.NFD).replace(combiningMarks, "").replace('ı', 'i').lowercase(Locale.ROOT)
+    Normalizer.normalize(Normalizer.normalize(text, Normalizer.Form.NFD).replace(accents, ""), Normalizer.Form.NFC)
+        .replace('ı', 'i').lowercase(Locale.ROOT)
 
 internal fun Item.toEntity(serverId: String, fetchedAt: Instant) = ItemEntity(
     serverId = serverId, itemId = id, kind = kind, name = name, nameKey = searchKey(name), sortName = sortName,

@@ -54,7 +54,7 @@ class LibraryRepository(
 
     init {
         val store = LibraryStore(db)
-        cache = ListCache(db, store, refresher, LibraryMaintenance(store, maintenanceLog, clock, scope, io, writeGate), clock, io, writeGate)
+        cache = ListCache(db, store, refresher, LibraryMaintenance(store, maintenanceLog, clock, scope, io, writeGate, onCleared = refresher::forgetFinished), clock, io, writeGate)
     }
 
     /** Forgets what the last attempts did for this account (or, with no [userId], every account of the server): it was removed or signed out. */
@@ -82,8 +82,30 @@ class LibraryRepository(
         wholeList(s, ListKey.episodes(seriesId, seasonId), SERIES_WINDOW) { gateway.episodes(s, seriesId, seasonId) }
 
     private fun itemRecipe(s: Session, itemId: String, window: Duration) = Recipe(ListKey.item(itemId), window) {
-        cache.writeItems(s, listOf(gateway.item(s, itemId)), authoritative = true) // a detail fetch asks for every field, so a missing overview is really gone
+        val fetched = try {
+            gateway.item(s, itemId)
+        } catch (e: AppError) {
+            // The server answered that this item is not there, or not for this user: it is hidden from them at once
+            // (their record and list entries go; other users and the shared row stay), and reads as "not found".
+            if (e.kind == AppError.Kind.SERVER_NOT_FOUND || e.kind == AppError.Kind.FORBIDDEN) {
+                cache.revoke(s, itemId)
+                throw AppError.of(AppError.Kind.SERVER_NOT_FOUND, e)
+            }
+            throw e
+        }
+        cache.writeItems(s, listOf(fetched), authoritative = true) // a detail fetch asks for every field, so a missing overview is really gone
         cache.markLoaded(s, ListKey.item(itemId))
+    }
+
+    /** A local failure (the database) must reach the screen as an [AppError], never as a raw exception from the seam. */
+    private suspend fun <T> localFailuresAsAppError(block: suspend () -> T): T = try {
+        block()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: AppError) {
+        throw e
+    } catch (e: Exception) {
+        throw AppError.of(AppError.Kind.UNKNOWN, e)
     }
 
     /** Page 0 replaces the whole list, so anything the server dropped disappears; pages after the first are fetched again by [loadMore]. */
@@ -126,7 +148,7 @@ class LibraryRepository(
 
     override suspend fun loadMore(s: Session, parentId: String, shape: ListShape, sort: Sort, filter: ItemFilter) = withContext(io) {
         if (!wellFormed(parentId)) return@withContext
-        loadMoreOnIo(s, parentId, shape, sort, filter)
+        localFailuresAsAppError { loadMoreOnIo(s, parentId, shape, sort, filter) }
     }
 
     private suspend fun loadMoreOnIo(s: Session, parentId: String, shape: ListShape, sort: Sort, filter: ItemFilter) {
@@ -186,7 +208,11 @@ class LibraryRepository(
     override suspend fun search(s: Session, term: String): SearchResult = withContext(io) {
         val text = term.trim()
         if (text.isEmpty()) return@withContext SearchResult(emptyList(), offline = false)
-        try {
+        localFailuresAsAppError { searchOnIo(s, text) }
+    }
+
+    private suspend fun searchOnIo(s: Session, text: String): SearchResult {
+        return try {
             val found = gateway.search(s, text, SEARCH_LIMIT)
             // Saved so a detail screen opens at once. A failure to save must not lose the results the user is waiting for.
             try {
@@ -216,6 +242,10 @@ class LibraryRepository(
             is RefreshTarget.Item -> listOf(target.itemId)
         }
         if (!wellFormed(*ids.toTypedArray())) return@withContext
+        localFailuresAsAppError { refreshOnIo(s, target) }
+    }
+
+    private suspend fun refreshOnIo(s: Session, target: RefreshTarget) {
         when (target) {
             RefreshTarget.Home -> refreshHome(s)
             is RefreshTarget.Children -> cache.refreshNow(s, childrenRecipe(s, target.parentId, target.shape, target.sort, target.filter))

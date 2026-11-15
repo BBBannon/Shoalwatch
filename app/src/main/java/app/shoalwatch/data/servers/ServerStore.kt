@@ -57,6 +57,8 @@ class ServerStore(
     private val onServerRemoved: (serverId: String) -> Unit = {},
     /** Called after an account is removed or signed out (its token rejected), so per-account state elsewhere (e.g. remembered library failures) can be dropped. */
     private val onAccountGone: (serverId: String, userId: String) -> Unit = { _, _ -> },
+    /** Called after an account is saved (signed in, or signed in again), so remembered failures of its earlier sign-in can be dropped. */
+    private val onAccountSignedIn: (serverId: String, userId: String) -> Unit = { _, _ -> },
     /** Where [warmTokens] reads saved accounts from (the database by default); a test passes one that fails. */
     accountSource: (suspend () -> List<AccountEntity>)? = null,
     /** Where Keystore work runs. */
@@ -65,15 +67,8 @@ class ServerStore(
     private val serverDao = db.serverDao()
     private val accountDao = db.accountDao()
 
-    /**
-     * Opened custom headers, memoised BY CIPHERTEXT (the key is a SHA-256 of the sealed bytes, never the plaintext), so
-     * the Keystore is not used on every authenticated request. The row is still read every time and a change of headers
-     * is a different ciphertext, so the memo cannot go stale. Only a successful open is kept (an unreadable blob is
-     * retried), at most [HEADER_MEMO_SIZE] entries (oldest unused out), and it is emptied when a server is saved or removed.
-     */
-    private val openedHeaders = object : LinkedHashMap<String, Map<String, String>>(HEADER_MEMO_SIZE, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Map<String, String>>) = size > HEADER_MEMO_SIZE
-    }
+    /** Opened custom headers, memoised by ciphertext (see [OpenedHeaders]). */
+    private val openedHeaders = OpenedHeaders(box)
 
     /** Every server with its full settings (headers opened on [io]). For the address selector, not for lists. */
     override val servers: Flow<List<Server>> = serverDao.observeAll().map { rows -> rows.map(::toServer) }.flowOn(io)
@@ -194,7 +189,7 @@ class ServerStore(
                 ),
             )
         }
-        forgetOpenedHeaders()
+        openedHeaders.forget()
         onClientsStale(s.id, (before?.addresses.orEmpty() + s.addresses).distinct())
         if (s.addresses.isEmpty()) onServerRemoved(s.id)
     }
@@ -214,7 +209,7 @@ class ServerStore(
                     tokens.keys.removeAll { it.first == id }
                     rejected.removeAll { it.first == id }
                     usable.update { set -> set.filterNot { it.first == id }.toSet() }
-                    forgetOpenedHeaders()
+                    openedHeaders.forget()
                 }
             }
         } finally {
@@ -244,6 +239,7 @@ class ServerStore(
             usable.update { it + (a.serverId to a.userId) }
         }
         onClientsStale(a.serverId, addresses)
+        onAccountSignedIn(a.serverId, a.userId)
     }
 
     /** If it was the active account, nobody is active afterwards. Runs to completion even if the caller is cancelled (see [removeServer]). */
@@ -350,7 +346,7 @@ class ServerStore(
 
     private fun toServer(e: ServerEntity): Server {
         val pinOk = e.pinnedSpkiSha256 == null || isValidPin(e.pinnedSpkiSha256)
-        val headers = openHeaders(e.customHeaders)
+        val headers = openedHeaders.open(e.customHeaders)
         return Server(
             id = e.id, name = e.name, version = e.version,
             homeAddress = e.homeAddress?.let(::parseOrNull), awayAddress = e.awayAddress?.let(::parseOrNull),
@@ -362,21 +358,6 @@ class ServerStore(
         )
     }
 
-    /** The headers in [sealed]; none if it cannot be opened (not remembered, so the next read tries again). */
-    private fun openHeaders(sealed: ByteArray): Map<String, String> {
-        val key = MessageDigest.getInstance("SHA-256").digest(sealed).joinToString("") { "%02x".format(it) }
-        synchronized(openedHeaders) { openedHeaders[key] }?.let { return it }
-        val opened = try {
-            Json.decodeFromString(HEADERS, box.open(sealed))
-        } catch (_: Exception) {
-            return emptyMap()
-        }
-        synchronized(openedHeaders) { openedHeaders[key] = opened }
-        return opened
-    }
-
-    private fun forgetOpenedHeaders() = synchronized(openedHeaders) { openedHeaders.clear() }
-
     private fun parseOrNull(value: String): ServerAddress? = try {
         ServerAddress.parse(value)
     } catch (_: AppError) {
@@ -385,8 +366,7 @@ class ServerStore(
 
     private companion object {
         const val TAG = "ServerStore"
-        const val HEADER_MEMO_SIZE = 16
-        val HEADERS = MapSerializer(String.serializer(), String.serializer())
+        val HEADERS = OpenedHeaders.HEADERS
     }
 }
 

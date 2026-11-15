@@ -133,4 +133,24 @@ class LibraryCacheOnDeviceTest {
         store.writeItems(Session(server, other), listOf(ItemWithUserData(item("a"), null)), t0)
         assertNotNull(db.itemDao().getItem(server, other, id("a")))
     }
+
+    @Test fun revokingAnItemHidesItForThatUserOnlyAndOldUnconfirmedRecordsExpire() = runBlocking {
+        val other = "33333333333333333333333333333333"
+        db.accountDao().upsert(AccountEntity(server, other, "bob", ByteArray(1)))
+        val bob = Session(server, other)
+        store.writePage(session, "resume", 0, listOf("a", "b").map { ItemWithUserData(item(it), null) }, 2, t0)
+        store.writePage(bob, "resume", 0, listOf("a", "b").map { ItemWithUserData(item(it), null) }, 2, t0)
+        // the server refused "a" for Bob: gone from his reads and his list, untouched for the first user
+        store.revokeVisibility(bob, id("a"))
+        assertNull(db.itemDao().getItem(server, other, id("a")))
+        assertEquals(listOf(id("b")), db.listDao().entryIds(server, other, "resume"))
+        assertNotNull(db.itemDao().getItem(server, user, id("a")))
+        assertEquals(listOf(id("a"), id("b")), db.listDao().entryIds(server, user, "resume"))
+        // a record the server has not re-confirmed for 31 days goes, unless the item is in that user's current lists
+        db.openHelper.writableDatabase.execSQL("UPDATE visible_items SET seenAt = ?", arrayOf<Any>(t0.minus(Duration.ofDays(31)).toEpochMilli()))
+        store.writeItems(bob, listOf(ItemWithUserData(item("a"), null)), t0) // keeps the shared row recent; makes Bob's record fresh again
+        store.evict(t0)
+        assertNotNull("in the user's current list", db.itemDao().getItem(server, user, id("a")))
+        assertNotNull("re-confirmed", db.itemDao().getItem(server, other, id("a")))
+    }
 }

@@ -136,6 +136,16 @@ class LibraryStore(private val db: AppDatabase) {
         }
     }
 
+    /**
+     * The server refused the item for this user: it stops existing for them. Their `visible_items` record goes and the item
+     * leaves each of their lists (later entries move up, counts drop), in one transaction. Other users, and the shared item row, are untouched.
+     * A later server return of the item to this user makes it visible again ([writeItems]).
+     */
+    suspend fun revokeVisibility(s: Session, itemId: String) = db.withTransaction {
+        items.deleteVisible(s.serverId, s.userId, itemId)
+        lists.keysContaining(s.serverId, s.userId, itemId).forEach { removeEntry(s, it, itemId) }
+    }
+
     /** Marks this user's row for the item as holding a local change the server has not confirmed. False if there is no row (set the value first). */
     suspend fun markPending(s: Session, itemId: String, now: Instant): Boolean = items.markPending(s.serverId, s.userId, itemId, now.toEpochMilli()) > 0
 

@@ -71,12 +71,12 @@ class LibraryItemTest : LibraryTestBase() {
 
     // ---- the upsert rules
 
-    @Test fun aListResponseDoesNotEraseAStoredOverviewOrChildCount() = runBlocking {
+    @Test fun aListResponseDoesNotEraseAStoredOverviewButChildCountIsTakenAsSent() = runBlocking {
         library.writeItems(s1u1, listOf(row(item("a", overview = "Long plot", childCount = 4))), t0)
         library.writeItems(s1u1, listOf(row(item("a", name = "Renamed", overview = null, childCount = null))), t0.plusSeconds(60))
         val stored = items.getItemEntity(S1, id("a"))!!
         assertEquals("Long plot", stored.overview)
-        assertEquals(4, stored.childCount)
+        assertNull("a count from another user's write must never be shown: null means unknown", stored.childCount)
         assertEquals("every other column takes the new value", "Renamed", stored.name)
         assertEquals(t0.plusSeconds(60).toEpochMilli(), stored.fetchedAt)
     }
@@ -299,5 +299,14 @@ class LibraryItemTest : LibraryTestBase() {
         val bob = items.searchByName(S1, U2, "match", emptySet(), 10).single()
         assertTrue(ann.userData!!.played)
         assertNull(bob.userData)
+    }
+
+    @Test fun searchDoesNotConflateJapaneseVoicedAndUnvoicedKanaOrSplitHangul() = runBlocking {
+        library.writeItems(s1u1, listOf("かさ", "がさ", "한국어 영화", "ก็ได้", "กด").map { row(item(it, name = it)) }, t0)
+        assertEquals(listOf("かさ"), search("か"))
+        assertEquals(listOf("がさ"), search("が"))
+        assertEquals(listOf("한국어 영화"), search("한국어"))
+        assertEquals(listOf("한국어 영화"), search("영화"))
+        assertEquals(listOf("ก็ได้"), search("ก็")) // the Thai vowel mark is part of the letter, not an accent to strip
     }
 }

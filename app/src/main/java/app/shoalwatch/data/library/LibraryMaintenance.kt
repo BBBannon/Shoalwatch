@@ -51,6 +51,8 @@ internal class LibraryMaintenance(
     private val context: CoroutineContext,
     private val writeGate: Mutex,
     private val every: Duration = Duration.ofHours(24),
+    /** Called after a clear-out has removed saved lists, so nothing keeps a "loaded" memory of a list that is gone. */
+    private val onCleared: () -> Unit = {},
 ) {
     private val busy = AtomicBoolean(false)
 
@@ -70,6 +72,7 @@ internal class LibraryMaintenance(
                     return@launch
                 }
                 for (serverId in store.serverIds()) writeGate.withLock { store.evictServer(serverId, Instant.ofEpochMilli(now), EvictionPolicy()) }
+                onCleared()
                 log.record(now)
                 lastKnown = now
             } catch (e: CancellationException) {

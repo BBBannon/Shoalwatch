@@ -100,4 +100,52 @@ class LibraryVisibilityTest : LibraryTestBase() {
         assertNull(items.getItem(S1, U2, id("show")))
         assertNotNull(items.getItem(S1, U2, id("e1")))
     }
+
+    // ---- unconfirmed visibility expires (30 days)
+
+    private val day = Duration.ofDays(1)
+
+    /** Item X is shown to Ann and Bob; only Ann's record is made [age] old (Bob's item write keeps the row itself fresh). */
+    private fun annSeenAgo(age: Duration, label: String = "x") = runBlocking {
+        library.writeItems(s1u1, listOf(row(item(label))), t0)
+        library.writeItems(s1u2, listOf(row(item(label))), t0)
+        sql("UPDATE visible_items SET seenAt = ? WHERE userId = ? AND itemId = ?", t0.minus(age).toEpochMilli(), U1, id(label))
+    }
+
+    @Test fun aVisibilityRecordOlderThanThirtyDaysThatIsNeitherPinnedNorListedIsDropped() = runBlocking {
+        annSeenAgo(day.multipliedBy(31))
+        library.evict(t0)
+        assertNull(items.getItem(S1, U1, id("x")))
+        assertNotNull(items.getItem(S1, U2, id("x"))) // Bob's is fresh; the shared row stays for him
+        assertEquals(1, count("items", "itemId = '${id("x")}'"))
+    }
+
+    @Test fun anOldRecordForAnItemInTheUsersCurrentListIsKept() = runBlocking {
+        library.writePage(s1u1, "resume", 0, listOf(row(item("x"))), 1, t0)
+        sql("UPDATE visible_items SET seenAt = ? WHERE userId = ?", t0.minus(day.multipliedBy(31)).toEpochMilli(), U1)
+        library.evict(t0)
+        assertNotNull(items.getItem(S1, U1, id("x")))
+    }
+
+    @Test fun anOldRecordForAListedItemOfAnotherUserDoesNotProtectIt() = runBlocking {
+        library.writePage(s1u2, "resume", 0, listOf(row(item("x"))), 1, t0) // Bob's list names X
+        library.writeItems(s1u1, listOf(row(item("x"))), t0)
+        sql("UPDATE visible_items SET seenAt = ? WHERE userId = ?", t0.minus(day.multipliedBy(31)).toEpochMilli(), U1)
+        library.evict(t0)
+        assertNull(items.getItem(S1, U1, id("x")))
+        assertNotNull(items.getItem(S1, U2, id("x")))
+    }
+
+    @Test fun anOldRecordForAPinnedItemIsKept() = runBlocking {
+        annSeenAgo(day.multipliedBy(60))
+        sql("UPDATE items SET pinned = 1 WHERE itemId = ?", id("x"))
+        library.evict(t0)
+        assertNotNull(items.getItem(S1, U1, id("x")))
+    }
+
+    @Test fun aTwentyNineDayOldRecordIsKept() = runBlocking {
+        annSeenAgo(day.multipliedBy(29))
+        library.evict(t0)
+        assertNotNull(items.getItem(S1, U1, id("x")))
+    }
 }

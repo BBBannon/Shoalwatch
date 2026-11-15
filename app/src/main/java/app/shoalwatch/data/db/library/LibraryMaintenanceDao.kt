@@ -44,6 +44,17 @@ abstract class LibraryMaintenanceDao {
     )
     protected abstract suspend fun deleteOrphanedUserData(serverId: String): Int
 
+    /**
+     * A record the server has not re-confirmed since [cutoffMs] (`seenAt` is refreshed by every server-sourced write) goes, unless the
+     * item is pinned (a download) or is in one of THAT user's current lists. The item row itself follows the eviction rules.
+     */
+    @Query(
+        "DELETE FROM visible_items WHERE serverId = :serverId AND seenAt < :cutoffMs " +
+            "AND NOT EXISTS (SELECT 1 FROM items i WHERE i.serverId = visible_items.serverId AND i.itemId = visible_items.itemId AND i.pinned = 1) " +
+            "AND NOT EXISTS (SELECT 1 FROM list_entries e WHERE e.serverId = visible_items.serverId AND e.userId = visible_items.userId AND e.itemId = visible_items.itemId)",
+    )
+    protected abstract suspend fun deleteUnconfirmedVisibility(serverId: String, cutoffMs: Long): Int
+
     /** The record of what the server showed each user, for items that no longer exist (pinned items still exist, so theirs stays). */
     @Query("DELETE FROM visible_items WHERE serverId = :serverId AND NOT EXISTS (SELECT 1 FROM items i WHERE i.serverId = visible_items.serverId AND i.itemId = visible_items.itemId)")
     protected abstract suspend fun deleteOrphanedVisibility(serverId: String): Int
@@ -51,6 +62,7 @@ abstract class LibraryMaintenanceDao {
     /**
      * One transaction, in this order:
      *  1. delete list entries and states for lists not refreshed since [listCutoffMs];
+     *  1b. delete `visible_items` records not re-confirmed since [itemCutoffMs], unless pinned or in that user's current lists;
      *  2. delete unprotected items fetched before [itemCutoffMs];
      *  3. if the server still has more than [maxUnpinnedItems] unpinned items, delete the oldest-fetched unprotected ones
      *     until it does not (protected rows are never deleted, so the cap can be exceeded only by protected rows);
@@ -61,11 +73,12 @@ abstract class LibraryMaintenanceDao {
     open suspend fun evict(serverId: String, listCutoffMs: Long, itemCutoffMs: Long, maxUnpinnedItems: Int): EvictionCounts {
         val entries = deleteStaleEntries(serverId, listCutoffMs)
         val states = deleteStaleStates(serverId, listCutoffMs)
+        val expired = deleteUnconfirmedVisibility(serverId, itemCutoffMs)
         var items = deleteOldItems(serverId, itemCutoffMs)
         val excess = countUnpinned(serverId) - maxUnpinnedItems.coerceAtLeast(0)
         if (excess > 0) items += deleteOldest(serverId, excess)
         val userData = deleteOrphanedUserData(serverId)
-        return EvictionCounts(entries, states, items, userData, deleteOrphanedVisibility(serverId))
+        return EvictionCounts(entries, states, items, userData, expired + deleteOrphanedVisibility(serverId))
     }
 
     private companion object {

@@ -29,6 +29,10 @@ interface ListDao {
     @Query("SELECT itemId FROM list_entries WHERE serverId = :serverId AND userId = :userId AND listKey = :listKey ORDER BY position")
     suspend fun entryIds(serverId: String, userId: String, listKey: String): List<String>
 
+    /** The keys of this user's lists that hold the item. */
+    @Query("SELECT DISTINCT listKey FROM list_entries WHERE serverId = :serverId AND userId = :userId AND itemId = :itemId")
+    suspend fun keysContaining(serverId: String, userId: String, itemId: String): List<String>
+
     @Query("SELECT COUNT(*) FROM list_entries WHERE serverId = :serverId AND userId = :userId AND listKey = :listKey")
     suspend fun countEntries(serverId: String, userId: String, listKey: String): Int
 

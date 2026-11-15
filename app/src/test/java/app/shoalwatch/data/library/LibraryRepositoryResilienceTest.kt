@@ -17,6 +17,7 @@ import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 import java.time.Duration
 import java.util.concurrent.CopyOnWriteArrayList
@@ -233,5 +234,55 @@ class LibraryRepositoryResilienceTest : LibraryRepositoryTestBase() {
         settle()
         assertEquals(1, log.records.size)
         assertEquals(0, count("list_entries", "listKey = 'old-list'"))
+    }
+
+    // ---- after the clear-out, under a live collector
+
+    @Test fun aListWhoseSavedStateWasClearedOutUnderALiveCollectorIsStaleUnknownNotASpinner() = runBlocking {
+        gateway.resumeFor = { films("a") }
+        val seen = CopyOnWriteArrayList<Freshness>()
+        val collector = launch { repo.home(s1u1).collect { seen += it.resume.freshness } }
+        until { seen.lastOrNull() == Freshness.Fresh }
+        advance(Duration.ofDays(40)) // the screen stays open; the daily clear-out then removes the old list
+        repo.item(s1u1, id("z")).first5s() // any use of the library starts the clear-out
+        settle()
+        until { seen.last() == Freshness.Stale(AppError.Kind.UNKNOWN) }
+        collector.cancelAndJoin()
+    }
+
+    // ---- signing in again
+
+    @Test fun afterSigningInAgainTheListRefreshesAtOnceAndIsFresh() = runBlocking {
+        gateway.failOps["resume"] = AppError.Kind.UNAUTHORISED
+        repo.home(s1u1).first5s { it.resume.freshness == Freshness.Stale(AppError.Kind.UNAUTHORISED) }
+        settle()
+        gateway.failOps.clear()
+        gateway.resumeFor = { films("a") }
+        repo.forget(S1, U1) // what the store announces when the account is signed in again
+        repo.home(s1u1).first5s { it.resume.freshness == Freshness.Fresh && it.resume.items.isNotEmpty() }
+        assertEquals(2, gateway.count("resume"))
+    }
+
+    // ---- a raw database failure on the seam
+
+    @Test fun aRawDatabaseFailureInLoadMoreSearchOrRefreshIsAnAppErrorUnknown() = runBlocking {
+        // The tables go missing: Room then fails with a raw SQLiteException (closing the database would cancel the call instead).
+        sql("DROP TABLE list_state")
+        sql("DROP TABLE visible_items")
+        sql("DROP TABLE views")
+        gateway.failAll = AppError.Kind.OFFLINE // so search falls back to the (broken) database
+        val calls = listOf<suspend () -> Unit>(
+            { repo.loadMore(s1u1, id("p"), ListShape.DIRECT, nameAsc, noFilter) },
+            { repo.search(s1u1, "x") },
+            { repo.refresh(s1u1, RefreshTarget.Home) },
+        )
+        for ((i, call) in calls.withIndex()) {
+            try {
+                call()
+                fail("call $i should have thrown")
+            } catch (e: AppError) {
+                assertEquals("call $i", AppError.Kind.UNKNOWN, e.kind)
+            }
+        }
     }
 }

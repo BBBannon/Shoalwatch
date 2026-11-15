@@ -40,6 +40,9 @@ class FakeLibraryGateway : LibraryGateway {
     var latestFor: (Session, String) -> List<ItemWithUserData> = { _, _ -> emptyList() }
     var childPage: (parentId: String, start: Int, limit: Int) -> Page<ItemWithUserData> = { _, start, _ -> Page(emptyList(), start, 0, start, true) }
     var itemFor: (String) -> ItemWithUserData = { error("no item programmed") }
+
+    /** When set, answers a single-item fetch instead of [itemFor], knowing who asked. */
+    var itemBySession: ((Session, String) -> ItemWithUserData)? = null
     var seasonsFor: (String) -> List<ItemWithUserData> = { emptyList() }
     var episodesFor: (seriesId: String, seasonId: String?) -> List<ItemWithUserData> = { _, _ -> emptyList() }
     var searchFor: (String) -> List<ItemWithUserData> = { emptyList() }
@@ -74,7 +77,7 @@ class FakeLibraryGateway : LibraryGateway {
         return childPage(parentId, start, limit)
     }
 
-    override suspend fun item(s: Session, itemId: String): ItemWithUserData { enter("item", itemId); return itemFor(itemId) }
+    override suspend fun item(s: Session, itemId: String): ItemWithUserData { enter("item", itemId); return itemBySession?.invoke(s, itemId) ?: itemFor(itemId) }
 
     override suspend fun seasons(s: Session, seriesId: String): List<ItemWithUserData> { enter("seasons"); return seasonsFor(seriesId) }
 
