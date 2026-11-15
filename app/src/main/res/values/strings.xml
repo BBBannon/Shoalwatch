@@ -191,4 +191,135 @@
     <string name="home_manage">Servers and accounts</string>
     <string name="home_settings_cd">Servers and accounts</string>
     <string name="obscured_hint">Another app is drawing over the screen, so this button is switched off. Close screen filters or bubbles and try again.</string>
+
+    <!-- Browsing: shared -->
+    <string name="untitled">Untitled</string>
+    <string name="action_sign_in">Sign in</string>
+    <string name="action_review">Review</string>
+    <string name="action_clear_filters">Clear filters</string>
+    <string name="action_more">More</string>
+    <string name="action_less">Less</string>
+    <string name="cd_more_actions">More actions for %1$s</string>
+    <string name="cd_working">Working</string>
+    <string name="cd_loading_content">Loading</string>
+    <string name="banner_offline">You’re offline — showing what’s saved on this phone</string>
+    <string name="banner_signin">Your sign-in has expired</string>
+    <string name="banner_certificate">This server’s security certificate needs checking</string>
+    <string name="banner_generic">Couldn’t refresh</string>
+    <string name="gone_title">This is no longer available</string>
+    <string name="gone_body">It may have been removed, or you may no longer have access to it.</string>
+    <string name="error_title">Couldn’t load this</string>
+    <string name="error_body">Check your connection and try again.</string>
+
+    <!-- Browsing: shell -->
+    <string name="nav_home">Home</string>
+    <string name="nav_search">Search</string>
+    <string name="nav_downloads">Downloads</string>
+    <string name="downloads_title">Downloads</string>
+    <string name="downloads_body">Downloads arrive in a later update. You’ll be able to save whole seasons to watch offline.</string>
+
+    <!-- Browsing: home -->
+    <string name="home_continue">Continue Watching</string>
+    <string name="home_next_up">Next Up</string>
+    <string name="home_latest">Latest in %1$s</string>
+    <string name="home_libraries">Libraries</string>
+    <string name="home_empty_title">Nothing to show yet</string>
+    <string name="home_empty_body">Your library hasn’t loaded. Check your connection and try again.</string>
+    <string name="account_menu_cd">Account and settings</string>
+    <string name="account_switch_title">Switch account</string>
+    <string name="account_current">%1$s (current)</string>
+    <string name="library_kind_movies">Films</string>
+    <string name="library_kind_tv">TV shows</string>
+    <string name="library_kind_collections">Collections</string>
+    <string name="library_kind_mixed">Folders and more</string>
+    <string name="library_card_cd">%1$s, %2$s</string>
+
+    <!-- Browsing: item actions and labels -->
+    <string name="sheet_remove_resume">Remove from Continue Watching</string>
+    <string name="sheet_mark_watched">Mark as watched</string>
+    <string name="sheet_mark_unwatched">Mark as unwatched</string>
+    <string name="sheet_favourite">Add to favourites</string>
+    <string name="sheet_unfavourite">Remove from favourites</string>
+    <string name="sheet_go_series">Go to series</string>
+    <string name="sheet_details">Details</string>
+    <string name="state_watched">watched</string>
+    <string name="state_favourite">favourite</string>
+    <string name="state_percent_watched">%1$s%% watched</string>
+    <string name="state_remaining">%1$s left</string>
+    <string name="state_resume_from">Resume from %1$s</string>
+    <plurals name="unwatched_episodes">
+        <item quantity="one">%1$s unwatched episode</item>
+        <item quantity="other">%1$s unwatched episodes</item>
+    </plurals>
+    <string name="duration_hr_min">%1$s hr %2$s min</string>
+    <string name="duration_hr">%1$s hr</string>
+    <string name="duration_min">%1$s min</string>
+    <string name="duration_under_min">Under 1 min</string>
+    <string name="episode_code_full">S%1$s E%2$s</string>
+    <string name="episode_code_season">S%1$s</string>
+    <string name="episode_code_episode">E%1$s</string>
+    <string name="line_join">%1$s · %2$s</string>
+
+    <!-- Browsing: library grid -->
+    <string name="sort_label">Sort by</string>
+    <string name="sort_name">Name</string>
+    <string name="sort_date_added">Date added</string>
+    <string name="sort_release">Release date</string>
+    <string name="sort_rating">Rating</string>
+    <string name="sort_ascending">Ascending</string>
+    <string name="sort_descending">Descending</string>
+    <string name="sort_current">Sort: %1$s, %2$s</string>
+    <string name="filter_unwatched">Unwatched</string>
+    <string name="filter_favourites">Favourites</string>
+    <plurals name="total_films">
+        <item quantity="one">%1$s film</item>
+        <item quantity="other">%1$s films</item>
+    </plurals>
+    <plurals name="total_series">
+        <item quantity="one">%1$s series</item>
+        <item quantity="other">%1$s series</item>
+    </plurals>
+    <plurals name="total_items">
+        <item quantity="one">%1$s item</item>
+        <item quantity="other">%1$s items</item>
+    </plurals>
+    <string name="library_empty_title">Nothing here yet</string>
+    <string name="library_empty_body">This library has nothing to show.</string>
+    <string name="library_empty_filtered">Nothing matches these filters.</string>
+    <string name="library_loading_more">Loading more</string>
+
+    <!-- Browsing: series and detail -->
+    <plurals name="season_count">
+        <item quantity="one">%1$s season</item>
+        <item quantity="other">%1$s seasons</item>
+    </plurals>
+    <string name="season_specials">Specials</string>
+    <string name="season_number">Season %1$s</string>
+    <string name="season_unnamed">Season</string>
+    <string name="series_mark_watched">Mark series as watched</string>
+    <string name="series_mark_unwatched">Mark series as unwatched</string>
+    <string name="season_mark_watched">Mark season as watched</string>
+    <string name="season_mark_unwatched">Mark season as unwatched</string>
+    <string name="season_menu_cd">Season actions</string>
+    <string name="episodes_empty">No episodes in this season yet.</string>
+    <string name="episodes_heading">Episodes</string>
+    <string name="series_fact_line">%1$s · %2$s</string>
+    <string name="detail_play">Play</string>
+    <string name="detail_playback_later">Playback arrives in the next update</string>
+    <string name="detail_watched_state">Watched</string>
+    <string name="detail_unwatched_state">Not watched yet</string>
+    <string name="detail_rating_cd">Community rating %1$s out of 10</string>
+    <string name="detail_overview_heading">About</string>
+
+    <!-- Browsing: search -->
+    <string name="search_hint">Search films, series and episodes</string>
+    <string name="search_clear">Clear search</string>
+    <string name="search_heading_films">Films</string>
+    <string name="search_heading_series">Series</string>
+    <string name="search_heading_episodes">Episodes</string>
+    <string name="search_offline">You’re offline — searching what’s saved on this phone</string>
+    <string name="search_empty_title">No results</string>
+    <string name="search_empty_body">Nothing matched “%1$s”. Check the spelling, or try a shorter word.</string>
+    <string name="search_prompt">Type at least 2 letters to search.</string>
+    <string name="search_series_label">Series</string>
 </resources>

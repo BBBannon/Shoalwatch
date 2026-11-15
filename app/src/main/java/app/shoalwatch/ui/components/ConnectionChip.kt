@@ -49,10 +49,10 @@ private fun Kind.icon(): ImageVector = when (this) {
 /**
  * Where the connection is right now: icon plus words ("Home network", "Away", "Checking…", "Offline"), never
  * colour alone. While checking it shows what it was a moment ago, subtly. For [Kind.OFFLINE] the plain-English
- * reason is shown beneath.
+ * reason is shown beneath, unless [compact] (the top bar of Home), which keeps just the icon and the words.
  */
 @Composable
-fun ConnectionChip(view: ConnectionView, modifier: Modifier = Modifier) {
+fun ConnectionChip(view: ConnectionView, modifier: Modifier = Modifier, compact: Boolean = false) {
     val label = when {
         view.kind == Kind.CHECKING && view.previous != null -> stringResource(R.string.conn_checking_was, view.previous.label())
         else -> view.kind.label()
@@ -74,7 +74,7 @@ fun ConnectionChip(view: ConnectionView, modifier: Modifier = Modifier) {
             },
         ) {
             Row(
-                Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                Modifier.padding(horizontal = if (compact) 12.dp else 16.dp, vertical = if (compact) 6.dp else 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -82,7 +82,7 @@ fun ConnectionChip(view: ConnectionView, modifier: Modifier = Modifier) {
                 Text(label, style = MaterialTheme.typography.labelLarge)
             }
         }
-        if (offline && view.detail != null) {
+        if (offline && view.detail != null && !compact) {
             Text(view.detail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
