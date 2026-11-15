@@ -248,6 +248,6 @@ Each behaviour above has a `tools/mockjelly` flag (see its README):
 | Cuts differ between sessions | `--hls-recut` |
 | Idle kill | `--hls-idle-kill` |
 
-**Known gap:** the default mock sends an `ETag`, which real Jellyfin does not. The mock already sends `Last-Modified` and honours a matching date `If-Range` (tested). A `--no-etag` flag was not added, because the brief fixes the flag list. It is listed for the controller to decide.
+**Known gap:** the default mock sends an `ETag`, which real Jellyfin does not. The mock already sends `Last-Modified` and honours a matching date `If-Range` (tested). A `--no-etag` flag was not added, because the brief fixes the flag list. It is listed for the controller to decide. **Closed after the Tasks 1–4 review:** `--no-etag` now exists (Last-Modified only; an entity-tag `If-Range` is ignored and the range served; a date `If-Range` resumes when not modified since), and `/Download` answers 400 for a known item with no file.
 
 The open questions are repeated in the plan's "Unproven until Ben's real server".

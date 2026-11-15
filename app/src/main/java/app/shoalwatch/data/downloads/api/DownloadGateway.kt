@@ -17,6 +17,7 @@ import kotlinx.serialization.json.longOrNull
  * What the server says about downloading an item, validated. [canDownload]: true, false, or null when the server did not say
  * (Task 1's rule: null allows the original only). [sourceId], [eTag]: `MediaSources[0]`'s, `[A-Za-z0-9]{1,64}` else null.
  * [container]: its first comma-separated name, lower-cased, `[a-z0-9]{1,16}` else null. [sizeBytes]: 1..256 GiB else null.
+ * [eTag] is a change hint only; it is never sent as `If-Range` (only a validator from an earlier response for the same file is).
  */
 internal data class DownloadFacts(
     val itemId: String, val canDownload: Boolean?, val sourceId: String?, val container: String?, val sizeBytes: Long?, val eTag: String?,
