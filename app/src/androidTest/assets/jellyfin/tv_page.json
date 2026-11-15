@@ -1,0 +1,39 @@
+{
+  "Items": [
+    {
+      "Name": "Harbour Lights",
+      "ServerId": "5a3e1c0d9b7f4e2a8c6d0b1f3e5a7c9d",
+      "Id": "aa000000000000000000000000000004",
+      "SortName": "harbour lights",
+      "Type": "Series",
+      "ParentId": "c0ffee00000000000000000000000002",
+      "IsFolder": true,
+      "ChildCount": 2,
+      "RecursiveItemCount": 12,
+      "ProductionYear": 2015,
+      "CommunityRating": 8.2,
+      "OfficialRating": "PG",
+      "Status": "Continuing",
+      "ImageTags": {
+        "Primary": "serprim01"
+      },
+      "BackdropImageTags": [
+        "serbd01"
+      ],
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "aa000000000000000000000000000004",
+        "ItemId": "00000000000000000000000000000000",
+        "UnplayedItemCount": 7,
+        "Rating": null,
+        "Likes": null
+      },
+      "ExtraField": null
+    }
+  ],
+  "TotalRecordCount": 1,
+  "StartIndex": 0
+}

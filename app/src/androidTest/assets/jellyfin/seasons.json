@@ -1,0 +1,58 @@
+{
+  "Items": [
+    {
+      "Name": "Season 1",
+      "ServerId": "5a3e1c0d9b7f4e2a8c6d0b1f3e5a7c9d",
+      "Id": "5e0000000000000000000000000000a1",
+      "Type": "Season",
+      "ParentId": "aa000000000000000000000000000004",
+      "IndexNumber": 1,
+      "SeriesName": "Harbour Lights",
+      "SeriesId": "aa000000000000000000000000000004",
+      "ChildCount": 6,
+      "IsFolder": true,
+      "ImageTags": {
+        "Primary": "season1prim"
+      },
+      "SeriesPrimaryImageTag": "serprim01",
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": true,
+        "Key": "5e0000000000000000000000000000a1",
+        "ItemId": "00000000000000000000000000000000",
+        "UnplayedItemCount": 0,
+        "Rating": null,
+        "Likes": null
+      }
+    },
+    {
+      "Name": "Season 2",
+      "ServerId": "5a3e1c0d9b7f4e2a8c6d0b1f3e5a7c9d",
+      "Id": "5e0000000000000000000000000000a2",
+      "Type": "Season",
+      "ParentId": "aa000000000000000000000000000004",
+      "IndexNumber": 2,
+      "SeriesName": "Harbour Lights",
+      "SeriesId": "aa000000000000000000000000000004",
+      "ChildCount": 6,
+      "IsFolder": true,
+      "ImageTags": {},
+      "SeriesPrimaryImageTag": "serprim01",
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "5e0000000000000000000000000000a2",
+        "ItemId": "00000000000000000000000000000000",
+        "UnplayedItemCount": 5,
+        "Rating": null,
+        "Likes": null
+      }
+    }
+  ],
+  "TotalRecordCount": 2,
+  "StartIndex": 0
+}
