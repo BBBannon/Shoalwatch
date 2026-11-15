@@ -1,6 +1,9 @@
 package app.shoalwatch.data.playback
 
 import app.shoalwatch.data.playback.PlaybackState.Phase
+import app.shoalwatch.data.playback.engine.EngineEvent
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -31,6 +34,40 @@ internal class HostStoppedTest : PlaybackControllerTestBase() {
         assertEquals("starting again does not play by itself", Phase.PAUSED, c.state.value.phase)
         engine.controllerPlay(); runCurrent()
         assertEquals(Phase.PLAYING, c.state.value.phase)
+    }
+
+    // ---- final-fixes review I-3: a load still in flight when the host stops arrives paused
+
+    private fun hold() = CompletableDeferred<Unit>().also { gateway.infoGate = it }
+
+    private fun TestScope.release(gate: CompletableDeferred<Unit>) { gateway.infoGate = null; gate.complete(Unit); runCurrent() }
+
+    @Test fun anOpenWhoseAnswerArrivesAfterTheHostStoppedStartsPaused() = runTest {
+        val c = controller()
+        val gate = hold()
+        c.open(ep1, StartFrom.RESUME); runCurrent()
+        c.onHostStopped(); runCurrent()
+        release(gate)
+        assertEquals("it loaded", 1, engine.loads.size)
+        assertFalse("loaded with playWhenReady = false", engine.playWhenReady)
+        engine.emit(EngineEvent.Ready); runCurrent()
+        assertEquals(Phase.PAUSED, c.state.value.phase)
+        c.onHostStarted(); runCurrent()
+        assertEquals("starting again does not play by itself", Phase.PAUSED, c.state.value.phase)
+        c.playPause(); runCurrent()
+        assertEquals("the user's Play plays", Phase.PLAYING, c.state.value.phase)
+    }
+
+    @Test fun aQualityChangeWhoseAnswerArrivesAfterTheHostStoppedStaysPaused() = runTest {
+        val c = controller(); openAndPlay(c); at(30_000)
+        val gate = hold()
+        c.setQuality(Quality.MBPS_8); runCurrent()
+        c.onHostStopped(); runCurrent()
+        release(gate)
+        assertEquals("it reloaded", 2, engine.loads.size)
+        assertFalse("reloaded with playWhenReady = false", engine.playWhenReady)
+        engine.emit(EngineEvent.Ready); runCurrent()
+        assertEquals(Phase.PAUSED, c.state.value.phase)
     }
 
     @Test fun theHostStoppingBeforeAnythingIsOpenStillRefusesControllers() = runTest {
