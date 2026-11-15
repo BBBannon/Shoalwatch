@@ -115,9 +115,10 @@ class PlayerTextTest {
         assertEquals("−1.2 seconds", PlayerText.delay(strings, -1_200))
         assertEquals(strings.get(R.string.quality_maximum), PlayerText.quality(strings, Quality.MAXIMUM))
         assertEquals("1.5 Mbps (480p)", PlayerText.quality(strings, Quality.MBPS_1_5))
-        assertEquals("30 minutes", PlayerText.sleep(strings, SleepChoice.MIN_30))
-        assertEquals("End of this episode", PlayerText.sleep(strings, SleepChoice.END_OF_ITEM))
-        assertEquals("Off", PlayerText.sleep(strings, SleepChoice.OFF))
+        assertEquals("30 minutes", PlayerText.sleep(strings, SleepChoice.MIN_30, episode = true))
+        assertEquals("End of this episode", PlayerText.sleep(strings, SleepChoice.END_OF_ITEM, episode = true))
+        assertEquals("a film is not an episode", "End of this film", PlayerText.sleep(strings, SleepChoice.END_OF_ITEM, episode = false))
+        assertEquals("Off", PlayerText.sleep(strings, SleepChoice.OFF, episode = false))
     }
 
     @Test fun eachSegmentHasItsSkipLabel() {

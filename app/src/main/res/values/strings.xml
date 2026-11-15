@@ -379,6 +379,7 @@
     <string name="sleep_off">Off</string>
     <string name="sleep_minutes">%1$d minutes</string>
     <string name="sleep_end">End of this episode</string>
+    <string name="sleep_end_film">End of this film</string>
     <string name="sleep_fired">Paused by the sleep timer</string>
     <string name="player_subtitle_style">Subtitle style</string>
     <string name="subtitle_size">Text size</string>

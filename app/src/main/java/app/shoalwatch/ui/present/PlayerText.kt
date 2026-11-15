@@ -89,9 +89,10 @@ object PlayerText {
         },
     )
 
-    fun sleep(strings: Strings, choice: SleepChoice): String = when (choice) {
+    /** [episode]: the item playing is an episode (it has a series line); otherwise "End of this film". */
+    fun sleep(strings: Strings, choice: SleepChoice, episode: Boolean): String = when (choice) {
         SleepChoice.OFF -> strings.get(R.string.sleep_off)
-        SleepChoice.END_OF_ITEM -> strings.get(R.string.sleep_end)
+        SleepChoice.END_OF_ITEM -> strings.get(if (episode) R.string.sleep_end else R.string.sleep_end_film)
         else -> strings.get(R.string.sleep_minutes, checkNotNull(choice.minutes).toInt())
     }
 

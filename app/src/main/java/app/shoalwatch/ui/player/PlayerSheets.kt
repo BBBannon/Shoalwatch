@@ -99,7 +99,7 @@ private fun ColumnScope.SleepSheet(state: PlayerUiState, actions: PlayerActions)
     SleepChoice.entries.forEach { c ->
         // A timed choice running now is not told apart by its length (the state holds only when it ends): none is marked.
         val selected = (c == SleepChoice.OFF && sleep == SleepState.Off) || (c == SleepChoice.END_OF_ITEM && sleep == SleepState.EndOfItem)
-        ChoiceRow(PlayerText.sleep(strings, c), selected) { actions.onSleep(c) }
+        ChoiceRow(PlayerText.sleep(strings, c, episode = state.playback.episodeLine != null), selected) { actions.onSleep(c) }
     }
 }
 
