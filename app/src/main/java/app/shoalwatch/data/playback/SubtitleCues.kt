@@ -15,12 +15,12 @@ import kotlinx.coroutines.job
 import kotlinx.coroutines.withTimeout
 
 /**
- * Fetches a text subtitle file and parses it with Media3's own parser for its format (`engine/SubtitleFiles`), treating it
+ * Fetches a text subtitle file and parses it with the app's own parser for its format (`engine/SubtitleFiles`), treating it
  * as untrusted: the gateway refuses more than [MAX_BYTES] (by declared length and while reading), and this checks again
  * before parsing, so an oversized file is never copied; parsing runs on [io], never the caller's thread, and is waited for at
- * most [parseTimeoutMs] (then it is cancelled, and stops at its next cue: Media3's parser cannot be interrupted between
- * cues); at most [SubtitleFiles.MAX_GROUPS] cue groups, and ASS/SSA files over the work budget are refused before parsing. Anything unreadable is `AppError(SERVER_ERROR)`; a failure to
- * fetch is the gateway's `AppError`. Nothing from the file is logged. Holds no state of any session.
+ * most [parseTimeoutMs] (then it is cancelled, and the parse stops within 1,000 lines); the caps are `SubtitleFiles`'.
+ * Anything unreadable is `AppError(SERVER_ERROR)`; a failure to fetch is the gateway's `AppError`. Nothing from the file is
+ * logged. Holds no state of any session.
  */
 class SubtitleLoader internal constructor(
     private val gateway: PlaybackGateway,
@@ -34,7 +34,7 @@ class SubtitleLoader internal constructor(
         val format = track.fileFormat?.takeIf { track.kind != SubtitleKind.PICTURE } ?: throw unreadable()
         val bytes = gateway.subtitleFile(s, itemId, mediaSourceId, track.index, format)
         if (bytes.size > MAX_BYTES) throw unreadable()
-        // A given-up parse is told so: it stops at its next cue instead of running on (Task 7 review I-2).
+        // A given-up parse is told so, and stops instead of running on (Task 7 review I-2, final-fixes review I-2).
         val job = parsing.async { val me = coroutineContext.job; parse(bytes, format) { !me.isActive } }
         return try {
             withTimeout(parseTimeoutMs) { job.await() }
