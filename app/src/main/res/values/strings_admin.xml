@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Server admin (Milestone 6). Every admin word lives here, not in strings.xml, so the parallel branches merge cleanly. -->
+<resources>
+    <!-- Common -->
+    <string name="admin_checking">Checking you’re an administrator…</string>
+    <string name="admin_offline_title">You’re offline</string>
+    <string name="admin_offline_body">Server admin needs a connection to your server. Buttons are switched off until it’s back.</string>
+    <string name="admin_updated_at">Last updated %1$s</string>
+    <string name="admin_refresh">Refresh</string>
+    <string name="admin_dismiss">Dismiss</string>
+    <string name="admin_problem_offline">You’re offline. Server admin needs a connection to your server.</string>
+    <string name="admin_problem_network">Couldn’t reach the server. Try again.</string>
+    <string name="admin_problem_refused">The server refused that. Your account may not be allowed to do it.</string>
+    <string name="admin_problem_gone">That’s no longer on the server. The list has been refreshed.</string>
+    <string name="admin_problem_server">The server reported a problem. Try again later.</string>
+    <string name="admin_problem_connection">The connection to the server needs checking. Open Servers and accounts.</string>
+    <string name="admin_problem_other">Something went wrong. Try again.</string>
+    <string name="admin_refresh_failed">Couldn’t refresh just now. Showing what the server said earlier.</string>
+    <string name="admin_this_phone">This phone</string>
+    <string name="admin_you">You</string>
+    <string name="admin_unnamed_user">Unnamed user</string>
+    <string name="admin_unnamed_device">Unnamed device</string>
+    <string name="admin_untitled">Untitled</string>
+
+    <!-- Times -->
+    <string name="admin_time_just_now">Just now</string>
+    <string name="admin_time_minutes">%1$s min ago</string>
+    <string name="admin_time_today">Today at %1$s</string>
+    <string name="admin_time_yesterday">Yesterday at %1$s</string>
+    <string name="admin_never">Never</string>
+
+    <!-- Dialogs (Cancel is action_cancel) -->
+    <string name="admin_type_to_confirm">Type %1$s to confirm</string>
+    <string name="admin_type_exactly">Type the word exactly as shown.</string>
+    <string name="admin_message_label">Message</string>
+    <string name="admin_message_counter">%1$s of 200 characters</string>
+    <string name="admin_message_send">Send</string>
+
+    <!-- Plain words used by AdminText (Task 5); their screens come in Tasks 7, 8 and 10 -->
+    <string name="admin_session_episode">%1$s · S%2$s E%3$s · %4$s</string>
+    <string name="admin_session_episode_spoken">%1$s, season %2$s, episode %3$s, %4$s</string>
+    <string name="admin_session_device">%1$s · %2$s %3$s</string>
+    <string name="admin_session_device_no_version">%1$s · %2$s</string>
+    <string name="admin_session_progress">%1$s of %2$s</string>
+    <string name="admin_method_direct_play">Playing the original file.</string>
+    <string name="admin_method_direct_stream">Playing the original video. The server is repackaging it.</string>
+    <string name="admin_convert_video">The server is converting the video</string>
+    <string name="admin_convert_audio_only">The server is converting the sound only</string>
+    <string name="admin_convert_sentence">%1$s %2$s</string>
+    <string name="admin_convert_no_reason">%1$s.</string>
+    <string name="admin_reason_video_format">because the device can’t play its video format.</string>
+    <string name="admin_reason_audio_format">because the device can’t play its sound format.</string>
+    <string name="admin_reason_file_type">because the device can’t open its file type.</string>
+    <string name="admin_reason_subtitles">so it can draw the subtitles into the picture.</string>
+    <string name="admin_reason_bitrate">to fit a quality or bandwidth limit.</string>
+    <string name="admin_reason_hdr">so its HDR colours look right on that screen.</string>
+    <string name="admin_reason_audio_channels">to mix the sound down for the device.</string>
+    <string name="admin_reason_direct_play_failed">because the device couldn’t play the original.</string>
+    <string name="admin_kind_films">Films</string>
+    <string name="admin_kind_tv">TV</string>
+    <string name="admin_kind_music">Music</string>
+    <string name="admin_kind_collections">Collections</string>
+    <string name="admin_kind_mixed">Films and TV</string>
+    <string name="admin_kind_other">Other</string>
+    <string name="admin_outcome_completed">Completed</string>
+    <string name="admin_outcome_failed">Failed</string>
+    <string name="admin_outcome_cancelled">Stopped</string>
+    <string name="admin_outcome_aborted">Interrupted</string>
+    <string name="admin_severity_information">Information</string>
+    <string name="admin_severity_warning">Warning</string>
+    <string name="admin_severity_error">Error</string>
+    <string name="admin_severity_critical">Critical</string>
+</resources>

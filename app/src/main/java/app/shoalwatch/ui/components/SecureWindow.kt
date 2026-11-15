@@ -9,9 +9,10 @@ import app.shoalwatch.ui.findActivity
 import java.util.WeakHashMap
 
 /**
- * Marks the window `FLAG_SECURE` while this is in the composition. It is used by exactly two screens: Sign in
- * (password, Quick Connect code) and Connection settings (pinned fingerprint, header values), so their content
- * stays out of screenshots and the recent-apps preview. Their dialogs are separate windows and are secured through
+ * Marks the window `FLAG_SECURE` while this is in the composition. It is used by Sign in (password, Quick Connect
+ * code), Connection settings (pinned fingerprint, header values) and every Server admin screen (`ui/admin/AdminScaffold`:
+ * other household members' names, viewing and devices), so their content stays out of screenshots and the recent-apps
+ * preview. Their dialogs are separate windows and are secured through
  * `DialogProperties(securePolicy = SecureOn)` (`SecureDialog`) instead. The Add server certificate and HTTP screens
  * show no secret (a fingerprint on first contact is public information) and are intentionally not protected.
  *
