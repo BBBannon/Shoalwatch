@@ -24,6 +24,11 @@ import java.util.TreeSet
  * (Media3's own logging is switched off app-wide). What comes out is only text, the limited styling Media3 draws (bold,
  * italic, underline, strike-through, colours, sizes, alignment, position, ASS layer order), and nothing else: links, images
  * and any other span are removed, each line is cut to [MAX_LINE_CHARS] characters and each cue to [MAX_LINES] lines.
+ *
+ * Bounded in work as well as in bytes (Task 7 review I-2): an ASS/SSA file is pre-scanned ([AssBudget]) and refused before
+ * Media3 sees it when its overlapping lines would make Media3's parser build quadratic lists; only the cues that can be drawn
+ * at once are cleaned; running out of memory is "unreadable", not a crash; and a parse that has been given up ([cancelled])
+ * stops at the next cue.
  */
 @OptIn(UnstableApi::class)
 internal object SubtitleFiles {
@@ -39,23 +44,42 @@ internal object SubtitleFiles {
     private val MIME = mapOf("srt" to MimeTypes.APPLICATION_SUBRIP, "vtt" to MimeTypes.TEXT_VTT, "ass" to MimeTypes.TEXT_SSA, "ssa" to MimeTypes.TEXT_SSA)
 
     /** Throws [IllegalArgumentException] (a fixed message) for anything unreadable, including a parser failure. */
-    fun parse(bytes: ByteArray, format: String): CueTimeline {
+    /** For tests: called once for every cue cleaned. */
+    @Volatile internal var cleanHook: (() -> Unit)? = null
+
+    /**
+     * Throws [IllegalArgumentException] (a fixed message) for anything unreadable, including a parser failure, a file over the
+     * work budget, running out of memory, and [cancelled] turning true (checked at every cue and while building the timeline).
+     */
+    fun parse(bytes: ByteArray, format: String, cancelled: () -> Boolean = { false }): CueTimeline = guarded {
         val mime = MIME[format] ?: throw IllegalArgumentException("Unsupported subtitle format.")
         val factory = DefaultSubtitleParserFactory()
         val media = Format.Builder().setSampleMimeType(mime).build()
         if (!factory.supportsFormat(media)) throw IllegalArgumentException("Unsupported subtitle format.")
+        val ass = format == "ass" || format == "ssa"
+        if (ass) AssBudget.check(bytes)
         val groups = ArrayList<Group>()
-        try {
-            factory.create(media).parse(bytes, SubtitleParser.OutputOptions.allCues()) { c -> groups.add(groupOf(c, groups.size) ?: return@parse) }
-        } catch (e: IllegalArgumentException) {
-            throw e
-        } catch (e: RuntimeException) {
-            throw IllegalArgumentException("Unreadable subtitles.")
-        } catch (e: StackOverflowError) {
-            throw IllegalArgumentException("Unreadable subtitles.")
+        factory.create(media).parse(bytes, SubtitleParser.OutputOptions.allCues()) { c ->
+            if (cancelled()) throw IllegalArgumentException("Stopped.")
+            groups.add(groupOf(c, groups.size) ?: return@parse)
         }
-        val effects = (format == "ass" || format == "ssa") && AssEffects.found(bytes)
-        return CueTimeline.of(groups, effects)
+        CueTimeline.of(groups, ass && AssEffects.found(bytes), cancelled)
+    }
+
+    /**
+     * [block], with every failure as the fixed [IllegalArgumentException]: Media3's runtime exceptions, a stack overflow, and
+     * running out of memory (a last line of defence: [AssBudget] is the bound).
+     */
+    internal inline fun <T> guarded(block: () -> T): T = try {
+        block()
+    } catch (e: IllegalArgumentException) {
+        throw e
+    } catch (e: RuntimeException) {
+        throw IllegalArgumentException("Unreadable subtitles.")
+    } catch (e: StackOverflowError) {
+        throw IllegalArgumentException("Unreadable subtitles.")
+    } catch (e: OutOfMemoryError) {
+        throw IllegalArgumentException("Unreadable subtitles.")
     }
 
     internal class Group(val startUs: Long, val endUs: Long, val seq: Int, val cues: List<Cue>)
@@ -66,7 +90,8 @@ internal object SubtitleFiles {
         val start = c.startTimeUs.coerceAtLeast(0)
         val end = if (c.durationUs == C.TIME_UNSET) start + UNSET_DURATION_US else c.endTimeUs
         if (end <= start || start > MAX_TIME_US) return null
-        val cues = c.cues.mapNotNull(::safe).take(MAX_CUES_AT_ONCE)
+        // Lazily: a group can hold every line showing at that moment, and only the first few can be drawn.
+        val cues = c.cues.asSequence().mapNotNull(::safe).take(MAX_CUES_AT_ONCE).toList()
         return if (cues.isEmpty()) null else Group(start, end.coerceAtMost(MAX_TIME_US), count, cues)
     }
 
@@ -78,6 +103,7 @@ internal object SubtitleFiles {
     }
 
     internal fun cleanText(text: CharSequence): CharSequence {
+        cleanHook?.invoke()
         val out = SpannableStringBuilder()
         var lineStart = 0
         var lines = 0
@@ -137,7 +163,7 @@ class CueTimeline internal constructor(
     override fun toString() = "CueTimeline(<redacted>)"
 
     internal companion object {
-        fun of(groups: List<SubtitleFiles.Group>, effects: Boolean): CueTimeline {
+        fun of(groups: List<SubtitleFiles.Group>, effects: Boolean, cancelled: () -> Boolean = { false }): CueTimeline {
             val byStart = groups.sortedWith(compareBy({ it.startUs }, { it.seq }))
             val boundaries = (byStart.map { it.startUs } + byStart.map { it.endUs }).distinct().sorted()
             val active = TreeSet<Int>() // positions in byStart: start order
@@ -147,6 +173,7 @@ class CueTimeline internal constructor(
             val starts = ArrayList<Long>()
             val frames = ArrayList<SubtitleFrame>()
             for (t in boundaries) {
+                if (cancelled()) throw IllegalArgumentException("Stopped.")
                 while (nextEnd < byEnd.size && byStart[byEnd[nextEnd]].endUs <= t) active.remove(byEnd[nextEnd++])
                 while (nextStart < byStart.size && byStart[nextStart].startUs <= t) {
                     if (byStart[nextStart].endUs > t) active.add(nextStart)
@@ -161,6 +188,89 @@ class CueTimeline internal constructor(
             return CueTimeline(starts.toLongArray(), frames, effects)
         }
     }
+}
+
+/**
+ * The work Media3's `SsaParser` would do, worked out on the raw bytes before it runs: it keeps one list of cues per distinct
+ * start or end time and adds each line to every list its time spans, so K lines that all overlap cost about K squared / 2
+ * references (a 1 MB file can need gigabytes). Refuses more than [SubtitleFiles.MAX_GROUPS] `Dialogue:` lines, or more than
+ * [MAX_PLACEMENTS] placements in all. Start and End are found from the `[Events]` `Format:` line (Layer, Start, End by default).
+ */
+internal object AssBudget {
+    const val MAX_PLACEMENTS = 2_000_000L
+    private val DIALOGUE = "dialogue:".toByteArray()
+    private val FORMAT = "format:".toByteArray()
+    private val EVENTS = "[events]".toByteArray()
+
+    fun check(bytes: ByteArray) {
+        var startField = 1
+        var endField = 2
+        var inEvents = false
+        val starts = ArrayList<Long>()
+        val ends = ArrayList<Long>()
+        var i = 0
+        while (i < bytes.size) {
+            var end = i
+            while (end < bytes.size && bytes[end] != '\n'.code.toByte()) end++
+            var at = i
+            while (at < end && (bytes[at] == ' '.code.toByte() || bytes[at] == '\t'.code.toByte() || bytes[at] == 0xEF.toByte() || bytes[at] == 0xBB.toByte() || bytes[at] == 0xBF.toByte())) at++
+            when {
+                bytes.getOrNull(at) == '['.code.toByte() -> inEvents = startsWithIgnoringCase(bytes, at, EVENTS)
+                inEvents && startsWithIgnoringCase(bytes, at, FORMAT) -> {
+                    val names = fields(bytes, at + FORMAT.size, end).map { (a, b) -> String(bytes, a, b - a, Charsets.US_ASCII).trim().lowercase() }
+                    names.indexOf("start").takeIf { it >= 0 }?.let { startField = it }
+                    names.indexOf("end").takeIf { it >= 0 }?.let { endField = it }
+                }
+                startsWithIgnoringCase(bytes, at, DIALOGUE) -> {
+                    if (starts.size >= SubtitleFiles.MAX_GROUPS) throw IllegalArgumentException("Too many subtitles.")
+                    val f = fields(bytes, at + DIALOGUE.size, end, limit = maxOf(startField, endField) + 1)
+                    val s = f.getOrNull(startField)?.let { (a, b) -> timeOf(bytes, a, b) }
+                    val e = f.getOrNull(endField)?.let { (a, b) -> timeOf(bytes, a, b) }
+                    if (s != null && e != null && e > s) { starts += s; ends += e }
+                }
+            }
+            i = end + 1
+        }
+        if (starts.isEmpty()) return
+        val times = (starts + ends).distinct().sorted().toLongArray()
+        var placements = 0L
+        for (n in starts.indices) {
+            placements += times.binarySearch(ends[n]) - times.binarySearch(starts[n])
+            if (placements > MAX_PLACEMENTS) throw IllegalArgumentException("Too many subtitles.")
+        }
+    }
+
+    /** The comma-separated fields of bytes [from, to), at most [limit] (the rest of the line is not needed). */
+    private fun fields(bytes: ByteArray, from: Int, to: Int, limit: Int = Int.MAX_VALUE): List<Pair<Int, Int>> {
+        val out = ArrayList<Pair<Int, Int>>()
+        var a = from
+        for (j in from..to) {
+            if (out.size >= limit) break
+            if (j == to || bytes[j] == ','.code.toByte()) { out += a to j; a = j + 1 }
+        }
+        return out
+    }
+
+    /** `H:MM:SS.cc` in hundredths of a second, or null when it is not a time (Media3 skips such a line too). */
+    private fun timeOf(bytes: ByteArray, from: Int, to: Int): Long? {
+        val parts = LongArray(4)
+        var part = 0
+        var digits = 0
+        for (j in from until to) {
+            val c = bytes[j].toInt().toChar()
+            when {
+                c == ' ' || c == '\r' -> if (digits > 0 && part == 3) break
+                c.isDigit() -> { if (++digits > 9) return null; parts[part] = parts[part] * 10 + (c - '0') }
+                (c == ':' && part < 2) || (c == '.' && part == 2) -> { part++; digits = 0 }
+                else -> return null
+            }
+        }
+        if (part < 2) return null
+        return ((parts[0] * 60 + parts[1]) * 60 + parts[2]) * 100 + parts[3]
+    }
+
+    private fun startsWithIgnoringCase(bytes: ByteArray, at: Int, word: ByteArray): Boolean =
+        word.indices.all { j -> bytes.getOrNull(at + j)?.toInt()?.toChar()?.lowercaseChar() == word[j].toInt().toChar() }
 }
 
 /** Finds the ASS override tags Media3 cannot draw, in `Dialogue:` lines' `{...}` blocks, on the raw bytes (no second copy). */

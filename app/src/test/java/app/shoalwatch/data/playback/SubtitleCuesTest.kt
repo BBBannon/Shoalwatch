@@ -154,7 +154,7 @@ class SubtitleCuesTest {
     // ---- the loader
 
     private fun TestScope.loader(parse: (ByteArray, String) -> CueTimeline = SubtitleFiles::parse) =
-        SubtitleLoader(gateway, StandardTestDispatcher(testScheduler), parse)
+        SubtitleLoader(gateway, StandardTestDispatcher(testScheduler), { b, f, _ -> parse(b, f) })
 
     @Test fun theLoaderFetchesWithTheTracksFileFormatAndParses() = runTest {
         gateway.subtitleFiles[3] = bytes("sample.srt")
@@ -194,7 +194,7 @@ class SubtitleCuesTest {
         val release = CountDownLatch(1)
         val thread = Executors.newSingleThreadExecutor()
         try {
-            val slow = SubtitleLoader(gateway, thread.asCoroutineDispatcher(), { b, f -> release.await(); SubtitleFiles.parse(b, f) }, parseTimeoutMs = 2_000)
+            val slow = SubtitleLoader(gateway, thread.asCoroutineDispatcher(), { b, f, _ -> release.await(); SubtitleFiles.parse(b, f) }, parseTimeoutMs = 2_000)
             val e = runCatching { slow.load(BEN, ITEM, SOURCE, track()) }.exceptionOrNull()
             assertEquals(AppError.Kind.SERVER_ERROR, (e as AppError).kind)
         } finally {
