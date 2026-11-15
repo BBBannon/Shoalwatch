@@ -247,7 +247,7 @@ class PlaybackController internal constructor(
         phase = Phase.BUFFERING
         trackControl.prepare(c, resolved.plan)
         c.entry?.item?.let { engine.setMediaMetadata(it.name, it.seriesName) } // only now: never the next title over the old stream (m-7)
-        engine.load(EngineItem(resolved.route, resolved.plan.source, resolved.plan.itemId), atMs, playWhenReady = !c.startPaused.also { c.startPaused = false })
+        engine.load(EngineItem(resolved.route, resolved.plan.source), atMs, playWhenReady = !c.startPaused.also { c.startPaused = false })
         publish()
         if (first && resolved.plan.hasSegments) work.launch { gateway.segmentsOrNull(session, c.itemId)?.let { if (current === c) { c.segments = it; publish() } } }
     }

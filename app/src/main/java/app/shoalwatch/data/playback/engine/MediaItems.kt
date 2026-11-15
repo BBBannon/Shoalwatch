@@ -12,14 +12,17 @@ import app.shoalwatch.net.BlockedRequestException
 
 /** What Media3 is handed, and how its errors are read. Pure apart from Media3's own value types. */
 internal object MediaItems {
+    /** The only media id the session ever shares (final review N-1): never the item's id. */
+    const val MEDIA_ID = "shoalwatch-video"
+
     /**
      * The URI is the route's verified address + the source's path and query (`MediaRoute.url`, which never holds a credential:
      * the token travels only in the `Authorization` header). HLS is marked as such; no subtitle configurations (text subtitles
-     * are fetched and drawn by the app itself).
+     * are fetched and drawn by the app itself). The media id is [MEDIA_ID], the same for every item.
      */
     fun build(item: EngineItem, title: String?, subtitle: String?): MediaItem = MediaItem.Builder()
         .setUri(item.route.url(item.source).toString())
-        .setMediaId(item.mediaId)
+        .setMediaId(MEDIA_ID)
         .apply { if (item.source.hls) setMimeType(MimeTypes.APPLICATION_M3U8) }
         .setMediaMetadata(metadata(title, subtitle))
         .build()

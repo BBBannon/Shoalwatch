@@ -55,7 +55,7 @@ interface VideoOutput {
 }
 
 /** What to load: the URL is built inside the engine module from the route; it never leaves `data/playback`. Never printed. */
-class EngineItem internal constructor(internal val route: MediaRoute, internal val source: StreamSource, val mediaId: String) {
+class EngineItem internal constructor(internal val route: MediaRoute, internal val source: StreamSource) {
     override fun toString() = "EngineItem(<redacted>)"
 }
 

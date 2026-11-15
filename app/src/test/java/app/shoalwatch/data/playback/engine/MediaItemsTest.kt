@@ -26,7 +26,7 @@ import java.util.concurrent.ExecutionException
 class MediaItemsTest {
     private val route = PlaybackFakes.route(BEN)
 
-    private fun item(source: StreamSource) = EngineItem(route, source, PlaybackFakes.ITEM)
+    private fun item(source: StreamSource) = EngineItem(route, source)
 
     @Test fun aDirectStreamIsTheVerifiedAddressPlusPathAndQueryWithNoMimeType() {
         val source = MediaPaths.directStream(PlaybackFakes.ITEM, PlaybackFakes.SOURCE, "abc123")
@@ -37,8 +37,17 @@ class MediaItemsTest {
         assertEquals("true", uri.getQueryParameter("static")); assertEquals(PlaybackFakes.SOURCE, uri.getQueryParameter("mediaSourceId"))
         assertNull(media.localConfiguration!!.mimeType)
         assertTrue(media.localConfiguration!!.subtitleConfigurations.isEmpty())
-        assertEquals(PlaybackFakes.ITEM, media.mediaId)
         assertEquals("Title", media.mediaMetadata.title)
+    }
+
+    @Test fun theMediaSessionIsNeverToldTheItemId() {
+        // Final review N-1: the session shares the media id and metadata with Bluetooth devices and other apps.
+        val media = MediaItems.build(item(MediaPaths.directStream(PlaybackFakes.ITEM, PlaybackFakes.SOURCE, null)), "Title", "Series")
+        assertEquals(MediaItems.MEDIA_ID, media.mediaId)
+        assertFalse(media.mediaId.contains(PlaybackFakes.ITEM, ignoreCase = true))
+        val shared = media.mediaMetadata.toBundle().toString() + media.requestMetadata.toBundle().toString()
+        assertFalse(shared, shared.contains(PlaybackFakes.ITEM, ignoreCase = true))
+        assertNull(media.requestMetadata.mediaUri)
     }
 
     @Test fun hlsSetsTheM3u8MimeTypeAndCarriesNoCredential() {

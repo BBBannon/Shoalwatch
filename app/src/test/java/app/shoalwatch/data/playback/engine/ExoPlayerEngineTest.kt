@@ -19,7 +19,7 @@ import org.robolectric.RobolectricTestRunner
 @RunWith(RobolectricTestRunner::class)
 class ExoPlayerEngineTest {
     private val context = ApplicationProvider.getApplicationContext<android.content.Context>()
-    private fun item() = EngineItem(PlaybackFakes.route(BEN), MediaPaths.directStream(PlaybackFakes.ITEM, PlaybackFakes.SOURCE, null), PlaybackFakes.ITEM)
+    private fun item() = EngineItem(PlaybackFakes.route(BEN), MediaPaths.directStream(PlaybackFakes.ITEM, PlaybackFakes.SOURCE, null))
 
     @Test fun twoEnginesAliveAtOnceBothLoadWithoutAClash() {
         val first = ExoPlayerEngine(context)
