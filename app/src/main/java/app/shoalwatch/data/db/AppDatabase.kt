@@ -5,6 +5,14 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import app.shoalwatch.data.db.downloads.Converters
+import app.shoalwatch.data.db.downloads.DownloadEntity
+import app.shoalwatch.data.db.downloads.DownloadOwnerEntity
+import app.shoalwatch.data.db.downloads.DownloadSegmentEntity
+import app.shoalwatch.data.db.downloads.DownloadSettingsEntity
+import app.shoalwatch.data.db.downloads.DownloadTrackEntity
+import app.shoalwatch.data.db.downloads.OfflinePlayEntity
+import app.shoalwatch.data.db.downloads.PinnedArtworkEntity
 import app.shoalwatch.data.db.library.ItemDao
 import app.shoalwatch.data.db.library.ItemEntity
 import app.shoalwatch.data.db.library.ItemKindConverter
@@ -28,11 +36,13 @@ import app.shoalwatch.data.db.playback.TrackChoiceEntity
         ServerEntity::class, AccountEntity::class, ActiveAccountEntity::class,
         ItemEntity::class, UserDataEntity::class, ViewEntity::class, ListEntryEntity::class, ListStateEntity::class, VisibleItemEntity::class,
         TrackChoiceEntity::class,
+        DownloadEntity::class, DownloadOwnerEntity::class, DownloadTrackEntity::class, DownloadSegmentEntity::class, PinnedArtworkEntity::class,
+        DownloadSettingsEntity::class, OfflinePlayEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
-@TypeConverters(ItemKindConverter::class)
+@TypeConverters(ItemKindConverter::class, Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun serverDao(): ServerDao
     abstract fun accountDao(): AccountDao
@@ -47,7 +57,7 @@ abstract class AppDatabase : RoomDatabase() {
 
         fun open(context: Context): AppDatabase =
             Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, FILE_NAME)
-                .addMigrations(Migration1To2, Migration2To3)
+                .addMigrations(Migration1To2, Migration2To3, Migration3To4)
                 .build()
     }
 }

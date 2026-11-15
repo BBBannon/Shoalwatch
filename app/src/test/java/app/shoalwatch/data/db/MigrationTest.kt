@@ -37,7 +37,7 @@ import java.time.Instant
 import javax.crypto.KeyGenerator
 
 /**
- * Migrations 1 to 2 and 2 to 3 against REAL older databases. The v1 database is built from the exported schema
+ * Migrations 1 to 2, 2 to 3 and 3 to 4 against REAL older databases. The v1 database is built from the exported schema
  * (`app/schemas/.../1.json`: its `createSql` statements and Room's `setupQueries`), not by Room, so this is what a phone
  * that installed Milestone 1 actually holds. Room then opens it with [Migration1To2]; opening validates the migrated tables
  * against 2.json and throws on any difference.
@@ -80,7 +80,9 @@ class MigrationTest {
     private fun createVersion1() = createVersion(1) { }
 
     /** A real version-2 database: the v1 rows plus a row in every library table. */
-    private fun createVersion2() = createVersion(2) { db ->
+    private fun createVersion2() = createVersion(2, ::createVersion2Rows)
+
+    private fun createVersion2Rows(db: SupportSQLiteDatabase) {
         db.execSQL("INSERT INTO items (serverId, itemId, kind, name, nameKey, overview, communityRating, fetchedAt, pinned) VALUES (?, ?, 'SERIES', 'Show', 'show', 'Über', 7.5, 11, 1)", arrayOf(S1, SERIES))
         db.execSQL("INSERT INTO user_data (serverId, userId, itemId, played, positionMs, playedPercentage, playCount, favourite, lastPlayed, unplayedItemCount, updatedAt, pendingSyncAt) VALUES (?, ?, ?, 1, 61500, 42.5, 3, 1, 99, 4, 12, 13)", arrayOf(S1, U1, SERIES))
         db.execSQL("INSERT INTO views (serverId, userId, viewId, name, kind, position) VALUES (?, ?, ?, 'Films', 'MOVIES', 0)", arrayOf(S1, U1, SERIES))
@@ -112,14 +114,14 @@ class MigrationTest {
     }
 
     private fun openWithMigration(file: String = name): AppDatabase =
-        Room.databaseBuilder(context, AppDatabase::class.java, file).addMigrations(Migration1To2, Migration2To3).allowMainThreadQueries().build()
+        Room.databaseBuilder(context, AppDatabase::class.java, file).addMigrations(Migration1To2, Migration2To3, Migration3To4).allowMainThreadQueries().build()
             .also { opened += it }
 
     @Test fun aVersion1DatabaseOpensAndKeepsItsServersAndAccountsByteForByte() = runBlocking {
         createVersion1()
         val db = openWithMigration()
         db.openHelper.writableDatabase // forces the migrations and Room's validation against the current schema
-        assertEquals(3, db.openHelper.writableDatabase.version)
+        assertEquals(4, db.openHelper.writableDatabase.version)
         val server = db.serverDao().get(S1)!!
         assertEquals("Den", server.name)
         assertEquals("https://home.example", server.homeAddress)
@@ -198,7 +200,7 @@ class MigrationTest {
         helper.close()
         assertTrue("every v2 table has a row to keep", before.values.all { it.isNotEmpty() })
         val db = openWithMigration()
-        assertEquals(3, db.openHelper.writableDatabase.version)
+        assertEquals(4, db.openHelper.writableDatabase.version)
         assertEquals(before, rowsOf(db.openHelper.readableDatabase, V2_TABLES))
     }
 
@@ -220,6 +222,77 @@ class MigrationTest {
         val fresh = openWithMigration("fresh-test.db")
         assertEquals(schemaOf(fresh), schemaOf(migrated))
         assertTrue("track_choices is in it", schemaOf(migrated).any { it.startsWith("table track_choices:") })
+        context.deleteDatabase("fresh-test.db")
+    }
+
+    // ---- 3 to 4: the seven download tables
+
+    /** A real version-3 database: the v2 rows plus a track choice. */
+    private fun createVersion3() = createVersion(3) { db ->
+        createVersion2Rows(db)
+        db.execSQL(
+            "INSERT INTO track_choices (serverId, userId, seriesId, audioLanguage, subtitleLanguage, subtitlesOff, subtitleForced, subtitleHearingImpaired, updatedAt) VALUES (?, ?, ?, 'jpn', NULL, 1, 0, 1, 16)",
+            arrayOf(S1, U1, SERIES),
+        )
+    }
+
+    private fun openRaw(version: Int) = FrameworkSQLiteOpenHelperFactory().create(
+        SupportSQLiteOpenHelper.Configuration.builder(context).name(name).callback(object : SupportSQLiteOpenHelper.Callback(version) {
+            override fun onCreate(db: SupportSQLiteDatabase) = Unit
+            override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+        }).build(),
+    )
+
+    @Test fun theVersion4SchemaIsExportedAndAddsOnlyTheSevenDownloadTables() {
+        val tables = schema(4)["entities"]!!.jsonArray.map { it.jsonObject["tableName"]!!.jsonPrimitive.content }.toSet()
+        assertEquals(V3_TABLES.toSet() + DownloadRows.TABLES, tables)
+    }
+
+    @Test fun aVersion3DatabaseKeepsEveryTableAndRowByteForByte() {
+        createVersion3()
+        val helper = openRaw(3)
+        val before = rowsOf(helper.readableDatabase, V3_TABLES)
+        helper.close()
+        assertTrue("every v3 table has a row to keep", before.values.all { it.isNotEmpty() })
+        val db = openWithMigration()
+        assertEquals(4, db.openHelper.writableDatabase.version)
+        assertEquals(before, rowsOf(db.openHelper.readableDatabase, V3_TABLES))
+    }
+
+    @Test fun theDownloadTablesWorkAfterMigrationAndEachCascadeFires() = runBlocking {
+        createVersion3()
+        val db = openWithMigration()
+        val raw = db.openHelper.writableDatabase
+        val item = testId("episode")
+        DownloadRows.fullSet(raw, S1, U1, item)
+        DownloadRows.settings(raw, S1)
+        assertEquals(DownloadRows.TABLES.associateWith { 1 }, DownloadRows.TABLES.associateWith { DownloadRows.count(raw, it) })
+        raw.execSQL("DELETE FROM downloads")
+        assertEquals(listOf(0, 0, 0), listOf("download_owners", "download_tracks", "download_segments").map { DownloadRows.count(raw, it) })
+        DownloadRows.download(raw, S1, item)
+        DownloadRows.owner(raw, S1, U1, item)
+        ServerStore(db, box).removeAccount(S1, U1)
+        assertEquals(listOf(0, 0, 1), listOf("download_owners", "offline_plays", "downloads").map { DownloadRows.count(raw, it) })
+        ServerStore(db, box).removeServer(S1)
+        assertEquals(DownloadRows.TABLES.associateWith { 0 }, DownloadRows.TABLES.associateWith { DownloadRows.count(raw, it) })
+    }
+
+    @Test fun aDatabaseMigratedFromVersion3AndAFreshOneHaveIdenticalSchemas() {
+        createVersion3()
+        val migrated = openWithMigration()
+        val fresh = openWithMigration("fresh-test.db")
+        assertEquals(schemaOf(fresh), schemaOf(migrated))
+        for (table in DownloadRows.TABLES) assertTrue("$table is in it", schemaOf(migrated).any { it.startsWith("table $table:") })
+        assertEquals(3, schemaOf(migrated).count { it.startsWith("index index_download") })
+        context.deleteDatabase("fresh-test.db")
+    }
+
+    @Test fun aDatabaseMigratedFromVersion1ThroughAllThreeHasTheFreshVersion4Schema() {
+        createVersion1()
+        val migrated = openWithMigration()
+        val fresh = openWithMigration("fresh-test.db")
+        assertEquals(schemaOf(fresh), schemaOf(migrated))
+        assertTrue(schemaOf(migrated).any { it.startsWith("table offline_plays:") })
         context.deleteDatabase("fresh-test.db")
     }
 
@@ -245,6 +318,7 @@ class MigrationTest {
     private companion object {
         val SERIES = testId("series")
         val V2_TABLES = listOf("servers", "accounts", "active_account", "items", "user_data", "views", "list_entries", "list_state", "visible_items")
+        val V3_TABLES = V2_TABLES + "track_choices"
     }
 }
 

@@ -39,7 +39,9 @@ app.shoalwatch
 │                ClientCertWatch, CertificateInfo, AuthInterceptor, CustomHeaderInterceptor, AuthHeader, BlockedRequestException, CleartextGuard,
 │                ServerAddress, NetworkMonitor (+ AndroidNetworkMonitor)
 ├── data/
-│   ├── db/          AppDatabase (Room v3, `shoalwatch.db`), ServerEntity, AccountEntity, ActiveAccountEntity, DAOs (+ ServerRow, AccountRow projections), Migration1To2, Migration2To3
+│   ├── db/          AppDatabase (Room v4, `shoalwatch.db`), ServerEntity, AccountEntity, ActiveAccountEntity, DAOs (+ ServerRow, AccountRow projections), Migration1To2, Migration2To3, Migration3To4
+│   │   ├── downloads/ the download tables (Room v4): DownloadEntity, DownloadOwnerEntity, DownloadTrackEntity, DownloadSegmentEntity, PinnedArtworkEntity,
+│   │   │            DownloadSettingsEntity, OfflinePlayEntity, Converters; see "Download tables" under "Library cache"
 │   │   ├── playback/ TrackChoiceEntity, TrackChoiceDao (Room v3, see "Track choices" under "Library cache")
 │   │   └── library/ the library cache: ItemEntity, UserDataEntity, ViewEntity, ListEntryEntity, ListStateEntity, ItemKindConverter, ItemRow (joined read), LibraryMappers,
 │   │                ItemDao, ListDao, ViewDao, LibraryMaintenanceDao, LibraryStore (writes that span tables); see "Library cache"
@@ -63,7 +65,8 @@ app.shoalwatch
 │   │                EngineEvent, EngineFailure), ExoPlayerEngine, MediaItems, SubtitleFiles (+ CueTimeline), SubtitleFrame, SubtitleSurface
 │   │                (the only Media3 code); see "Playback endpoints", "Media route", "Device profile", "Playback decision", "Progress
 │   │                reports and teardown", "Player engine and controller" and "Tracks and subtitles"
-│   ├── downloads/ sync/
+│   ├── downloads/   DownloadModels (the download enums; Milestone 4)
+│   ├── sync/
 └── ui/          theme, nav, components, one package per screen group (see "UI" below)
 ```
 
@@ -277,6 +280,24 @@ The on-phone copy of what the server told us, and the only thing browsing screen
 **Track choices (Room v3, `data/db/playback`).** `track_choices` (PK `serverId, userId, seriesId`; FK `(serverId, userId)` to `accounts` ON DELETE CASCADE; no extra index: the key leads with the foreign key) holds the audio and subtitle choice one user made for one series, by identity: `audioLanguage`, `subtitleLanguage`, `subtitlesOff`, `subtitleForced`, `subtitleHearingImpaired` (never a stream index: another episode's indices differ), and `updatedAt`. Read and written only through `TrackPreferences` for the session's own account, so a restricted profile never sees or inherits another profile's choice; films are not remembered; a failed read is no memory and a failed write (the account went meanwhile) is dropped. Removing the account (or its server) deletes its rows; signing in again keeps them. `TrackPreferencesTest` (in-memory Room, through the real `ServerStore`).
 
 **Migration 2 to 3** (`Migration2To3`, explicit, no destructive fallback): one `CREATE TABLE`, Room's generated SQL copied from `3.json`; nothing existing is touched. `MigrationTest` builds a real v2 database from `2.json` with a row in every v2 table, migrates it, and checks every v2 row is identical (each column's type and bytes), `track_choices` works and cascades with the account, and a migrated database and a fresh one have identical `sqlite_master` SQL (also from v1 through both migrations).
+
+**Download tables (Room v4, `data/db/downloads`).** A download is keyed by server + item (SPEC 3.3); who has it in their library is a separate table, and every offline read will join `visible_items` (Milestone 4 Task 3).
+
+| Table | Primary key | Foreign keys (ON DELETE CASCADE) | Extra indices | Holds |
+|---|---|---|---|---|
+| `downloads` | `serverId, itemId` | `serverId` to `servers` | `(serverId, seriesId)`; `(state, queuePosition)` | the queue row: kind (MOVIE or EPISODE), series and season ids, quality, state, failure, storage and volume, media source, container, bytes and segments done, the If-Range validator, restarts, attempts, runtime, audio index, SHA-256, queue position, times |
+| `download_owners` | `serverId, userId, itemId` | `(serverId, userId)` to `accounts`; `(serverId, itemId)` to `downloads` | `(serverId, itemId)` | which profiles have the download in their library |
+| `download_tracks` | `serverId, itemId, type, streamIndex` | `(serverId, itemId)` to `downloads` | none | the saved audio and subtitle tracks (`fileSaved`: a text subtitle saved beside the media) |
+| `download_segments` | `serverId, itemId, kind, startMs` | `(serverId, itemId)` to `downloads` | none | saved skip markers |
+| `pinned_artwork` | `serverId, itemId, slot` | `serverId` to `servers` | none | pictures saved for offline use, per item (several downloads can pin one series poster) |
+| `download_settings` | `serverId` | `serverId` to `servers` | none | `shareBetweenProfiles` (default 0; no row is off) |
+| `offline_plays` | `serverId, userId, itemId` | `(serverId, userId)` to `accounts` | none | what a profile watched from a saved copy, for Milestone 5's outbox (`playedAt` never cleared once set); kept when the download is deleted |
+
+- **No foreign key from `downloads` to `items`, on purpose:** the download row and its pinned item rows are written in one transaction, maintenance never deletes a pinned row, and a download must never vanish because metadata was refreshed.
+- **Cascades:** removing a server deletes every row above for it; removing an account deletes only its `download_owners` and `offline_plays` (what happens to a download nobody owns any more is the ownership rule, Milestone 4 Task 12); deleting a download deletes its owners, tracks and segments, not its artwork or plays. A rejected token (401) and signing in again delete nothing. `DownloadCascadeTest`, through the real `ServerStore`.
+- **Enums by name** (`Converters`): an unknown state reads as FAILED, failure as UNKNOWN, quality as ORIGINAL, storage as INTERNAL. An unknown artwork slot, track type, subtitle kind or segment kind reads as null: reading one into a whole entity would fail Room's not-null check, so DAOs read those tables into rows with the column as text and drop the row (`DownloadConvertersTest`).
+
+**Migration 3 to 4** (`Migration3To4`, explicit, no destructive fallback): the seven `CREATE TABLE` and three `CREATE INDEX` statements, Room's generated SQL copied verbatim from `4.json`; nothing existing is touched. `MigrationTest` builds a real v3 database from `3.json` with a row in every v3 table, migrates it, checks every v3 row is identical, the new tables work and each cascade fires, and that `sqlite_master` is identical for a migrated and a fresh database, from v3 and from v1 through all three migrations.
 
 **No SQL newer than SQLite 3.22.** `minSdk` is 29 and Android 10 ships SQLite 3.22, while Robolectric and Room's own query verifier use a newer one, so a statement that needs a later SQLite passes every unit test and fails on an Android 10 phone. So: no SQL UPSERT (`INSERT ... ON CONFLICT ... DO UPDATE/NOTHING`, 3.24), no `RETURNING`, window functions, `UPDATE ... FROM`, `RENAME/DROP COLUMN`, generated columns, `STRICT`, `->`/`->>`, `IIF`, `MATERIALIZED` and the like. Create-or-update is `INSERT OR IGNORE` plus `UPDATE` in one `@Transaction` (Room's `@Upsert` is fine: it is an insert then an update, not SQL UPSERT). `SqlCompatibilityTest` scans every SQL string in the Kotlin sources and the exported schema for these and names the file and line; `LibraryCacheOnDeviceTest` (androidTest) runs every statement shape on a real device's SQLite.
 
