@@ -181,6 +181,8 @@ class LibraryGridViewModelTest {
         assertEquals(BannerKind.GENERIC, s.banner)
         assertFalse(s.refreshing)
         assertTrue(s.items.isEmpty())
+        assertTrue("the error state (with Retry) must show", s.showError)
+        assertFalse(s.showSkeleton)
     }
 
     // --- refresh ------------------------------------------------------------------------------------------------
