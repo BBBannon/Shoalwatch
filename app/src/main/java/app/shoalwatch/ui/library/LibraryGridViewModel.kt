@@ -15,6 +15,7 @@ import app.shoalwatch.data.library.Sort
 import app.shoalwatch.data.servers.ServerCatalog
 import app.shoalwatch.data.servers.ServerConnections
 import app.shoalwatch.data.servers.Session
+import app.shoalwatch.ui.browse.FAILED_LOCALLY
 import app.shoalwatch.ui.browse.ItemActions
 import app.shoalwatch.ui.browse.connectionRegained
 import app.shoalwatch.ui.browse.forSession
@@ -56,7 +57,7 @@ class LibraryGridViewModel(
     playstate: Playstate,
     private val memory: BrowseMemory,
 ) : ViewModel() {
-    private val actions = ItemActions(playstate, viewModelScope) { state.value.session }
+    private val actions = ItemActions(playstate, viewModelScope, connections) { state.value.session }
     private val endVisible = MutableStateFlow(false)
 
     /** The session whose page load is running: another session's load never holds up this one's. */
@@ -111,7 +112,7 @@ class LibraryGridViewModel(
             catalog.activeSession().flatMapLatest { s ->
                 if (s == null) flowOf(LibraryGridUiState(GridPhase.SIGNED_OUT)) else flow {
                     emit(LibraryGridUiState(GridPhase.LOADING, s))
-                    emitAll(forSession(s))
+                    emitAll(actions.guard(s, forSession(s)) { LibraryGridUiState(GridPhase.READY, s, banner = FAILED_LOCALLY.reason.banner()) })
                 }
             },
             actions.working,

@@ -51,17 +51,20 @@ class FakeLibrary : Library {
     var onRefresh: suspend (Session, RefreshTarget) -> Unit = { _, _ -> }
     var onLoadMore: suspend (ChildrenKey) -> Unit = {}
 
+    /** Set to make every observing flow throw as it starts, as a Room flow does when the database is damaged. */
+    var observeFailure: Exception? = null
+
     fun homeFlow(s: Session) = homes.getOrPut(s) { MutableStateFlow(EMPTY_HOME) }
     fun listFlow(key: ChildrenKey) = lists.getOrPut(key) { MutableStateFlow(EMPTY_LISTING) }
     fun seriesFlow(s: Session, seriesId: String, seasonId: String? = null) =
         serieses.getOrPut(Triple(s, seriesId, seasonId)) { MutableStateFlow(SeriesDetail(null, emptyList(), emptyList(), null, Freshness.Refreshing)) }
     fun itemFlow(s: Session, itemId: String) = items.getOrPut(s to itemId) { MutableStateFlow(ItemDetail(null, Freshness.Refreshing)) }
 
-    override fun home(s: Session): Flow<Home> = flow { homeCollects += s; emitAll(homeFlow(s)) }
+    override fun home(s: Session): Flow<Home> = flow { observeFailure?.let { throw it }; homeCollects += s; emitAll(homeFlow(s)) }
 
     override fun children(s: Session, parentId: String, shape: ListShape, sort: Sort, filter: ItemFilter): Flow<Listing> {
         val key = ChildrenKey(s, parentId, shape, sort, filter)
-        return flow { childrenCollects += key; emitAll(listFlow(key)) }
+        return flow { observeFailure?.let { throw it }; childrenCollects += key; emitAll(listFlow(key)) }
     }
 
     override suspend fun loadMore(s: Session, parentId: String, shape: ListShape, sort: Sort, filter: ItemFilter) {
@@ -72,9 +75,9 @@ class FakeLibrary : Library {
     }
 
     override fun series(s: Session, seriesId: String, seasonId: String?): Flow<SeriesDetail> =
-        flow { seriesCollects += Triple(s, seriesId, seasonId); emitAll(seriesFlow(s, seriesId, seasonId)) }
+        flow { observeFailure?.let { throw it }; seriesCollects += Triple(s, seriesId, seasonId); emitAll(seriesFlow(s, seriesId, seasonId)) }
 
-    override fun item(s: Session, itemId: String): Flow<ItemDetail> = flow { itemCollects += s to itemId; emitAll(itemFlow(s, itemId)) }
+    override fun item(s: Session, itemId: String): Flow<ItemDetail> = flow { observeFailure?.let { throw it }; itemCollects += s to itemId; emitAll(itemFlow(s, itemId)) }
 
     override suspend fun search(s: Session, term: String): SearchResult {
         searches += s to term

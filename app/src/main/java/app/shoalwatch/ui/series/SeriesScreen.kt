@@ -121,7 +121,7 @@ class SeriesActions(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SeriesScreen(state: SeriesUiState, actions: SeriesActions, messages: Flow<String>, snackbar: SnackbarHostState) {
-    CollectMessages(messages, snackbar)
+    CollectMessages(messages, snackbar, state.session)
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbar) },

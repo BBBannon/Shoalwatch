@@ -12,6 +12,7 @@ import app.shoalwatch.data.library.RefreshTarget
 import app.shoalwatch.data.servers.ServerCatalog
 import app.shoalwatch.data.servers.ServerConnections
 import app.shoalwatch.data.servers.Session
+import app.shoalwatch.ui.browse.FAILED_LOCALLY
 import app.shoalwatch.ui.browse.ItemActions
 import app.shoalwatch.ui.browse.Work
 import app.shoalwatch.ui.browse.connectionRegained
@@ -57,7 +58,7 @@ class DetailViewModel(
     private val library: Library,
     playstate: Playstate,
 ) : ViewModel() {
-    private val actions = ItemActions(playstate, viewModelScope) { state.value.session }
+    private val actions = ItemActions(playstate, viewModelScope, connections) { state.value.session }
 
     /** Failure messages for a snackbar, each once. */
     val messages: Flow<String> = actions.failures
@@ -78,7 +79,7 @@ class DetailViewModel(
             catalog.activeSession().flatMapLatest { s ->
                 if (s == null) flowOf(DetailUiState(DetailPhase.SIGNED_OUT)) else flow {
                     emit(DetailUiState(DetailPhase.LOADING, s))
-                    emitAll(library.item(s, itemId).map { build(s, it) })
+                    emitAll(actions.guard(s, library.item(s, itemId).map { build(s, it) }) { build(s, ItemDetail(null, FAILED_LOCALLY)) })
                 }
             },
             actions.working,

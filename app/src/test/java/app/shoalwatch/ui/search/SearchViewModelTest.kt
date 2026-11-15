@@ -1,5 +1,7 @@
 package app.shoalwatch.ui.search
 
+import app.shoalwatch.ui.FakeConnections
+import app.shoalwatch.data.servers.Connection
 import app.shoalwatch.core.AppError
 import app.shoalwatch.data.library.ItemKind
 import app.shoalwatch.data.library.SearchResult
@@ -30,7 +32,9 @@ class SearchViewModelTest {
     private val library = FakeLibrary()
     private val scheduler get() = main.dispatcher.scheduler
 
-    private fun vm() = SearchViewModel(catalog, library)
+    private val connections = FakeConnections()
+
+    private fun vm() = SearchViewModel(catalog, library, connections)
     private fun advance(ms: Long) { scheduler.advanceTimeBy(ms); scheduler.runCurrent() }
 
     private val results = SearchResult(listOf(entry(1, name = "Tide Film"), entry(2, ItemKind.SERIES, "Tidal"), episode(3, name = "The Tide")), offline = false)
@@ -200,5 +204,18 @@ class SearchViewModelTest {
         first.onQueryChange("tide")
         advance(300)
         assertEquals("", vm().state.value.query)
+    }
+
+    @Test fun retryingASearchOfAnOfflineServerAsksForAProbeFirst() {
+        connections.stateFor(SERVER_ID).value = Connection.Offline()
+        val v = vm()
+        v.retry()
+        assertEquals(listOf("probe:$SERVER_ID"), connections.log)
+    }
+
+    @Test fun retryingASearchOfAnOnlineServerDoesNotProbe() {
+        connections.stateFor(SERVER_ID).value = Connection.Online(app.shoalwatch.ui.address("http://192.168.1.10:8096"), isHome = true)
+        vm().retry()
+        assertTrue(connections.log.isEmpty())
     }
 }

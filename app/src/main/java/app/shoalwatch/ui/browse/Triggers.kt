@@ -13,6 +13,15 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 
 /**
+ * What every refresh the user asks for does first: if [s]'s server is `Offline`, ask for a fresh probe of it (and only it). The
+ * connection is otherwise re-checked only when the phone's network changes, so a server that was down and came back would stay
+ * "offline" for good. `Online` and `Checking` need nothing: the first is fine, the second is already being probed.
+ */
+fun ServerConnections.reprobeIfOffline(s: Session) {
+    if (connection(s.serverId).value is Connection.Offline) refresh(s.serverId)
+}
+
+/**
  * Emits the active [Session] each time the connection to its server becomes `Online` after having been anything else
  * (`Offline`, or `Checking`, which includes a network change). It does not emit for the first reading, so opening a screen while
  * already online is not a "regain" (collecting a list already refreshes what is due), and it follows the active account: a new

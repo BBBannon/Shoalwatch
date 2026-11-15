@@ -10,6 +10,7 @@ import app.shoalwatch.AppGraph
 import app.shoalwatch.ui.home.HomeActions
 import app.shoalwatch.ui.home.HomeScreen
 import app.shoalwatch.ui.home.HomeViewModel
+import app.shoalwatch.ui.components.DismissOnSessionChange
 import app.shoalwatch.ui.detail.DetailActions
 import app.shoalwatch.ui.detail.DetailScreen
 import app.shoalwatch.ui.detail.DetailViewModel
@@ -152,7 +153,7 @@ internal fun DetailRoute(graph: AppGraph, nav: NavHostController, itemId: String
 
 @Composable
 internal fun SearchRoute(graph: AppGraph, nav: NavHostController) {
-    val vm = graphViewModel { SearchViewModel(graph.serverCatalog, graph.library) }
+    val vm = graphViewModel { SearchViewModel(graph.serverCatalog, graph.library, graph.addressSelector) }
     val state by vm.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val actions = remember(vm, nav) {
@@ -164,6 +165,8 @@ internal fun SearchRoute(graph: AppGraph, nav: NavHostController) {
             onOpenServers = { nav.navigate(Routes.SERVERS) },
         )
     }
+    // Search shows no messages of its own, but the snackbar is the shell's: another tab's message does not outlive the account.
+    DismissOnSessionChange(snackbar, state.session)
     AppShell(Tab.SEARCH, nav::switchTab, snackbar) { SearchScreen(state, actions) }
 }
 

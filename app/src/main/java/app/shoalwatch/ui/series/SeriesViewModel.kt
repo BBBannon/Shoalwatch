@@ -13,6 +13,7 @@ import app.shoalwatch.data.library.SeriesDetail
 import app.shoalwatch.data.servers.ServerCatalog
 import app.shoalwatch.data.servers.ServerConnections
 import app.shoalwatch.data.servers.Session
+import app.shoalwatch.ui.browse.FAILED_LOCALLY
 import app.shoalwatch.ui.browse.ItemActions
 import app.shoalwatch.ui.browse.Work
 import app.shoalwatch.ui.browse.connectionRegained
@@ -80,7 +81,7 @@ class SeriesViewModel(
     private val library: Library,
     playstate: Playstate,
 ) : ViewModel() {
-    private val actions = ItemActions(playstate, viewModelScope) { state.value.session }
+    private val actions = ItemActions(playstate, viewModelScope, connections) { state.value.session }
     private val picked: StateFlow<String?> = saved.getStateFlow<String?>(KEY_SEASON, null)
 
     /** Failure messages for a snackbar, each once. */
@@ -97,7 +98,9 @@ class SeriesViewModel(
 
     private fun forSession(s: Session): Flow<SeriesUiState> =
         picked.map { it ?: routeSeasonId }.distinctUntilChanged().flatMapLatest { season ->
-            library.series(s, seriesId, season).map { build(s, it) }
+            actions.guard(s, library.series(s, seriesId, season).map { build(s, it) }) {
+                build(s, SeriesDetail(null, emptyList(), emptyList(), null, FAILED_LOCALLY))
+            }
         }
 
     private fun build(s: Session, d: SeriesDetail): SeriesUiState {

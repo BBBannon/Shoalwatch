@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.shoalwatch.data.library.Freshness
 import app.shoalwatch.data.library.Home
+import app.shoalwatch.data.library.HomeRow
 import app.shoalwatch.data.library.ItemWithUserData
 import app.shoalwatch.data.library.Library
 import app.shoalwatch.data.library.Playstate
@@ -14,6 +15,7 @@ import app.shoalwatch.data.servers.ServerConnections
 import app.shoalwatch.data.servers.ServerSummary
 import app.shoalwatch.data.servers.Session
 import app.shoalwatch.ui.ConnectionView
+import app.shoalwatch.ui.browse.FAILED_LOCALLY
 import app.shoalwatch.ui.browse.ItemActions
 import app.shoalwatch.ui.browse.Work
 import app.shoalwatch.ui.browse.connectionRegained
@@ -57,7 +59,7 @@ class HomeViewModel(
     playstate: Playstate,
     refreshOnOpen: Boolean = false,
 ) : ViewModel() {
-    private val actions = ItemActions(playstate, viewModelScope) { state.value.session }
+    private val actions = ItemActions(playstate, viewModelScope, connections) { state.value.session }
     private val warmFailed = MutableStateFlow(false)
 
     /** Failure messages for a snackbar, each once. */
@@ -92,7 +94,8 @@ class HomeViewModel(
         } else {
             flow {
                 emit(null)
-                emitAll(library.home(s).map { s to it })
+                val failed = Home(emptyList(), FAILED_LOCALLY, HomeRow(emptyList(), FAILED_LOCALLY), HomeRow(emptyList(), FAILED_LOCALLY), emptyList())
+                emitAll(actions.guard(s, library.home(s).map { s to it }) { s to failed })
             }
         }
     }

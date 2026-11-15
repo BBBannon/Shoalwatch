@@ -8,7 +8,9 @@ import app.shoalwatch.data.library.ItemWithUserData
 import app.shoalwatch.data.library.Library
 import app.shoalwatch.data.library.SearchResult
 import app.shoalwatch.data.servers.ServerCatalog
+import app.shoalwatch.data.servers.ServerConnections
 import app.shoalwatch.data.servers.Session
+import app.shoalwatch.ui.browse.reprobeIfOffline
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
@@ -54,7 +56,11 @@ const val SEARCH_DEBOUNCE_MS = 300L
  * searches what is saved and says so. The query lives only here (never in saved state, never on disk).
  */
 @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
-class SearchViewModel(private val catalog: ServerCatalog, private val library: Library) : ViewModel() {
+class SearchViewModel(
+    private val catalog: ServerCatalog,
+    private val library: Library,
+    private val connections: ServerConnections,
+) : ViewModel() {
     private val query = MutableStateFlow("")
     private val retries = MutableStateFlow(0)
 
@@ -128,6 +134,7 @@ class SearchViewModel(private val catalog: ServerCatalog, private val library: L
 
     /** Search again for the same words (after an error). */
     fun retry() {
+        state.value.session?.let { connections.reprobeIfOffline(it) }
         retries.update { it + 1 }
     }
 }

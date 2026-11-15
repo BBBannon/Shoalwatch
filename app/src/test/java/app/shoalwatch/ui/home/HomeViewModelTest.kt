@@ -367,6 +367,28 @@ class HomeViewModelTest {
         }
     }
 
+    @Test fun aMessageQueuedForTheOldAccountIsNotShownAfterTheSwitch() = kotlinx.coroutines.test.runTest {
+        val v = vm()
+        // Nothing is collecting yet (Home is on another tab, or showing an earlier message): the failure waits in the channel.
+        playstate.failWith = AppError.of(AppError.Kind.OFFLINE)
+        v.setFavourite(id(1), true)
+        catalog.activeFlow.value = account(AMY, "amy")
+        v.messages.test {
+            expectNoEvents()
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test fun aMessageQueuedForTheCurrentAccountIsStillShown() = kotlinx.coroutines.test.runTest {
+        val v = vm()
+        playstate.failWith = AppError.of(AppError.Kind.OFFLINE)
+        v.setFavourite(id(1), true)
+        v.messages.test {
+            assertEquals(AppError.of(AppError.Kind.OFFLINE).userMessage, awaitItem())
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
     @Test fun thePullIndicatorOfTheOldAccountIsNotShownToTheNext() {
         val gate = CompletableDeferred<Unit>()
         library.onRefresh = { _, _ -> gate.await() }
@@ -421,5 +443,48 @@ class HomeViewModelTest {
             assertEquals(AppError.of(AppError.Kind.UNKNOWN).userMessage, awaitItem())
             cancelAndIgnoreRemainingEvents()
         }
+    }
+
+    // --- a user's own refresh brings an offline server back ---------------------------------------------------------
+
+    @Test fun aUserRefreshOfAnOfflineServerAsksForAProbeBeforeTheRefreshIsSent() {
+        connections.stateFor(SERVER_ID).value = Connection.Offline()
+        library.onRefresh = { _, _ -> connections.log += "refresh" }
+        vm().refresh()
+        assertEquals(listOf("probe:$SERVER_ID", "refresh"), connections.log)
+    }
+
+    @Test fun aUserRefreshOfAnOnlineServerDoesNotProbe() {
+        connections.stateFor(SERVER_ID).value = online
+        library.onRefresh = { _, _ -> connections.log += "refresh" }
+        vm().refresh()
+        assertEquals(listOf("refresh"), connections.log)
+    }
+
+    @Test fun anOfflineServerThatStaysOfflineShowsTheOfflineStateAndNothingCrashes() = kotlinx.coroutines.test.runTest {
+        connections.stateFor(SERVER_ID).value = Connection.Offline()
+        library.onRefresh = { _, _ -> throw AppError.of(AppError.Kind.OFFLINE) }
+        val v = vm()
+        v.messages.test {
+            v.refresh()
+            assertEquals(AppError.of(AppError.Kind.OFFLINE).userMessage, awaitItem())
+            cancelAndIgnoreRemainingEvents()
+        }
+        assertEquals(listOf("probe:$SERVER_ID"), connections.log)
+        assertFalse(v.state.value.pulling)
+        assertEquals(HomePhase.READY, v.state.value.phase)
+    }
+
+    // --- a damaged database while watching the library is reported, never fatal -------------------------------------
+
+    @Test fun aDatabaseFailureWhileObservingIsReportedAndShowsAnErrorNotACrash() = kotlinx.coroutines.test.runTest {
+        library.observeFailure = IllegalStateException("database disk image is malformed")
+        val v = vm()
+        v.messages.test {
+            assertEquals(AppError.of(AppError.Kind.UNKNOWN).userMessage, awaitItem())
+            cancelAndIgnoreRemainingEvents()
+        }
+        assertEquals(HomePhase.READY, v.state.value.phase)
+        assertTrue(v.state.value.topBanner != null)
     }
 }

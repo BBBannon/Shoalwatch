@@ -1,7 +1,9 @@
 package app.shoalwatch.ui.browse
 
 import app.shoalwatch.core.AppError
+import app.shoalwatch.data.library.Freshness
 import app.shoalwatch.data.library.Playstate
+import app.shoalwatch.data.servers.ServerConnections
 import app.shoalwatch.data.servers.Session
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -9,11 +11,17 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 enum class ActionKind { PLAYED, FAVOURITE, REMOVE }
+
+/** What a screen is given when its library flow failed locally: nothing saved, and the failure shown the way any other is. */
+val FAILED_LOCALLY = Freshness.Stale(AppError.Kind.UNKNOWN)
 
 /** One tidy-up in progress: which item and which action. The screen shows a small "working" indicator on the control for it. */
 data class Work(val itemId: String, val kind: ActionKind)
@@ -31,13 +39,19 @@ data class OwnedWork(val session: Session, val work: Work)
  *  - ignores a second tap on the same control, for the same session, while its first is still working;
  *  - on an [AppError] sends its `userMessage` to [failures] (the change has already been put back by the layer below, and the
  *    screen shows it again because it observes the database); anything else becomes a plain "something went wrong" message. A
- *    failure is only shown while its session is still the one on screen ([current]): it is dropped, not queued, for the next user;
+ *    failure is only shown while its session is still the one on screen ([current]), checked when it is sent and again when it is
+ *    about to be shown: it is dropped, not queued, for the next user;
  *  - after a success, runs [onDone] (a favourites-filtered list refreshes itself with it).
  *
  * [pull] and [attempt] are for the other calls a screen makes (refresh, load more, switching account): a failing local call, such
  * as a full disk, is reported the same way and never ends the app.
  */
-class ItemActions(private val playstate: Playstate, private val scope: CoroutineScope, private val current: () -> Session?) {
+class ItemActions(
+    private val playstate: Playstate,
+    private val scope: CoroutineScope,
+    private val connections: ServerConnections,
+    private val current: () -> Session?,
+) {
     private val _working = MutableStateFlow<Set<OwnedWork>>(emptySet())
     val working: StateFlow<Set<OwnedWork>> = _working
 
@@ -46,10 +60,14 @@ class ItemActions(private val playstate: Playstate, private val scope: Coroutine
     /** The session whose pull-to-refresh or Retry is running, if any; compare it with the session on screen. */
     val pulling: StateFlow<Session?> = _pulling
 
-    private val failureChannel = Channel<String>(Channel.BUFFERED)
+    /** Each message travels with the session it belongs to, so it can be checked again when it is about to be shown. */
+    private val failureChannel = Channel<Pair<Session?, String>>(Channel.BUFFERED)
 
-    /** Messages to show in a snackbar, each once; they wait if nothing is collecting yet. */
-    val failures: Flow<String> = failureChannel.receiveAsFlow()
+    /**
+     * Messages to show in a snackbar, each once; they wait if nothing is collecting yet. A message is shown only while its session
+     * is still the one on screen when it is received: one that waited past a switch of account is dropped, not shown to the next user.
+     */
+    val failures: Flow<String> = failureChannel.receiveAsFlow().filter { (s, _) -> s == current() }.map { it.second }
 
     fun setPlayed(s: Session, itemId: String, played: Boolean, onDone: suspend () -> Unit = {}) =
         run(s, Work(itemId, ActionKind.PLAYED), onDone) { playstate.setPlayed(s, itemId, played) }
@@ -60,8 +78,13 @@ class ItemActions(private val playstate: Playstate, private val scope: Coroutine
     fun removeFromContinueWatching(s: Session, itemId: String, onDone: suspend () -> Unit = {}) =
         run(s, Work(itemId, ActionKind.REMOVE), onDone) { playstate.removeFromContinueWatching(s, itemId) }
 
-    /** The user's own refresh: [pulling] is set for [s] while [block] runs, and a failure is reported. */
+    /**
+     * The user's own refresh: [pulling] is set for [s] while [block] runs, and a failure is reported. If the server is `Offline`
+     * it is re-probed first: nothing is sent while the app believes the server is down, so without this a refresh could never
+     * find out that it is back. The probe sets `Checking` at once, so [block]'s request waits for its answer.
+     */
     fun pull(s: Session, block: suspend () -> Unit) {
+        connections.reprobeIfOffline(s)
         scope.launch {
             _pulling.value = s
             try {
@@ -83,9 +106,22 @@ class ItemActions(private val playstate: Playstate, private val scope: Coroutine
         }
     }
 
+    /**
+     * For a flow the library gives a screen (Room-backed: a damaged database throws while it is collected, which in a ViewModel
+     * scope would end the app). A failure is reported like any other and the flow ends with [fallback], so the screen shows an
+     * error state rather than a skeleton that never goes. Cancellation and `Error`s pass through untouched. The message is queued
+     * for [s] without asking [current], which may not exist yet when a flow fails as the ViewModel starts; it is checked
+     * against the session on screen when it is shown, like every message.
+     */
+    fun <T> guard(s: Session, flow: Flow<T>, fallback: () -> T): Flow<T> = flow.catch { e ->
+        if (e !is Exception || e is CancellationException) throw e
+        failureChannel.trySend(s to (e as? AppError ?: AppError.of(AppError.Kind.UNKNOWN)).userMessage)
+        emit(fallback())
+    }
+
     private fun report(s: Session?, e: Exception) {
         if (current() != s) return
-        failureChannel.trySend((e as? AppError ?: AppError.of(AppError.Kind.UNKNOWN)).userMessage)
+        failureChannel.trySend(s to (e as? AppError ?: AppError.of(AppError.Kind.UNKNOWN)).userMessage)
     }
 
     private fun run(s: Session, work: Work, onDone: suspend () -> Unit, call: suspend () -> Unit) {

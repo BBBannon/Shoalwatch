@@ -104,7 +104,7 @@ class DetailActions(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DetailScreen(state: DetailUiState, actions: DetailActions, messages: Flow<String>, snackbar: SnackbarHostState) {
-    CollectMessages(messages, snackbar)
+    CollectMessages(messages, snackbar, state.session)
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbar) },

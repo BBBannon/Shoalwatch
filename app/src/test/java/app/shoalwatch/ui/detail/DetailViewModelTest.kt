@@ -232,4 +232,32 @@ class DetailViewModelTest {
             cancelAndIgnoreRemainingEvents()
         }
     }
+
+    // --- a user's own refresh brings an offline server back ---------------------------------------------------------
+
+    @Test fun aUserRefreshOfAnOfflineServerAsksForAProbeBeforeTheRefreshIsSent() {
+        connections.stateFor(SERVER_ID).value = Connection.Offline()
+        library.onRefresh = { _, _ -> connections.log += "refresh" }
+        vm().refresh()
+        assertEquals(listOf("probe:$SERVER_ID", "refresh"), connections.log)
+    }
+
+    @Test fun aUserRefreshOfAnOnlineServerDoesNotProbe() {
+        connections.stateFor(SERVER_ID).value = online
+        library.onRefresh = { _, _ -> connections.log += "refresh" }
+        vm().refresh()
+        assertEquals(listOf("refresh"), connections.log)
+    }
+
+    // --- a damaged database while watching the library is reported, never fatal -------------------------------------
+
+    @Test fun aDatabaseFailureWhileObservingIsReportedAndShowsAnErrorNotACrash() = kotlinx.coroutines.test.runTest {
+        library.observeFailure = IllegalStateException("database disk image is malformed")
+        val v = vm()
+        v.messages.test {
+            assertEquals(AppError.of(AppError.Kind.UNKNOWN).userMessage, awaitItem())
+            cancelAndIgnoreRemainingEvents()
+        }
+        assertEquals(DetailPhase.ERROR, v.state.value.phase)
+    }
 }

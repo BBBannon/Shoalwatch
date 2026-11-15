@@ -91,7 +91,7 @@ class HomeActions(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(state: HomeUiState, actions: HomeActions, messages: Flow<String>, snackbar: SnackbarHostState) {
-    CollectMessages(messages, snackbar)
+    CollectMessages(messages, snackbar, state.session)
     when (state.phase) {
         HomePhase.SIGNED_OUT -> Placeholder(actions) {
             NoticeCard(stringResource(R.string.home_signed_out_title), stringResource(R.string.home_signed_out_body), tone = Tone.Info)
