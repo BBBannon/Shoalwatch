@@ -75,6 +75,9 @@ class DownloadPathsTest {
         }
         assertEquals("Stream index out of range.", refusal { paths.subtitleFile(f, -1, "srt") })
         assertEquals("Stream index out of range.", refusal { paths.subtitleFile(f, 10_001, "srt") })
+        assertEquals("sub-7.ass.part", paths.subtitlePartFile(f, 7, "ass").name)
+        assertEquals("Not an allowed subtitle format.", refusal { paths.subtitlePartFile(f, 7, "txt") })
+        assertEquals("Stream index out of range.", refusal { paths.subtitlePartFile(f, -1, "srt") })
         assertEquals("Segment index out of range.", refusal { paths.segmentFile(hls, -1) })
         assertEquals("Segment index out of range.", refusal { paths.segmentFile(hls, 20_000) })
         assertEquals("Segment index out of range.", refusal { paths.segmentPartFile(hls, -1) })

@@ -67,6 +67,15 @@ class OrphanSweepTest {
         for (f in stray) assertFalse(f.name, f.exists())
     }
 
+    @Test fun aSubtitleBeingWrittenIsKeptButAStrayPartIsNot() {
+        val keptFolder = folder(internal, s1, kept)
+        val writing = file(paths.subtitlePartFile(keptFolder, 3, "srt"))
+        val stray = listOf(file(File(keptFolder, "sub-3.part")), file(File(keptFolder, "sub-3.txt.part")), file(File(keptFolder, "other.part")))
+        sweep()
+        assertTrue(writing.exists())
+        for (f in stray) assertFalse(f.name, f.exists())
+    }
+
     @Test fun aFileNamedLikeAGuidButOutsideThePatternsIsDeleted() {
         val asFile = file(File(internal, s1)) // the server id, but a file rather than a folder
         sweep()

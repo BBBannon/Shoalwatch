@@ -61,6 +61,9 @@ internal class DownloadPaths(private val volumes: Volumes, private val sweepLimi
         return itemChild(folder, "sub-$streamIndex.$fileFormat")
     }
 
+    /** `sub-<index>.<format>.part`: a subtitle while it is being written, before its fsync and rename to [subtitleFile]. */
+    fun subtitlePartFile(folder: File, streamIndex: Int, fileFormat: String): File = subtitleFile(folder, streamIndex, fileFormat).let { itemChild(folder, it.name + PART) }
+
     fun artworkFile(serverId: String, itemId: String, slot: ArtworkSlot, tag: String): File {
         requireId(serverId)
         requireId(itemId)
@@ -271,7 +274,8 @@ internal class DownloadPaths(private val volumes: Volumes, private val sweepLimi
         private fun isItemFileName(name: String): Boolean {
             val media = name.removeSuffix(PART)
             if (media.startsWith("media.") && media.removePrefix("media.") in MEDIA_EXTENSIONS) return true
-            return SUBTITLE.matchEntire(name)?.groupValues?.get(1)?.toInt()?.let { it <= MAX_STREAM_INDEX && name == "sub-$it.${name.substringAfterLast('.')}" } == true
+            val sub = name.removeSuffix(PART) // a subtitle being written keeps its `.part` until the rename
+            return SUBTITLE.matchEntire(sub)?.groupValues?.get(1)?.toInt()?.let { it <= MAX_STREAM_INDEX && sub == "sub-$it.${sub.substringAfterLast('.')}" } == true
         }
 
         private fun attributes(p: Path): BasicFileAttributes? =

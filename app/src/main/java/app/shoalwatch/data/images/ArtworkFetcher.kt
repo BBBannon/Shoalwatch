@@ -2,6 +2,7 @@ package app.shoalwatch.data.images
 
 import app.shoalwatch.core.AppError
 import app.shoalwatch.data.api.ServerApi
+import app.shoalwatch.data.servers.Session
 import coil3.ImageLoader
 import coil3.decode.DataSource
 import coil3.decode.ImageSource
@@ -25,7 +26,7 @@ internal class ArtworkKeyer : Keyer<ArtworkRef> {
 }
 
 /**
- * Loads one [ArtworkRef]: disk cache, then `ServerApi.getBytes` (the authenticated, verified-address path; there is no other
+ * Loads one [ArtworkRef]: disk cache, then the copy pinned with a download ([PinnedArtwork]), then `ServerApi.getBytes` (the authenticated, verified-address path; there is no other
  * way this class can reach a server). Only a response that passes every check is written to the cache (see "Artwork" in
  * docs/ARCHITECTURE.md): an allowed Content-Type, an allowed format by its first bytes, complete, and declared dimensions
  * within the limits. Failures are exceptions that carry nothing from the response; Coil turns them into an error result.
@@ -37,6 +38,7 @@ internal class ArtworkFetcher(
     private val api: ServerApi,
     private val caches: ArtworkDiskCaches,
     private val io: CoroutineDispatcher,
+    private val pinned: PinnedArtwork? = null,
 ) : Fetcher {
 
     private val cache: DiskCache = caches.forServer(ref.session.serverId)
@@ -45,25 +47,14 @@ internal class ArtworkFetcher(
         val bucket = ArtworkLimits.bucketFor(options.size)
         val key = ArtworkLimits.cacheKey(ref, bucket)
         if (options.diskCachePolicy.readEnabled) fromDisk(key)?.let { return it }
+        // The copy kept with a download (any width; re-checked on every read), before the network, so it shows offline.
+        pinned?.find(ref)?.let { return fromPinned(it) }
         if (!options.networkCachePolicy.readEnabled) throw AppError.of(AppError.Kind.OFFLINE)
         val downloaded = download(bucket)
         return save(key, downloaded)
     }
 
-    private class Downloaded(val kind: ArtworkLimits.Kind, val bytes: ByteArray)
-
-    private suspend fun download(bucket: Int): Downloaded {
-        val query = listOf("tag" to ref.tag, "maxWidth" to bucket.toString(), "quality" to ArtworkLimits.QUALITY.toString(), "format" to FORMAT)
-        return api.getBytes(ref.session, "/Items/${ref.itemId}/Images/${ref.type.path}", query, ArtworkLimits.MAX_BYTES) { source, contentType ->
-            val declared = ArtworkLimits.kindOfContentType(contentType) ?: throw ArtworkValidation.refuse(ArtworkRejectedException.Reason.CONTENT_TYPE)
-            // Early out before the body is read: the first bytes must already agree with the header.
-            val first = ArtworkBounds.kind(source) ?: throw ArtworkValidation.refuse(ArtworkRejectedException.Reason.NOT_AN_IMAGE)
-            if (first != declared) throw ArtworkValidation.refuse(ArtworkRejectedException.Reason.CONTENT_TYPE)
-            val bytes = source.readByteArray()
-            val kind = ArtworkValidation.check(declared, bytes)
-            Downloaded(kind, bytes)
-        }
-    }
+    private suspend fun download(bucket: Int): ArtworkRequest.Downloaded = ArtworkRequest.download(api, ref.session, ref.itemId, ref.type, ref.tag, bucket)
 
     /** Saved entries are written only after [ArtworkValidation.check]; a saved one is checked the same way (read once), and a bad one is dropped. */
     private suspend fun fromDisk(key: String): SourceFetchResult? = handingOver { held ->
@@ -85,6 +76,11 @@ internal class ArtworkFetcher(
         SourceFetchResult(ImageSource(snapshot.data, cache.fileSystem, key, snapshot, ArtworkSourceInfo { cache.remove(key) }), kind.mime, DataSource.DISK)
     }
 
+    private fun fromPinned(bytes: ByteArray): SourceFetchResult {
+        val kind = checkNotNull(ArtworkLimits.sniff(bytes)) // find() has just run every check on these bytes
+        return SourceFetchResult(ImageSource(Buffer().write(bytes), options.fileSystem, ArtworkSourceInfo { }), kind.mime, DataSource.DISK)
+    }
+
     private fun readSaved(file: Path): ByteArray {
         val size = cache.fileSystem.metadata(file).size
         if (size == null || size > ArtworkLimits.MAX_BYTES) throw ArtworkRejectedException(ArtworkRejectedException.Reason.INCOMPLETE)
@@ -92,7 +88,7 @@ internal class ArtworkFetcher(
     }
 
     /** Writes the validated bytes to the cache (when allowed) and serves them from there, or straight from memory if the cache will not take them. */
-    private suspend fun save(key: String, downloaded: Downloaded): SourceFetchResult = handingOver { held ->
+    private suspend fun save(key: String, downloaded: ArtworkRequest.Downloaded): SourceFetchResult = handingOver { held ->
         val snapshot = if (options.diskCachePolicy.writeEnabled) write(key, downloaded.bytes) else null
         held.set(snapshot)
         val source = if (snapshot != null) ImageSource(snapshot.data, cache.fileSystem, key, snapshot, ArtworkSourceInfo { cache.remove(key) })
@@ -126,15 +122,36 @@ internal class ArtworkFetcher(
         }
     }
 
-    class Factory(private val api: ServerApi, private val caches: ArtworkDiskCaches, private val io: CoroutineDispatcher) : Fetcher.Factory<ArtworkRef> {
+    class Factory(
+        private val api: ServerApi, private val caches: ArtworkDiskCaches, private val io: CoroutineDispatcher, private val pinned: PinnedArtwork? = null,
+    ) : Fetcher.Factory<ArtworkRef> {
         override fun create(data: ArtworkRef, options: Options, imageLoader: ImageLoader): Fetcher =
-            ArtworkFetcher(data, options, api, caches, io)
+            ArtworkFetcher(data, options, api, caches, io, pinned)
     }
 
-    private companion object {
-        const val TAG = "Artwork"
+}
 
-        /** `ImageFormat.Webp` in the Jellyfin 12.4.0 reference: decoded by Android 10 and later with no extra library. */
-        const val FORMAT = "Webp"
+/** THE request for a picture, shared by the loader and the download saver ([PinnedArtwork]), so no other parser touches server bytes. */
+internal object ArtworkRequest {
+    class Downloaded(val kind: ArtworkLimits.Kind, val bytes: ByteArray)
+
+    /** `ImageFormat.Webp` in the Jellyfin 12.4.0 reference: decoded by Android 10 and later with no extra library. */
+    const val FORMAT = "Webp"
+
+    /**
+     * `GET /Items/{itemId}/Images/{type}?tag=&maxWidth=&quality=90&format=Webp` through `ServerApi.getBytes`, and every check of
+     * [ArtworkValidation] (an allowed Content-Type that the first bytes agree with, complete, not animated, dimensions within the
+     * limits). Throws [ArtworkRejectedException] or `AppError`; nothing from the response is in either.
+     */
+    suspend fun download(api: ServerApi, session: Session, itemId: String, type: ArtworkType, tag: String, maxWidth: Int): Downloaded {
+        val query = listOf("tag" to tag, "maxWidth" to maxWidth.toString(), "quality" to ArtworkLimits.QUALITY.toString(), "format" to FORMAT)
+        return api.getBytes(session, "/Items/$itemId/Images/${type.path}", query, ArtworkLimits.MAX_BYTES) { source, contentType ->
+            val declared = ArtworkLimits.kindOfContentType(contentType) ?: throw ArtworkValidation.refuse(ArtworkRejectedException.Reason.CONTENT_TYPE)
+            // Early out before the body is read: the first bytes must already agree with the header.
+            val first = ArtworkBounds.kind(source) ?: throw ArtworkValidation.refuse(ArtworkRejectedException.Reason.NOT_AN_IMAGE)
+            if (first != declared) throw ArtworkValidation.refuse(ArtworkRejectedException.Reason.CONTENT_TYPE)
+            val bytes = source.readByteArray()
+            Downloaded(ArtworkValidation.check(declared, bytes), bytes)
+        }
     }
 }

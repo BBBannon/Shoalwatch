@@ -107,6 +107,27 @@ class ArtworkFetcherTest : ArtworkTestBase() {
         assertEquals(1, web.requestCount)
     }
 
+    private fun pinnedLoader(): PinnedArtwork {
+        val pinned = PinnedArtwork(db.downloadDao(), app.shoalwatch.data.downloads.DownloadPaths(app.shoalwatch.data.downloads.FakeVolumes(tmp.newFolder("dl")).volumes))
+        loader.shutdown()
+        loader = ArtworkLoader.build(context, api, signedIn, caches, pinned = pinned)
+        runBlocking { pinned.save(session.serverId, item, app.shoalwatch.data.downloads.ArtworkSlot.PRIMARY, "tag1", bitmapBytes()) }
+        return pinned
+    }
+
+    @Test fun onlineWithAPinnedCopyForTheSameTagNoRequestIsSent() {
+        pinnedLoader()
+        assertEquals(40, loaded(ref()).width)
+        assertEquals(0, web.requestCount)
+    }
+
+    @Test fun aSignedOutSessionIsNotSignedInBeforeThePinnedCopyIsLookedAt() {
+        pinnedLoader()
+        runBlocking { store.removeAccount(session.serverId, session.userId) }
+        assertEquals(app.shoalwatch.core.AppError.Kind.NOT_SIGNED_IN, (failed(ref()) as app.shoalwatch.core.AppError).kind)
+        assertEquals(0, web.requestCount)
+    }
+
     @Test fun aNetworkFailureIsAnErrorResultNotAThrow() {
         web.enqueue(MockResponse().setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.DISCONNECT_AFTER_REQUEST))
         web.enqueue(MockResponse().setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.DISCONNECT_AFTER_REQUEST))

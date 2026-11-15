@@ -8,6 +8,9 @@ import app.shoalwatch.data.db.AppDatabase
 import app.shoalwatch.data.images.ArtworkDiskCaches
 import app.shoalwatch.data.images.ArtworkEviction
 import app.shoalwatch.data.images.ArtworkLoader
+import app.shoalwatch.data.images.PinnedArtwork
+import app.shoalwatch.data.downloads.AndroidVolumes
+import app.shoalwatch.data.downloads.DownloadPaths
 import app.shoalwatch.core.SystemMonotonicClock
 import app.shoalwatch.data.db.library.LocalChangeLog
 import app.shoalwatch.data.library.Library
@@ -97,8 +100,12 @@ class AppGraph(private val appContext: Context) {
     val artworkCaches: ArtworkDiskCaches by lazy { ArtworkDiskCaches(File(appContext.cacheDir, "artwork")) }
     /** The one image loader: it loads `ArtworkRef`s and nothing else (see "Artwork" in docs/ARCHITECTURE.md). Provided to every screen as `LocalArtworkLoader` and also set as Coil's singleton in `ShoalwatchApp`. */
     val imageLoader: ImageLoader by lazy {
-        ArtworkLoader.build(appContext, serverApi, { s -> serverStore.awaitWarmed(); serverStore.cachedToken(s.serverId, s.userId) != null }, artworkCaches)
+        ArtworkLoader.build(appContext, serverApi, { s -> serverStore.awaitWarmed(); serverStore.cachedToken(s.serverId, s.userId) != null }, artworkCaches, pinned = pinnedArtwork)
     }
+    /** Where download files go (internal storage, or an SD card by choice); the only code that names them. */
+    internal val downloadPaths: DownloadPaths by lazy { DownloadPaths(AndroidVolumes(appContext)) }
+    /** Pictures kept with downloads, consulted by the image loader after a disk-cache miss. */
+    val pinnedArtwork: PinnedArtwork by lazy { PinnedArtwork(database.downloadDao(), downloadPaths) }
     /** Clears a server's pictures when the server, or its last signed-in account, goes. */
     val artworkEviction: ArtworkEviction by lazy {
         ArtworkEviction(artworkCaches, { imageLoader.memoryCache }, { id -> serverStore.accounts(id).first().isNotEmpty() }, appScope, Dispatchers.IO)

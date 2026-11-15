@@ -23,12 +23,14 @@ object ArtworkLoader {
         signedIn: suspend (Session) -> Boolean,
         caches: ArtworkDiskCaches = ArtworkDiskCaches(File(context.cacheDir, "artwork")),
         io: CoroutineDispatcher = Dispatchers.IO,
+        /** Pictures kept with downloads, read after a disk-cache miss and before the network (Milestone 4). */
+        pinned: PinnedArtwork? = null,
     ): ImageLoader = ImageLoader.Builder(context)
         .serviceLoaderEnabled(false)
         .components {
             add(ArtworkOnlyInterceptor(signedIn))
             add(ArtworkKeyer(), ArtworkRef::class)
-            add(ArtworkFetcher.Factory(api, caches, io), ArtworkRef::class)
+            add(ArtworkFetcher.Factory(api, caches, io, pinned), ArtworkRef::class)
             add(ArtworkDecoder.Factory())
         }
         .diskCache { null } // pictures live in the per-server caches, never in a Coil-wide one
