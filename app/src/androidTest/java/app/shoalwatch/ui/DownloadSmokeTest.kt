@@ -31,6 +31,9 @@ import java.io.File
 import java.security.MessageDigest
 import java.util.Collections
 import kotlinx.coroutines.runBlocking
+import androidx.work.WorkManager
+import app.shoalwatch.data.downloads.DownloadScheduler
+import java.util.concurrent.TimeUnit
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -74,6 +77,9 @@ class DownloadSmokeTest {
     private val graph get() = ShoalwatchApp.graph(context)
     @Volatile private var downloadsServed = 0
     private var mobileDataBefore = false
+    /** The "asked about notifications" flag as it was, so later manual runs still see the ask (Tasks 13-16 review M-2). */
+    private var askedBefore = false
+    private val downloadPrefsFile get() = context.getSharedPreferences("download_prefs", Context.MODE_PRIVATE)
 
     private val item = """{"Name":"Test Clip","ServerId":"$serverId","Id":"$clipId","Type":"Movie","IsFolder":false,"MediaType":"Video",
         "RunTimeTicks":100000000,"ImageTags":{"Primary":"tag1"},"BackdropImageTags":[],"LocationType":"FileSystem","CanDownload":true,
@@ -142,6 +148,7 @@ class DownloadSmokeTest {
             }
             mock.start()
             mobileDataBefore = graph.downloadPrefs.settings.value.mobileData
+            askedBefore = graph.downloadPrefs.notificationAsked
             graph.downloadPrefs.setMobileData(true) // the emulator's network may count as metered: never wait for Wi-Fi here
             runBlocking {
                 graph.tokensWarmed.join()
@@ -157,10 +164,16 @@ class DownloadSmokeTest {
 
         override fun after() = cleanUp()
 
+        /** Leaves the device as it was, even after a failed run: no work, no folder, the same settings (Tasks 13-16 review M-2). */
         private fun cleanUp() {
+            runCatching { WorkManager.getInstance(context).cancelUniqueWork(DownloadScheduler.NAME).result.get(10, TimeUnit.SECONDS) }
             runCatching { runBlocking { graph.serverStore.removeServer(serverId) } }
             runCatching { graph.downloadPrefs.setMobileData(mobileDataBefore) }
+            runCatching { downloadPrefsFile.edit().putBoolean("notification_asked", askedBefore).commit() }
             runCatching { mock.shutdown() }
+            val server = File(File(context.filesDir, "downloads"), serverId)
+            val until = System.currentTimeMillis() + 10_000
+            while (server.exists() && System.currentTimeMillis() < until) Thread.sleep(100) // the removal hook runs in the app scope
         }
     }
 
