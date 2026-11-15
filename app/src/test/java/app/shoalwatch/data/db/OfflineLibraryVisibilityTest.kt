@@ -154,7 +154,8 @@ class OfflineLibraryVisibilityTest : DownloadTestBase() {
         val s2e1 = ep("s2e1", 2, 1)
         val unnumbered = episode("x", 1, null)
         val all = listOf(special, s2e1, unnumbered, e2, e1)
-        seen(a, series, *all.toTypedArray())
+        val specials = item("season0", app.shoalwatch.data.library.ItemKind.SEASON, "Specials", seriesId = "show", parentId = "show", indexNumber = 0)
+        seen(a, series, season1, season2, specials, *all.toTypedArray()) // the series screens need each season's own record too
         store.add(a, all.map { newDownload(it) })
         for (it in all) store.update(key(it)) { row -> row.copy(state = DownloadState.COMPLETE) }
         assertEquals(listOf(e1, e2, unnumbered, s2e1, special).map { it.id }, dao.observeSeriesEpisodes(S1, a.userId, series.id).first().map { it.item.itemId })

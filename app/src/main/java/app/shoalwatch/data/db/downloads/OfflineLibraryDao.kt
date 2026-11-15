@@ -52,7 +52,7 @@ class SeriesSummaryRow(
 
 /**
  * The offline library, for one user (SAFEGUARDING). Every query takes `(serverId, userId)` and returns a download only when
- * that user has a `visible_items` record for the item (on the series screens, for the series too) AND either owns it or the
+ * that user has a `visible_items` record for the item (on the series screens, for the series and the episode's season too) AND either owns it or the
  * server's "Share downloads between profiles" is on and the download is COMPLETE ([MINE_OR_SHARED]). Watched state is always
  * the session user's own `user_data` (LEFT JOINed with the user in the ON clause). Items never cross servers.
  *
@@ -100,6 +100,10 @@ abstract class OfflineLibraryDao {
         /** The server showed this user the item's series (the series screens need it as well as the episode's own record). */
         const val SERIES_VISIBLE = "EXISTS (SELECT 1 FROM visible_items sv WHERE sv.serverId = d.serverId AND sv.userId = :userId AND sv.itemId = d.seriesId)"
 
+        /** The episode has no season, or the server showed this user its season (the series screens group episodes under it). */
+        const val SEASON_VISIBLE =
+            "(d.seasonId IS NULL OR EXISTS (SELECT 1 FROM visible_items qv WHERE qv.serverId = d.serverId AND qv.userId = :userId AND qv.itemId = d.seasonId))"
+
         const val VISIBLE_JOIN = "JOIN visible_items v ON v.serverId = d.serverId AND v.userId = :userId AND v.itemId = d.itemId "
 
         /** downloads, the shared item row, the user's visibility record (required) and the user's own data (optional). */
@@ -129,10 +133,10 @@ abstract class OfflineLibraryDao {
         /** `+d.state` keeps SQLite on the (serverId, seriesId) index rather than the queue's (state, queuePosition) one (LibraryPerformanceTest). */
         const val SERIES_EPISODES_SQL =
             "$SELECT_OFFLINE WHERE d.serverId = :serverId AND d.seriesId = :seriesId AND d.kind = 'EPISODE' AND +d.state = 'COMPLETE' " +
-                "AND $MINE_OR_SHARED AND $SERIES_VISIBLE $EPISODE_ORDER"
+                "AND $MINE_OR_SHARED AND $SERIES_VISIBLE AND $SEASON_VISIBLE $EPISODE_ORDER"
 
         const val FOR_SERIES_SQL =
-            "$SELECT_OFFLINE WHERE d.serverId = :serverId AND d.seriesId = :seriesId AND $MINE_OR_SHARED AND $SERIES_VISIBLE $EPISODE_ORDER"
+            "$SELECT_OFFLINE WHERE d.serverId = :serverId AND d.seriesId = :seriesId AND $MINE_OR_SHARED AND $SERIES_VISIBLE AND $SEASON_VISIBLE $EPISODE_ORDER"
 
         const val IN_PROGRESS_SQL = "$SELECT_OFFLINE WHERE d.serverId = :serverId AND d.state <> 'COMPLETE' AND $MINE ORDER BY d.queuePosition"
 
@@ -148,7 +152,7 @@ abstract class OfflineLibraryDao {
                 "FROM downloads d JOIN items e ON e.serverId = d.serverId AND e.itemId = d.itemId " + VISIBLE_JOIN +
                 "JOIN items i ON i.serverId = d.serverId AND i.itemId = d.seriesId " +
                 "LEFT JOIN user_data u ON u.serverId = d.serverId AND u.userId = :userId AND u.itemId = d.seriesId " +
-                "WHERE d.serverId = :serverId AND d.kind = 'EPISODE' AND d.state = 'COMPLETE' AND $MINE_OR_SHARED AND $SERIES_VISIBLE " +
+                "WHERE d.serverId = :serverId AND d.kind = 'EPISODE' AND d.state = 'COMPLETE' AND $MINE_OR_SHARED AND $SERIES_VISIBLE AND $SEASON_VISIBLE " +
                 "GROUP BY i.serverId, i.itemId ORDER BY i.nameKey, i.itemId"
 
         /** The seasons of a series that hold a ready episode this user may see; the season row needs its own visibility record. */
