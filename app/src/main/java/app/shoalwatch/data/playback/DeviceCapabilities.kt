@@ -28,7 +28,8 @@ data class DeviceCapabilities(
 fun interface CodecSupport { fun read(): DeviceCapabilities }
 
 /**
- * [CodecSupport] from the platform: the decoders in `MediaCodecList(REGULAR_CODECS)` (encoders ignored) and the default
+ * [CodecSupport] from the platform: the decoders in `MediaCodecList(REGULAR_CODECS)` (encoders ignored; which video decoders
+ * count is [DecoderRules.counted]: hardware, not alias, not `.secure`, with software h264 as the fallback) and the default
  * display's HDR types (`Display.getHdrCapabilities()`, and on API 34+ also the current mode's `supportedHdrTypes`).
  * Never throws: any platform failure gives [MINIMAL] (h264 + aac, SDR), logged by exception class only.
  */
@@ -41,33 +42,35 @@ class AndroidDeviceCapabilities(private val context: Context) : CodecSupport {
         MINIMAL
     }
 
-    /** Decoder MIME type (lower case) to every profile it reports, encoders left out. */
-    private fun decoderProfiles(): Map<String, List<CodecProfileLevel>> {
-        val found = HashMap<String, MutableList<CodecProfileLevel>>()
-        for (info in MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos) {
-            if (info.isEncoder) continue
-            for (type in info.supportedTypes) {
-                val levels = try {
-                    info.getCapabilitiesForType(type).profileLevels.toList()
+    /** Every decoder (encoders left out), once per type it supports, as plain data for [DecoderRules]. */
+    private fun decoders(): List<DecoderInfo> =
+        MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.filterNot { it.isEncoder }.flatMap { info ->
+            info.supportedTypes.map { type ->
+                val caps = try {
+                    info.getCapabilitiesForType(type)
                 } catch (_: IllegalArgumentException) {
-                    emptyList()
+                    null
                 }
-                found.getOrPut(type.lowercase()) { ArrayList() } += levels
+                DecoderInfo(
+                    name = info.name, mime = type.lowercase(), softwareOnly = info.isSoftwareOnly, alias = info.isAlias,
+                    profileLevels = caps?.profileLevels?.map { it.profile to it.level }.orEmpty(),
+                )
             }
         }
-        return found
-    }
 
     private fun readDecoders(): DeviceCapabilities {
-        val decoders = decoderProfiles()
-        fun profiles(mime: String): Set<Int> = decoders[mime]?.mapTo(HashSet()) { it.profile }.orEmpty()
+        val all = decoders()
+        val counted = HashMap<String, List<DecoderInfo>>()
+        fun counted(mime: String) = counted.getOrPut(mime) { DecoderRules.counted(all, mime) }
+        fun profiles(mime: String): Set<Int> = counted(mime).flatMap { it.profileLevels }.mapTo(HashSet()) { it.first }
         val hevc = profiles(VideoCodec.HEVC.mime)
         val vp9 = profiles(VideoCodec.VP9.mime)
         val av1 = profiles(VideoCodec.AV1.mime)
-        val audio = AUDIO_MIMES.filterValues { it in decoders }.keys
-        val avcLevels = decoders[VideoCodec.H264.mime].orEmpty().mapNotNull { AVC_LEVELS[it.level] }
+        // Audio is cheap to decode in software: any decoder of the type counts.
+        val audio = AUDIO_MIMES.filterValues { mime -> all.any { it.mime == mime && !it.alias } }.keys
+        val avcLevels = counted(VideoCodec.H264.mime).flatMap { it.profileLevels }.mapNotNull { AVC_LEVELS[it.second] }
         return DeviceCapabilities(
-            video = VideoCodec.entries.filterTo(LinkedHashSet()) { it.mime in decoders },
+            video = VideoCodec.entries.filterTo(LinkedHashSet()) { counted(it.mime).isNotEmpty() },
             audio = audio,
             h264MaxLevel = avcLevels.maxOrNull() ?: DEFAULT_H264_LEVEL,
             hevcMain10 = hevc.any { it in HEVC_10_BIT },

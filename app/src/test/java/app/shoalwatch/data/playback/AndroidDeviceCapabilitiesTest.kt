@@ -22,13 +22,14 @@ import org.robolectric.shadows.ShadowMediaCodecList
 class AndroidDeviceCapabilitiesTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
 
-    private fun codec(name: String, mime: String, vararg profiles: Pair<Int, Int>, encoder: Boolean = false): MediaCodecInfo {
+    private fun codec(name: String, mime: String, vararg profiles: Pair<Int, Int>, encoder: Boolean = false, software: Boolean = false): MediaCodecInfo {
         val format = MediaFormat().apply { setString(MediaFormat.KEY_MIME, mime) }
         val levels = profiles.map { (p, l) -> CodecProfileLevel().apply { profile = p; level = l } }.toTypedArray()
         val caps = MediaCodecInfoBuilder.CodecCapabilitiesBuilder.newBuilder().setMediaFormat(format).setIsEncoder(encoder).setProfileLevels(levels)
             .apply { if (mime.startsWith("video/")) setColorFormats(intArrayOf(MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible)) }
             .build()
-        return MediaCodecInfoBuilder.newBuilder().setName(name).setIsEncoder(encoder).setCapabilities(caps).build()
+        return MediaCodecInfoBuilder.newBuilder().setName(name).setIsEncoder(encoder).setIsSoftwareOnly(software).setIsHardwareAccelerated(!software)
+            .setCapabilities(caps).build()
     }
 
     private fun add(vararg codecs: MediaCodecInfo) = codecs.forEach(ShadowMediaCodecList::addCodec)
@@ -95,6 +96,45 @@ class AndroidDeviceCapabilitiesTest {
     @Test fun audioDecoders() {
         add(codec("c2.aac", "audio/mp4a-latm"), codec("c2.opus", "audio/opus"), codec("c2.flac", "audio/flac"), codec("c2.eac3", "audio/eac3"))
         assertEquals(setOf("aac", "opus", "flac", "eac3"), read().audio)
+    }
+
+    @Test fun aSoftwareOnlyHevcDecoderIsNotClaimed() {
+        add(codec("c2.android.hevc.decoder", "video/hevc", CodecProfileLevel.HEVCProfileMain10 to CodecProfileLevel.HEVCMainTierLevel51, software = true))
+        val caps = read()
+        assertFalse(VideoCodec.HEVC in caps.video)
+        assertFalse(caps.hevcMain10)
+    }
+
+    @Test fun aSecureOnlyDecoderIsIgnored() {
+        add(codec("c2.vendor.hevc.decoder.secure", "video/hevc", CodecProfileLevel.HEVCProfileMain10HDR10 to CodecProfileLevel.HEVCMainTierLevel51))
+        val caps = read()
+        assertFalse(VideoCodec.HEVC in caps.video)
+        assertTrue(caps.decoderHdr[VideoCodec.HEVC].isNullOrEmpty())
+    }
+
+    @Test fun aSoftwareOnlyH264DecoderStillCounts() {
+        add(codec("c2.android.avc.decoder", "video/avc", CodecProfileLevel.AVCProfileHigh to CodecProfileLevel.AVCLevel52, software = true))
+        val caps = read()
+        assertTrue(VideoCodec.H264 in caps.video)
+        assertEquals(52, caps.h264MaxLevel)
+    }
+
+    @Test fun aSoftwareH264DecoderCannotRaiseTheHardwareLevel() {
+        add(
+            codec("c2.android.avc.decoder", "video/avc", CodecProfileLevel.AVCProfileHigh to CodecProfileLevel.AVCLevel52, software = true),
+            codec("c2.vendor.avc.decoder", "video/avc", CodecProfileLevel.AVCProfileHigh to CodecProfileLevel.AVCLevel41),
+        )
+        assertEquals(41, read().h264MaxLevel)
+    }
+
+    @Test fun tenBitIsClaimedOnlyFromACountedDecoder() {
+        add(
+            codec("c2.android.hevc.decoder", "video/hevc", CodecProfileLevel.HEVCProfileMain10 to CodecProfileLevel.HEVCMainTierLevel51, software = true),
+            codec("c2.vendor.hevc.decoder", "video/hevc", CodecProfileLevel.HEVCProfileMain to CodecProfileLevel.HEVCMainTierLevel41),
+        )
+        val caps = read()
+        assertTrue(VideoCodec.HEVC in caps.video)
+        assertFalse(caps.hevcMain10)
     }
 
     @Test fun vp9AndAv1TenBitAndHdrProfiles() {
