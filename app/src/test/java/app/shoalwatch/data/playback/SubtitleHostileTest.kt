@@ -91,8 +91,54 @@ class SubtitleHostileTest {
         val cue = t.frameAt(1_500).cues.single()
         assertEquals("Bold text", cue.text.toString())
         assertTrue("still bold", spans(cue).any { it is StyleSpan })
-        val lines = parse("1\n00:00:01,000 --> 00:00:02,000\n" + (1..1_000).joinToString("\n") { "<b>".repeat(700) } + "\nEnd\n", "srt")
-        assertTrue(lines.size > 0)
+        val lines = parse("1\n00:00:01,000 --> 00:00:02,000\n" + (1..1_000).joinToString("\n") { "<b>".repeat(700) + "L$it" } + "\nEnd\n", "srt")
+        val shown = lines.frameAt(1_500).cues.single()
+        assertEquals("cut at 16 lines, End dropped", (1..SubtitleFiles.MAX_CUE_LINES).joinToString("\n") { "L$it" }, shown.text.toString())
+        assertTrue("bold", spans(shown).any { it is StyleSpan })
+    }
+
+    // ---- subtitle-parsers review I-2 and m-2: styled runs, and what one frame hands the view
+
+    private fun alternating(cues: Int) = buildString {
+        repeat(cues) { append(stamp(it * 10L, ',')).append(" --> ").append(stamp(it * 10L + 5, ',')).append("\n<b><i>").append("<u>a</u>b".repeat(1_000)).append("\n\n") }
+    }
+
+    @Test fun nineHundredCuesOfAlternatingStylesToTheSizeLimitAreQuickAndCancellable() {
+        val srt = alternating(900)
+        assertTrue("near the 8 MiB limit: ${srt.length}", srt.length in 7_000_000..SubtitleFiles.MAX_BYTES)
+        val t = parse(srt, "srt")
+        val cue = t.frameAt(0).cues.single()
+        assertEquals(SubtitleFiles.MAX_CUE_CHARS, cue.text!!.length)
+        val styled = spans(cue)
+        assertTrue("styled runs are capped: ${styled.size} spans", styled.size <= SubtitleFiles.MAX_STYLED_RUNS * 2 + 2)
+        assertTrue("still bold and italic", styled.any { it is StyleSpan })
+        var asked = 0
+        quickly { SubtitleFiles.parse(srt.toByteArray(), "srt") { asked++; false } }
+        assertTrue("asked at least every 50 cues: $asked", asked >= 900 / 50)
+        var stopAt = 0
+        val e = quickly { runCatching { SubtitleFiles.parse(srt.toByteArray(), "srt") { ++stopAt > 3 } }.exceptionOrNull() }
+        assertEquals("Stopped.", e?.message)
+    }
+
+    @Test fun aNormalStyledCueKeepsItsSpansExactly() {
+        val cue = parse("1\n00:00:01,000 --> 00:00:02,000\n<b>Bold</b> <i>it</i> <u>un</u> <b><i>both</i></b>\n", "srt").frameAt(1_500).cues.single()
+        val text = cue.text as Spanned
+        assertEquals("Bold it un both", text.toString())
+        fun ranges(match: (Any) -> Boolean) = text.getSpans(0, text.length, Any::class.java).filter(match).map { text.getSpanStart(it) to text.getSpanEnd(it) }.sortedBy { it.first }
+        val bold = { s: Any -> s is StyleSpan && (s.style and android.graphics.Typeface.BOLD) != 0 }
+        val italic = { s: Any -> s is StyleSpan && (s.style and android.graphics.Typeface.ITALIC) != 0 }
+        assertEquals(listOf(0 to 4, 11 to 15), ranges(bold))
+        assertEquals(listOf(5 to 7, 11 to 15), ranges(italic))
+        assertEquals(listOf(8 to 10), ranges { it is android.text.style.UnderlineSpan })
+    }
+
+    @Test fun oneFrameHandsTheViewAtMostFourThousandCharacters() {
+        val srt = buildString { repeat(16) { append(stamp(1_000L + it, ',')).append(" --> 00:00:09,000\n").append(('a' + it).toString().repeat(1_999)).append("\n\n") } }
+        val shown = parse(srt, "srt").frameAt(5_000).cues
+        assertEquals("two cues of 1,999 characters fit, a third would not", 2, shown.size)
+        assertTrue(shown.sumOf { it.text!!.length } <= SubtitleFiles.MAX_FRAME_CHARS)
+        val short = parse(buildString { repeat(20) { append(stamp(1_000L + it, ',')).append(" --> 00:00:09,000\nLine $it\n\n") } }, "srt")
+        assertEquals("short cues: still up to 16", SubtitleFiles.MAX_CUES_AT_ONCE, short.frameAt(5_000).cues.size)
     }
 
     @Test fun aMegabyteOfUnclosedAngleBracketsIsLiteral() {
@@ -259,9 +305,14 @@ class SubtitleHostileTest {
     }
 
     @Test fun moreThanTwoHundredAndFiftySixAssStylesKeepTheFirst() {
-        val styles = (1..10_000).joinToString("\n") { "Style: S$it,-1,0,&H000000FF,8" } + "\nStyle: S1,0,0,&H00FFFFFF,2\nStyle: ${"L".repeat(65)},-1,0,&H000000FF,8\n"
+        val long = "L".repeat(SubtitleFiles.MAX_TOKEN + 1)
+        val styles = "Style: $long,-1,0,&H000000FF,8\n" + (1..10_000).joinToString("\n") { "Style: S$it,-1,0,&H000000FF,8" } + "\nStyle: S1,0,0,&H00FFFFFF,2\n"
         val ass = "[Script Info]\n\n[V4+ Styles]\nFormat: Name, Bold, Italic, PrimaryColour, Alignment\n$styles\n[Events]\nFormat: Layer, Start, End, Style, Text\n" +
-            "Dialogue: 0,0:00:01.00,0:00:02.00,S1,First style\nDialogue: 0,0:00:03.00,0:00:04.00,S300,Past the cap\n"
+            "Dialogue: 0,0:00:01.00,0:00:02.00,S1,First style\nDialogue: 0,0:00:03.00,0:00:04.00,S300,Past the cap\n" +
+            "Dialogue: 0,0:00:05.00,0:00:06.00,$long,Over-long style name\n"
+        val unknown = parse(ass, "ass").frameAt(5_500).cues.single()
+        assertEquals("Over-long style name", unknown.text.toString())
+        assertFalse("a 65-character style name is never read, though it came first", spans(unknown).any { it is StyleSpan })
         val t = parse(ass, "ass")
         val first = t.frameAt(1_500).cues.single()
         assertEquals("the first S1 wins", Cue.ANCHOR_TYPE_START, first.lineAnchor)

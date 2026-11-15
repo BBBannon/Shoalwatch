@@ -49,8 +49,8 @@ internal object VttFile {
     private fun cue(timing: String, lines: SubtitleLines, out: Drafts): String? {
         val arrow = timing.indexOf(Times.ARROW)
         val left = timing.substring(0, arrow).trim()
-        val start = Times.read(left, 0, ".")?.takeIf { it.end == left.length }?.ms
-        val end = Times.read(timing, SrtFile.skipSpaces(timing, arrow + 3), ".")
+        val start = Times.read(left, 0, ".", fractionRequired = false)?.takeIf { it.end == left.length }?.ms
+        val end = Times.read(timing, SrtFile.skipSpaces(timing, arrow + 3), ".", fractionRequired = false)
             ?.takeIf { it.end == timing.length || timing[it.end] == ' ' || timing[it.end] == '\t' }
         val readable = start != null && end != null
         val text = CueText()

@@ -22,12 +22,20 @@ internal object SubtitleFiles {
     const val MAX_CUE_CHARS = 2_000
     /** Lines of one cue: the rest of that cue is dropped. */
     const val MAX_CUE_LINES = 16
+    /** Characters of an ASS header line (`[Script Info]`, styles, any `Format:`), checked before it is split: over it, refused. */
+    const val MAX_HEADER_LINE = 4_096
     /** ASS styles read: later ones are ignored. */
     const val MAX_STYLES = 256
     /** Characters of any id, style name or setting: a longer one is ignored (an unknown style, an unread setting). */
     const val MAX_TOKEN = 64
     /** Cues drawn at one instant (a hostile file could stack thousands). */
     const val MAX_CUES_AT_ONCE = 16
+    /** Characters of text handed to the view in one frame: a cue that would pass it is left out of that frame. */
+    const val MAX_FRAME_CHARS = 4_000
+    /** Styled runs (bold, italic, underline changes) kept per cue: later style changes in that cue are ignored, the text kept. */
+    const val MAX_STYLED_RUNS = 32
+    /** How often (in cues) a parse also asks whether it has been given up. */
+    const val CHECK_EVERY_CUES = 50
     /** How often (in lines, and timeline steps) a parse asks whether it has been given up. */
     const val CHECK_EVERY_LINES = 1_000
     /** A cue starting later than this is dropped; one ending later ends here. */
@@ -45,7 +53,7 @@ internal object SubtitleFiles {
             else -> throw IllegalArgumentException("Unsupported subtitle format.")
         }
         if (bytes.size > MAX_BYTES) throw unreadable()
-        val drafts = Drafts()
+        val drafts = Drafts(cancelled)
         reader(SubtitleLines(bytes, cancelled), drafts)
         CueTimeline.of(drafts, cancelled)
     }
@@ -72,13 +80,16 @@ internal object SubtitleFiles {
 internal class Draft(val startMs: Long, val endMs: Long, val layer: Int, val seq: Int, val cue: Cue)
 
 /** The cues a parser has read, and whether an ASS file asked for effects this phone cannot draw. */
-internal class Drafts {
+internal class Drafts(private val cancelled: () -> Boolean = { false }) {
     val list = ArrayList<Draft>()
     private var seen = 0
     var effects = false
 
-    /** Every timing line (or `Dialogue:` line) counts, whether or not it can be read. */
-    fun count() { if (++seen > SubtitleFiles.MAX_CUES) throw SubtitleFiles.tooMany() }
+    /** Every timing line (or `Dialogue:` line) counts, whether or not it can be read; every 50th also asks [cancelled]. */
+    fun count() {
+        if (++seen > SubtitleFiles.MAX_CUES) throw SubtitleFiles.tooMany()
+        if (seen % SubtitleFiles.CHECK_EVERY_CUES == 0 && cancelled()) throw SubtitleFiles.stopped()
+    }
 
     /** Dropped when it ends before it starts, starts after [SubtitleFiles.MAX_TIME_MS], or has no text. */
     fun add(startMs: Long, endMs: Long, layer: Int, cue: Cue?) {
@@ -134,13 +145,31 @@ class CueTimeline internal constructor(
                     if (byStart[nextStart].endMs > t) active.add(nextStart)
                     nextStart++
                 }
-                val shown = active.asSequence().take(SubtitleFiles.MAX_CUES_AT_ONCE).map { byStart[it] }.sortedBy { it.layer }.map { it.cue }.toList()
+                val shown = shown(active, byStart)
                 val frame = if (shown.isEmpty()) SubtitleFrame.NONE else SubtitleFrame(shown)
                 if (frames.isNotEmpty() && frame.isEmpty && frames.last().isEmpty) continue
                 starts += t
                 frames += frame
             }
             return CueTimeline(starts.toLongArray(), frames, drafts.effects)
+        }
+
+        /**
+         * The first cues showing, in start order, while they number at most [SubtitleFiles.MAX_CUES_AT_ONCE] and hold at most
+         * [SubtitleFiles.MAX_FRAME_CHARS] characters between them (review m-2: the view lays them all out on the main thread);
+         * then in layer order for drawing.
+         */
+        private fun shown(active: TreeSet<Int>, byStart: List<Draft>): List<Cue> {
+            val out = ArrayList<Draft>(SubtitleFiles.MAX_CUES_AT_ONCE)
+            var chars = 0
+            for (i in active) {
+                val d = byStart[i]
+                val length = d.cue.text?.length ?: 0
+                if (out.size == SubtitleFiles.MAX_CUES_AT_ONCE || chars + length > SubtitleFiles.MAX_FRAME_CHARS) break
+                out += d
+                chars += length
+            }
+            return out.sortedBy { it.layer }.map { it.cue }
         }
     }
 }

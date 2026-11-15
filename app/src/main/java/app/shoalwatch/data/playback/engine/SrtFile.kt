@@ -21,7 +21,7 @@ internal object SrtFile {
             if (arrow < 0) { line = lines.next(); continue }
             out.count()
             val start = whole(line.substring(0, arrow).trim())
-            val end = Times.read(line, skipSpaces(line, arrow + 3), ".,")?.ms
+            val end = Times.read(line, skipSpaces(line, arrow + 3), ".,", fractionRequired = false)?.ms
             val text = CueText()
             val markup = Markup(subRip = true)
             line = lines.next()
@@ -36,7 +36,7 @@ internal object SrtFile {
         }
     }
 
-    private fun whole(s: String): Long? = Times.read(s, 0, ".,")?.takeIf { it.end == s.length }?.ms
+    private fun whole(s: String): Long? = Times.read(s, 0, ".,", fractionRequired = false)?.takeIf { it.end == s.length }?.ms
 
     internal fun skipSpaces(s: String, from: Int): Int {
         var i = from

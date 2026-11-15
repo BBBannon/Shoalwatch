@@ -26,14 +26,31 @@ class Media3BoundaryTest {
         // Untrusted subtitle files are parsed by the app's own linear parsers, never by Media3's text parsers or Android's HTML
         // parser (final-fixes review I-1, I-2): each did quadratic work on a crafted file that nothing could stop.
         "import androidx.media3.extractor.text", "SsaParser", "SubripParser", "WebvttParser", "SubtitleParser", "Html.fromHtml", "fromHtml(",
+        // Nor by them inside a played file (subtitle-parsers review I-1): no default parser factory, no extractors factory or
+        // switch that would bring one back, no legacy text decoding in the renderer.
+        "DefaultSubtitleParserFactory", "DefaultExtractorsFactory", "ParseSubtitlesDuringExtraction", "TextTrackTranscoding",
+        "LegacyDecodingEnabled", "SubtitleDecoderFactory", "Tx3gParser", "TtmlParser", "Mp4WebvttParser",
     )
+
+    /**
+     * The one narrow exception: `engine/PictureSubtitles.kt` is the player's subtitle parser factory, so it must name Media3's
+     * `SubtitleParser` interface and import from `extractor.text` (only the PGS, VobSub and DVB parsers). Every other banned
+     * word, the text parsers among them, is still banned there.
+     */
+    private val pictureParsers = "/data/playback/engine/PictureSubtitles.kt"
+    private val allowedForPictureParsers = setOf("import androidx.media3.extractor.text", "SubtitleParser")
 
     private fun sources() = listOf("src/main/java", "src/main/kotlin").map(::File).filter { it.isDirectory }
         .flatMap { dir -> dir.walkTopDown().filter { it.isFile && it.extension == "kt" }.toList() }
 
     private fun violations(files: List<Pair<String, List<String>>>): List<String> = files.flatMap { (path, lines) ->
         val inEngine = "/data/playback/engine/" in path.replace('\\', '/')
-        lines.withIndex().filter { (_, line) -> nowhere.any { it in line } || (!inEngine && outsideEngine.any { it in line }) }
+        val banned = if (path.replace('\\', '/').endsWith(pictureParsers)) nowhere - allowedForPictureParsers else nowhere
+        lines.withIndex().filter { (_, raw) ->
+            // Handing the media source factory the picture parsers is the one allowed use of the name.
+            val line = raw.replace(PICTURES_ONLY, "")
+            banned.any { it in line } || (!inEngine && outsideEngine.any { it in line })
+        }
             .map { (i, line) -> "$path:${i + 1}: ${line.trim()}" }
     }
 
@@ -55,10 +72,13 @@ class Media3BoundaryTest {
         val players = built("ExoPlayer.Builder(")
         val sessions = built("MediaSession.Builder(")
         assertTrue("the engine builds a player and a session", players.isNotEmpty() && sessions.isNotEmpty())
-        for (b in players) assertTrue("a player without the guarded media source factory: $b", ".setMediaSourceFactory(DefaultMediaSourceFactory(OkHttpDataSource.Factory(" in b)
+        for (b in players) assertTrue("a player without the engine's media source factory: $b", ".setMediaSourceFactory(mediaSources)" in b)
         for (b in sessions) assertTrue("a media session without the loader that loads nothing: $b", ".setBitmapLoader(" in b)
         fun count(word: String) = Regex(Regex.escape(word)).findAll(text).count()
         assertEquals("every media source factory is over OkHttpDataSource", count("DefaultMediaSourceFactory("), count("DefaultMediaSourceFactory(OkHttpDataSource.Factory("))
+        assertEquals("one media source factory, the engine's", 1, count("DefaultMediaSourceFactory("))
+        assertEquals("every media source factory is given only the picture parsers", count("DefaultMediaSourceFactory("), count(PICTURES_ONLY))
+        assertEquals("no other subtitle parser factory is set anywhere", count(".setSubtitleParserFactory("), count(PICTURES_ONLY))
     }
 
     @Test fun theScannerCatchesEachWordAndNamesTheLine() {
@@ -69,5 +89,16 @@ class Media3BoundaryTest {
             assertTrue(word, violations(listOf(engine to listOf("$word.X"))).isEmpty())
         }
         for (word in nowhere) assertEquals(word, listOf("$engine:1: val a = $word"), violations(listOf(engine to listOf("val a = $word"))))
+        val pictures = "src/main/java/app/shoalwatch$pictureParsers"
+        for (word in nowhere) {
+            val found = violations(listOf(pictures to listOf("val a = $word")))
+            if (word in allowedForPictureParsers) assertTrue(word, found.isEmpty()) else assertEquals(word, listOf("$pictures:1: val a = $word"), found)
+        }
+        assertTrue(violations(listOf(engine to listOf("val s = f$PICTURES_ONLY"))).isEmpty())
+        assertEquals(1, violations(listOf(engine to listOf("val s = f.setSubtitleParserFactory(Other)"))).size)
+    }
+
+    private companion object {
+        const val PICTURES_ONLY = ".setSubtitleParserFactory(PictureSubtitles)"
     }
 }

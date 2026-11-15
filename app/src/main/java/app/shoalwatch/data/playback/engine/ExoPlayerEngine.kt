@@ -48,7 +48,8 @@ import okhttp3.Call
  *   Bluetooth, Assistant) get play/pause, seeking and the title only: they cannot set media items, change speed or tracks.
  * - **Picture:** to the screen's `SurfaceView` through [video] (a SurfaceView, not a TextureView, so HDR output works); let go on
  *   [release].
- * - **Text renderer** off unless a picture-subtitle track is selected (text subtitles are the app's own).
+ * - **Subtitles in the stream:** only PGS, VobSub and DVB are parsed ([PictureSubtitles]); text tracks pass through unparsed,
+ *   and the text renderer is off unless a picture-subtitle track is selected (text subtitles are the app's own files).
  */
 @OptIn(UnstableApi::class)
 class ExoPlayerEngine(context: Context) : PlayerEngine {
@@ -60,8 +61,14 @@ class ExoPlayerEngine(context: Context) : PlayerEngine {
     @Volatile private var route: MediaRoute? = null
     private val calls = Call.Factory { request -> checkNotNull(route) { "No media route." }.callFactory.newCall(request) }
 
+    /**
+     * What builds every media source and, through it, every extractor: with [PictureSubtitles] as its only subtitle parsers, so
+     * no text track inside a file is ever parsed by Media3 (subtitle-parsers review I-1). A test reads it.
+     */
+    internal val mediaSources = DefaultMediaSourceFactory(OkHttpDataSource.Factory(calls)).setSubtitleParserFactory(PictureSubtitles)
+
     private val player: ExoPlayer = ExoPlayer.Builder(appContext)
-        .setMediaSourceFactory(DefaultMediaSourceFactory(OkHttpDataSource.Factory(calls)))
+        .setMediaSourceFactory(mediaSources)
         .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(), true)
         .setHandleAudioBecomingNoisy(true)
         .setSeekBackIncrementMs(SEEK_MS)

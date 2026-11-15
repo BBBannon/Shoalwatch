@@ -46,6 +46,9 @@ internal object AssFile {
                 r.section = SECTIONS.firstOrNull { it.equals(heading, ignoreCase = true) }.orEmpty()
                 r.styleFields = null
             } else {
+                // A header line is split or interpreted: bounded first (subtitle-parsers review m-1). A Dialogue line is text.
+                val header = r.section.isNotEmpty() && (r.section != EVENTS || line.startsWith("Format:"))
+                if (header && line.length > SubtitleFiles.MAX_HEADER_LINE) throw SubtitleFiles.unreadable()
                 when (r.section) {
                     INFO -> info(r, line)
                     STYLES, LEGACY_STYLES -> if (line.startsWith("Format:")) r.styleFields = fields(line) else if (line.startsWith("Style:")) style(r, line)

@@ -2,6 +2,7 @@ package app.shoalwatch.data.playback
 
 import app.shoalwatch.data.playback.PlaybackState.Phase
 import app.shoalwatch.data.playback.engine.EngineEvent
+import app.shoalwatch.data.playback.engine.EngineFailure
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
@@ -68,6 +69,46 @@ internal class HostStoppedTest : PlaybackControllerTestBase() {
         assertFalse("reloaded with playWhenReady = false", engine.playWhenReady)
         engine.emit(EngineEvent.Ready); runCurrent()
         assertEquals(Phase.PAUSED, c.state.value.phase)
+    }
+
+    // ---- subtitle-parsers review I-3: a load that STARTS after the host stopped loads paused too
+
+    private fun fail(f: EngineFailure) { engine.isPlaying = false; engine.emit(EngineEvent.Failed(f)) }
+
+    @Test fun aFallbackAfterTheHostStoppedLoadsPausedAndPlaysOnceTheUserSaysSo() = runTest {
+        answerOnly("direct-play.json", "transcode.json")
+        val c = controller(); openAndPlay(c); at(30_000)
+        c.onHostStopped(); runCurrent()
+        fail(EngineFailure.DECODER); runCurrent()
+        assertEquals("fell back", 2, engine.loads.size)
+        assertFalse("the transcode loads paused", engine.playWhenReady)
+        engine.emit(EngineEvent.Ready); runCurrent()
+        assertEquals(Phase.PAUSED, c.state.value.phase)
+        c.onHostStarted(); runCurrent()
+        assertEquals("starting again does not play by itself", Phase.PAUSED, c.state.value.phase)
+        c.playPause(); runCurrent()
+        assertEquals("the user's Play plays", Phase.PLAYING, c.state.value.phase)
+    }
+
+    @Test fun aReResolveAfterTheHostStoppedLoadsPaused() = runTest {
+        val c = controller(); openAndPlay(c); at(30_000)
+        c.onHostStopped(); runCurrent()
+        fail(EngineFailure.NETWORK); runCurrent()
+        assertEquals("re-resolved", 2, engine.loads.size)
+        assertFalse(engine.playWhenReady)
+        engine.emit(EngineEvent.Ready); runCurrent()
+        assertEquals(Phase.PAUSED, c.state.value.phase)
+    }
+
+    @Test fun aLoadAfterTheHostStartedAgainPlaysAsUsual() = runTest {
+        val c = controller(); openAndPlay(c); at(30_000)
+        c.onHostStopped(); runCurrent()
+        c.onHostStarted(); runCurrent()
+        c.playPause(); runCurrent()
+        assertEquals(Phase.PLAYING, c.state.value.phase)
+        fail(EngineFailure.NETWORK); runCurrent()
+        assertEquals("re-resolved", 2, engine.loads.size)
+        assertTrue("in front again, a reload plays as before", engine.playWhenReady)
     }
 
     @Test fun theHostStoppingBeforeAnythingIsOpenStillRefusesControllers() = runTest {
