@@ -69,7 +69,7 @@ class AdminAccessTest {
         assertNull(access.state.value)
     }
 
-        @Test fun anAdministrator() = runTest {
+    @Test fun anAdministrator() = runTest {
         access.sessionChanged(ben)
         assertEquals(AdminStatus.ADMIN, access.check(ben))
         assertEquals(AdminState(ben, AdminStatus.ADMIN), access.state.value)

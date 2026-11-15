@@ -15,7 +15,10 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 enum class DashboardResult { OPENED, OFFLINE, NO_BROWSER }
 
 fun interface DashboardOpener {
-    /** Opens [session]'s server dashboard in the browser from [context] (an Activity). No token, header, query or user name is passed. */
+    /**
+     * Opens [session]'s server dashboard in the browser from [context] (the application, so a new task; an Activity also works).
+     * No token, header, query or user name is passed.
+     */
     suspend fun open(session: Session, context: Context): DashboardResult
 }
 

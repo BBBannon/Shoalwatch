@@ -159,7 +159,7 @@ class AdminGuardTest {
         }
     }
 
-        @Test fun aRefusalWhileStillAdminStaysOpen() = runTest {
+    @Test fun aRefusalWhileStillAdminStaysOpen() = runTest {
         val g = guard()
         assertEquals(AdminProblem.REFUSED, g.problemFor(AppError.of(AppError.Kind.FORBIDDEN)))
         assertEquals(AdminGate.Open(owner, online = true), g.gate.value)
