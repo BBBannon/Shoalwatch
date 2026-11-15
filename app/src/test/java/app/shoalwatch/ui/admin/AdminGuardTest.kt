@@ -149,7 +149,17 @@ class AdminGuardTest {
         }
     }
 
-    @Test fun aRefusalWhileStillAdminStaysOpen() = runTest {
+    @Test fun aSignInThatEndedAlsoTakesTheRightsAway() = runTest {
+        for (kind in listOf(AppError.Kind.UNAUTHORISED, AppError.Kind.NOT_SIGNED_IN)) {
+            rights.lostCalls.clear()
+            val g = guard()
+            assertNull(g.problemFor(AppError.of(kind)))
+            assertEquals(kind.name, listOf(owner), rights.lostCalls)
+            assertEquals(AdminGate.Closed, g.gate.value)
+        }
+    }
+
+        @Test fun aRefusalWhileStillAdminStaysOpen() = runTest {
         val g = guard()
         assertEquals(AdminProblem.REFUSED, g.problemFor(AppError.of(AppError.Kind.FORBIDDEN)))
         assertEquals(AdminGate.Open(owner, online = true), g.gate.value)

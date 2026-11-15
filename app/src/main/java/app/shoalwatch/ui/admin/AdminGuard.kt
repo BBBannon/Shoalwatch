@@ -104,7 +104,7 @@ class AdminGuard(
     }
 
     /**
-     * What a failed admin call means. Null when it closes the gate (UNAUTHORISED, NOT_SIGNED_IN; FORBIDDEN that a fresh
+     * What a failed admin call means. Null when it closes the gate (UNAUTHORISED, NOT_SIGNED_IN — then `rights.lost`; FORBIDDEN that a fresh
      * `rights.check` turns into NOT_ADMIN — then `rights.lost`), so the caller shows nothing. Otherwise: FORBIDDEN still admin
      * REFUSED, OFFLINE OFFLINE, NETWORK/TIMEOUT NETWORK, SERVER_NOT_FOUND GONE, SERVER_ERROR SERVER, TLS_UNTRUSTED/TLS_PIN_CHANGED/
      * CLEARTEXT_BLOCKED/CLIENT_CERT_REQUIRED CONNECTION, anything else OTHER. Never called with a CancellationException.
@@ -113,6 +113,7 @@ class AdminGuard(
         if (gateState.value == AdminGate.Closed) return null
         return when ((e as? AppError)?.kind) {
             AppError.Kind.UNAUTHORISED, AppError.Kind.NOT_SIGNED_IN -> {
+                owner?.let(rights::lost) // the sign-in ended: the Servers entry must not stay either
                 close()
                 null
             }
