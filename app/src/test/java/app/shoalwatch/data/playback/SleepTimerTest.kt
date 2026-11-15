@@ -1,5 +1,6 @@
 package app.shoalwatch.data.playback
 
+import app.shoalwatch.TestMonotonic
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -25,5 +26,28 @@ class SleepTimerTest {
     @Test fun offAndEndOfItemAreNeverDueByTime() {
         assertFalse(SleepTimer.isDue(SleepState.Off, Long.MAX_VALUE))
         assertFalse(SleepTimer.isDue(SleepState.EndOfItem, Long.MAX_VALUE))
+    }
+
+    @Test fun theControllersTimerIsDueOnceThenOff() {
+        val clock = TestMonotonic(0)
+        val sleep = SleepControl(clock)
+        sleep.set(SleepChoice.MIN_15)
+        assertFalse(sleep.takeDue())
+        clock.ms = 15 * 60_000L
+        assertTrue(sleep.takeDue())
+        assertEquals(SleepState.Off, sleep.state)
+        assertFalse(sleep.takeDue())
+    }
+
+    @Test fun endOfItemIsTakenOnceAndNeverDueByTime() {
+        val clock = TestMonotonic(0)
+        val sleep = SleepControl(clock)
+        sleep.set(SleepChoice.END_OF_ITEM)
+        clock.ms = Long.MAX_VALUE
+        assertFalse(sleep.takeDue())
+        assertTrue(sleep.atEndOfItem)
+        assertTrue(sleep.takeEndOfItem())
+        assertFalse(sleep.atEndOfItem)
+        assertFalse(sleep.takeEndOfItem())
     }
 }

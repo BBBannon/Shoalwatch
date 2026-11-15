@@ -70,7 +70,7 @@ class PlaybackController internal constructor(
     private var error: AppError.Kind? = null
     private var quality = Quality.MAXIMUM
     private var speed = 1f
-    private var sleep: SleepState = SleepState.Off
+    private val sleep = SleepControl(clock)
 
     private val trackControl = TrackControl(session, engine, resolver, tracks, subtitles, captions, work, appScope, object : TrackControl.Host {
         override val current get() = this@PlaybackController.current
@@ -164,10 +164,7 @@ class PlaybackController internal constructor(
 
     fun dismissSubtitleNotice() = trackControl.dismissNotice()
 
-    fun setSleep(choice: SleepChoice) {
-        sleep = SleepTimer.start(choice, clock.nowMs())
-        publish()
-    }
+    fun setSleep(choice: SleepChoice) { sleep.set(choice); publish() }
 
     /** The activity stopped (screen off, app left): pause, report, and no Up next plays on its own. */
     fun onHostStopped() {
@@ -280,7 +277,7 @@ class PlaybackController internal constructor(
         val finishAt = finishedAt(c)
         if (phase == Phase.PLAYING && PlaybackRules.crossedByPlayback(before, now, finishAt)) c.finished = true
         c.outro()?.let { if (now >= it.startMs) showUpNext(c) }
-        if (SleepTimer.isDue(sleep, clock.nowMs())) sleepNow(c)
+        if (sleep.takeDue()) sleepNow(c)
         c.upNext?.let { countdown ->
             if (phase != Phase.PAUSED) countdown.advance(TICK_MS)
             if (countdown.due) return play(countdown.itemId, StartFrom.RESUME)
@@ -293,8 +290,7 @@ class PlaybackController internal constructor(
         if (c.knownMs < (finishedAt(c) ?: Long.MAX_VALUE)) c.finished = true // played to the end, not seeked past the mark
         durationOf(c)?.let { c.knownMs = it }
         phase = Phase.ENDED
-        if (sleep is SleepState.EndOfItem) {
-            sleep = SleepState.Off
+        if (sleep.takeEndOfItem()) {
             c.upNextShown = true // the sleep wins: no Up next from the credits on the next tick either
             engine.pause()
             return
@@ -332,15 +328,14 @@ class PlaybackController internal constructor(
     }
 
     private fun showUpNext(c: PlayingItem) {
-        if (c.upNextShown || sleep is SleepState.EndOfItem) return
+        if (c.upNextShown || sleep.atEndOfItem) return
         val next = c.around.next ?: return
         c.upNextShown = true
         c.upNext = UpNextCountdown(next.id, next.name, autoplayNext())
     }
 
-    /** A due sleep timer always pauses, whatever the phase (buffering, ended), and cancels an Up next countdown. */
+    /** A due sleep timer (already off) always pauses, whatever the phase (buffering, ended), and cancels an Up next countdown. */
     private fun sleepNow(c: PlayingItem) {
-        sleep = SleepState.Off
         c.upNext?.cancel()
         if (phase == Phase.PLAYING) pauseAndReport(c) else engine.pause()
     }
@@ -386,7 +381,7 @@ class PlaybackController internal constructor(
         if (ended) return
         val c = current
         val buffered = if (c?.resolved != null) engine.bufferedMs else 0
-        _state.value = stateOf(session, c, phase, c?.let(::durationOf), buffered, quality, speed, sleep, error)
+        _state.value = stateOf(session, c, phase, c?.let(::durationOf), buffered, quality, speed, sleep.state, error)
         trackControl.refreshCues()
     }
 
