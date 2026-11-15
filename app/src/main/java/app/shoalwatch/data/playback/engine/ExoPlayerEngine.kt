@@ -165,12 +165,15 @@ class ExoPlayerEngine(context: Context) : PlayerEngine {
 
     /**
      * What the media session drives, so every controller command (a headset, Bluetooth, the Assistant, a media button) goes
-     * through it: `play` and `playWhenReady = true` are refused while the host is stopped (final review N-4); the app's own
-     * calls go to [player] directly.
+     * through it: `play` and `playWhenReady = true` are refused while the host is stopped (final review N-4), and so are
+     * `prepare` and `seekToDefaultPosition`, which the session's play action runs first on a failed or ended player (m-3); the
+     * app's own calls go to [player] directly.
      */
     internal val sessionPlayer: Player = object : ForwardingPlayer(player) {
         override fun play() { if (!hostStopped) super.play() }
         override fun setPlayWhenReady(playWhenReady: Boolean) { if (!playWhenReady || !hostStopped) super.setPlayWhenReady(playWhenReady) }
+        override fun prepare() { if (!hostStopped) super.prepare() }
+        override fun seekToDefaultPosition() { if (!hostStopped) super.seekToDefaultPosition() }
     }
 
     override fun setHostStopped(stopped: Boolean) { hostStopped = stopped }

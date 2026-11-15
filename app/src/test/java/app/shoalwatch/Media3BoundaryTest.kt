@@ -9,7 +9,8 @@ import java.io.File
  * Media3 stays inside the engine: only `data/playback/engine/` may name ExoPlayer, Media3's data sources, its subtitle
  * parsers and cues, its media session or its UI (plus the one logging switch in `ShoalwatchApp.kt`), and nothing anywhere may use a Media3 data source other than
  * `OkHttpDataSource` over a route's guarded call factory (`DefaultHttpDataSource` and friends would send without the account's
- * client, pin or guard) or Media3's own `EventLogger` (it logs URIs). Failures name the file and line.
+ * client, pin or guard) or Media3's own `EventLogger` (it logs URIs), and nothing may hand a subtitle file to Media3's text
+ * parsers or `Html.fromHtml`. Failures name the file and line.
  */
 class Media3BoundaryTest {
     private val outsideEngine = listOf(
@@ -22,6 +23,9 @@ class Media3BoundaryTest {
         // per-format factories, and the stock bitmap loader (built over a default data source).
         "DefaultMediaSourceFactory(appContext", "DefaultMediaSourceFactory(context", "HlsMediaSource.Factory", "ProgressiveMediaSource.Factory",
         "DataSourceBitmapLoader",
+        // Untrusted subtitle files are parsed by the app's own linear parsers, never by Media3's text parsers or Android's HTML
+        // parser (final-fixes review I-1, I-2): each did quadratic work on a crafted file that nothing could stop.
+        "import androidx.media3.extractor.text", "SsaParser", "SubripParser", "WebvttParser", "SubtitleParser", "Html.fromHtml", "fromHtml(",
     )
 
     private fun sources() = listOf("src/main/java", "src/main/kotlin").map(::File).filter { it.isDirectory }

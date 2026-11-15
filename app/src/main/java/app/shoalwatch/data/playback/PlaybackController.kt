@@ -176,6 +176,7 @@ class PlaybackController internal constructor(
     fun onHostStopped() {
         engine.setHostStopped(true)
         val c = current ?: return
+        if (loading?.isActive == true) c.startPaused = true // a load in flight would start it behind the lock screen (I-3)
         if (phase == Phase.PLAYING) pauseAndReport(c) else engine.pause()
         c.upNext?.cancel()
         publish()
