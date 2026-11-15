@@ -8,6 +8,8 @@ object ArtworkLimits {
     const val MAX_BYTES = 8L * 1024 * 1024
     const val MAX_SIDE = 8192
     const val MAX_PIXELS = 40_000_000L
+    const val MAX_DECODED_PIXELS = 4_000_000L
+    private const val MAX_SAMPLE = 64
     const val QUALITY = 90
     const val DEFAULT_WIDTH = 480
     val BUCKETS = intArrayOf(160, 320, 480, 720, 1280)
@@ -47,18 +49,64 @@ object ArtworkLimits {
         Kind.WEBP -> bytes.size >= WEBP_HEAD && riffLength(bytes) + 8 == bytes.size.toLong()
     }
 
+    /**
+     * Whether [bytes] are an animated PNG (an `acTL` chunk before the image data) or an animated WebP (the animation flag of the
+     * `VP8X` header). Both are refused, not shown as a still: detection is a few bytes and cannot be fooled into a loop.
+     */
+    fun isAnimated(kind: Kind, bytes: ByteArray): Boolean = when (kind) {
+        Kind.JPEG -> false
+        Kind.WEBP -> bytes.size > WEBP_FLAGS && bytes.regionEquals(WEBP_HEAD, VP8X) && (bytes[WEBP_FLAGS].toInt() and WEBP_ANIMATION) != 0
+        Kind.PNG -> hasChunkBeforeImageData(bytes, ACTL)
+    }
+
+    private fun hasChunkBeforeImageData(png: ByteArray, wanted: ByteArray): Boolean {
+        var offset = PNG_MAGIC.size.toLong()
+        while (offset + CHUNK_OVERHEAD <= png.size) {
+            val at = offset.toInt()
+            val length = (0..3).fold(0L) { acc, i -> (acc shl 8) or (png[at + i].toLong() and 0xFF) }
+            if (png.regionEquals(at + 4, wanted)) return true
+            if (png.regionEquals(at + 4, IDAT) || png.regionEquals(at + 4, IEND)) return false
+            offset += CHUNK_OVERHEAD + length
+        }
+        return false
+    }
+
     /** Declared dimensions within [MAX_SIDE] a side and [MAX_PIXELS] in all (decompression-bomb guard, checked before any pixels are allocated). */
     fun dimensionsAcceptable(width: Int, height: Int): Boolean =
         width in 1..MAX_SIDE && height in 1..MAX_SIDE && width.toLong() * height <= MAX_PIXELS
+
+    /**
+     * The power-of-two `inSampleSize` for decoding a [width] x [height] image for a [bucket]-wide slot: the largest that keeps the
+     * width at least the bucket (so it is under twice the bucket), raised until the decoded pixels fit [MAX_DECODED_PIXELS].
+     * Null if it cannot fit at any sensible sample size.
+     */
+    fun sampleSize(width: Int, height: Int, bucket: Int): Int? {
+        var sample = 1
+        while (width / (sample * 2) >= bucket) sample *= 2
+        while (ceilDiv(width, sample).toLong() * ceilDiv(height, sample) > MAX_DECODED_PIXELS) {
+            sample *= 2
+            if (sample > MAX_SAMPLE) return null
+        }
+        return sample
+    }
+
+    private fun ceilDiv(a: Int, b: Int) = (a + b - 1) / b
 
     /** `art:<serverId>:<itemId>:<TYPE>:<tag>:<bucket>`: from the validated ref only, so never an address, and not the user (see "Artwork"). */
     fun cacheKey(ref: ArtworkRef, bucket: Int): String = "art:${ref.session.serverId}:${ref.itemId}:${ref.type.name}:${ref.tag}:$bucket"
 
     private const val WEBP_HEAD = 12
+    private const val WEBP_FLAGS = 20
+    private const val WEBP_ANIMATION = 0x02
+    private const val CHUNK_OVERHEAD = 12
     private const val JPEG_PADDING = 16
     private val JPEG_MAGIC = intArrayOf(0xFF, 0xD8, 0xFF).toBytes()
     private val PNG_MAGIC = intArrayOf(0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A).toBytes()
     private val PNG_IEND = intArrayOf(0, 0, 0, 0, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82).toBytes()
+    private val VP8X = "VP8X".toByteArray(Charsets.US_ASCII)
+    private val ACTL = "acTL".toByteArray(Charsets.US_ASCII)
+    private val IDAT = "IDAT".toByteArray(Charsets.US_ASCII)
+    private val IEND = "IEND".toByteArray(Charsets.US_ASCII)
     private val RIFF = "RIFF".toByteArray(Charsets.US_ASCII)
     private val WEBP = "WEBP".toByteArray(Charsets.US_ASCII)
 

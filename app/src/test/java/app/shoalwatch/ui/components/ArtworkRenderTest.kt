@@ -1,6 +1,7 @@
 package app.shoalwatch.ui.components
 
 import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertCountEquals
@@ -14,7 +15,6 @@ import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.unit.dp
 import app.shoalwatch.data.images.ArtworkTestBase
 import app.shoalwatch.ui.theme.ShoalwatchTheme
-import coil3.SingletonImageLoader
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -26,9 +26,8 @@ import org.robolectric.annotation.GraphicsMode
 class ArtworkRenderTest : ArtworkTestBase() {
     @get:Rule val compose = createComposeRule()
 
-    @Before fun useTheTestLoader() {
+    @Before fun goOffline() {
         selector.answer = { null } // offline: a ref's picture cannot load, which is the placeholder path
-        SingletonImageLoader.setUnsafe(loader)
     }
 
     private class Shown(val ref: app.shoalwatch.data.images.ArtworkRef?, val aspect: ArtworkAspect, val description: String?)
@@ -43,7 +42,9 @@ class ArtworkRenderTest : ArtworkTestBase() {
             started = true
             compose.setContent {
                 val current = shown.value
-                ShoalwatchTheme { Artwork(current.ref, current.description, Modifier.width(120.dp), current.aspect, title = "Alien") }
+                CompositionLocalProvider(LocalArtworkLoader provides loader) {
+                    ShoalwatchTheme { Artwork(current.ref, current.description, Modifier.width(120.dp), current.aspect, title = "Alien") }
+                }
             }
         }
         compose.waitForIdle()
@@ -84,5 +85,31 @@ class ArtworkRenderTest : ArtworkTestBase() {
         compose.waitForIdle()
         compose.onNodeWithContentDescription("Poster of Alien").assertExists()
         assertTrue(web.requestCount >= 1)
+    }
+
+    @Test fun aRefWithNoLoaderProvidedFailsLoudlyInDebugAndTests() {
+        val failure = runCatching {
+            compose.setContent { ShoalwatchTheme { Artwork(ref(), "Poster", Modifier.width(120.dp), title = "Alien") } }
+            compose.waitForIdle()
+        }.exceptionOrNull()
+        val message = generateSequence(failure) { it.cause }.mapNotNull { it.message }.joinToString(" | ")
+        assertTrue("expected a loud failure naming LocalArtworkLoader, got: $message", failure != null && message.contains("LocalArtworkLoader"))
+    }
+
+    @Test fun noRefNeedsNoLoaderSoPreviewsShowThePlaceholder() {
+        compose.setContent { ShoalwatchTheme { Artwork(null, "Poster", Modifier.width(120.dp), title = "Alien") } }
+        compose.onNodeWithContentDescription("Poster").assertExists()
+        compose.onAllNodesWithText("A", useUnmergedTree = true).assertCountEquals(1)
+    }
+
+    @Test fun thePlaceholderLetterShowsUntilThePictureHasLoadedThenGoesSoATransparentPictureCannotShowItThrough() {
+        selector.answer = { online() }
+        web.enqueue(image(bitmapBytes(), "image/jpeg"))
+        show(ref(), ArtworkAspect.POSTER)
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("A", useUnmergedTree = true).fetchSemanticsNodes().isEmpty() }
+        compose.onAllNodesWithText("A", useUnmergedTree = true).assertCountEquals(0)
+        selector.answer = { null }
+        show(ref("other"), ArtworkAspect.POSTER)
+        compose.onAllNodesWithText("A", useUnmergedTree = true).assertCountEquals(1)
     }
 }

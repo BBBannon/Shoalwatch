@@ -1,7 +1,6 @@
 package app.shoalwatch.data.images
 
 import android.graphics.Bitmap
-import app.shoalwatch.testId
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -86,7 +85,8 @@ class ArtworkFetcherTest : ArtworkTestBase() {
     @Test fun anotherUserOfTheSameServerReusesTheEntry() {
         serve(image(bitmapBytes(), "image/jpeg"))
         loaded(ref())
-        val other = ArtworkRef.of(app.shoalwatch.data.servers.Session(session.serverId, testId("someone-else")), item, ArtworkType.PRIMARY, "tag1")!!
+        runBlocking { store.upsertAccount(app.shoalwatch.data.servers.Account(session.serverId, app.shoalwatch.U2, "amy", "tok-2"), makeActive = false) }
+        val other = ArtworkRef.of(app.shoalwatch.data.servers.Session(session.serverId, app.shoalwatch.U2), item, ArtworkType.PRIMARY, "tag1")!!
         loaded(other)
         assertEquals(1, web.requestCount)
     }
@@ -141,8 +141,8 @@ class ArtworkFetcherTest : ArtworkTestBase() {
 
     @Test fun aDamagedSavedEntryIsDroppedAndFetchedAgain() {
         val r = ref()
-        val editor = loader.diskCache!!.openEditor(ArtworkLimits.cacheKey(r, 320))!!
-        loader.diskCache!!.fileSystem.write(editor.data) { write(pngDeclaring(20000, 20000)) }
+        val editor = diskOf(r).openEditor(ArtworkLimits.cacheKey(r, 320))!!
+        diskOf(r).fileSystem.write(editor.data) { write(pngDeclaring(20000, 20000)) }
         editor.commit()
         serve(image(bitmapBytes(), "image/jpeg"))
         assertEquals(40, loaded(r).width)

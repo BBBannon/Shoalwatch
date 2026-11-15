@@ -5,6 +5,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import app.shoalwatch.ShoalwatchApp
+import androidx.compose.runtime.CompositionLocalProvider
+import app.shoalwatch.ui.components.LocalArtworkLoader
 import app.shoalwatch.ui.nav.AppRoot
 import app.shoalwatch.ui.theme.ShoalwatchTheme
 
@@ -15,7 +17,9 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         val graph = ShoalwatchApp.graph(this)
         setContent {
-            ShoalwatchTheme { AppRoot(graph) }
+            CompositionLocalProvider(LocalArtworkLoader provides graph.imageLoader) {
+                ShoalwatchTheme { AppRoot(graph) }
+            }
         }
     }
 }

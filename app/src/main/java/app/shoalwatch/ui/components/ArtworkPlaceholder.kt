@@ -2,12 +2,14 @@ package app.shoalwatch.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import java.text.BreakIterator
@@ -28,6 +30,13 @@ fun placeholderStyle(seed: String): PlaceholderStyle {
     val accent = if (hash and 1 == 0) PlaceholderAccent.PRIMARY else PlaceholderAccent.TERTIARY
     return PlaceholderStyle(accent, MIN_BLEND + ((hash ushr 1) % BLEND_STEPS) * BLEND_STEP)
 }
+
+/** Every blend [placeholderStyle] can produce: the tests check the letter's contrast against each. */
+internal fun placeholderBlends(): List<Float> = (0 until BLEND_STEPS).map { MIN_BLEND + it * BLEND_STEP }
+
+/** The block's colour: the theme's surface variant leaning [PlaceholderStyle.amount] towards the accent container. */
+internal fun placeholderColour(scheme: ColorScheme, style: PlaceholderStyle): Color =
+    lerp(scheme.surfaceVariant, if (style.accent == PlaceholderAccent.PRIMARY) scheme.primaryContainer else scheme.tertiaryContainer, style.amount)
 
 private const val MIN_BLEND = 0.08f
 private const val BLEND_STEP = 0.03f
@@ -66,9 +75,8 @@ private const val CROSSFADE_MS = 150
 internal fun ArtworkPlaceholder(seed: String, title: String?, modifier: Modifier = Modifier) {
     val scheme = MaterialTheme.colorScheme
     val style = remember(seed) { placeholderStyle(seed) }
-    val accent = if (style.accent == PlaceholderAccent.PRIMARY) scheme.primaryContainer else scheme.tertiaryContainer
     val letter = remember(title) { firstGrapheme(title) }
-    Box(modifier.background(lerp(scheme.surfaceVariant, accent, style.amount)).clearAndSetSemantics {}, contentAlignment = Alignment.Center) {
+    Box(modifier.background(placeholderColour(scheme, style)).clearAndSetSemantics {}, contentAlignment = Alignment.Center) {
         if (letter.isNotEmpty()) Text(letter, style = MaterialTheme.typography.headlineMedium, color = scheme.onSurfaceVariant, maxLines = 1)
     }
 }

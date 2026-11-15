@@ -1,7 +1,6 @@
 package app.shoalwatch.data.images
 
 import app.shoalwatch.core.AppError
-import app.shoalwatch.core.AppLog
 import app.shoalwatch.data.api.ServerApi
 import coil3.ImageLoader
 import coil3.decode.DataSource
@@ -18,7 +17,7 @@ import okio.Buffer
 import okio.IOException
 import okio.Path
 import okio.buffer
-import java.io.ByteArrayInputStream
+import java.util.concurrent.atomic.AtomicReference
 
 /** The memory-cache key of an [ArtworkRef]: the same text the disk cache uses (see [ArtworkLimits.cacheKey]). */
 internal class ArtworkKeyer : Keyer<ArtworkRef> {
@@ -36,17 +35,19 @@ internal class ArtworkFetcher(
     private val ref: ArtworkRef,
     private val options: Options,
     private val api: ServerApi,
-    private val cache: DiskCache?,
+    private val caches: ArtworkDiskCaches,
     private val io: CoroutineDispatcher,
 ) : Fetcher {
+
+    private val cache: DiskCache = caches.forServer(ref.session.serverId)
 
     override suspend fun fetch(): FetchResult {
         val bucket = ArtworkLimits.bucketFor(options.size)
         val key = ArtworkLimits.cacheKey(ref, bucket)
-        if (cache != null && options.diskCachePolicy.readEnabled) fromDisk(cache, key)?.let { return it }
+        if (options.diskCachePolicy.readEnabled) fromDisk(key)?.let { return it }
         if (!options.networkCachePolicy.readEnabled) throw AppError.of(AppError.Kind.OFFLINE)
         val downloaded = download(bucket)
-        return withContext(io) { save(key, downloaded) }
+        return save(key, downloaded)
     }
 
     private class Downloaded(val kind: ArtworkLimits.Kind, val bytes: ByteArray)
@@ -54,71 +55,80 @@ internal class ArtworkFetcher(
     private suspend fun download(bucket: Int): Downloaded {
         val query = listOf("tag" to ref.tag, "maxWidth" to bucket.toString(), "quality" to ArtworkLimits.QUALITY.toString(), "format" to FORMAT)
         return api.getBytes(ref.session, "/Items/${ref.itemId}/Images/${ref.type.path}", query, ArtworkLimits.MAX_BYTES) { source, contentType ->
-            if (ArtworkLimits.kindOfContentType(contentType) == null) throw refuse(ArtworkRejectedException.Reason.CONTENT_TYPE)
-            val kind = ArtworkBounds.kind(source) ?: throw refuse(ArtworkRejectedException.Reason.NOT_AN_IMAGE)
+            val declared = ArtworkLimits.kindOfContentType(contentType) ?: throw ArtworkValidation.refuse(ArtworkRejectedException.Reason.CONTENT_TYPE)
+            // Early out before the body is read: the first bytes must already agree with the header.
+            val first = ArtworkBounds.kind(source) ?: throw ArtworkValidation.refuse(ArtworkRejectedException.Reason.NOT_AN_IMAGE)
+            if (first != declared) throw ArtworkValidation.refuse(ArtworkRejectedException.Reason.CONTENT_TYPE)
             val bytes = source.readByteArray()
-            if (!ArtworkLimits.isComplete(kind, bytes)) throw refuse(ArtworkRejectedException.Reason.INCOMPLETE)
-            val bounds = ArtworkBounds.read(ByteArrayInputStream(bytes))
-            if (bounds == null || !ArtworkLimits.dimensionsAcceptable(bounds.first, bounds.second)) throw refuse(ArtworkRejectedException.Reason.DIMENSIONS)
+            val kind = ArtworkValidation.check(declared, bytes)
             Downloaded(kind, bytes)
         }
     }
 
-    private fun refuse(reason: ArtworkRejectedException.Reason): ArtworkRejectedException {
-        AppLog.d(TAG, "artwork refused: $reason")
-        return ArtworkRejectedException(reason)
+    /** Saved entries are written only after [ArtworkValidation.check]; a saved one is checked the same way (read once), and a bad one is dropped. */
+    private suspend fun fromDisk(key: String): SourceFetchResult? = handingOver { held ->
+        val snapshot = cache.openSnapshot(key) ?: return@handingOver null
+        held.set(snapshot)
+        val kind = try {
+            ArtworkValidation.check(null, readSaved(snapshot.data))
+        } catch (e: ArtworkRejectedException) {
+            null
+        } catch (e: IOException) {
+            null
+        }
+        if (kind == null) {
+            held.set(null)
+            snapshot.close()
+            cache.remove(key)
+            return@handingOver null
+        }
+        SourceFetchResult(ImageSource(snapshot.data, cache.fileSystem, key, snapshot, ArtworkSourceInfo { cache.remove(key) }), kind.mime, DataSource.DISK)
     }
 
-    /** A saved entry that is still a plausible image of an allowed kind; anything else is dropped and treated as not saved. */
-    private suspend fun fromDisk(cache: DiskCache, key: String): SourceFetchResult? = withContext(io) {
-        val snapshot = cache.openSnapshot(key) ?: return@withContext null
-        try {
-            val kind = readable(cache, snapshot.data)
-            if (kind == null) {
-                snapshot.close()
-                cache.remove(key)
-                return@withContext null
-            }
-            SourceFetchResult(ImageSource(snapshot.data, cache.fileSystem, key, snapshot), kind.mime, DataSource.DISK)
+    private fun readSaved(file: Path): ByteArray {
+        val size = cache.fileSystem.metadata(file).size
+        if (size == null || size > ArtworkLimits.MAX_BYTES) throw ArtworkRejectedException(ArtworkRejectedException.Reason.INCOMPLETE)
+        return cache.fileSystem.source(file).buffer().use { it.readByteArray() }
+    }
+
+    /** Writes the validated bytes to the cache (when allowed) and serves them from there, or straight from memory if the cache will not take them. */
+    private suspend fun save(key: String, downloaded: Downloaded): SourceFetchResult = handingOver { held ->
+        val snapshot = if (options.diskCachePolicy.writeEnabled) write(key, downloaded.bytes) else null
+        held.set(snapshot)
+        val source = if (snapshot != null) ImageSource(snapshot.data, cache.fileSystem, key, snapshot, ArtworkSourceInfo { cache.remove(key) })
+        else ImageSource(Buffer().write(downloaded.bytes), options.fileSystem, ArtworkSourceInfo { })
+        SourceFetchResult(source, downloaded.kind.mime, DataSource.NETWORK)
+    }
+
+    /**
+     * Runs blocking cache work on [io]. Whatever [block] opens must be put in `held`; if the caller is cancelled while the work
+     * runs, `withContext` throws the finished result away, so anything still held is closed here: no snapshot is ever leaked.
+     */
+    private suspend fun <T> handingOver(block: (AtomicReference<AutoCloseable?>) -> T): T {
+        val held = AtomicReference<AutoCloseable?>()
+        return try {
+            withContext(io) { block(held) }.also { held.set(null) }
         } catch (e: Throwable) {
-            snapshot.close()
+            held.getAndSet(null)?.close()
             throw e
         }
     }
 
-    private fun readable(cache: DiskCache, file: Path): ArtworkLimits.Kind? = try {
-        val kind = cache.fileSystem.source(file).buffer().use { ArtworkBounds.kind(it) }
-        val bounds = cache.fileSystem.source(file).buffer().use { ArtworkBounds.read(it.inputStream()) }
-        kind.takeIf { bounds != null && ArtworkLimits.dimensionsAcceptable(bounds.first, bounds.second) }
-    } catch (e: IOException) {
-        null
-    }
-
-    /** Writes the validated bytes to the cache (when allowed) and serves them from there, or straight from memory if the cache will not take them. */
-    private fun save(key: String, downloaded: Downloaded): SourceFetchResult {
-        val snapshot = if (cache != null && options.diskCachePolicy.writeEnabled) write(cache, key, downloaded.bytes) else null
-        val source = if (snapshot != null) ImageSource(snapshot.data, cache!!.fileSystem, key, snapshot)
-        else ImageSource(Buffer().write(downloaded.bytes), options.fileSystem)
-        return SourceFetchResult(source, downloaded.kind.mime, DataSource.NETWORK)
-    }
-
-    private fun write(cache: DiskCache, key: String, bytes: ByteArray): DiskCache.Snapshot? {
+    private fun write(key: String, bytes: ByteArray): DiskCache.Snapshot? {
         val editor = cache.openEditor(key) ?: return null
         return try {
             cache.fileSystem.write(editor.data) { write(bytes) }
             editor.commitAndOpenSnapshot()
-        } catch (e: IOException) {
+        } catch (e: Exception) {
+            // Every Exception (a full disk, a cache shut down by an eviction) falls back to memory; cancellation is not an Exception here, it cannot interrupt this.
             editor.abort()
             null
-        } catch (e: Throwable) {
-            editor.abort()
-            throw e
         }
     }
 
-    class Factory(private val api: ServerApi, private val io: CoroutineDispatcher) : Fetcher.Factory<ArtworkRef> {
+    class Factory(private val api: ServerApi, private val caches: ArtworkDiskCaches, private val io: CoroutineDispatcher) : Fetcher.Factory<ArtworkRef> {
         override fun create(data: ArtworkRef, options: Options, imageLoader: ImageLoader): Fetcher =
-            ArtworkFetcher(data, options, api, imageLoader.diskCache, io)
+            ArtworkFetcher(data, options, api, caches, io)
     }
 
     private companion object {

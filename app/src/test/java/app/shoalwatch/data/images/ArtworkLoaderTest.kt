@@ -12,6 +12,7 @@ import okio.FileSystem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
@@ -58,15 +59,8 @@ class ArtworkLoaderTest : ArtworkTestBase() {
         for (banned in listOf("Network", "Http", "Gif", "Animated", "Svg", "Video")) assertFalse("$banned in $names", names.contains(banned, ignoreCase = true))
         assertTrue(names.contains("ArtworkFetcher"))
         assertTrue(loader.components.interceptors.first().javaClass.name.contains("ArtworkOnly"))
+        assertNull("our per-server caches are the only disk cache", loader.diskCache)
         assertEquals("our own decoder is consulted first", ArtworkDecoder.Factory::class.java, loader.components.decoderFactories.first().javaClass)
-    }
-
-    @Test fun theDiskCacheLivesInTheCacheDirectoryAndIsCappedAt250Mb() {
-        assertEquals(250L * 1024 * 1024, loader.diskCache!!.maxSize)
-        val built = ArtworkLoader.build(context, api)
-        try {
-            assertEquals(File(context.cacheDir, "artwork").absolutePath, built.diskCache!!.directory.toString().replace('\\', '/').let { File(it).absolutePath })
-        } finally { built.shutdown() }
     }
 
     @Test fun theDecoderRefusesAnAbsurdImageEvenIfItReachedTheCache() {
@@ -79,14 +73,5 @@ class ArtworkLoaderTest : ArtworkTestBase() {
         } catch (e: ArtworkRejectedException) {
             assertEquals(ArtworkRejectedException.Reason.DIMENSIONS, e.reason)
         }
-    }
-
-    @Test fun theDecoderDownsamplesSoTheBitmapNeverExceedsTwiceTheBucket() {
-        val bytes = bitmapBytes(3000, 2000, android.graphics.Bitmap.CompressFormat.PNG)
-        val source = SourceFetchResult(ImageSource(Buffer().write(bytes), FileSystem.SYSTEM), "image/png", DataSource.DISK)
-        val options = Options(context, size = coil3.size.Size(5000, 5000))
-        val result = runBlocking { ArtworkDecoder.Factory().create(source, options, loader)!!.decode()!! }
-        assertTrue(result.isSampled)
-        assertTrue("${result.image.width} wide", result.image.width <= 2 * 1280)
     }
 }

@@ -24,7 +24,7 @@ class ArtworkHostileInputTest : ArtworkTestBase() {
         val ref = ref()
         val error = failed(ref, widthPx)
         assertNull("nothing cached", cached(ref, ArtworkLimits.bucketFor(widthPx)))
-        assertEquals(0L, loader.diskCache!!.size)
+        assertEquals(0L, diskOf(ref).size)
         return error
     }
 
@@ -97,7 +97,7 @@ class ArtworkHostileInputTest : ArtworkTestBase() {
         val ref = ref()
         failed(ref)
         assertNull(cached(ref, 320))
-        assertEquals(0L, loader.diskCache!!.size)
+        assertEquals(0L, diskOf(ref).size)
     }
 
     @Test fun aRedirectIsNotFollowed() {
@@ -126,5 +126,52 @@ class ArtworkHostileInputTest : ArtworkTestBase() {
         val text = refused(image("nope".toByteArray(), "text/plain")).let { generateSequence(it) { t -> t.cause }.joinToString(" ") { t -> "${t.javaClass.name} ${t.message}" } }
         assertFalse(text.contains("tok-1")); assertFalse(text.contains("127.0.0.1")); assertFalse(text.contains("tag1")); assertFalse(text.contains(item))
         assertTrue(text.isNotEmpty())
+    }
+
+    private fun reasonOf(error: Throwable) = (error as ArtworkRejectedException).reason
+
+    @Test fun aHeaderAndFirstBytesThatDisagreeAreRefusedWhicheverWayRound() {
+        val png = bitmapBytes(30, 30, Bitmap.CompressFormat.PNG)
+        val webp = bitmapBytes(30, 30, Bitmap.CompressFormat.WEBP_LOSSY)
+        assertEquals(ArtworkRejectedException.Reason.CONTENT_TYPE, reasonOf(refused(image(png, "image/jpeg"))))
+        assertEquals(ArtworkRejectedException.Reason.CONTENT_TYPE, reasonOf(refused(image(jpeg, "image/png"))))
+        assertEquals(ArtworkRejectedException.Reason.CONTENT_TYPE, reasonOf(refused(image(webp, "image/jpeg"))))
+        assertEquals(ArtworkRejectedException.Reason.CONTENT_TYPE, reasonOf(refused(image(jpeg, "image/webp"))))
+    }
+
+    @Test fun aRiffContainerThatIsNotWebpIsRefused() {
+        val wave = ByteArray(44).also {
+            "RIFF".forEachIndexed { i, c -> it[i] = c.code.toByte() }
+            it[4] = 36
+            "WAVEfmt ".forEachIndexed { i, c -> it[8 + i] = c.code.toByte() }
+        }
+        assertEquals(ArtworkRejectedException.Reason.NOT_AN_IMAGE, reasonOf(refused(image(wave, "image/webp"))))
+    }
+
+    @Test fun imageJpgIsNotAContentTypeWeAccept() {
+        assertEquals(ArtworkRejectedException.Reason.CONTENT_TYPE, reasonOf(refused(image(jpeg, "image/jpg"))))
+    }
+
+    @Test fun anApngIsRefusedNotShownAsAStill() {
+        val still = bitmapBytes(8, 8, Bitmap.CompressFormat.PNG)
+        // Insert an animation control chunk straight after IHDR (8 byte signature + 25 byte IHDR chunk).
+        val acTL = java.io.ByteArrayOutputStream().also { out ->
+            val body = "acTL".toByteArray() + ByteArray(8)
+            val crc = java.util.zip.CRC32().apply { update(body) }.value
+            out.write(byteArrayOf(0, 0, 0, 8)); out.write(body); for (i in 3 downTo 0) out.write((crc shr (8 * i)).toInt())
+        }.toByteArray()
+        val apng = still.copyOfRange(0, 33) + acTL + still.copyOfRange(33, still.size)
+        assertEquals(ArtworkRejectedException.Reason.ANIMATED, reasonOf(refused(image(apng, "image/png"))))
+    }
+
+    @Test fun anAnimatedWebpIsRefusedNotShownAsAStill() {
+        val animated = ByteArray(40).also {
+            "RIFF".forEachIndexed { i, c -> it[i] = c.code.toByte() }
+            it[4] = 32
+            "WEBPVP8X".forEachIndexed { i, c -> it[8 + i] = c.code.toByte() }
+            it[16] = 10
+            it[20] = 0x02
+        }
+        assertEquals(ArtworkRejectedException.Reason.ANIMATED, reasonOf(refused(image(animated, "image/webp"))))
     }
 }

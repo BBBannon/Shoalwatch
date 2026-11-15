@@ -110,4 +110,47 @@ class ArtworkLimitsTest {
         assertTrue("a new bucket is a new entry", key != ArtworkLimits.cacheKey(ref, 480))
         assertNotNull(ref)
     }
+
+    private fun pngChunk(type: String, data: ByteArray): ByteArray {
+        val body = type.toByteArray(Charsets.US_ASCII) + data
+        val crc = java.util.zip.CRC32().apply { update(body) }.value
+        fun int(v: Long) = ByteArray(4) { (v shr (24 - 8 * it)).toByte() }
+        return int(data.size.toLong()) + body + int(crc)
+    }
+
+    @Test fun anApngIsRecognisedByItsAnimationControlChunkBeforeTheImageData() {
+        val ihdr = pngChunk("IHDR", ByteArray(13))
+        val still = png + ihdr + pngChunk("IDAT", ByteArray(4)) + iend
+        val apng = png + ihdr + pngChunk("acTL", ByteArray(8)) + pngChunk("IDAT", ByteArray(4)) + iend
+        assertFalse(ArtworkLimits.isAnimated(Kind.PNG, still))
+        assertTrue(ArtworkLimits.isAnimated(Kind.PNG, apng))
+        assertFalse("a malformed chunk length never loops or throws", ArtworkLimits.isAnimated(Kind.PNG, png + byteArrayOf(0x7F, 0, 0, 0, 'a'.code.toByte())))
+    }
+
+    @Test fun anAnimatedWebpIsRecognisedByTheExtendedHeaderFlag() {
+        fun vp8x(flags: Int) = webp(100, 108).also {
+            "VP8X".forEachIndexed { i, c -> it[12 + i] = c.code.toByte() }
+            it[20] = flags.toByte()
+        }
+        assertTrue(ArtworkLimits.isAnimated(Kind.WEBP, vp8x(0x02)))
+        assertTrue(ArtworkLimits.isAnimated(Kind.WEBP, vp8x(0x12)))
+        assertFalse(ArtworkLimits.isAnimated(Kind.WEBP, vp8x(0x10)))
+        assertFalse("a plain lossy file is a still", ArtworkLimits.isAnimated(Kind.WEBP, webp(100, 108)))
+        assertFalse(ArtworkLimits.isAnimated(Kind.JPEG, byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte())))
+    }
+
+    @Test fun sampleSizeKeepsTheWidthUnderTwiceTheBucketAndThePixelsUnderTheBudget() {
+        assertEquals(1, ArtworkLimits.sampleSize(1000, 1500, 1280))
+        assertEquals(4, ArtworkLimits.sampleSize(1000, 1500, 160))
+        assertEquals(1, ArtworkLimits.sampleSize(1, 8192, 160))
+        assertEquals(4, ArtworkLimits.sampleSize(2559, 8192, 1280))
+        assertEquals(4, ArtworkLimits.sampleSize(8192, 2559, 1280))
+        assertEquals(32, ArtworkLimits.sampleSize(8192, 100, 160))
+        for (w in listOf(1, 100, 1280, 2559, 5000, 8192)) for (h in listOf(1, 800, 4880, 8192)) for (bucket in ArtworkLimits.BUCKETS.toList()) {
+            if (!ArtworkLimits.dimensionsAcceptable(w, h)) continue
+            val ss = ArtworkLimits.sampleSize(w, h, bucket)!!
+            assertTrue("${w}x$h @ $bucket: $ss", ((w + ss - 1) / ss).toLong() * ((h + ss - 1) / ss) <= ArtworkLimits.MAX_DECODED_PIXELS)
+            assertTrue("${w}x$h @ $bucket width", (w + ss - 1) / ss <= maxOf(2 * bucket, 1))
+        }
+    }
 }

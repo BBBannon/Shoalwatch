@@ -3,6 +3,8 @@ package app.shoalwatch
 import android.content.Context
 import app.shoalwatch.data.api.ServerApi
 import app.shoalwatch.data.db.AppDatabase
+import app.shoalwatch.data.images.ArtworkDiskCaches
+import app.shoalwatch.data.images.ArtworkEviction
 import app.shoalwatch.data.images.ArtworkLoader
 import app.shoalwatch.data.library.Library
 import app.shoalwatch.data.library.LibraryRepository
@@ -33,7 +35,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import java.io.File
 
 /** Holds the app's lazy singletons (no DI framework). Later tasks add the rest of the data layer here. */
 class AppGraph(private val appContext: Context) {
@@ -44,8 +48,8 @@ class AppGraph(private val appContext: Context) {
     val serverClients: ServerClients by lazy { ServerClients(httpClientFactory) }
     val serverStore: ServerStore by lazy { ServerStore(
         database, secretBox, serverClients::evict,
-        onServerRemoved = { addressSelector.forget(it); libraryRepository.forget(it) },
-        onAccountGone = { server, user -> libraryRepository.forget(server, user) },
+        onServerRemoved = { addressSelector.forget(it); libraryRepository.forget(it); artworkEviction.onServerRemoved(it) },
+        onAccountGone = { server, user -> libraryRepository.forget(server, user); artworkEviction.onAccountGone(server) },
         onAccountSignedIn = { server, user -> libraryRepository.forget(server, user) },
     ) }
     val httpClientFactory: HttpClientFactory by lazy { HttpClientFactory(appContext) }
@@ -55,8 +59,16 @@ class AppGraph(private val appContext: Context) {
     val addressSelector: AddressSelector by lazy { AddressSelector(jellyfinGateway, networkMonitor, appScope, deviceIdentity, serverStore) }
     /** The one path for every signed-in request; nothing in the UI uses it yet. */
     val serverApi: ServerApi by lazy { ServerApi(serverStore, addressSelector, serverClients, deviceIdentity) }
-    /** The one image loader: it loads `ArtworkRef`s and nothing else (see "Artwork" in docs/ARCHITECTURE.md). Coil's singleton, set up in `ShoalwatchApp`. */
-    val imageLoader: ImageLoader by lazy { ArtworkLoader.build(appContext, serverApi) }
+    /** Saved pictures, one folder per server in `cacheDir/artwork` (so a removed server's pictures can go as a unit). */
+    val artworkCaches: ArtworkDiskCaches by lazy { ArtworkDiskCaches(File(appContext.cacheDir, "artwork")) }
+    /** The one image loader: it loads `ArtworkRef`s and nothing else (see "Artwork" in docs/ARCHITECTURE.md). Provided to every screen as `LocalArtworkLoader` and also set as Coil's singleton in `ShoalwatchApp`. */
+    val imageLoader: ImageLoader by lazy {
+        ArtworkLoader.build(appContext, serverApi, { s -> serverStore.awaitWarmed(); serverStore.cachedToken(s.serverId, s.userId) != null }, artworkCaches)
+    }
+    /** Clears a server's pictures when the server, or its last signed-in account, goes. */
+    val artworkEviction: ArtworkEviction by lazy {
+        ArtworkEviction(artworkCaches, { imageLoader.memoryCache }, { id -> serverStore.accounts(id).first().isNotEmpty() }, appScope, Dispatchers.IO)
+    }
     /** Library endpoints as safe models; only `library` uses it. */
     val libraryGateway: LibraryGateway by lazy { LibraryGatewayImpl(serverApi) }
     /** What every browsing screen reads: saved rows first, refreshed behind them (see "Library repository" in docs/ARCHITECTURE.md). */
