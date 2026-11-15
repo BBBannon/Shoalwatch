@@ -4,6 +4,13 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!--
+        Media3's ExoPlayer AAR requests WAKE_LOCK for its optional wake mode. The player never sets a wake
+        mode (the player screen keeps itself on through its window), so the permission is removed.
+    -->
+    <uses-permission
+        android:name="android.permission.WAKE_LOCK"
+        tools:node="remove" />
 
     <!--
         usesCleartextTraffic="true" is deliberate. Users may opt in to a plain-HTTP LAN server, per

@@ -64,7 +64,10 @@ class ManifestSecurityTest {
     @Test
     fun onlyInternetAndNetworkStatePermissionsAreRequested() {
         val permissions = manifest.getElementsByTagName("uses-permission").let { nodes ->
-            (0 until nodes.length).map { (nodes.item(it) as Element).attr("name") }
+            // A `tools:node="remove"` entry is a removal of a library's request (WAKE_LOCK from Media3), not a request.
+            (0 until nodes.length).map { nodes.item(it) as Element }
+                .filter { it.getAttributeNS("http://schemas.android.com/tools", "node") != "remove" }
+                .map { it.attr("name") }
         }
         assertEquals(
             setOf("android.permission.INTERNET", "android.permission.ACCESS_NETWORK_STATE"),
