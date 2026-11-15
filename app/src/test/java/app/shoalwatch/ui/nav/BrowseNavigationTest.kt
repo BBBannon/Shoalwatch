@@ -6,6 +6,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import app.shoalwatch.data.playback.StartFrom
 import app.shoalwatch.ui.present.Destination
 import org.junit.Assert.assertEquals
 import org.junit.Before
@@ -40,6 +41,7 @@ class BrowseNavigationTest {
                     library = { viewId -> arrived += "library:$viewId" },
                     series = { id, s, e -> arrived += "series:$id|$s|$e" },
                     item = { id -> arrived += "item:$id" },
+                    player = { id, from -> arrived += "play:$id|$from" },
                 )
             }
         }
@@ -86,5 +88,29 @@ class BrowseNavigationTest {
         assertEquals("series/$series?season=$season", Routes.series(series, season))
         assertEquals("series/$series?episode=$episode", Routes.series(series, null, episode))
         assertEquals("series/$series?season=$season&episode=$episode", Routes.series(series, season, episode))
+    }
+
+    private fun go(route: String): String {
+        arrived.clear()
+        rule.runOnUiThread { nav.navigate(route) }
+        rule.waitForIdle()
+        return arrived.last()
+    }
+
+    @Test fun thePlayerArrivesWithItsIdAndWhereToStart() {
+        assertEquals("play/$episode?from=resume", Routes.player(episode, StartFrom.RESUME))
+        assertEquals("play/$episode?from=start", Routes.player(episode, StartFrom.BEGINNING))
+        assertEquals("play:$episode|RESUME", go(Routes.player(episode, StartFrom.RESUME)))
+        assertEquals("play:$episode|BEGINNING", go(Routes.player(episode, StartFrom.BEGINNING)))
+    }
+
+    @Test fun aFromThatIsNeitherArrivesAsTheStart() {
+        assertEquals("play:$episode|BEGINNING", go("play/$episode?from=sideways"))
+        assertEquals("play:$episode|BEGINNING", go("play/$episode"))
+        assertEquals("play:$episode|BEGINNING", go("play/$episode?from=RESUME"))
+    }
+
+    @Test fun anOddIdIsEncodedIntoThePath() {
+        assertEquals("play:a/b?c|RESUME", go(Routes.player("a/b?c", StartFrom.RESUME)))
     }
 }

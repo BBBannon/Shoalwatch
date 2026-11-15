@@ -46,7 +46,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -56,6 +55,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import app.shoalwatch.R
 import app.shoalwatch.data.library.ItemKind
+import app.shoalwatch.data.playback.StartFrom
 import app.shoalwatch.data.library.ItemWithUserData
 import app.shoalwatch.data.servers.Session
 import app.shoalwatch.ui.browse.ActionKind
@@ -83,7 +83,6 @@ import app.shoalwatch.ui.present.plainOverview
 import app.shoalwatch.ui.present.rememberStrings
 import app.shoalwatch.ui.present.resumeLabel
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.launch
 
 /** What the detail page can ask for. The route wires these to the ViewModel and to navigation. */
 class DetailActions(
@@ -95,11 +94,14 @@ class DetailActions(
     val onOpenServers: () -> Unit,
     val onSetPlayed: (played: Boolean) -> Unit,
     val onSetFavourite: (favourite: Boolean) -> Unit,
+    /** Opens the player: [StartFrom.RESUME] from the saved position, or from the start. */
+    val onPlay: (StartFrom) -> Unit,
 )
 
 /**
- * A film or an episode. Play is always there; until the player arrives (the next milestone) pressing it says so in a snackbar:
- * nothing is faked and the button is never silently dead. Content is capped at a readable width and centred on a tablet.
+ * A film or an episode. Play is always there: "Resume from 23 min" with "Play from start" under it when there is a saved
+ * position, otherwise "Play". Offline it still opens the player, which says it is offline with Try again. Content is capped at a
+ * readable width and centred on a tablet.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -132,7 +134,7 @@ fun DetailScreen(state: DetailUiState, actions: DetailActions, messages: Flow<St
                 item == null || session == null -> Loading(actions.onBack)
                 else -> {
                     PullRefresh(isRefreshing = state.pulling, onRefresh = actions.onRefresh, modifier = Modifier.fillMaxSize(), belowStatusBar = true) {
-                        Content(state, item, session, actions, snackbar)
+                        Content(state, item, session, actions)
                     }
                     RefreshLine(state.refreshing && !state.pulling, Modifier.statusBarsPadding().align(Alignment.TopCenter))
                 }
@@ -163,12 +165,10 @@ private fun Loading(onBack: () -> Unit) {
 }
 
 @Composable
-private fun Content(state: DetailUiState, entry: ItemWithUserData, session: Session, actions: DetailActions, snackbar: SnackbarHostState) {
+private fun Content(state: DetailUiState, entry: ItemWithUserData, session: Session, actions: DetailActions) {
     val strings = rememberStrings()
     val item = entry.item
     val data = entry.userData
-    val scope = rememberCoroutineScope()
-    val later = stringResource(R.string.detail_playback_later)
     val facts = detailFacts(strings, item)
     val percent = percentWatched(item, data)
     val resume = resumeLabel(strings, data?.positionMs ?: 0)
@@ -198,12 +198,17 @@ private fun Content(state: DetailUiState, entry: ItemWithUserData, session: Sess
                 }
                 WatchState(watched, resume, percent?.let { strings.get(R.string.state_percent_watched, it.toString()) }, percent)
                 Button(
-                    onClick = { scope.launch { snackbar.showSnackbar(later) } },
+                    onClick = { actions.onPlay(if (resume != null) StartFrom.RESUME else StartFrom.BEGINNING) },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                 ) {
                     Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(24.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.detail_play), style = MaterialTheme.typography.titleMedium)
+                    Text(resume ?: stringResource(R.string.detail_play), style = MaterialTheme.typography.titleMedium)
+                }
+                if (resume != null) {
+                    TextButton(onClick = { actions.onPlay(StartFrom.BEGINNING) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                        Text(stringResource(R.string.detail_play_from_start), style = MaterialTheme.typography.labelLarge)
+                    }
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     WatchedButton(

@@ -86,7 +86,7 @@ class SessionChangeNavigationTest {
                     LaunchedEffect(signedIn) { if (signedIn) nav.toHome() }
                     Text("sign in")
                 }
-                browsingDestinations(library = { Text("library") }, series = { _, _, _ -> Text("series") }, item = { Text("item") })
+                browsingDestinations(library = { Text("library") }, series = { _, _, _ -> Text("series") }, item = { Text("item") }, player = { _, _ -> Text("player") })
             }
         }
         rule.waitForIdle()
@@ -113,6 +113,16 @@ class SessionChangeNavigationTest {
     @Test fun switchingAccountClearsEverythingTheOldAccountOpenedAndLandsOnHome() {
         start()
         openThreeAsBen()
+        catalog.activeFlow.value = amy
+        rule.waitForIdle()
+        assertOnlyHome()
+    }
+
+    @Test fun switchingAccountWhileThePlayerShowsTakesThePlayerAwayToo() {
+        start()
+        openThreeAsBen()
+        go(Routes.player(item, app.shoalwatch.data.playback.StartFrom.RESUME))
+        assertEquals(Routes.PLAYER, nav.currentBackStackEntry?.destination?.route)
         catalog.activeFlow.value = amy
         rule.waitForIdle()
         assertOnlyHome()

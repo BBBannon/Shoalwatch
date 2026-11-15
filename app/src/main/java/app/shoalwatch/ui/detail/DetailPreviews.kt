@@ -21,7 +21,7 @@ private val film = previewEntry(
 
 private val episode = previewEntry(8, "The Turning Tide", ItemKind.EPISODE, series = "Tidal", code = 2 to 5, overview = "A storm decides the route.")
 
-private val actions = DetailActions({}, {}, {}, {}, {}, {}, {}, {})
+private val actions = DetailActions({}, {}, {}, {}, {}, {}, {}, {}, {})
 
 @Composable
 private fun Screen(state: DetailUiState) = ShoalwatchTheme { DetailScreen(state, actions, emptyFlow(), SnackbarHostState()) }

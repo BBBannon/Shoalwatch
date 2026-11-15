@@ -16,6 +16,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import app.shoalwatch.R
 import app.shoalwatch.data.library.ItemWithUserData
+import app.shoalwatch.data.playback.StartFrom
 import app.shoalwatch.ui.browse.ActionKind
 import app.shoalwatch.ui.browse.BEN
 import app.shoalwatch.ui.browse.RenderBase
@@ -43,10 +44,11 @@ abstract class DetailRenderBase : RenderBase() {
     private var signIns = 0
     private var reviews = 0
     private var servers = 0
+    private val plays = mutableListOf<StartFrom>()
 
     private val actions = DetailActions(
         onBack = { backs++ }, onRefresh = { refreshed++ }, onOpen = { opened += it }, onSignIn = { signIns++ }, onReview = { reviews++ },
-        onOpenServers = { servers++ }, onSetPlayed = { played += it }, onSetFavourite = { favourites += it },
+        onOpenServers = { servers++ }, onSetPlayed = { played += it }, onSetFavourite = { favourites += it }, onPlay = { plays += it },
     )
 
     private fun film(data: app.shoalwatch.data.library.UserData? = userData()): ItemWithUserData =
@@ -97,11 +99,24 @@ abstract class DetailRenderBase : RenderBase() {
         assertShown(text(R.string.sheet_mark_watched))
     }
 
-    @Test fun playIsAlwaysThereAndSaysPlaybackArrivesLater() {
+    @Test fun withNoSavedPositionPlayPlaysFromTheStart() {
         showDetail(ready())
+        assertNotShown(text(R.string.detail_play_from_start))
         rule.onAllNodes(hasText(text(R.string.detail_play))).onFirst().performScrollTo().performClick()
-        rule.waitForIdle()
-        assertShown(text(R.string.detail_playback_later))
+        assertEquals(listOf(StartFrom.BEGINNING), plays)
+    }
+
+    @Test fun withASavedPositionTheButtonResumesAndPlayFromStartIsOffered() {
+        showDetail(ready(film(userData(positionMs = 23 * 60_000L, percent = 22f))))
+        rule.onAllNodes(hasText("Resume from 23 min")).onFirst().performScrollTo().performClick()
+        rule.onAllNodes(hasText(text(R.string.detail_play_from_start))).onFirst().performScrollTo().performClick()
+        assertEquals(listOf(StartFrom.RESUME, StartFrom.BEGINNING), plays)
+    }
+
+    @Test fun playButtonsAreAtLeast48dpHigh() {
+        showDetail(ready(film(userData(positionMs = 23 * 60_000L, percent = 22f))))
+        val node = rule.onAllNodes(hasText(text(R.string.detail_play_from_start))).onFirst().performScrollTo().fetchSemanticsNode()
+        assertTrue(node.size.height >= with(rule.density) { 48.dp.roundToPx() })
     }
 
     @Test fun markWatchedAndFavouriteArePassedOn() {

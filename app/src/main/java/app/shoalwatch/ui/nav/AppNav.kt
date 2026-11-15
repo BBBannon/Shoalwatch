@@ -32,6 +32,7 @@ import androidx.navigation.navArgument
 import androidx.navigation.navOptions
 import app.shoalwatch.AppGraph
 import app.shoalwatch.R
+import app.shoalwatch.data.playback.StartFrom
 import app.shoalwatch.data.servers.ServerCatalog
 import app.shoalwatch.data.servers.Session
 import kotlinx.coroutines.flow.map
@@ -56,6 +57,9 @@ internal object Routes {
     const val SERIES = "series/{$ARG_SERIES}?$ARG_SEASON={$ARG_SEASON}&$ARG_EPISODE={$ARG_EPISODE}"
     const val ARG_ITEM = "itemId"
     const val ITEM = "item/{$ARG_ITEM}"
+    const val ARG_FROM = "from"
+    /** The player for an item. [ARG_FROM] is "resume" or "start"; anything else (or nothing) arrives as the start. */
+    const val PLAYER = "play/{$ARG_ITEM}?$ARG_FROM={$ARG_FROM}"
     const val SERVERS = "servers"
     const val ARG_SERVER = "serverId"
     const val SIGN_IN = "sign_in/{$ARG_SERVER}"
@@ -75,6 +79,9 @@ internal object Routes {
     }
 
     fun item(itemId: String) = "item/${Uri.encode(itemId)}"
+    fun player(itemId: String, from: StartFrom) = "play/${Uri.encode(itemId)}?$ARG_FROM=${if (from == StartFrom.RESUME) FROM_RESUME else FROM_START}"
+    const val FROM_RESUME = "resume"
+    const val FROM_START = "start"
     fun signIn(serverId: String) = "sign_in/${Uri.encode(serverId)}"
     fun serverEdit(serverId: String) = "server/${Uri.encode(serverId)}"
 }
@@ -84,7 +91,7 @@ internal object Routes {
  * ([StartupViewModel]), so the wrong screen never flashes.
  *
  * Navigation graph: `welcome` (first run) or `home` to start; `add_server` and `sign_in/{serverId}` for
- * onboarding; `servers` and `server/{serverId}` for management. Signing in clears the stack and lands on `home`.
+ * onboarding; `play/{itemId}?from=` for the player; `servers` and `server/{serverId}` for management. Signing in clears the stack and lands on `home`.
  */
 @Composable
 fun AppRoot(graph: AppGraph) {
@@ -137,6 +144,7 @@ private fun AppNavHost(graph: AppGraph, start: String) {
             library = { viewId -> LibraryRoute(graph, nav, viewId) },
             series = { id, season, episode -> SeriesRoute(graph, nav, id, season, episode) },
             item = { id -> DetailRoute(graph, nav, id) },
+            player = { id, from -> PlayerRoute(graph, nav, id, from) },
         )
         composable(Routes.SERVERS) { ServersRoute(graph, nav) }
         composable(Routes.SERVER_EDIT, serverArg) { ServerEditRoute(graph, nav, it.arguments?.getString(Routes.ARG_SERVER).orEmpty()) }
@@ -205,6 +213,7 @@ internal fun NavGraphBuilder.browsingDestinations(
     library: @Composable (viewId: String) -> Unit,
     series: @Composable (seriesId: String, seasonId: String?, episodeId: String?) -> Unit,
     item: @Composable (itemId: String) -> Unit,
+    player: @Composable (itemId: String, from: StartFrom) -> Unit,
 ) {
     composable(Routes.LIBRARY, listOf(navArgument(Routes.ARG_VIEW) { type = NavType.StringType })) {
         library(it.arguments?.getString(Routes.ARG_VIEW).orEmpty())
@@ -226,5 +235,15 @@ internal fun NavGraphBuilder.browsingDestinations(
     }
     composable(Routes.ITEM, listOf(navArgument(Routes.ARG_ITEM) { type = NavType.StringType })) {
         item(it.arguments?.getString(Routes.ARG_ITEM).orEmpty())
+    }
+    composable(
+        Routes.PLAYER,
+        listOf(
+            navArgument(Routes.ARG_ITEM) { type = NavType.StringType },
+            navArgument(Routes.ARG_FROM) { type = NavType.StringType; nullable = true; defaultValue = null },
+        ),
+    ) {
+        val from = if (it.arguments?.getString(Routes.ARG_FROM) == Routes.FROM_RESUME) StartFrom.RESUME else StartFrom.BEGINNING
+        player(it.arguments?.getString(Routes.ARG_ITEM).orEmpty(), from)
     }
 }

@@ -2,11 +2,22 @@ package app.shoalwatch.ui.nav
 
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import app.shoalwatch.AppGraph
+import app.shoalwatch.data.playback.PlaybackState
+import app.shoalwatch.data.playback.StartFrom
+import app.shoalwatch.ui.player.HostLifecycle
+import app.shoalwatch.ui.player.PlayerActions
+import app.shoalwatch.ui.player.PlayerScreen
+import app.shoalwatch.ui.player.PlayerViewModel
+import app.shoalwatch.ui.player.PlayerWindow
+import app.shoalwatch.ui.player.TouchExploration
+import app.shoalwatch.ui.player.VideoSurface
+import app.shoalwatch.ui.player.rememberDolbyVisionScreen
 import app.shoalwatch.ui.home.HomeActions
 import app.shoalwatch.ui.home.HomeScreen
 import app.shoalwatch.ui.home.HomeViewModel
@@ -146,6 +157,7 @@ internal fun DetailRoute(graph: AppGraph, nav: NavHostController, itemId: String
             onOpenServers = { nav.navigate(Routes.SERVERS) },
             onSetPlayed = vm::setPlayed,
             onSetFavourite = vm::setFavourite,
+            onPlay = { from -> nav.navigate(Routes.player(itemId, from)) },
         )
     }
     DetailScreen(state, actions, vm.messages, snackbar)
@@ -175,3 +187,58 @@ internal fun DownloadsRoute(graph: AppGraph, nav: NavHostController) {
     val snackbar = remember { SnackbarHostState() }
     AppShell(Tab.DOWNLOADS, nav::switchTab, snackbar) { DownloadsScreen() }
 }
+
+/**
+ * The player. Its ViewModel (and so the controller and the engine) lives as long as this back-stack entry, so a rotation does not
+ * rebuffer. It leaves as soon as the session ends or the controller closes: popped back to where Play was pressed (and if the
+ * session changed, `ClearBrowsingOnSessionChange` takes the stack to Home as for any other screen). Popping by route does
+ * nothing if that has already taken the player away.
+ */
+@Composable
+internal fun PlayerRoute(graph: AppGraph, nav: NavHostController, itemId: String, from: StartFrom) {
+    val vm = graphStateViewModel(key = "$itemId|$from") { saved ->
+        PlayerViewModel(itemId, from, saved, graph.serverCatalog, { s, scope -> graph.playbackController(s, scope) { true } }, graph.subtitleSettings)
+    }
+    val state by vm.state.collectAsStateWithLifecycle()
+    LaunchedEffect(state.leave) { if (state.leave) nav.popBackStack(Routes.PLAYER, inclusive = true) }
+    val playing = state.playback.phase == PlaybackState.Phase.PLAYING || state.playback.phase == PlaybackState.Phase.BUFFERING
+    PlayerWindow(keepOn = playing, locked = state.locked)
+    HostLifecycle(onStopped = vm::onHostStopped, onStarted = vm::onHostStarted)
+    TouchExploration(vm::setTouchExploration)
+    val actions = remember(vm, nav) {
+        PlayerActions(
+            onBack = { nav.popBackStack(Routes.PLAYER, inclusive = true) },
+            onTapSurface = vm::tapSurface,
+            onPlayPause = vm::playPause,
+            onSeek = vm::seekTo,
+            onSkipBack = { vm.skipBy(-SKIP_MS) },
+            onSkipForward = { vm.skipBy(SKIP_MS) },
+            onDoubleTap = { forward -> vm.skipBy(if (forward) SKIP_MS else -SKIP_MS) },
+            onPrevious = vm::previous,
+            onNext = vm::next,
+            onSkipSegment = vm::skipSegment,
+            onPlayUpNext = vm::playUpNext,
+            onCancelUpNext = vm::cancelUpNext,
+            onToggleLock = vm::toggleLock,
+            onOpenSheet = vm::openSheet,
+            onCloseSheet = vm::closeSheet,
+            onSelectAudio = vm::selectAudio,
+            onSelectSubtitle = vm::selectSubtitle,
+            onBurnIn = vm::burnIn,
+            onQuality = vm::setQuality,
+            onSpeed = vm::setSpeed,
+            onSleep = vm::setSleep,
+            onAppearance = vm::setAppearance,
+            onDelay = vm::setDelay,
+            onRetry = vm::retry,
+            onSignIn = { vm.state.value.session?.let { nav.navigate(Routes.signIn(it.serverId)) } },
+            onDismissSubtitleNotice = vm::dismissSubtitleNotice,
+            onDismissSleepFired = vm::dismissSleepFired,
+        )
+    }
+    PlayerScreen(state, actions, rememberDolbyVisionScreen()) { controlsUp ->
+        VideoSurface(vm.video, vm.cues, state.appearance, controlsUp)
+    }
+}
+
+private const val SKIP_MS = 10_000L
