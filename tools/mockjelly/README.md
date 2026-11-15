@@ -18,6 +18,9 @@ python -I tools/mockjelly/mock_jellyfin.py 8096
 | `--latency-ms N` | Delay every response by N ms |
 | `--refuse` | Answer every `PlaybackInfo` request with `ErrorCode` `NotAllowed` (to see the app's refusal state) |
 | `--fail-rate P` | Answer a fraction P (0 to 1) of signed-in requests with a 500, to see error states. Sign-in and `/System/Info/Public` are never failed |
+| `--ben-not-admin` | ben is not an administrator: the Server admin entry must not appear |
+| `--pending-restart` | `/System/Info` says `HasPendingRestart` (the "Restart needed" notice) until a restart is requested |
+| `--admin-forbidden` | Every admin-only route answers 403 while `/Users/Me` still says ben is an administrator: the app must say "refused" and stay |
 
 ## Connect from the app
 
@@ -25,8 +28,10 @@ python -I tools/mockjelly/mock_jellyfin.py 8096
 |---|---|
 | Address from the Android emulator | `http://10.0.2.2:8096` (plain http: tick the unencrypted-connection consent) |
 | Address from this PC | `http://127.0.0.1:8096` |
-| User | `ben` |
+| User | `ben` (administrator unless `--ben-not-admin`) |
 | Password | `test-password` |
+| Second user | `kid` / `kid-password` (not an administrator; cannot download; Films only) |
+| Third user | `guest` (disabled; cannot sign in) |
 | Quick Connect | Reported as switched off |
 
 Each sign-in gets a fresh random token. `POST /Sessions/Logout` revokes it, after which its requests get 401. Restarting the server forgets every token and resets all watched and favourite state.
@@ -96,3 +101,38 @@ curl -H "$H" -X POST "http://127.0.0.1:8096/Sessions/Playing/Ping?playSessionId=
 curl -H "$H" http://127.0.0.1:8096/MediaSegments/$ID
 curl -H "$H" http://127.0.0.1:8096/mock/reports
 ```
+
+## Admin routes
+
+In `mock_admin.py`. All need a token this server issued (401 otherwise). Admin-only routes answer **403** to `kid` (and to ben under `--admin-forbidden` or after `/mock/demote`). A disabled user's tokens get 401 everywhere. Shapes follow the 12.4.0 reference. Some answers deliberately carry things the app must never show or keep: `RemoteEndPoint` on sessions, folder `Locations`, `LocalAddress` and paths in `/System/Info`, the IP address in sign-in activity entries, and an `AccessToken` on every device.
+
+Set `H` as above. `SID`, `TID` and `UID` are ids from the lists.
+
+| Route | Behaviour | Example |
+|---|---|---|
+| `GET /Users/Me` | The token's user with `Policy` (`IsAdministrator`, `IsDisabled`, `EnableContentDownloading`, `EnableAllFolders`, `EnabledFolders`, both provider ids and `"MockFutureField": 7`) | `curl -H "$H" http://127.0.0.1:8096/Users/Me` |
+| `GET /Users` | Admin: ben, kid and guest. Anyone else: only themselves | `curl -H "$H" http://127.0.0.1:8096/Users` |
+| `GET /Users/{id}` | Admin: anyone. Anyone else: only themselves (403) | `curl -H "$H" http://127.0.0.1:8096/Users/$UID` |
+| `POST /Users/{id}/Policy` | Admin only. 400 unless the body has both provider ids **and** `MockFutureField: 7` (so the app must post back what it read); applies `IsDisabled` only | `curl -H "$H" -H "Content-Type: application/json" -d @policy.json http://127.0.0.1:8096/Users/$UID/Policy` |
+| `GET /Sessions` | `activeWithinSeconds` accepted. Admin: kid on Living room TV (transcoding Harbour Lights S2 E3), ben on Ben's laptop (a film, paused), kid on Kid's tablet (idle), plus one per signed-in token. Anyone else: only their own | `curl -H "$H" "http://127.0.0.1:8096/Sessions?activeWithinSeconds=960"` |
+| `POST /Sessions/{id}/Message` | 400 without `Text`; 404 unknown; 403 for someone else's session unless admin. The text is kept for `/mock/admin-events` and never printed | `curl -H "$H" -H "Content-Type: application/json" -d "{\"Text\":\"Bed time\"}" http://127.0.0.1:8096/Sessions/$SID/Message` |
+| `POST /Sessions/{id}/Playing/{command}` | `Pause` sets `IsPaused`; `Stop` ends what is playing; other `PlaystateCommand`s recorded | `curl -H "$H" -X POST http://127.0.0.1:8096/Sessions/$SID/Playing/Pause` |
+| `GET /Library/VirtualFolders` | Admin only. Films and TV; `RefreshStatus` `Idle`/`Active`, `RefreshProgress` null or 25, 50, 75 (each GET while scanning adds 25) | `curl -H "$H" http://127.0.0.1:8096/Library/VirtualFolders` |
+| `POST /Library/Refresh` | Admin only. Scans every library and runs the "Scan Media Library" task | `curl -H "$H" -X POST http://127.0.0.1:8096/Library/Refresh` |
+| `POST /Items/{id}/Refresh` | Admin only. A library id scans that library; another known item 204; unknown 404 | `curl -H "$H" -X POST "http://127.0.0.1:8096/Items/$ID/Refresh?metadataRefreshMode=Default"` |
+| `GET /ScheduledTasks` | Admin only. Four tasks (one last failed, one never run) and a hidden one left out by `isHidden=false`. Each GET adds 25 to a running task | `curl -H "$H" "http://127.0.0.1:8096/ScheduledTasks?isHidden=false"` |
+| `POST`/`DELETE /ScheduledTasks/Running/{id}` | Admin only. Start (`Running` at 0) or stop (`Cancelling` on the next GET, then `Idle`/`Cancelled`); unknown 404 | `curl -H "$H" -X POST http://127.0.0.1:8096/ScheduledTasks/Running/$TID` |
+| `GET /System/ActivityLog/Entries` | Admin only. 120 entries, newest first, `startIndex`/`limit` honoured; every 10th a `Warning`, every 25th an `Error` | `curl -H "$H" "http://127.0.0.1:8096/System/ActivityLog/Entries?startIndex=0&limit=50"` |
+| `GET /Devices` | Admin only. Living room TV, Ben's laptop, Kid's tablet, plus one per signed-in token | `curl -H "$H" http://127.0.0.1:8096/Devices` |
+| `DELETE /Devices?id=` | Admin only. 400 without `id`; 404 unknown; removes it and signs out every token issued to that device id | `curl -H "$H" -X DELETE "http://127.0.0.1:8096/Devices?id=tablet-kid"` |
+| `GET /System/Info` | "Test Jellyfin", 12.4.0, `HasPendingRestart`, `IsShuttingDown` false | `curl -H "$H" http://127.0.0.1:8096/System/Info` |
+| `POST /System/Restart`, `/System/Shutdown` | Admin only. 204 and recorded; restart clears `HasPendingRestart`. The mock never stops itself | `curl -H "$H" -X POST http://127.0.0.1:8096/System/Restart` |
+
+**The `/mock/*` routes are not Jellyfin routes; they exist only for testing.**
+
+| Route | Behaviour | Example |
+|---|---|---|
+| `POST /mock/demote`, `/mock/promote` | ben's token only (403 otherwise): ben stops or starts being an administrator at run time, to see the admin screens close mid-use | `curl -H "$H" -X POST http://127.0.0.1:8096/mock/demote` |
+| `GET /mock/admin-events` | Every admin action received, newest last (`Kind`, `Target`, `Query`; a message's `Header` and `Text`) | `curl -H "$H" http://127.0.0.1:8096/mock/admin-events` |
+
+Run the admin tests with `python -I tools/mockjelly/test_mock_admin.py`.

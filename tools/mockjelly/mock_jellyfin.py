@@ -6,6 +6,7 @@ reference in docs/reference) from a small in-memory catalogue. Plain http, no TL
     python -I mock_jellyfin.py [port] [--latency-ms N] [--fail-rate P] [--host H]
 
 Each request logs one line: method, path (no query), auth yes/no, token yes/no, status. Never the token or password.
+Admin routes, extra users and the --ben-not-admin, --pending-restart and --admin-forbidden flags live in mock_admin.py.
 """
 import argparse
 import hashlib
@@ -16,11 +17,15 @@ import secrets
 import threading
 import time
 import struct
+import sys
 import zlib
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlsplit
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # python -I does not add the script folder
+import mock_admin  # noqa: E402
 
 SERVER_ID = "0123456789abcdef0123456789abcdef"
 USER_ID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -95,6 +100,7 @@ def build_catalogue():
                 add({"Id": guid(f"episode-{s}-{sn}-{ep}"), "Type": "Episode", "Name": f"Episode {ep}", "ParentId": season["Id"], "Index": ep,
                      "ParentIndex": sn, "SeriesId": series["Id"], "SeriesName": title, "SeasonId": season["Id"], "SeasonName": season["Name"],
                      "Runtime": 45 * 60 * TICKS, "Overview": f"Episode {ep} of season {sn} of {title}.", "Aspect": 1.778, "Year": 2015 + s * 3 + sn})
+    mock_admin.setup(SERVER_ID, USER_ID, USER_NAME, guid, NOW, [(FILMS_ID, "Films", "movies"), (TV_ID, "TV", "tvshows")], tokens=TOKENS, items=ITEMS)
 
 
 # ----------------------------------------------------------------- playback
@@ -425,11 +431,13 @@ class Handler(BaseHTTPRequestHandler):
                 creds = json.loads(raw or b"{}")
             except ValueError:
                 creds = {}
-            if not (isinstance(creds, dict) and creds.get("Username") == USER_NAME and creds.get("Pw") == PASSWORD):
+            other = mock_admin.sign_in(creds)
+            if not other and not (isinstance(creds, dict) and creds.get("Username") == USER_NAME and creds.get("Pw") == PASSWORD):
                 return self.reply(401)
             issued = "mock-" + secrets.token_hex(16)
             TOKENS.add(issued)
-            user = {"Name": USER_NAME, "ServerId": SERVER_ID, "Id": USER_ID, "HasPassword": True}
+            mock_admin.issued(issued, other["Id"] if other else USER_ID, self.headers.get("Authorization", ""))
+            user = {"Name": other["Name"] if other else USER_NAME, "ServerId": SERVER_ID, "Id": other["Id"] if other else USER_ID, "HasPassword": True}
             return self.reply(200, {"User": user, "SessionInfo": {}, "AccessToken": issued, "ServerId": SERVER_ID})
         if token not in TOKENS:
             return self.reply(401)
@@ -438,6 +446,8 @@ class Handler(BaseHTTPRequestHandler):
         if method == "POST" and low == "/sessions/logout":
             TOKENS.discard(token)
             return self.reply(204)
+        if mock_admin.handle(self, method, path, q, raw, token):
+            return
         if not self.authenticated(method, path, q, raw):
             return self.reply(404)
 
@@ -583,8 +593,12 @@ def main():
     parser.add_argument("--latency-ms", type=int, default=0, help="delay every response by this many milliseconds")
     parser.add_argument("--fail-rate", type=float, default=0.0, help="fraction (0 to 1) of signed-in requests answered with a 500")
     parser.add_argument("--refuse", action="store_true", help="answer every PlaybackInfo request with ErrorCode NotAllowed")
+    parser.add_argument("--ben-not-admin", action="store_true", help="ben is not an administrator (the Server admin entry must not show)")
+    parser.add_argument("--pending-restart", action="store_true", help="System/Info says a restart is needed")
+    parser.add_argument("--admin-forbidden", action="store_true", help="admin-only routes answer 403 while /Users/Me still says administrator")
     args = parser.parse_args()
     CONFIG.update(latency=args.latency_ms / 1000, fail_rate=args.fail_rate, refuse=args.refuse)
+    mock_admin.CONFIG.update(ben_admin=not args.ben_not_admin, pending_restart=args.pending_restart, admin_forbidden=args.admin_forbidden)
     build_catalogue()
     seed_state()
     print(f"Mock Jellyfin (test stand-in) on {args.host}:{args.port}; user {USER_NAME}", flush=True)
