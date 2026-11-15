@@ -195,6 +195,9 @@ class CueTimeline internal constructor(
  * start or end time and adds each line to every list its time spans, so K lines that all overlap cost about K squared / 2
  * references (a 1 MB file can need gigabytes). Refuses more than [SubtitleFiles.MAX_GROUPS] `Dialogue:` lines, or more than
  * [MAX_PLACEMENTS] placements in all. Start and End are found from the `[Events]` `Format:` line (Layer, Start, End by default).
+ * Times are read exactly as Media3 1.9.2 reads them (`SsaParser.SSA_TIMECODE_PATTERN`, `(?:(\d+):)?(\d+):(\d+)[:.](\d+)` on the
+ * trimmed field, the last group in hundredths whatever its length). Fails closed (Task 8 review I-4): every `Dialogue:` line
+ * counts towards the line cap, and a line whose times this cannot read is counted as spanning every slot.
  */
 internal object AssBudget {
     const val MAX_PLACEMENTS = 2_000_000L
@@ -208,6 +211,8 @@ internal object AssBudget {
         var inEvents = false
         val starts = ArrayList<Long>()
         val ends = ArrayList<Long>()
+        var lines = 0
+        var unread = 0L
         var i = 0
         while (i < bytes.size) {
             var end = i
@@ -222,18 +227,22 @@ internal object AssBudget {
                     names.indexOf("end").takeIf { it >= 0 }?.let { endField = it }
                 }
                 startsWithIgnoringCase(bytes, at, DIALOGUE) -> {
-                    if (starts.size >= SubtitleFiles.MAX_GROUPS) throw IllegalArgumentException("Too many subtitles.")
+                    if (++lines > SubtitleFiles.MAX_GROUPS) throw IllegalArgumentException("Too many subtitles.")
                     val f = fields(bytes, at + DIALOGUE.size, end, limit = maxOf(startField, endField) + 1)
                     val s = f.getOrNull(startField)?.let { (a, b) -> timeOf(bytes, a, b) }
                     val e = f.getOrNull(endField)?.let { (a, b) -> timeOf(bytes, a, b) }
-                    if (s != null && e != null && e > s) { starts += s; ends += e }
+                    when {
+                        s == null || e == null -> unread++
+                        e > s -> { starts += s; ends += e }
+                    }
                 }
             }
             i = end + 1
         }
         if (starts.isEmpty()) return
         val times = (starts + ends).distinct().sorted().toLongArray()
-        var placements = 0L
+        var placements = unread * times.size
+        if (placements > MAX_PLACEMENTS) throw IllegalArgumentException("Too many subtitles.")
         for (n in starts.indices) {
             placements += times.binarySearch(ends[n]) - times.binarySearch(starts[n])
             if (placements > MAX_PLACEMENTS) throw IllegalArgumentException("Too many subtitles.")
@@ -251,23 +260,26 @@ internal object AssBudget {
         return out
     }
 
-    /** `H:MM:SS.cc` in hundredths of a second, or null when it is not a time (Media3 skips such a line too). */
+    private val TIMECODE = Regex("""(?:(\d+):)?(\d+):(\d+)[:.](\d+)""")
+
+    /** In microseconds as Media3 works them out, or null when it is not a time Media3 reads, or this cannot be sure (too long). */
     private fun timeOf(bytes: ByteArray, from: Int, to: Int): Long? {
-        val parts = LongArray(4)
-        var part = 0
-        var digits = 0
-        for (j in from until to) {
-            val c = bytes[j].toInt().toChar()
-            when {
-                c == ' ' || c == '\r' -> if (digits > 0 && part == 3) break
-                c.isDigit() -> { if (++digits > 9) return null; parts[part] = parts[part] * 10 + (c - '0') }
-                (c == ':' && part < 2) || (c == '.' && part == 2) -> { part++; digits = 0 }
-                else -> return null
-            }
+        if (to - from > MAX_TIME_CHARS) return null
+        val m = TIMECODE.matchEntire(String(bytes, from, to - from, Charsets.US_ASCII).trim()) ?: return null
+        return try {
+            val (h, mi, se, fraction) = m.destructured
+            var us = Math.multiplyExact(if (h.isEmpty()) 0L else h.toLong(), 3_600_000_000L)
+            us = Math.addExact(us, Math.multiplyExact(mi.toLong(), 60_000_000L))
+            us = Math.addExact(us, Math.multiplyExact(se.toLong(), 1_000_000L))
+            Math.addExact(us, Math.multiplyExact(fraction.toLong(), 10_000L))
+        } catch (e: ArithmeticException) {
+            null
+        } catch (e: NumberFormatException) {
+            null
         }
-        if (part < 2) return null
-        return ((parts[0] * 60 + parts[1]) * 60 + parts[2]) * 100 + parts[3]
     }
+
+    private const val MAX_TIME_CHARS = 64
 
     private fun startsWithIgnoringCase(bytes: ByteArray, at: Int, word: ByteArray): Boolean =
         word.indices.all { j -> bytes.getOrNull(at + j)?.toInt()?.toChar()?.lowercaseChar() == word[j].toInt().toChar() }

@@ -31,19 +31,49 @@ class SubtitleBudgetTest {
 
     private fun cs(cs: Int) = "%d:%02d:%02d.%02d".format(cs / 360_000, cs / 6_000 % 60, cs / 100 % 60, cs % 100)
 
-    /** [lines] dialogue lines, each starting 10 ms after the last, all ending at 9:59:59.00. */
-    private fun overlappingAss(lines: Int) = buildString {
+    /** [lines] dialogue lines, each starting a little after the last ([start]), all ending at [end]. */
+    private fun overlappingAss(lines: Int, end: String = "9:59:59.00", start: (Int) -> String = { cs(it + 1) }) = buildString {
         append("[Script Info]\nScriptType: v4.00+\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour\nStyle: Default,Arial,18,&H00FFFFFF\n\n")
         append("[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n")
-        repeat(lines) { append("Dialogue: 0,").append(cs(it + 1)).append(",9:59:59.00,Default,,0,0,0,,Line ").append(it).append('\n') }
+        repeat(lines) { append("Dialogue: 0,").append(start(it)).append(',').append(end).append(",Default,,0,0,0,,Line ").append(it).append('\n') }
     }.toByteArray()
 
+    // ---- every time form Media3's SsaParser reads, `(?:(\d+):)?(\d+):(\d+)[:.](\d+)` (Task 8 review I-4)
+
+    @Test fun theColonFormOfTheCentisecondsIsCountedToo() {
+        val bytes = overlappingAss(2_500, end = "9:59:59:00") { cs(it + 1).replace('.', ':') }
+        assertTrue(overBudget { SubtitleFiles.parse(bytes, "ass") })
+    }
+
+    @Test fun aFractionOfTenDigitsIsCountedToo() {
+        val bytes = overlappingAss(2_500, end = "9:59:59.0000000000") { "0:00:01.%010d".format(it + 1) }
+        assertTrue(overBudget { SubtitleFiles.parse(bytes, "ass") })
+    }
+
+    @Test fun timesWithoutHoursAreCountedToo() {
+        val bytes = overlappingAss(2_500, end = "59:59.00") { "%02d:%02d.%02d".format((it + 1) / 6_000, (it + 1) / 100 % 60, (it + 1) % 100) }
+        assertTrue(overBudget { SubtitleFiles.parse(bytes, "ass") })
+    }
+
+    @Test fun everyDialogueLineCountsTowardsTheCapWhetherOrNotItsTimesCanBeRead() {
+        val bytes = buildString {
+            append("[Script Info]\nScriptType: v4.00+\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n")
+            repeat(SubtitleFiles.MAX_GROUPS + 1) { append("Dialogue: 0,soon,later,Default,,0,0,0,,x\n") }
+        }.toByteArray()
+        counting()
+        assertTrue(refused { SubtitleFiles.parse(bytes, "ass") })
+        assertEquals("Media3 never ran", 0, cleaned)
+    }
+
     private fun refused(block: () -> Unit) = runCatching(block).exceptionOrNull() is IllegalArgumentException
+
+    /** Refused by the work budget itself ("Too many subtitles."), not by Media3 failing on the file. */
+    private fun overBudget(block: () -> Unit) = runCatching(block).exceptionOrNull()?.message == "Too many subtitles."
 
     @Test fun anAssFileWhoseLinesAllOverlapIsRefusedQuickly() {
         val bytes = overlappingAss(2_500) // about 150 KB; Media3 would hold about 3 million cue references (the budget is 2 million)
         val started = System.nanoTime()
-        assertTrue(refused { SubtitleFiles.parse(bytes, "ass") })
+        assertTrue(overBudget { SubtitleFiles.parse(bytes, "ass") })
         val ms = (System.nanoTime() - started) / 1_000_000
         assertTrue("refused in $ms ms", ms < 2_000)
     }
@@ -52,7 +82,7 @@ class SubtitleBudgetTest {
         // Start and End are not in the usual places: the pre-scan must read the Format line, not assume fields 1 and 2.
         val swapped = String(overlappingAss(2_500)).replace("Format: Layer, Start, End,", "Format: Layer, End, Start,")
             .replace(Regex("Dialogue: 0,([^,]+),9:59:59.00,"), "Dialogue: 0,9:59:59.00,$1,")
-        assertTrue(refused { SubtitleFiles.parse(swapped.toByteArray(), "ass") })
+        assertTrue(overBudget { SubtitleFiles.parse(swapped.toByteArray(), "ass") })
     }
 
     @Test fun moreThanFiftyThousandDialogueLinesAreRefusedBeforeParsing() {
