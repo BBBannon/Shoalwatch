@@ -6,6 +6,7 @@ import app.shoalwatch.data.db.library.LibraryStore
 import app.shoalwatch.data.db.library.ListStateEntity
 import app.shoalwatch.data.db.library.toModel
 import app.shoalwatch.data.library.api.LibraryGateway
+import app.shoalwatch.data.servers.JellyfinId
 import app.shoalwatch.data.servers.Session
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -106,12 +107,20 @@ class LibraryRepository(
     // ---- listings
 
     override fun children(s: Session, parentId: String, shape: ListShape, sort: Sort, filter: ItemFilter): Flow<Listing> =
-        cache.rows(s, childrenRecipe(s, parentId, shape, sort, filter), MAX_ROWS)
+        if (!wellFormed(parentId)) flowOf(Listing(emptyList(), null, NOT_FOUND, false))
+        else cache.rows(s, childrenRecipe(s, parentId, shape, sort, filter), MAX_ROWS)
             .map { Listing(it.rows, it.state?.total, it.freshness, canLoadMore(it.state)) }
+
+    /**
+     * Ids reach the seam from navigation arguments and saved state, so a malformed one is data, not a programming error: it
+     * reads as "not on the server" (flows) or does nothing (suspend functions), and no request or write is made.
+     */
+    private fun wellFormed(vararg ids: String?) = ids.all { it == null || JellyfinId.parseOrNull(it) != null }
 
     private fun canLoadMore(state: ListStateEntity?) = state != null && !state.endReached && state.pagesLoaded < MAX_PAGES
 
     override suspend fun loadMore(s: Session, parentId: String, shape: ListShape, sort: Sort, filter: ItemFilter) {
+        if (!wellFormed(parentId)) return
         val key = ListKey.children(parentId, shape, sort, filter)
         if (!canLoadMore(lists.getState(s.serverId, s.userId, key))) return
         refresher.launch(ListId(s, key), Refresher.Mode.MORE) { loadNextPage(s, key, parentId, shape, sort, filter) }?.join()
@@ -134,6 +143,7 @@ class LibraryRepository(
     // ---- series and items
 
     override fun series(s: Session, seriesId: String, seasonId: String?): Flow<SeriesDetail> {
+        if (!wellFormed(seriesId, seasonId)) return flowOf(SeriesDetail(null, emptyList(), emptyList(), null, NOT_FOUND))
         val header = combine(items.observeItem(s.serverId, s.userId, seriesId), cache.status(s, itemRecipe(s, seriesId, SERIES_WINDOW))) { row, f ->
             row?.toModel() to f
         }
@@ -158,7 +168,7 @@ class LibraryRepository(
         parts.firstOrNull { it is Freshness.Refreshing } ?: parts.firstOrNull { it is Freshness.Stale } ?: Freshness.Fresh
 
     override fun item(s: Session, itemId: String): Flow<ItemDetail> =
-        combine(items.observeItem(s.serverId, s.userId, itemId), cache.status(s, itemRecipe(s, itemId, ITEM_WINDOW))) { row, f ->
+        if (!wellFormed(itemId)) flowOf(ItemDetail(null, NOT_FOUND)) else combine(items.observeItem(s.serverId, s.userId, itemId), cache.status(s, itemRecipe(s, itemId, ITEM_WINDOW))) { row, f ->
             ItemDetail(row?.toModel(), f)
         }.flowOn(io)
 
@@ -190,6 +200,13 @@ class LibraryRepository(
     // ---- pull to refresh
 
     override suspend fun refresh(s: Session, target: RefreshTarget) {
+        val ids = when (target) {
+            RefreshTarget.Home -> emptyList()
+            is RefreshTarget.Children -> listOf(target.parentId)
+            is RefreshTarget.Series -> listOf(target.seriesId, target.seasonId)
+            is RefreshTarget.Item -> listOf(target.itemId)
+        }
+        if (!wellFormed(*ids.toTypedArray())) return
         when (target) {
             RefreshTarget.Home -> refreshHome(s)
             is RefreshTarget.Children -> cache.refreshNow(s, childrenRecipe(s, target.parentId, target.shape, target.sort, target.filter))
@@ -228,6 +245,7 @@ class LibraryRepository(
         val LISTING_WINDOW: Duration = Duration.ofMinutes(15)
         val SERIES_WINDOW: Duration = Duration.ofMinutes(10)
         val ITEM_WINDOW: Duration = Duration.ofMinutes(5)
+        val NOT_FOUND = Freshness.Stale(AppError.Kind.SERVER_NOT_FOUND)
         val OFFLINE_KINDS = setOf(AppError.Kind.OFFLINE, AppError.Kind.NETWORK, AppError.Kind.TIMEOUT)
         val SEARCH_KINDS = setOf(ItemKind.MOVIE, ItemKind.SERIES, ItemKind.EPISODE)
     }
