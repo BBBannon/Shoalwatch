@@ -21,7 +21,8 @@ object PlayerText {
         PlayMethod.DIRECT_PLAY -> strings.get(R.string.stream_direct_play)
         PlayMethod.DIRECT_STREAM -> strings.get(R.string.stream_direct_stream)
         PlayMethod.TRANSCODE -> {
-            val reason = if (fellBack) R.string.stream_reason_fallback else reasons.firstOrNull()?.let(::reasonText)
+            // The first reason with words: an unexplained one (OTHER) does not hide a real one after it.
+            val reason = if (fellBack) R.string.stream_reason_fallback else reasons.firstNotNullOfOrNull(::reasonText)
             if (reason == null) strings.get(R.string.stream_transcode) else strings.get(R.string.stream_transcode_because, strings.get(reason))
         }
     }

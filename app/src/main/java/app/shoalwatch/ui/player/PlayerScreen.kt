@@ -1,5 +1,6 @@
 package app.shoalwatch.ui.player
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -56,6 +57,8 @@ fun PlayerScreen(
     val streamLine = PlayerText.streamInfo(strings, p.method, p.transcodeReasons, p.fellBackToTranscode)
     val hdrLine = PlayerText.hdrLine(strings, p.videoRange, p.method, p.transcodeReasons, dolbyVisionScreen)
     val snackbar = remember { SnackbarHostState() }
+    // Locked, the system Back (an edge swipe with the bars hidden) does not leave: it shows the lock and its hint instead.
+    BackHandler(enabled = state.locked) { actions.onTapSurface() }
     Notices(state, actions, snackbar)
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         video(state.controlsVisible)

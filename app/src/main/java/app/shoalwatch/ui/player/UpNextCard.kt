@@ -17,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -42,9 +43,9 @@ internal fun UpNextCard(upNext: UpNextState, actions: PlayerActions, modifier: M
             val title = upNext.title?.let { stringResource(R.string.up_next, it) } ?: stringResource(R.string.up_next_untitled)
             Text(title, style = MaterialTheme.typography.titleMedium)
             if (seconds != null) {
-                val spoken = announced?.let { stringResource(R.string.up_next_in, it) }.orEmpty()
+                val spoken = announced?.let { pluralStringResource(R.plurals.up_next_in, it, it) }.orEmpty()
                 Text(
-                    stringResource(R.string.up_next_in, seconds), style = MaterialTheme.typography.bodyLarge,
+                    pluralStringResource(R.plurals.up_next_in, seconds, seconds), style = MaterialTheme.typography.bodyLarge,
                     modifier = Modifier.clearAndSetSemantics { contentDescription = spoken; liveRegion = LiveRegionMode.Polite },
                 )
             }

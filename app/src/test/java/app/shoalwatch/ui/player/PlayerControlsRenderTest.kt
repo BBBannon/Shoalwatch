@@ -105,8 +105,12 @@ abstract class PlayerControlsRenderBase : RenderBase() {
     }
 
     @Test fun theStreamLineShowsUnderTheTitleOnlyAtTheStart() {
-        showPlayer(ui().copy(streamInfoShown = true))
+        val shownNow = androidx.compose.runtime.mutableStateOf(true)
+        show { PlayerScreen(ui().copy(streamInfoShown = shownNow.value), log.actions) }
         assertShown(text(R.string.stream_direct_play))
+        shownNow.value = false
+        rule.waitForIdle()
+        assertNotShown(text(R.string.stream_direct_play))
     }
 }
 

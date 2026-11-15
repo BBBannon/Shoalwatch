@@ -48,6 +48,14 @@ class PlayerTextTest {
         assertEquals("$lead.", PlayerText.streamInfo(strings, PlayMethod.TRANSCODE, emptySet(), false))
     }
 
+    @Test fun anUnexplainedReasonFirstDoesNotHideARealOneAfterIt() {
+        val reasons = linkedSetOf(TranscodeReason.OTHER, TranscodeReason.VIDEO_CODEC)
+        assertEquals(
+            "Your server is converting this video for this phone because this phone can't play its video format.",
+            PlayerText.streamInfo(strings, PlayMethod.TRANSCODE, reasons, false),
+        )
+    }
+
     @Test fun aFallBackSaysThePhoneCouldNotPlayTheOriginalWhateverTheServerSaid() {
         assertEquals(
             "Your server is converting this video for this phone because this phone couldn't play the original.",

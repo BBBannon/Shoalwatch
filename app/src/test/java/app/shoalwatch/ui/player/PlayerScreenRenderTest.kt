@@ -47,6 +47,30 @@ abstract class PlayerScreenRenderBase : RenderBase() {
         assertEquals(listOf("playUpNext", "cancelUpNext"), log.calls)
     }
 
+    @Test fun oneSecondLeftIsSaidInTheSingular() {
+        showPlayer(ui(playingEpisode.copy(upNext = UpNextState(id(102), "The Turn", 1, cancelled = false))).copy(controlsVisible = false))
+        assertDescribed("Playing in 1 second")
+    }
+
+    @Test fun whileLockedTheSystemBackStaysInThePlayerAndShowsTheLock() {
+        var back: androidx.activity.OnBackPressedDispatcher? = null
+        show {
+            back = androidx.activity.compose.LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
+            PlayerScreen(ui().copy(locked = true, controlsVisible = false), log.actions)
+        }
+        rule.runOnIdle { back!!.onBackPressed() }
+        assertEquals("shown the lock and its hint, not left", listOf("tap"), log.calls)
+    }
+
+    @Test fun unlockedTheSystemBackIsNotTaken() {
+        var back: androidx.activity.OnBackPressedDispatcher? = null
+        show {
+            back = androidx.activity.compose.LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
+            PlayerScreen(ui(), log.actions)
+        }
+        rule.runOnIdle { assertTrue(back!!.hasEnabledCallbacks().not()) }
+    }
+
     @Test fun upNextWithoutAutoplayOffersPlayNextEpisodeAndClose() {
         showPlayer(ui(playingEpisode.copy(upNext = UpNextState(id(102), null, null, cancelled = false))))
         assertShown(text(R.string.up_next_untitled))
