@@ -173,6 +173,38 @@ class SharingTest : DownloadHousekeepingTestBase() {
         assertFalse("hidden from the child at once", "films" in seenBy(b))
     }
 
+    @Test fun aRefusedItemDoesNotStopReconfirmOrItsPermissionCheck() = runBlocking {
+        val films = (1..3).map { item("r$it") }
+        seen(a, *films.toTypedArray()); queued(a, *films.toTypedArray()); complete(*films.toTypedArray())
+        repo.setSharing(a, true)
+        seen(b, *films.toTypedArray())
+        films.forEach { confirm(b, it) }
+        clock += 8 * DAY
+        refused += films[0].id // its rating went up: a 403, which the real Library revokes and then throws
+        facts.allow(films[1].id, canDownload = false)
+        facts.allow(films[2].id, canDownload = true)
+        housekeeping.reconfirm(b)
+        assertEquals("every item is refreshed", films.map { it.id }.toSet(), refreshedIds.toSet())
+        assertEquals("the permission check still runs", 1, facts.calls.size)
+        assertFalse(store.isConfirmed(key(films[1]), b.userId))
+        assertTrue(store.isConfirmed(key(films[2]), b.userId))
+        assertNull(repo.status(b, films[0].id).first())
+        assertNull(repo.status(b, films[1].id).first())
+        assertTrue(repo.status(b, films[2].id).first() != null)
+    }
+
+    @Test fun aTransportFailureStopsReconfirmAndChangesNothing() = runBlocking {
+        aDownloads()
+        repo.setSharing(a, true)
+        seen(b, film, series, season1, e1)
+        confirm(b, film)
+        clock += 8 * DAY
+        refreshFails = app.shoalwatch.core.AppError.of(app.shoalwatch.core.AppError.Kind.OFFLINE)
+        housekeeping.reconfirm(b)
+        assertTrue("no facts call", facts.calls.isEmpty())
+        assertTrue(store.isConfirmed(key(film), b.userId))
+    }
+
     @Test fun aConfirmationThatCannotBeReAskedOfflineStillCounts() = runBlocking {
         aDownloads()
         repo.setSharing(a, true)

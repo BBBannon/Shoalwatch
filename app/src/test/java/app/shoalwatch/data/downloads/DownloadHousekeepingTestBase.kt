@@ -37,15 +37,24 @@ abstract class DownloadHousekeepingTestBase : DownloadQueueTestBase() {
     internal lateinit var card: File
     protected lateinit var workManager: WorkManager
 
-    /** What the server says on a single-item refresh: ids listed here are refused (403), which revokes the record. */
+    /**
+     * What the server says on a single-item refresh: ids listed here are refused (403), which revokes the record and then THROWS
+     * `SERVER_NOT_FOUND`, exactly as `LibraryRepository.refresh` does (Tasks 11-12 review I-2). [refreshFails] throws instead.
+     */
     internal val refused = mutableSetOf<String>()
     internal val refreshedIds = mutableListOf<String>()
+    internal var refreshFails: app.shoalwatch.core.AppError? = null
 
     private val fakeLibrary = object : Library by app.shoalwatch.ui.browse.FakeLibrary() {
         override suspend fun refresh(s: Session, target: RefreshTarget) {
             val id = (target as RefreshTarget.Item).itemId
             refreshedIds += id
-            if (id in refused) library.revokeVisibility(s, id) else db.itemDao().markVisible(s.serverId, s.userId, listOf(id), clock)
+            refreshFails?.let { throw it }
+            if (id in refused) {
+                library.revokeVisibility(s, id)
+                throw app.shoalwatch.core.AppError.of(app.shoalwatch.core.AppError.Kind.SERVER_NOT_FOUND)
+            }
+            db.itemDao().markVisible(s.serverId, s.userId, listOf(id), clock)
         }
     }
 

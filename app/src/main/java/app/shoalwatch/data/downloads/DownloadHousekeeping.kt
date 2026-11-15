@@ -1,5 +1,6 @@
 package app.shoalwatch.data.downloads
 
+import app.shoalwatch.core.AppError
 import app.shoalwatch.core.AppLog
 import app.shoalwatch.data.db.downloads.DownloadKey
 import app.shoalwatch.data.db.downloads.DownloadStore
@@ -71,13 +72,20 @@ internal class DownloadHousekeeping(
      * has not had confirmed for 7 days, or whose download permission it never confirmed. A 403 or 404 revokes that profile's
      * record (the library's rule), so the item is hidden from it at once; the owner still sees it. Then ONE `facts` call
      * records this profile's own CanDownload: true is a confirmed permission (the strict sharing rule), anything else removes
-     * it. Stops at the first failure (offline, say): it is asked again next time.
+     * it. A refused item (the library revokes it and throws `SERVER_NOT_FOUND`) does not stop the rest or the permission check
+     * (Tasks 11-12 review I-2); any other failure (offline, say) stops it, changing nothing more: it is asked again next time.
      */
     suspend fun reconfirm(s: Session) = withContext(io) {
         val stale = store.unconfirmedShared(s, now() - WEEK_MS, LIMIT)
         val ids = (stale.map { it.first } + stale.mapNotNull { it.second }).distinct().take(LIMIT)
         try {
-            for (id in ids) library.refresh(s, RefreshTarget.Item(id))
+            for (id in ids) {
+                try {
+                    library.refresh(s, RefreshTarget.Item(id))
+                } catch (e: AppError) {
+                    if (e.kind != AppError.Kind.SERVER_NOT_FOUND && e.kind != AppError.Kind.FORBIDDEN) throw e // refused: already revoked
+                }
+            }
             val asked = stale.map { it.first }
             if (asked.isNotEmpty()) {
                 val answers = gateway.facts(s, asked).associateBy { it.itemId }
