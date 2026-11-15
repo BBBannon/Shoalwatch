@@ -32,13 +32,15 @@ data class PlaybackState(
     val sleep: SleepState,
     val error: AppError.Kind?,
     val fellBackToTranscode: Boolean,
+    /** The controller has ended (closed, refused, signed out, another profile took over): the screen leaves. Never true before. */
+    val closed: Boolean = false,
 ) {
     enum class Phase { IDLE, RESOLVING, BUFFERING, PLAYING, PAUSED, ENDED, FAILED }
 
     override fun toString() = "PlaybackState(phase=$phase)"
 
     companion object {
-        /** Nothing playing, nobody's: what a controller publishes before [PlaybackController.open] and after it ends. */
+        /** Nothing playing, nobody's: what a controller publishes before [PlaybackController.open]. */
         val EMPTY = PlaybackState(
             session = null, itemId = null, title = null, episodeLine = null, phase = Phase.IDLE,
             positionMs = 0, durationMs = null, bufferedMs = 0, method = null, transcodeReasons = emptySet(), videoRange = null,
@@ -46,6 +48,9 @@ data class PlaybackState(
             subtitle = SubtitleChoice.Off, subtitleDelayMs = 0, subtitleEffectsNotDrawn = false, subtitleNotice = null, segmentNow = null, upNext = null, previous = null, next = null, sleep = SleepState.Off,
             error = null, fellBackToTranscode = false,
         )
+
+        /** [EMPTY], and closed: what an ended controller publishes, so a screen can tell it from "not opened yet" (Task 6 review M-1). */
+        val CLOSED = EMPTY.copy(closed = true)
     }
 }
 

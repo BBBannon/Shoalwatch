@@ -30,7 +30,7 @@ internal class PlaybackControllerTeardownTest : PlaybackControllerTestBase() {
     @Test fun anotherProfileBecomingActiveEndsPlaybackAtOnce() = runTest {
         val c = controller(); openAndPlay(c); at(30_000)
         activePlayback.sessionChanged(AMY)
-        assertTrue(engine.released); assertEquals(PlaybackState.EMPTY, c.state.value)
+        assertTrue(engine.released); assertEquals(PlaybackState.CLOSED, c.state.value)
         runCurrent()
         assertEquals(listOf("stopped@30000"), stopCalls); assertEquals(listOf(session), reports.stopSessions)
     }
@@ -50,13 +50,13 @@ internal class PlaybackControllerTeardownTest : PlaybackControllerTestBase() {
         assertEquals(1, playbackInfos)
         c.end(EndReason.SIGNED_OUT)
         held.complete(Unit); advanceTimeBy(1_000); runCurrent()
-        assertTrue(engine.loads.isEmpty()); assertEquals(PlaybackState.EMPTY, c.state.value)
+        assertTrue(engine.loads.isEmpty()); assertEquals(PlaybackState.CLOSED, c.state.value)
     }
 
     @Test fun aStaleScreenCannotStartAnotherProfilesPlayback() = runTest {
         activePlayback.sessionChanged(AMY) // handled while nothing played
         val c = controller(); c.open(ep1, StartFrom.RESUME); advanceTimeBy(1_000); runCurrent()
         assertTrue(engine.loads.isEmpty()); assertEquals(0, playbackInfos)
-        assertEquals(PlaybackState.EMPTY, c.state.value)
+        assertEquals(PlaybackState.CLOSED, c.state.value)
     }
 }

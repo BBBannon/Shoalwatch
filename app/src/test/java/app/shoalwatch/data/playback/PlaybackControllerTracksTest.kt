@@ -308,7 +308,7 @@ internal class PlaybackControllerTracksTest : PlaybackControllerTestBase() {
         assertEquals(listOf("First cue"), c.cueTexts())
         activePlayback.sessionChanged(AMY); runCurrent()
         assertSame(SubtitleFrame.NONE, c.cues.value)
-        assertEquals(PlaybackState.EMPTY, c.state.value)
+        assertEquals(PlaybackState.CLOSED, c.state.value)
     }
 
     @Test fun aSubtitleFileThatArrivesAfterTheEndIsNeverShown() = runTest {
@@ -320,7 +320,7 @@ internal class PlaybackControllerTracksTest : PlaybackControllerTestBase() {
         c.end(null)
         gate.complete(Unit); engine.positionMs = 1_500; advanceTimeBy(500); runCurrent()
         assertSame(SubtitleFrame.NONE, c.cues.value)
-        assertEquals(PlaybackState.EMPTY, c.state.value)
+        assertEquals(PlaybackState.CLOSED, c.state.value)
     }
 
     @Test fun theNextEpisodeStartsWithNoneOfThisOnesCues() = runTest {

@@ -90,4 +90,16 @@ internal class PlaybackControllerReviewTest : PlaybackControllerTestBase() {
         assertEquals(listOf("first load", "first release", "second load"), log)
         assertNull("the first has ended", first.state.value.session)
     }
+
+    // ---- M-1: a closed controller is told apart from one never opened
+
+    @Test fun aRefusedOpenIsClosedNotEmpty() = runTest {
+        activePlayback.sessionChanged(app.shoalwatch.ui.browse.AMY)
+        val c = controller()
+        assertEquals(PlaybackState.EMPTY, c.state.value)
+        c.open(ep1, StartFrom.RESUME); runCurrent()
+        assertEquals(PlaybackState.CLOSED, c.state.value)
+        assertTrue(c.state.value.closed)
+        assertNull(c.state.value.session)
+    }
 }

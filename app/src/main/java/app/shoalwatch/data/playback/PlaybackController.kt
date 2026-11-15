@@ -36,7 +36,7 @@ enum class StartFrom { RESUME, BEGINNING }
  * or sign-in failure, asking for a new route when one goes stale), reports through a [ProgressReporter] per play session, and
  * publishes [state], which never carries a URL, route, token or Media3 type, and [cues] (what subtitles to draw now, opaque).
  * Tracks and subtitles are [TrackControl]'s (see "Tracks and subtitles"). [end] is the only way out: it releases the engine
- * (and so the media session) at once and publishes [PlaybackState.EMPTY]; [ActivePlayback] calls it when the session changes
+ * (and so the media session) at once and publishes [PlaybackState.CLOSED]; [ActivePlayback] calls it when the session changes
  * or the account goes. Positions are believed only while the engine is really playing, or when the app or a seek set them, so a
  * 0 from an engine that is preparing, seeking or has lost its output is never reported.
  */
@@ -193,7 +193,7 @@ class PlaybackController internal constructor(
         if (reason == null) token?.let(activePlayback::release)
         token = null
         trackControl.clear()
-        _state.value = PlaybackState.EMPTY
+        _state.value = PlaybackState.CLOSED
     }
 
     private fun play(itemId: String, from: StartFrom) {

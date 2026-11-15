@@ -74,7 +74,7 @@ internal class PlaybackControllerFallbackTest : PlaybackControllerTestBase() {
     @Test fun aRouteRefusedAsSignedOutEndsPlaybackSendingNothing() = runTest {
         val c = controller(); openAndPlay(c)
         fail(EngineFailure.NOT_SIGNED_IN); runCurrent()
-        assertTrue(engine.released); assertEquals(PlaybackState.EMPTY, c.state.value)
+        assertTrue(engine.released); assertEquals(PlaybackState.CLOSED, c.state.value)
         assertTrue(stopCalls.isEmpty())
     }
 
