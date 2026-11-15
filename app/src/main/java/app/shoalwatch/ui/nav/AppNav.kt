@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -21,6 +22,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.background
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavBackStackEntry
+import androidx.navigation.NavGraph
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -29,6 +31,11 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import app.shoalwatch.AppGraph
 import app.shoalwatch.R
+import app.shoalwatch.data.servers.ServerCatalog
+import app.shoalwatch.data.servers.Session
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
+import androidx.navigation.NavHostController
 
 /** Screens and their paths. Server ids go through [Uri.encode] so any id is a safe path segment. */
 internal object Routes {
@@ -106,6 +113,7 @@ private fun AnimatedContentTransitionScope<NavBackStackEntry>.betweenTabs() =
 @Composable
 private fun AppNavHost(graph: AppGraph, start: String) {
     val nav = rememberNavController()
+    ClearBrowsingOnSessionChange(nav, graph.serverCatalog)
     val serverArg = listOf(navArgument(Routes.ARG_SERVER) { type = NavType.StringType })
     NavHost(
         navController = nav,
@@ -131,6 +139,37 @@ private fun AppNavHost(graph: AppGraph, start: String) {
         )
         composable(Routes.SERVERS) { ServersRoute(graph, nav) }
         composable(Routes.SERVER_EDIT, serverArg) { ServerEditRoute(graph, nav, it.arguments?.getString(Routes.ARG_SERVER).orEmpty()) }
+    }
+}
+
+/**
+ * One account's screens never outlive it. When the active session changes from one session to another (an account switch from
+ * Home or the Servers screen), or to nobody (sign-out, a removed account or server, a sign-in the server no longer accepts), the
+ * whole back stack goes and the app starts again at Home (at Welcome when no server is left, as at start-up). Without this, going
+ * Back would show a library, series or item that the old account opened, running as the new one. Nothing is saved for the popped
+ * screens (no `saveState`), and the tabs' saved states go too. The first value (the app starting) and a change FROM nobody (the
+ * sign-in flow has just finished and navigates to Home itself) do nothing.
+ */
+@Composable
+internal fun ClearBrowsingOnSessionChange(nav: NavHostController, catalog: ServerCatalog) {
+    LaunchedEffect(nav, catalog) {
+        var previous: Session? = null
+        var started = false
+        catalog.activeSession().distinctUntilChanged().collect { now ->
+            val was = previous
+            val first = !started
+            started = true
+            previous = now
+            if (first || was == null) return@collect
+            // A sign-in as another account (from Servers) has already taken the app to a fresh Home, alone: leave that one be.
+            val here = nav.currentBackStackEntry
+            val alone = nav.currentBackStack.value.count { it.destination !is NavGraph } == 1
+            if (alone && here?.destination?.route == Routes.HOME && here.arguments?.getBoolean(Routes.ARG_FRESH) == true) return@collect
+            val target = if (now == null && catalog.servers.first().isEmpty()) Routes.WELCOME else Routes.home()
+            nav.navigate(target) { popUpTo(nav.graph.id) { inclusive = true } }
+            // Tabs left earlier were saved with their state; none of it is kept.
+            listOf(Routes.HOME, Routes.SEARCH, Routes.DOWNLOADS).forEach { nav.clearBackStack(it) }
+        }
     }
 }
 
