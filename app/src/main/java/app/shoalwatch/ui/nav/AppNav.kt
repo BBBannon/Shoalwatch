@@ -56,8 +56,14 @@ internal object Routes {
     fun library(viewId: String) = "library/${Uri.encode(viewId)}"
 
     /** A series, optionally at a season with one episode picked out. Ids are not trusted: the library answers a bad one with "no longer available". */
-    fun series(seriesId: String, seasonId: String? = null, episodeId: String? = null) =
-        "series/${Uri.encode(seriesId)}?$ARG_SEASON=${Uri.encode(seasonId.orEmpty())}&$ARG_EPISODE=${Uri.encode(episodeId.orEmpty())}"
+    /** An absent season or episode is left out altogether: an empty `season=` does not arrive as "no season". */
+    fun series(seriesId: String, seasonId: String? = null, episodeId: String? = null): String {
+        val query = listOfNotNull(
+            seasonId?.takeIf { it.isNotEmpty() }?.let { "$ARG_SEASON=${Uri.encode(it)}" },
+            episodeId?.takeIf { it.isNotEmpty() }?.let { "$ARG_EPISODE=${Uri.encode(it)}" },
+        )
+        return "series/${Uri.encode(seriesId)}" + if (query.isEmpty()) "" else query.joinToString("&", prefix = "?")
+    }
 
     fun item(itemId: String) = "item/${Uri.encode(itemId)}"
     fun signIn(serverId: String) = "sign_in/${Uri.encode(serverId)}"
