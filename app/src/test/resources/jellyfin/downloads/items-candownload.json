@@ -1,0 +1,24 @@
+{
+  "Items": [
+    {
+      "Name": "Pilot", "Id": "a0000000000000000000000000000001", "Type": "Episode", "CanDownload": true,
+      "MediaSources": [
+        { "Protocol": "File", "Id": "a0000000000000000000000000000001", "Path": "/media/tv/pilot.mkv", "Type": "Default",
+          "Container": "mkv", "Size": 1503238553, "ETag": "5d1c0e9a7b", "SupportsDirectPlay": true },
+        { "Id": "b0000000000000000000000000000002", "Container": "mp4", "Size": 10 }
+      ]
+    },
+    {
+      "Name": "Second", "Id": "a0000000-0000-0000-0000-000000000002", "Type": "Episode", "CanDownload": false,
+      "MediaSources": [ { "Id": "a0000000000000000000000000000002", "Container": "mov,mp4,m4a,3gp,3g2,mj2", "Size": 734003200 } ]
+    },
+    {
+      "Name": "Third", "Id": "A0000000000000000000000000000003", "Type": "Movie",
+      "MediaSources": [ { "Id": "a0000000000000000000000000000003", "Container": "MP4" } ]
+    },
+    { "Name": "Fourth", "Id": "a0000000000000000000000000000004", "Type": "Movie", "CanDownload": null },
+    { "Name": "Fifth", "Id": "a0000000000000000000000000000005", "Type": "Movie", "CanDownload": "true", "MediaSources": [] }
+  ],
+  "TotalRecordCount": 5,
+  "StartIndex": 0
+}

@@ -51,18 +51,24 @@ class MediaRoute internal constructor(
  *   address is verified again (a home address on another network may be someone else's machine); after a change of the
  *   server's settings or accounts it sends nothing again, because its client holds the old settings.
  * The client never follows redirects, so a 3xx comes back to the caller as a response.
+ *
+ * [exactPath] (the download route only): the decoded segments of ONE more allowed path, `<base>/Items/<itemId>/Download`,
+ * compared segment for segment and exactly, except that `Items` and `Download` match in any case. The same method, target,
+ * segment and staleness rules apply to it; nothing else outside `/videos/` is allowed.
  */
 internal class GuardedCallFactory(
     private val delegate: Call.Factory,
     private val authority: String,
     private val videosPrefix: String,
     private val scheme: String,
+    private val exactPath: List<String>? = null,
     private val stale: () -> AppError.Kind?,
 ) : Call.Factory {
     private val prefix: List<String> = videosPrefix.split('/').filter { it.isNotEmpty() }
 
     init {
         require(prefix.lastOrNull().equals("videos", ignoreCase = true)) { "Invalid media prefix." }
+        require(exactPath == null || (exactPath.size >= 3 && exactPath.none { it.isEmpty() })) { "Invalid exact path." }
     }
 
     override fun newCall(request: Request): Call = refused(request)?.let { RefusedCall(delegate.newCall(request), it) } ?: GuardedCall(delegate.newCall(request))
@@ -87,10 +93,18 @@ internal class GuardedCallFactory(
     }
 
     private fun pathAllowed(segments: List<String>): Boolean {
-        if (segments.size <= prefix.size) return false
         if (segments.any { it.isEmpty() || it == "." || it == ".." || it.any { c -> c == '/' || c == '\\' || c == '%' } }) return false
+        if (exactPath != null && isExactPath(segments, exactPath)) return true
+        if (segments.size <= prefix.size) return false
         val base = prefix.size - 1
         return segments.subList(0, base) == prefix.subList(0, base) && segments[base].equals("videos", ignoreCase = true)
+    }
+
+    /** `<base...>/Items/<id>/Download`: every segment exact, except the two fixed words, which match in any case. */
+    private fun isExactPath(segments: List<String>, exact: List<String>): Boolean {
+        if (segments.size != exact.size) return false
+        val words = setOf(exact.size - 3, exact.size - 1)
+        return segments.indices.all { i -> if (i in words) segments[i].equals(exact[i], ignoreCase = true) else segments[i] == exact[i] }
     }
 
     /**
