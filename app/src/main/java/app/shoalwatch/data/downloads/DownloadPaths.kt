@@ -78,6 +78,12 @@ internal class DownloadPaths(private val volumes: Volumes, private val sweepLimi
         return volumes.allRoots().map { inside(it, File(it, serverId)) }
     }
 
+    /** `<root>/<serverId>/<itemId>` on every mounted root (an item may be on either; they may not exist). */
+    fun itemFolders(key: DownloadKey): List<File> {
+        requireId(key.itemId)
+        return serverFolders(key.serverId).map { inside(it, File(it, key.itemId)) }
+    }
+
     /** Deletes [target] and everything under it without following links, only if its own path is inside a root (never the root itself). */
     fun deleteInside(target: File): Boolean {
         val path = located(target) ?: return false
@@ -268,6 +274,18 @@ internal class DownloadPaths(private val volumes: Volumes, private val sweepLimi
         private val SUBTITLE = Regex("sub-(\\d{1,5})\\.(srt|vtt|ass|ssa)")
 
         private fun isId(name: String) = ID.matches(name)
+
+        /** A volume's downloads root (`<dir>/downloads`), for [Volumes]: the one other place a download path starts. */
+        fun rootIn(dir: File): File = File(dir, AndroidVolumes.ROOT)
+
+        /** The `.nomedia` marker in a downloads root, so no gallery or media scanner lists the films. */
+        fun noMediaIn(root: File): File = File(root, AndroidVolumes.NOMEDIA)
+
+        /** Segment [index] of a saved conversion's `hls/` folder, by the name the fetcher saved it under (for the verifier). */
+        fun savedSegment(hls: File, index: Int): File {
+            require(index in 0 until MAX_SEGMENTS) { "Segment index out of range." }
+            return File(hls, "seg-%05d.ts".format(index))
+        }
 
         private fun isHlsName(name: String) = name == LOCAL_PLAYLIST || SEGMENT.matchEntire(name)?.groupValues?.get(1)?.toInt()?.let { it < MAX_SEGMENTS } == true
 

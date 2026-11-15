@@ -85,7 +85,7 @@ internal class DownloadVerifier(private val probe: PlayabilityProbe, private val
         if (hlsShape != null && hlsShape.size != named.size) return null
         val present = hls.list()?.toSet() ?: return null
         if (present != named.toSet() + media.entry.name) return null
-        val files = named.map { File(hls, it) }
+        val files = named.indices.map { DownloadPaths.savedSegment(hls, it) } // the names equal these, checked above
         return if (files.all { (regularSize(it) ?: 0) > 0 }) files else null
     }
 

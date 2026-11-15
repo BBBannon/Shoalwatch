@@ -72,18 +72,18 @@ class AndroidVolumes internal constructor(
     /** Makes [dir] with a `.nomedia` file in it (so no gallery or media scanner lists the films); null if that fails. */
     private fun ensured(dir: File): File? = try {
         if (!dir.isDirectory && !dir.mkdirs() && !dir.isDirectory) null
-        else dir.also { File(it, NOMEDIA).let { marker -> if (!marker.exists()) marker.createNewFile() } }
+        else dir.also { DownloadPaths.noMediaIn(it).let { marker -> if (!marker.exists()) marker.createNewFile() } }
     } catch (e: IOException) {
         null
     } catch (e: SecurityException) {
         null
     }
 
-    private fun internalRoot(): File? = ensured(File(app.filesDir, ROOT))
+    private fun internalRoot(): File? = ensured(DownloadPaths.rootIn(app.filesDir))
 
     override fun root(kind: StorageKind, volumeId: String?): File? = when (kind) {
         StorageKind.INTERNAL -> internalRoot()
-        StorageKind.REMOVABLE -> removable().firstOrNull { it.uuid == volumeId }?.let { ensured(File(it.dir, ROOT)) }
+        StorageKind.REMOVABLE -> removable().firstOrNull { it.uuid == volumeId }?.let { ensured(DownloadPaths.rootIn(it.dir)) }
     }
 
     override fun choices(): List<StorageChoice> =
@@ -118,7 +118,7 @@ class AndroidVolumes internal constructor(
         allocate(manager, file.parentFile ?: return, bytes)
     }
 
-    override fun allRoots(): List<File> = listOfNotNull(internalRoot()) + removable().mapNotNull { ensured(File(it.dir, ROOT)) }
+    override fun allRoots(): List<File> = listOfNotNull(internalRoot()) + removable().mapNotNull { ensured(DownloadPaths.rootIn(it.dir)) }
 
     companion object {
         const val ROOT = "downloads"

@@ -25,7 +25,6 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
-import java.io.File
 
 /**
  * Implements [Downloads] over [DownloadStore] and [OfflineLibraryDao] (see "Downloads seam" in docs/ARCHITECTURE.md). Pins are
@@ -186,7 +185,7 @@ class DownloadRepository internal constructor(
 
         /** The item's folder on every mounted root (it may be on either; a card that is out is swept when it comes back). */
         fun deleteFiles(paths: DownloadPaths, key: DownloadKey) {
-            for (server in paths.serverFolders(key.serverId)) paths.deleteInside(File(server, key.itemId))
+            for (folder in paths.itemFolders(key)) paths.deleteInside(folder)
         }
     }
 }
