@@ -229,22 +229,24 @@ class PlaybackGatewayTest : PlaybackGatewayTestBase() {
 
     // ---- segments
 
-    @Test fun segmentsAskForTheFiveKindsAndMapThem() {
+    /** No `includeSegmentTypes`: the reference gives it no style, so how a server binds one value is unknown; the mapper filters instead. */
+    @Test fun segmentsAskForEveryKindAndKeepTheFive() {
         web.enqueue(json(
             """{"Items":[
               {"Id":"11111111111111111111111111111111","ItemId":"$ITEM","Type":"Outro","StartTicks":80000000,"EndTicks":100000000},
               {"Id":"22222222222222222222222222222222","ItemId":"$ITEM","Type":"Intro","StartTicks":10000000,"EndTicks":30000000},
               {"Type":"Recap","StartTicks":0,"EndTicks":5000000},
               {"Type":"Preview","StartTicks":100000000,"EndTicks":110000000},
-              {"Type":"Commercial","StartTicks":40000000,"EndTicks":45000000}
-            ],"TotalRecordCount":5,"StartIndex":0}""",
+              {"Type":"Commercial","StartTicks":40000000,"EndTicks":45000000},
+              {"Type":"Unknown","StartTicks":50000000,"EndTicks":60000000},
+              {"Type":"SomethingNew","StartTicks":60000000,"EndTicks":70000000}
+            ],"TotalRecordCount":7,"StartIndex":0}""",
         ))
         val segments = runBlocking { gateway.segments(session, ITEM.uppercase()) }
         val request = nextRequest()
         assertEquals("GET", request.method)
         assertEquals("/MediaSegments/$ITEM", request.requestUrl!!.encodedPath)
-        assertEquals(setOf("includeSegmentTypes"), request.requestUrl!!.queryParameterNames)
-        assertEquals("Intro,Outro,Recap,Preview,Commercial", request.requestUrl!!.queryParameter("includeSegmentTypes"))
+        assertEquals(emptySet<String>(), request.requestUrl!!.queryParameterNames)
         assertEquals(
             listOf(
                 MediaSegment(SegmentKind.RECAP, 0, 500), MediaSegment(SegmentKind.INTRO, 1_000, 3_000), MediaSegment(SegmentKind.COMMERCIAL, 4_000, 4_500),

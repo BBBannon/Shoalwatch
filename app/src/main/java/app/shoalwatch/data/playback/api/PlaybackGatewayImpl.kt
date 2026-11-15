@@ -41,7 +41,9 @@ internal class PlaybackGatewayImpl(private val api: ServerApi) : PlaybackGateway
 
     override suspend fun segments(s: Session, itemId: String): List<MediaSegment> {
         val id = idOf(itemId)
-        return api.get(s, "/MediaSegments/$id", listOf("includeSegmentTypes" to SEGMENT_TYPES), MediaSegmentQueryResultDto.serializer())
+        // No includeSegmentTypes: the reference gives the array no style, so a server may not bind one comma-separated value; the
+        // mapper keeps the five known kinds instead.
+        return api.get(s, "/MediaSegments/$id", emptyList(), MediaSegmentQueryResultDto.serializer())
             .toSegments(id)
     }
 
@@ -91,7 +93,5 @@ internal class PlaybackGatewayImpl(private val api: ServerApi) : PlaybackGateway
 
     private companion object {
         const val MAX_SUBTITLE_BYTES = 8L * 1024 * 1024
-        /** Every `MediaSegmentType` but `Unknown`, comma-delimited like the app's other array parameters. */
-        const val SEGMENT_TYPES = "Intro,Outro,Recap,Preview,Commercial"
     }
 }
