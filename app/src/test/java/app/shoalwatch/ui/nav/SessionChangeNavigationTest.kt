@@ -19,6 +19,14 @@ import app.shoalwatch.ui.present.Destination
 import app.shoalwatch.ui.testServer
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
+import app.shoalwatch.ui.shell.Tab
+import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertSame
 import org.junit.Before
 import org.junit.Rule
@@ -37,6 +45,16 @@ class SessionChangeNavigationTest {
     private lateinit var nav: NavHostController
     private val homeCompositions = mutableListOf<String>()
 
+    /** Every Home entry that was ever composed: one per Home opened. */
+    private val homeEntries = linkedSetOf<String>()
+
+    /** Stands in for a screen's ViewModel: the instance each screen was last composed with. */
+    class Holder : ViewModel() {
+        val signedIn = MutableStateFlow(false)
+    }
+    private val holders = mutableMapOf<String, Holder>()
+    private val serverArg = listOf(navArgument(Routes.ARG_SERVER) { type = NavType.StringType })
+
     private val ben = account(BEN, "ben")
     private val amy = account(AMY, "amy")
     private val catalog = FakeCatalog(listOf(testServer(id = SERVER_ID)), listOf(ben, amy), ben)
@@ -52,17 +70,29 @@ class SessionChangeNavigationTest {
             NavHost(nav, startDestination = startRoute) {
                 composable(Routes.WELCOME) { Text("welcome") }
                 composable(Routes.HOME, listOf(navArgument(Routes.ARG_FRESH) { type = NavType.BoolType; defaultValue = false })) {
-                    SideEffect { homeCompositions += "home" }
+                    SideEffect { homeCompositions += "home"; homeEntries += it.id }
                     Text("home")
                 }
-                composable(Routes.SEARCH) { Text("search") }
+                composable(Routes.SEARCH) { holders["search"] = viewModel(); Text("search") }
                 composable(Routes.DOWNLOADS) { Text("downloads") }
-                composable(Routes.SERVERS) { Text("servers") }
+                composable(Routes.SERVERS) { holders["servers"] = viewModel(); Text("servers") }
+                composable(Routes.ADD_SERVER) { holders["add"] = viewModel(); Text("add server") }
+                composable(Routes.SERVER_EDIT, serverArg) { holders["edit"] = viewModel(); Text("server settings") }
+                composable(Routes.SIGN_IN, serverArg) {
+                    // What SignInRoute does: once its ViewModel says signed in, it goes to a fresh Home itself.
+                    val h: Holder = viewModel()
+                    holders["sign_in"] = h
+                    val signedIn by h.signedIn.collectAsState()
+                    LaunchedEffect(signedIn) { if (signedIn) nav.toHome() }
+                    Text("sign in")
+                }
                 browsingDestinations(library = { Text("library") }, series = { _, _, _ -> Text("series") }, item = { Text("item") })
             }
         }
         rule.waitForIdle()
     }
+
+    private fun go(route: String) { rule.runOnUiThread { nav.navigate(route) }; rule.waitForIdle() }
 
     private fun open(d: Destination) { rule.runOnUiThread { nav.open(d) }; rule.waitForIdle() }
 
@@ -88,14 +118,128 @@ class SessionChangeNavigationTest {
         assertOnlyHome()
     }
 
-    @Test fun switchingFromTheServersScreenDoesTheSame() {
+    @Test fun switchingOnHomesMenuLandsOnHomeAlone() {
         start()
-        open(Destination.Library(view))
-        rule.runOnUiThread { nav.navigate(Routes.SERVERS) }
-        rule.waitForIdle()
         catalog.activeFlow.value = amy
         rule.waitForIdle()
         assertOnlyHome()
+    }
+
+    // --- account management screens are not tied to a session (I1) -------------------------------------------
+
+    @Test fun switchingOnTheServersScreenLeavesTheUserOnServersWithEverythingOpenedBeforeGone() {
+        start()
+        open(Destination.Library(view))
+        go(Routes.SERVERS)
+        val servers = holders.getValue("servers")
+        catalog.activeFlow.value = amy
+        rule.waitForIdle()
+        assertEquals(listOf(Routes.HOME, Routes.SERVERS), stack())
+        assertSame("the same Servers screen and ViewModel: nothing it was doing is lost", servers, holders["servers"])
+    }
+
+    @Test fun signingOutOfTheActiveAccountOnServersKeepsTheUserThereSoTheNoticeIsSeen() {
+        start()
+        openThreeAsBen()
+        go(Routes.SERVERS)
+        val servers = holders.getValue("servers")
+        catalog.activeFlow.value = null
+        rule.waitForIdle()
+        assertEquals("every browsing screen of the old session is gone", listOf(Routes.HOME, Routes.SERVERS), stack())
+        assertEquals(Routes.SERVERS, nav.currentBackStackEntry?.destination?.route)
+        assertSame("its ViewModel (which shows the signed-out-here-only notice) lives on", servers, holders["servers"])
+    }
+
+    @Test fun removingTheLastServerOnServersGoesToWelcomeUnderServers() {
+        start()
+        openThreeAsBen()
+        go(Routes.SERVERS)
+        catalog.remove(SERVER_ID)
+        rule.waitForIdle()
+        assertEquals(listOf(Routes.WELCOME, Routes.SERVERS), stack())
+    }
+
+    @Test fun aServersSettingsScreenStaysOnTopOfHome() {
+        start()
+        open(Destination.Library(view))
+        go(Routes.SERVERS)
+        go(Routes.serverEdit(SERVER_ID))
+        val edit = holders.getValue("edit")
+        catalog.activeFlow.value = amy
+        rule.waitForIdle()
+        assertEquals(listOf(Routes.HOME, Routes.SERVER_EDIT), stack())
+        assertEquals(SERVER_ID, nav.currentBackStackEntry?.arguments?.getString(Routes.ARG_SERVER))
+        assertSame(edit, holders["edit"])
+    }
+
+    // --- sign-in and the reset racing (M1) ----------------------------------------------------------------------
+
+    @Test fun whenTheStoreAnnouncesTheSignInFirstTheSignInStillEndsOnOneFreshHome() {
+        start()
+        open(Destination.Library(view))
+        go(Routes.SERVERS)
+        go(Routes.signIn(SERVER_ID))
+        val signIn = holders.getValue("sign_in")
+        val composedBefore = homeEntries.size
+        catalog.activeFlow.value = amy // the store's answer arrives before the sign-in screen has navigated
+        rule.waitForIdle()
+        assertEquals(listOf(Routes.HOME, Routes.SIGN_IN), stack())
+        assertSame("the sign-in in progress is not lost", signIn, holders["sign_in"])
+        signIn.signedIn.value = true
+        rule.waitForIdle()
+        assertEquals(listOf(Routes.HOME), stack())
+        assertEquals("fresh is kept", true, nav.currentBackStackEntry?.arguments?.getBoolean(Routes.ARG_FRESH))
+        assertEquals("Home is opened once", composedBefore + 1, homeEntries.size)
+    }
+
+    @Test fun whenBothArriveInTheSameFrameTheSignInEndsOnOneFreshHome() {
+        start()
+        go(Routes.SERVERS)
+        go(Routes.signIn(SERVER_ID))
+        val composedBefore = homeEntries.size
+        rule.runOnUiThread {
+            holders.getValue("sign_in").signedIn.value = true
+            catalog.activeFlow.value = amy
+        }
+        rule.waitForIdle()
+        assertEquals(listOf(Routes.HOME), stack())
+        assertEquals(true, nav.currentBackStackEntry?.arguments?.getBoolean(Routes.ARG_FRESH))
+        assertEquals("Home is opened once", composedBefore + 1, homeEntries.size)
+    }
+
+    // --- the tabs' saved states go on every path (M3) ----------------------------------------------------------
+
+    @Test fun aScreenSavedUnderTheHomeTabIsNotBroughtBackAfterTheSwitch() {
+        start()
+        open(Destination.Library(view))
+        rule.runOnUiThread { nav.switchTab(Tab.SEARCH) } // the library is saved with the Home tab
+        rule.waitForIdle()
+        assertEquals(listOf(Routes.HOME, Routes.SEARCH), stack())
+        catalog.activeFlow.value = amy
+        rule.waitForIdle()
+        assertOnlyHome()
+        rule.runOnUiThread { nav.switchTab(Tab.SEARCH) }
+        rule.waitForIdle()
+        rule.runOnUiThread { nav.switchTab(Tab.HOME) }
+        rule.waitForIdle()
+        assertOnlyHome()
+    }
+
+    @Test fun theSavedSearchTabIsClearedEvenWhenAFreshHomeIsLeftAlone() {
+        start()
+        rule.runOnUiThread { nav.navigate(Routes.home(fresh = true)) { popUpTo(nav.graph.id) { inclusive = true } } }
+        rule.waitForIdle()
+        rule.runOnUiThread { nav.switchTab(Tab.SEARCH) }
+        rule.waitForIdle()
+        val search = holders.getValue("search")
+        rule.runOnUiThread { nav.switchTab(Tab.HOME) } // Search is saved
+        rule.waitForIdle()
+        catalog.activeFlow.value = amy // a fresh Home alone: it stays, but the saved Search does not
+        rule.waitForIdle()
+        assertEquals(true, nav.currentBackStackEntry?.arguments?.getBoolean(Routes.ARG_FRESH))
+        rule.runOnUiThread { nav.switchTab(Tab.SEARCH) }
+        rule.waitForIdle()
+        assertTrue("a new Search, not the one saved for the old account", search !== holders["search"])
     }
 
     @Test fun signingOutClearsTheStackToHomeWhileAServerIsLeft() {

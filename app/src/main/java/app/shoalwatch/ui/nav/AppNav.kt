@@ -29,6 +29,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import androidx.navigation.navOptions
 import app.shoalwatch.AppGraph
 import app.shoalwatch.R
 import app.shoalwatch.data.servers.ServerCatalog
@@ -142,13 +143,21 @@ private fun AppNavHost(graph: AppGraph, start: String) {
     }
 }
 
+/** Screens for managing servers and accounts: they show every account, belong to no session, and survive a session change. */
+private val AccountRoutes = setOf(Routes.SERVERS, Routes.SERVER_EDIT, Routes.ADD_SERVER, Routes.SIGN_IN)
+
 /**
  * One account's screens never outlive it. When the active session changes from one session to another (an account switch from
  * Home or the Servers screen), or to nobody (sign-out, a removed account or server, a sign-in the server no longer accepts), the
  * whole back stack goes and the app starts again at Home (at Welcome when no server is left, as at start-up). Without this, going
  * Back would show a library, series or item that the old account opened, running as the new one. Nothing is saved for the popped
- * screens (no `saveState`), and the tabs' saved states go too. The first value (the app starting) and a change FROM nobody (the
- * sign-in flow has just finished and navigates to Home itself) do nothing.
+ * screens (no `saveState`), and the tabs' saved states go too, on every path. The first value (the app starting) and a change
+ * FROM nobody (the sign-in flow has just finished and navigates to Home itself) do nothing.
+ *
+ * If an account screen ([AccountRoutes]) is on top, the stack becomes `[Home or Welcome, that screen]`: the very same entry, with
+ * its ViewModel, is kept (popped with `saveState` and restored on top), so a sign-out made there still shows its "signed out
+ * here only" notice or its error, and a sign-in in progress (whose store update can arrive before it navigates) still ends on
+ * its own fresh Home.
  */
 @Composable
 internal fun ClearBrowsingOnSessionChange(nav: NavHostController, catalog: ServerCatalog) {
@@ -167,17 +176,26 @@ internal fun ClearBrowsingOnSessionChange(nav: NavHostController, catalog: Serve
             started = true
             previous = now
             if (first || was == null || now == was) return@collect
+            val target = if (now == null && catalog.servers.first().isEmpty()) Routes.WELCOME else Routes.home()
             // A sign-in as another account (from Servers) has already taken the app to a fresh Home, alone: leave that one be.
             val here = nav.currentBackStackEntry
             val alone = nav.currentBackStack.value.count { it.destination !is NavGraph } == 1
-            if (alone && here?.destination?.route == Routes.HOME && here.arguments?.getBoolean(Routes.ARG_FRESH) == true) return@collect
-            val target = if (now == null && catalog.servers.first().isEmpty()) Routes.WELCOME else Routes.home()
+            if (alone && here?.destination?.route == Routes.HOME && here.arguments?.getBoolean(Routes.ARG_FRESH) == true) {
+                nav.clearTabStates()
+                return@collect
+            }
+            val keep = here?.takeIf { it.destination.route in AccountRoutes }
+            if (keep != null) nav.popBackStack(keep.destination.id, inclusive = true, saveState = true)
+            // Before the new start: clearing a tab restores what it saved and pops it, which may take anything left with it.
+            nav.clearTabStates()
             nav.navigate(target) { popUpTo(nav.graph.id) { inclusive = true } }
-            // Tabs left earlier were saved with their state; none of it is kept.
-            listOf(Routes.HOME, Routes.SEARCH, Routes.DOWNLOADS).forEach { nav.clearBackStack(it) }
+            if (keep != null) nav.navigate(keep.destination.id, keep.arguments, navOptions { restoreState = true })
         }
     }
 }
+
+/** Tabs left earlier were saved with their state (screens opened under Home, the Search query); none of it is kept. */
+private fun NavHostController.clearTabStates() = listOf(Routes.HOME, Routes.SEARCH, Routes.DOWNLOADS).forEach { clearBackStack(it) }
 
 /**
  * The library, series and item destinations: their routes, argument names, and how an argument that is not there arrives (as
