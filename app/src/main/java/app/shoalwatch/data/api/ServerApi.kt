@@ -79,16 +79,20 @@ class ServerApi(
         JsonBodies.decode(JsonBodies.readBounded(response, maxBytes, AppError.Kind.SERVER_ERROR), deserializer, AppError.Kind.SERVER_ERROR)
     }
 
-    /** POST with an optional JSON body; the response body is ignored. Not retried unless the caller opts in with [retry]. */
+    /**
+     * POST with an optional JSON body; the response body is ignored. Not retried unless the caller opts in with [retry]. With
+     * [sendOnce] (admin actions) OkHttp may not resend it either (see [sentOnce]).
+     */
     suspend fun post(
         session: Session,
         path: String,
         query: List<Pair<String, String>> = emptyList(),
         jsonBody: String? = null,
         retry: Boolean = false,
+        sendOnce: Boolean = false,
     ) {
         val body = jsonBody?.toRequestBody(JSON) ?: ByteArray(0).toRequestBody(null)
-        execute(session, "POST", path, query, if (retry) body else body.sentOnce(), retry) { }
+        execute(session, "POST", path, query, if (sendOnce) body.sentOnce() else body, retry) { }
     }
 
     /**
@@ -155,19 +159,24 @@ class ServerApi(
         MediaRoute(session, base, guard, online)
     }
 
-    /** DELETE; the response body is ignored. Not retried unless the caller opts in with [retry]. */
+    /** DELETE; the response body is ignored. Not retried unless the caller opts in with [retry]; [sendOnce] as for [post]. */
     suspend fun delete(
         session: Session,
         path: String,
         query: List<Pair<String, String>> = emptyList(),
         retry: Boolean = false,
+        sendOnce: Boolean = false,
     ) {
-        execute(session, "DELETE", path, query, if (retry) null else ByteArray(0).toRequestBody(null).sentOnce(), retry) { }
+        execute(session, "DELETE", path, query, if (sendOnce) ByteArray(0).toRequestBody(null).sentOnce() else null, retry) { }
     }
 
     /**
-     * `retry = false` must hold below this class too: OkHttp's own `retryOnConnectionFailure` silently resends a request on a fresh
-     * connection when a kept-alive one fails, unless its body is one-shot. Marking it so means it is never resent once sending began.
+     * For `sendOnce` (admin actions only): OkHttp's own `retryOnConnectionFailure` silently resends a request on a fresh connection
+     * when a kept-alive one fails after the request was written, unless its body is one-shot. Marked so, a failure on a reused
+     * socket surfaces as an error instead. OkHttp still recovers when nothing of the request was written (a failure while
+     * connecting, or an HTTP/2 connection shut down before the stream was created), and it still follows a 503 with
+     * `Retry-After: 0` whatever the body (a residual risk, recorded in the milestone's security check). Every other
+     * caller (playback reports) keeps OkHttp's recovery, as before Milestone 6.
      */
     private fun RequestBody.sentOnce(): RequestBody {
         val inner = this

@@ -55,11 +55,11 @@ internal class AdminGateway(
         val cleaned = displayText(text, AdminLimits.MESSAGE)
         require(cleaned.isNotEmpty()) { "Empty message." }
         val body = MessageBody(displayText(header, AdminLimits.MESSAGE), cleaned, MESSAGE_TIMEOUT_MS)
-        api.post(s, "/Sessions/$id/Message", jsonBody = JsonBodies.JSON.encodeToString(MessageBody.serializer(), body), retry = false)
+        api.post(s, "/Sessions/$id/Message", jsonBody = JsonBodies.JSON.encodeToString(MessageBody.serializer(), body), retry = false, sendOnce = true)
     }
 
     override suspend fun command(s: Session, sessionId: String, command: RemoteCommand) = gated(s, "command") {
-        api.post(s, "/Sessions/${sessionId(sessionId)}/Playing/${command.wire}", retry = false)
+        api.post(s, "/Sessions/${sessionId(sessionId)}/Playing/${command.wire}", retry = false, sendOnce = true)
     }
 
     override suspend fun libraries(s: Session): List<LibraryFolder> = gated(s, "libraries") {
@@ -67,11 +67,11 @@ internal class AdminGateway(
     }
 
     override suspend fun scanAll(s: Session) = gated(s, "scanAll") {
-        api.post(s, "/Library/Refresh", retry = false)
+        api.post(s, "/Library/Refresh", retry = false, sendOnce = true)
     }
 
     override suspend fun scanLibrary(s: Session, libraryId: String) = gated(s, "scanLibrary") {
-        api.post(s, "/Items/${jellyfinId(libraryId)}/Refresh", SCAN_QUERY, retry = false)
+        api.post(s, "/Items/${jellyfinId(libraryId)}/Refresh", SCAN_QUERY, retry = false, sendOnce = true)
     }
 
     override suspend fun tasks(s: Session): List<ServerTask> = gated(s, "tasks") {
@@ -79,11 +79,11 @@ internal class AdminGateway(
     }
 
     override suspend fun startTask(s: Session, taskId: String) = gated(s, "startTask") {
-        api.post(s, "/ScheduledTasks/Running/${taskId(taskId)}", retry = false)
+        api.post(s, "/ScheduledTasks/Running/${taskId(taskId)}", retry = false, sendOnce = true)
     }
 
     override suspend fun stopTask(s: Session, taskId: String) = gated(s, "stopTask") {
-        api.delete(s, "/ScheduledTasks/Running/${taskId(taskId)}", retry = false)
+        api.delete(s, "/ScheduledTasks/Running/${taskId(taskId)}", retry = false, sendOnce = true)
     }
 
     override suspend fun users(s: Session): List<ServerUser> = gated(s, "users") {
@@ -94,7 +94,7 @@ internal class AdminGateway(
         val id = jellyfinId(userId)
         val user = api.get(s, "/Users/$id", deserializer = JsonObject.serializer(), maxBytes = UserPolicyEdit.MAX_POLICY_BYTES)
         val policy = UserPolicyEdit.withDisabled(user, id, disabled) ?: throw AppError.of(AppError.Kind.SERVER_ERROR)
-        api.post(s, "/Users/$id/Policy", jsonBody = policy.toString(), retry = false)
+        api.post(s, "/Users/$id/Policy", jsonBody = policy.toString(), retry = false, sendOnce = true)
     }
 
     override suspend fun activity(s: Session, startIndex: Int, limit: Int): ActivityPage = gated(s, "activity") {
@@ -111,15 +111,15 @@ internal class AdminGateway(
     override suspend fun removeDevice(s: Session, deviceId: String) = gated(s, "removeDevice") {
         if (!AdminLimits.DEVICE_ID.matches(deviceId)) throw notFound()
         // A device id is a client-chosen string: only ever a query value, never a path segment.
-        api.delete(s, "/Devices", listOf("id" to deviceId), retry = false)
+        api.delete(s, "/Devices", listOf("id" to deviceId), retry = false, sendOnce = true)
     }
 
     override suspend fun restart(s: Session) = gated(s, "restart") {
-        api.post(s, "/System/Restart", retry = false)
+        api.post(s, "/System/Restart", retry = false, sendOnce = true)
     }
 
     override suspend fun shutDown(s: Session) = gated(s, "shutDown") {
-        api.post(s, "/System/Shutdown", retry = false)
+        api.post(s, "/System/Shutdown", retry = false, sendOnce = true)
     }
 
     // ---- rules
