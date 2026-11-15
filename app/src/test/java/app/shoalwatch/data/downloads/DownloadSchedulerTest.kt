@@ -53,8 +53,8 @@ class DownloadSchedulerTest {
         assertEquals(30_000L, spec.backoffDelayDuration)
     }
 
-    @Test fun aSecondKickKeepsTheWorkAndChangingTheSettingReplacesIt() = runTest(UnconfinedTestDispatcher()) {
-        val scheduler = DownloadScheduler(workManager, prefs)
+    @Test fun aKickKeepsRunningWorkAndChangingTheSettingReplacesIt() = runTest(UnconfinedTestDispatcher()) {
+        val scheduler = DownloadScheduler({ workManager }, prefs) { true } // the worker is RUNNING: never cancelled by a kick
         val job = scheduler.watchSettings(backgroundScope) { true }
         scheduler.kick()
         val first = pending().single().id
@@ -65,6 +65,21 @@ class DownloadSchedulerTest {
         assertNotEquals("replaced", first, replaced.id)
         assertEquals(NetworkType.CONNECTED, replaced.constraints.requiredNetworkType)
         job.cancel()
+    }
+
+    /** Tasks 11-12 review I-3: work waiting out a long backoff is replaced, so coming to the front on a good connection resumes now. */
+    @Test fun aKickReplacesWorkThatIsWaitingNotRunningSoABackoffIsCutShort() = runTest {
+        val backedOff = androidx.work.OneTimeWorkRequest.Builder(DownloadWorker::class.java).setInitialDelay(5, java.util.concurrent.TimeUnit.HOURS).build()
+        workManager.enqueueUniqueWork(DownloadScheduler.NAME, androidx.work.ExistingWorkPolicy.KEEP, backedOff) // as after many retries
+        val scheduler = DownloadScheduler(workManager, prefs)
+        scheduler.inFront { true }
+        val now = pending().single()
+        assertNotEquals("a new work", backedOff.id, now.id)
+        assertEquals("no delay", 0L, workManager.getWorkInfoById(now.id).get()!!.initialDelayMillis)
+    }
+
+    @Test fun whenTheStateCannotBeReadAKickKeepsTheWork() {
+        assertTrue(DownloadScheduler.isRunning { error("no answer") })
     }
 
     @Test fun comingToTheForegroundWithQueuedRowsKicks() = runTest {
