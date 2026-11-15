@@ -202,4 +202,16 @@
     <string name="admin_confirm_device_action">Remove device</string>
     <string name="admin_device_removed">%1$s removed.</string>
     <string name="admin_devices_empty">No devices are signed in.</string>
+    <!-- Restart or shut down -->
+    <string name="admin_power_title">Restart or shut down</string>
+    <string name="admin_restart">Restart server</string>
+    <string name="admin_shutdown">Shut down server</string>
+    <string name="admin_confirm_restart_title">Restart %1$s?</string>
+    <string name="admin_confirm_restart_body">Everyone watching will be stopped. The server is usually back within a minute or two.</string>
+    <string name="admin_word_restart">restart</string>
+    <string name="admin_confirm_shutdown_title">Shut down %1$s?</string>
+    <string name="admin_confirm_shutdown_body">Everyone watching will be stopped, and the server won’t come back until someone starts it again on the computer it runs on. Shoalwatch can’t start it.</string>
+    <string name="admin_word_shutdown">shut down</string>
+    <string name="admin_restart_requested">Restart requested. The server is usually back within a minute or two.</string>
+    <string name="admin_shutdown_requested">Shut-down requested. The server won’t come back until it’s started again on its computer.</string>
 </resources>

@@ -100,3 +100,8 @@ private fun DevicesPreview() = ShoalwatchTheme {
     val tv = ServerDevice("tv", "Living room TV", listOf("kid"), "Jellyfin Android TV", "0.17.0", Instant.parse("2026-11-15T13:57:00Z"), false)
     DevicesScreen(DevicesUiState(open, listOf(tv, tv.copy(id = "p", name = "Pixel", isThisDevice = true))), DevicesActions({}, {}, {}, {}, {}))
 }
+
+@Preview(showBackground = true, widthDp = 360, heightDp = 760, name = "Restart or shut down") @Composable
+private fun PowerPreview() = ShoalwatchTheme {
+    PowerScreen(PowerUiState(open, ServerStatus("Den", "12.4.0", pendingRestart = true, shuttingDown = false)), PowerActions({}, {}, {}, {}, {}))
+}

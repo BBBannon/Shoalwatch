@@ -34,13 +34,12 @@ internal object AdminRoutes {
 /** The real admin destinations, each built from [graph] with `graphViewModel` (no arguments: nothing about the server travels in a route). */
 internal fun NavGraphBuilder.adminDestinations(graph: AppGraph, nav: NavHostController) = adminDestinations(
     dashboard = { DashboardRoute(graph, nav) },
-    // The other screens come in Tasks 8 to 11; until then their links lead straight back.
     libraries = { LibrariesRoute(graph, nav) },
     tasks = { TasksRoute(graph, nav) },
     users = { UsersRoute(graph, nav) },
     activity = { ActivityRoute(graph, nav) },
     devices = { DevicesRoute(graph, nav) },
-    power = { NotBuiltYet(nav) },
+    power = { PowerRoute(graph, nav) },
 )
 
 /** The same routes with the screens passed in, so `AdminNavigationTest` drives this exact graph with recorders. */
@@ -165,8 +164,15 @@ private fun DevicesRoute(graph: AppGraph, nav: NavHostController) {
     DevicesScreen(state, actions)
 }
 
-/** Stand-in for an admin screen a later task builds: it shows nothing and goes straight back. */
 @Composable
-private fun NotBuiltYet(nav: NavHostController) {
-    LaunchedEffect(Unit) { nav.popBackStack() }
+private fun PowerRoute(graph: AppGraph, nav: NavHostController) {
+    // Only the application context is kept (by the word lookup), never an Activity.
+    val app = LocalContext.current.applicationContext
+    val vm = graphViewModel {
+        PowerViewModel(graph.serverCatalog, graph.adminRights, graph.addressSelector, graph.admin, words = { app.getString(it.word) })
+    }
+    val state by vm.state.collectAsStateWithLifecycle()
+    AdminRouteEffects(vm, state.frame.gate, nav)
+    val actions = remember(vm, nav) { PowerActions({ nav.popBackStack() }, vm::refresh, vm::ask, vm::confirm, vm::dismiss, vm::dismissProblem, vm::dismissNotice) }
+    PowerScreen(state, actions, vm.typed)
 }
