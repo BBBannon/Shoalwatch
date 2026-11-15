@@ -159,7 +159,8 @@ def record_report(kind, body):
         item = ITEMS.get(norm(str(body.get("ItemId") or "")))
         ticks = body.get("PositionTicks")
         if kind == "stopped" and item and isinstance(ticks, int) and not body.get("Failed"):
-            if item.get("Runtime") and ticks > item["Runtime"] * PLAYED_AT:
+            # Measured against the clip that is actually served (PlaybackInfo says CLIP_TICKS), not the catalogue runtime.
+            if ticks > CLIP_TICKS * PLAYED_AT:
                 mark(item["Id"], played=True, pos=0, count=user_state(item["Id"])["count"] + 1, stamp=True)
             else:
                 mark(item["Id"], played=False, pos=max(ticks, 0), stamp=True)

@@ -20,8 +20,8 @@ Correctness on real files, app size, maintenance, provenance of any native binar
 | Correctness on real files | Highest for ASS (the reference renderer) | Highest overall | Partial: see feature list below |
 | App size | Adds native libs per ABI (size unmeasured: **unverified**) | Largest: FFmpeg inside; plan estimate 20-30 MB per ABI (**unverified**) | None |
 | Maintenance | Native build or binary upgrades each release; JNI glue to Media3 | A second player kept in step with every Milestone 3 feature | Nothing extra |
-| Provenance | Prebuilt AAR: third-party binaries; sha256 pins the bytes, not their build inputs. From source: ours, but needs the NDK | Same problem, bigger surface | All Kotlin/Java from the AndroidX artifacts already pinned |
-| Dependency-verification fit | AAR fits Gradle verification, but the binaries inside are opaque | Same | Already in the verification metadata (`androidx.media3`) |
+| Provenance | Prebuilt AAR: third-party binaries; sha256 pins the bytes, not their build inputs. From source: ours, but needs the NDK | Same problem, bigger surface | All Kotlin/Java from first-party AndroidX artifacts (Media3 is not in the project yet: its checksums are added to the verification metadata in Task 6) |
+| Dependency-verification fit | AAR fits Gradle verification, but the binaries inside are opaque | Same | Fits: ordinary Maven artifacts, checksums added to the verification metadata when the dependency is added |
 | Attack surface | libass, FreeType, HarfBuzz, FriBidi parse untrusted server files in our process | FFmpeg and more | Managed-code parser only |
 | Needs Ben's yes | **Yes** (NDK install, or a third-party binary) | **Yes** | No |
 

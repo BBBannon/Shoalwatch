@@ -245,13 +245,13 @@ class Reports(Served):
         self.assertNotIn("Token", raw.decode())
 
     def test_a_stop_at_95_percent_marks_the_item_played(self):
-        self.report("/Sessions/Playing/Stopped", PositionTicks=int(m.ITEMS[self.item]["Runtime"] * 0.95))
+        self.report("/Sessions/Playing/Stopped", PositionTicks=int(m.CLIP_TICKS * 0.95))
         data = self.json("GET", f"/Items/{self.item}")[1]["UserData"]
         self.assertTrue(data["Played"])
         self.assertEqual(0, data["PlaybackPositionTicks"])
 
     def test_a_stop_at_30_percent_sets_the_resume_position_for_continue_watching(self):
-        ticks = int(m.ITEMS[self.item]["Runtime"] * 0.30)
+        ticks = int(m.CLIP_TICKS * 0.30)
         self.report("/Sessions/Playing/Stopped", PositionTicks=ticks)
         data = self.json("GET", f"/Items/{self.item}")[1]["UserData"]
         self.assertEqual((False, ticks), (data["Played"], data["PlaybackPositionTicks"]))
@@ -259,7 +259,7 @@ class Reports(Served):
         self.assertIn(self.item, resume_ids)
 
     def test_a_failed_stop_does_not_move_the_position(self):
-        self.report("/Sessions/Playing/Stopped", PositionTicks=int(m.ITEMS[self.item]["Runtime"] * 0.30), Failed=True)
+        self.report("/Sessions/Playing/Stopped", PositionTicks=int(m.CLIP_TICKS * 0.30), Failed=True)
         self.assertEqual(0, self.json("GET", f"/Items/{self.item}")[1]["UserData"]["PlaybackPositionTicks"])
 
     def test_a_bad_body_is_a_400(self):
