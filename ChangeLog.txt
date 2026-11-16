@@ -1,3 +1,4 @@
+v1.117 — 16/11/2026 — If something between the phone and your server (such as a firewall) refuses every request for a while, your waiting watched changes are now kept and sent later instead of being thrown away.
 v1.116 — 16/11/2026 — On a very slow connection, watched and favourite changes now wait a little longer between tries instead of being sent again and again (a change you make is still sent straight away).
 v1.115 — 16/11/2026 — On a very slow connection, auto-download next now waits a little longer between tries instead of asking the server again and again.
 v1.114 — 16/11/2026 — Storage no longer says the next episodes could not be downloaded for lack of space when they are already on the phone.
