@@ -9,6 +9,7 @@ import androidx.work.WorkManager
 import app.shoalwatch.core.AppLog
 import app.shoalwatch.data.servers.Session
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -30,6 +31,9 @@ class SyncScheduler internal constructor(
     internal constructor(workManager: WorkManager, sender: SyncSender, outbox: OutboxStore, online: OnlineEvents, scope: CoroutineScope) :
         this({ workManager }, sender, outbox, online, scope)
 
+    /** A test seam: counts each cameOnline event once it is fully handled. */
+    internal val onlineHandled = AtomicInteger()
+
     /**
      * After every enqueue (its row already committed): kick [s] in process AND replace the job. REPLACE is safe: the worker only
      * awaits `sender.drainAll()`, which runs in the app scope, so replacing the job cancels a wait, never a send.
@@ -45,7 +49,11 @@ class SyncScheduler internal constructor(
      */
     fun start(): Job {
         scope.launch {
-            online.cameOnline.collect { serverId -> withWork { it.serverId == serverId }.forEach(sender::kick) }
+            online.cameOnline.collect { serverId ->
+                // After a timeout the re-probe's Online is no reconnection: held, with a back-off (a change, start and sign-in never are).
+                if (!sender.holdsReconnection(serverId)) withWork { it.serverId == serverId }.forEach(sender::kick)
+                onlineHandled.incrementAndGet()
+            }
         }
         return scope.launch {
             val sessions = withWork { true }

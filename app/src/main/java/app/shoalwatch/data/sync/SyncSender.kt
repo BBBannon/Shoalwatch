@@ -58,6 +58,14 @@ internal class SyncSender(
     private val profileLocks = HashMap<Session, Mutex>()
     private val permits = Semaphore(PARALLEL)
 
+    /**
+     * Per server, after a NETWORK or TIMEOUT failure: (hold its reconnection kicks until, current hold), under [lock]. Such a
+     * failure makes ServerApi re-probe, and the probe's new Online is a reconnection, so without this a slow link would re-send
+     * the head row without end (carried from Tasks 13-14 review M4, as auto-download next). From [HOLD_MIN_MS], doubling to
+     * [HOLD_MAX_MS]; any answer from the server ends it. Memory only, and only [SyncScheduler]'s reconnection kick reads it.
+     */
+    private val reconnectHolds = HashMap<String, Pair<Long, Long>>()
+
     /** A test seam: runs when a drain has found nothing more due, before it ends. */
     @Volatile internal var beforeIdle: suspend (Session) -> Unit = {}
 
@@ -163,6 +171,16 @@ internal class SyncSender(
         }
     }
 
+    /** Whether a reconnection of [serverId] should not kick now: its last request got no answer, and the hold has not run out. */
+    fun holdsReconnection(serverId: String): Boolean = synchronized(lock) { reconnectHolds[serverId]?.let { now() < it.first } ?: false }
+
+    private fun unanswered(serverId: String) = synchronized(lock) {
+        val wait = reconnectHolds[serverId]?.second?.let { minOf(it * 2, HOLD_MAX_MS) } ?: HOLD_MIN_MS
+        reconnectHolds[serverId] = (now() + wait) to wait
+    }
+
+    private fun answered(serverId: String) = synchronized(lock) { reconnectHolds.remove(serverId) }
+
     /** A test seam: whether a drain for [s] can still be joined. */
     internal fun isDraining(s: Session): Boolean = synchronized(lock) { s in running }
 
@@ -206,6 +224,7 @@ internal class SyncSender(
                     landing.confirmed(s, row.seq)
                 }
             }
+            answered(s.serverId)
             return Outcome.Landed
         } catch (e: AppError) {
             return failed(s, row, e.kind)
@@ -226,7 +245,16 @@ internal class SyncSender(
     }
 
     /** The failure table: the row stays unless the server answered about this item for this profile. */
-    private suspend fun failed(s: Session, row: OutboxEntity, kind: AppError.Kind): Outcome = when (kind) {
+    private suspend fun failed(s: Session, row: OutboxEntity, kind: AppError.Kind): Outcome {
+        when (kind) {
+            AppError.Kind.NETWORK, AppError.Kind.TIMEOUT -> unanswered(s.serverId)
+            AppError.Kind.SERVER_ERROR, AppError.Kind.UNAUTHORISED, AppError.Kind.FORBIDDEN, AppError.Kind.SERVER_NOT_FOUND -> answered(s.serverId)
+            else -> Unit
+        }
+        return failedRow(s, row, kind)
+    }
+
+    private suspend fun failedRow(s: Session, row: OutboxEntity, kind: AppError.Kind): Outcome = when (kind) {
         AppError.Kind.OFFLINE, AppError.Kind.NETWORK, AppError.Kind.TIMEOUT -> Outcome.Stop(DrainResult.WAITING_FOR_CONNECTION)
         AppError.Kind.SERVER_ERROR -> defer(row)
         AppError.Kind.UNAUTHORISED, AppError.Kind.NOT_SIGNED_IN -> Outcome.Stop(DrainResult.WAITING_FOR_SIGN_IN)
@@ -273,6 +301,8 @@ internal class SyncSender(
     private companion object {
         const val TAG = "SyncSender"
         const val PARALLEL = 4
+        const val HOLD_MIN_MS = 60_000L
+        const val HOLD_MAX_MS = 30 * 60_000L
 
         /** Least to most in need of another attempt: the worker acts on the worst. */
         val WORST = listOf(

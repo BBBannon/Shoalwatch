@@ -116,6 +116,52 @@ class SyncSchedulerTest : SyncSenderTestBase() {
         assertEquals(1, count("sync_outbox"))
     }
 
+    /**
+     * Carried from Tasks 13-14 review M4: a request that times out makes ServerApi re-probe, and the probe's new Online is a
+     * cameOnline, which kicked the head row again at once, for as long as the link stayed that slow. After a NETWORK or TIMEOUT,
+     * that server's reconnection kick is held for 1 min, then 2 min, and so on (the sender's clock); a change still sends at
+     * once, and a request the server answers ends the hold, so the next reconnection kicks again.
+     */
+    @Test fun aTimeoutHoldsTheReprobeKickWithABackOffButNotAChange() = runTest {
+        enqueue(s1u1, favourite("a"))
+        val state = connections.stateFor(S1)
+        val online = { n: Int -> Connection.Online(address("http://192.168.1.$n:8096"), isHome = true) }
+        state.value = online(10)
+        gateway.failNext("favourite", AppError.Kind.TIMEOUT, times = 2)
+        val scheduler = scheduler()
+        scheduler.start().join()
+        settle("tried once and watched") { gateway.calls.size == 1 && state.subscriptionCount.value > 0 && !sender.isDraining(s1u1) }
+        var n = 10
+        fun reprobe() { // what refreshIfCurrent does after a failed request: Checking, then a new Online; waits until it is handled
+            val handled = scheduler.onlineHandled.get()
+            state.value = Connection.Checking(online(n))
+            runCurrent()
+            state.value = online(++n)
+            settle("handled") { scheduler.onlineHandled.get() == handled + 1 }
+            settle("no drain running") { !sender.isDraining(s1u1) } // a kick, had there been one, has sent by now
+        }
+        reprobe()
+        assertEquals("inside the 1 min hold", 1, gateway.calls.size)
+        clock += 60_001
+        reprobe() // kicks: times out again, hold 2 min
+        assertEquals(2, gateway.calls.size)
+        clock += 60_001
+        reprobe()
+        assertEquals("the hold doubled", 2, gateway.calls.size)
+        enqueue(s1u1, favourite("b"))
+        scheduler.changed(s1u1) // a tick is never held
+        settle("both sent at once") { count("sync_outbox") == 0 }
+        assertEquals(4, gateway.calls.size)
+        settle("no longer watched (no rows)") { state.subscriptionCount.value == 0 }
+        enqueue(s1u1, favourite("c"))
+        gateway.failNext("favourite", AppError.Kind.OFFLINE)
+        scheduler.changed(s1u1)
+        settle("tried and watched again") { gateway.calls.size == 5 && !sender.isDraining(s1u1) && state.subscriptionCount.value > 0 }
+        reprobe() // the answer ended the hold and OFFLINE starts none: this reconnection kicks
+        assertEquals(0, count("sync_outbox"))
+        assertEquals(6, gateway.calls.size)
+    }
+
     @Test fun aSignInSendsThatProfilesRows() = runTest {
         signedOut += s1u2
         enqueue(s1u2, favourite("a"))
