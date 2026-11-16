@@ -1,3 +1,4 @@
+v1.120 — 16/11/2026 — If a firewall blocks the message sent when you stop watching, where you stopped is now kept and sent later instead of being lost.
 v1.119 — 16/11/2026 — After watching part of a download offline and then carrying on online, the app no longer goes back to the old offline spot after it restarts.
 v1.118 — 16/11/2026 — Taking something off Continue Watching after watching part of a download offline now stays that way after the app restarts.
 v1.117 — 16/11/2026 — If something between the phone and your server (such as a firewall) refuses every request for a while, your waiting watched changes are now kept and sent later instead of being thrown away.

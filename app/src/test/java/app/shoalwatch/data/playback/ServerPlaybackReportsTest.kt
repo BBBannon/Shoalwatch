@@ -110,7 +110,7 @@ class ServerPlaybackReportsTest {
     }
 
     @Test fun aRefusalAboutTheItemIsSavedOnThePhoneOnlyAsBefore() = runTest {
-        for (kind in listOf(AppError.Kind.FORBIDDEN, AppError.Kind.SERVER_NOT_FOUND)) {
+        for (kind in listOf(AppError.Kind.SERVER_NOT_FOUND)) {
             playstate.calls.clear(); kicked.clear()
             offline(kind)
             reports().stopped(BEN, report(61_000), finished = false)
@@ -124,6 +124,9 @@ class ServerPlaybackReportsTest {
         val kinds = listOf(
             AppError.Kind.UNAUTHORISED, AppError.Kind.TLS_UNTRUSTED, AppError.Kind.TLS_PIN_CHANGED, AppError.Kind.CLEARTEXT_BLOCKED,
             AppError.Kind.CLIENT_CERT_REQUIRED, AppError.Kind.SERVER_MISMATCH, AppError.Kind.UNKNOWN,
+            // Milestone 5 re-review m3: a 403 may be a firewall refusing everything, not the server about this item. The row stays,
+            // and the outbox's sender proves it (as the profile, final review I1) before anything is dropped.
+            AppError.Kind.FORBIDDEN,
         )
         for (kind in kinds) {
             playstate.calls.clear(); kicked.clear()

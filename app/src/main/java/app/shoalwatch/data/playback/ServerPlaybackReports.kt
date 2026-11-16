@@ -14,8 +14,9 @@ import kotlinx.coroutines.CancellationException
  *
  * **Every stop is saved and queued first** (`recordStop(..., reached = false, kick = false)`, at the stop's own time), then
  * reported (see [stopped]). "Heard" is an allow-list (Tasks 9-10 review M2): the report was sent, or the server answered about
- * this item (`FORBIDDEN`, `SERVER_NOT_FOUND`); only then is an unfinished stop's POSITION row taken back. Anything else (no
- * connection, a 401, a TLS or identity failure, not signed in, unknown) keeps it, like the account's other rows (a rejected
+ * this item (`SERVER_NOT_FOUND`); only then is an unfinished stop's POSITION row taken back. Anything else (no connection, a
+ * 403, which may be a firewall refusing everything and is proven by the sender as the profile (Milestone 5 re-review m3, as
+ * final review I1), a 401, a TLS or identity failure, not signed in, unknown) keeps it, like the account's other rows (a rejected
  * sign-in keeps its changes; a removed account's go with it); a finished stop keeps its PLAYED tick either way (review I1). The
  * outbox sends them, in order, when it can (this class never resends a stop: a session report is never replayed).
  */
@@ -85,7 +86,7 @@ class ServerPlaybackReports internal constructor(
     private companion object {
         const val TAG = "PlaybackReports"
 
-        /** The server answered about this item: the report was heard, so its position is not sent again. */
-        val HEARD = setOf(AppError.Kind.FORBIDDEN, AppError.Kind.SERVER_NOT_FOUND)
+        /** The server answered about this item: the report was heard, so its position is not sent again. Not a 403 (re-review m3). */
+        val HEARD = setOf(AppError.Kind.SERVER_NOT_FOUND)
     }
 }

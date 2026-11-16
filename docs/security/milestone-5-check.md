@@ -65,7 +65,7 @@ Proved against the Milestone 4 + 6 merge base `2022ff7`:
 
 | Finding | Done |
 |---|---|
-| **I1** a 403 dropped rows with no proof | Fixed: overruled only when `GET /UserViews` answers as the profile; a 403 or 404 there defers (`SyncSenderFailureTest`, `SyncGatewayTest.profileAnswersAsksTheViewsAndPassesAFailureThrough`) |
+| **I1** a 403 dropped rows with no proof | Fixed: overruled only when `GET /UserViews` answers as the profile; a 403 or 404 there defers (`SyncSenderFailureTest`, `SyncGatewayTest.profileAnswersAsksTheViewsAndPassesAFailureThrough`); a 403 on a stop report no longer counts as heard either, so its position stays for the sender (re-review m3, `ServerPlaybackReportsTest.aStopTheServerCertainlyDidNotTakeKeepsItsRowForTheOutbox`) |
 | **I2** an old offline position came back after a restart | Fixed: any confirmed PLAYED, POSITION or PLAY row clears the offline plays it covers, and so does a heard online stop (re-review m1) (`OfflineRecoveryTest`) |
 | **M2** a stop cut off mid-send waits for the next start | Documented in ARCHITECTURE ("Progress reports and teardown") |
 | **M5** the stand-in leaked Night Shift episodes to `kid` by `seasonId` | Fixed in `tools/mockjelly` with its test |
