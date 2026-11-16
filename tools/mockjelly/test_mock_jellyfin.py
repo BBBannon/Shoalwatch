@@ -542,5 +542,309 @@ class Downloads(Served):
         self.assertEqual(200, self.call("GET", f"{folder}/{self.segments(media)[0].split('?')[0]}")[0])
 
 
+# ------------------------------------------------- profiles and playstate (Milestone 5): each user's own watched state, one test per flag
+ANNA_ID, KID_ID = "b" * 32, m.guid("user-kid")
+NIGHT_SHIFT = m.guid("series-2")
+NIGHT_SHIFT_EPISODE = m.guid("episode-2-1-1")
+TICKED = m.guid("film-21")  # nobody has touched it in the seed
+
+
+class Profiles(Served):
+    """Anna and kid sign in once; each test starts with every playstate flag off and TICKED clean for all three."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.anna = cls.sign_in("anna", "test-password-2")
+        cls.kid = cls.sign_in("kid", "kid-password")
+
+    @classmethod
+    def sign_in(cls, name, password):
+        status, _, raw = cls.call("POST", "/Users/AuthenticateByName", {"Username": name, "Pw": password}, token=None)
+        assert status == 200, (name, status)
+        return json.loads(raw)["AccessToken"]
+
+    def setUp(self):
+        m.reset_playstate()
+        for uid in (m.USER_ID, ANNA_ID, KID_ID):
+            m.user_state(TICKED, uid).update(played=False, pos=0, fav=False, count=0, last=None)
+
+    def tearDown(self):
+        m.reset_playstate()
+
+    def as_(self, token, method, path, body=None):
+        status, _, raw = self.call(method, path, body, token=token)
+        return status, json.loads(raw) if raw else None
+
+    def data(self, token, item=TICKED):
+        status, body = self.as_(token, "GET", f"/UserItems/{item}/UserData")
+        self.assertEqual(200, status)
+        return body
+
+    @staticmethod
+    def stamp(text):
+        return m.parse_date(text)
+
+
+class ProfileRules(Profiles):
+    def test_the_token_decides_who_the_request_is_for(self):
+        for token, uid, name in ((self.token, m.USER_ID, "ben"), (self.anna, ANNA_ID, "anna"), (self.kid, KID_ID, "kid")):
+            with self.subTest(name=name):
+                _, me = self.as_(token, "GET", "/Users/Me")
+                self.assertEqual((uid, name), (me["Id"], me["Name"]))
+
+    def test_a_userid_naming_someone_else_is_403(self):
+        self.assertEqual(403, self.as_(self.anna, "GET", f"/Items?userId={m.USER_ID}")[0])
+        self.assertEqual(403, self.as_(self.token, "POST", f"/UserPlayedItems/{TICKED}?userId={ANNA_ID}")[0])
+        self.assertEqual(200, self.as_(self.anna, "GET", f"/Items?userId={ANNA_ID}")[0])
+        self.assertEqual(200, self.as_(self.anna, "GET", "/Items?userId=bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")[0])
+        self.assertFalse(self.data(self.anna)["Played"])
+
+    def test_kid_never_sees_night_shift(self):
+        m.user_state(NIGHT_SHIFT_EPISODE, KID_ID).update(pos=5 * m.TICKS, last=m.NOW)
+        m.user_state(m.guid("episode-2-1-2"), KID_ID).update(played=True, count=1, last=m.NOW)
+        try:
+            everything = {i["Id"] for i in self.as_(self.kid, "GET", "/Items?recursive=true")[1]["Items"]}
+            self.assertNotIn(NIGHT_SHIFT, everything)
+            self.assertNotIn(NIGHT_SHIFT_EPISODE, everything)
+            self.assertIn(m.guid("series-0"), everything)
+            self.assertEqual([], self.as_(self.kid, "GET", f"/Items?ids={NIGHT_SHIFT},{NIGHT_SHIFT_EPISODE}")[1]["Items"])
+            self.assertNotIn(NIGHT_SHIFT, {i["Id"] for i in self.as_(self.kid, "GET", f"/Items?parentId={m.TV_ID}")[1]["Items"]})
+            for path in (f"/Items/{NIGHT_SHIFT}", f"/Items/{NIGHT_SHIFT_EPISODE}", f"/Shows/{NIGHT_SHIFT}/Episodes", f"/Shows/{NIGHT_SHIFT}/Seasons",
+                         f"/UserItems/{NIGHT_SHIFT_EPISODE}/UserData"):
+                with self.subTest(path=path):
+                    self.assertEqual(404, self.as_(self.kid, "GET", path)[0])
+            self.assertEqual(404, self.as_(self.kid, "POST", f"/Items/{NIGHT_SHIFT_EPISODE}/PlaybackInfo", {})[0])
+            self.assertNotIn(NIGHT_SHIFT_EPISODE, {i["Id"] for i in self.as_(self.kid, "GET", "/UserItems/Resume")[1]["Items"]})
+            self.assertNotIn(m.guid("episode-2-1-3"), {i["Id"] for i in self.as_(self.kid, "GET", "/Shows/NextUp")[1]["Items"]})
+            self.assertNotIn(NIGHT_SHIFT, {i["Id"] for i in self.as_(self.kid, "GET", f"/Items/Latest?parentId={m.TV_ID}")[1]})
+            # everyone else still sees it
+            self.assertEqual(200, self.as_(self.anna, "GET", f"/Items/{NIGHT_SHIFT}")[0])
+            self.assertEqual(200, self.as_(self.token, "GET", f"/Shows/{NIGHT_SHIFT}/Episodes")[0])
+        finally:
+            m.STATE.pop((KID_ID, NIGHT_SHIFT_EPISODE), None)
+            m.STATE.pop((KID_ID, m.guid("episode-2-1-2")), None)
+
+    def test_annas_tick_does_not_change_bens_state(self):
+        self.assertEqual(200, self.as_(self.anna, "POST", f"/UserPlayedItems/{TICKED}")[0])
+        self.assertTrue(self.data(self.anna)["Played"])
+        self.assertFalse(self.data(self.token)["Played"])
+        self.assertFalse(self.data(self.kid)["Played"])
+        self.assertEqual(200, self.as_(self.anna, "POST", f"/UserFavoriteItems/{TICKED}")[0])
+        self.assertFalse(self.data(self.token)["IsFavorite"])
+        self.assertNotIn(TICKED, {i["Id"] for i in self.as_(self.token, "GET", "/Items?recursive=true&filters=IsPlayed")[1]["Items"]})
+
+    def test_bens_seeded_state_is_his_alone(self):
+        played = m.guid("film-5")
+        self.assertTrue(self.data(self.token, played)["Played"])
+        self.assertFalse(self.data(self.anna, played)["Played"])
+        self.assertEqual([], self.as_(self.anna, "GET", "/UserItems/Resume")[1]["Items"])
+
+
+class PlaystateDefaults(Profiles):
+    def test_user_data_carries_last_played_only_when_set(self):
+        self.assertNotIn("LastPlayedDate", self.data(self.anna))
+        self.as_(self.anna, "POST", f"/UserPlayedItems/{TICKED}")
+        self.assertIn("LastPlayedDate", self.data(self.anna))
+
+    def test_mark_played_sets_played_position_zero_count_at_least_one_and_now(self):
+        m.user_state(TICKED, ANNA_ID).update(pos=40 * m.TICKS)
+        before = m.datetime.now(m.timezone.utc)
+        status, body = self.as_(self.anna, "POST", f"/UserPlayedItems/{TICKED}")
+        self.assertEqual(200, status)
+        self.assertEqual((True, 0, 1), (body["Played"], body["PlaybackPositionTicks"], body["PlayCount"]))
+        self.assertLess(abs((self.stamp(body["LastPlayedDate"]) - before).total_seconds()), 5)
+        self.as_(self.anna, "POST", f"/UserPlayedItems/{TICKED}")
+        self.assertEqual(1, self.data(self.anna)["PlayCount"])  # a repeated mark does not count twice
+        m.user_state(TICKED, ANNA_ID).update(count=4)
+        self.as_(self.anna, "POST", f"/UserPlayedItems/{TICKED}")
+        self.assertEqual(4, self.data(self.anna)["PlayCount"])
+
+    def test_date_played_is_a_400_and_changes_nothing(self):
+        self.assertEqual(400, self.as_(self.anna, "POST", f"/UserPlayedItems/{TICKED}?datePlayed=2026-11-16T10:00:00Z")[0])
+        self.assertFalse(self.data(self.anna)["Played"])
+
+    def test_unplay_clears_the_count_and_the_last_played_date(self):
+        self.as_(self.anna, "POST", f"/UserPlayedItems/{TICKED}")
+        status, body = self.as_(self.anna, "DELETE", f"/UserPlayedItems/{TICKED}")
+        self.assertEqual(200, status)
+        self.assertEqual((False, 0, 0), (body["Played"], body["PlayCount"], body["PlaybackPositionTicks"]))
+        self.assertNotIn("LastPlayedDate", body)
+
+    def test_update_user_data_applies_play_count_as_an_absolute_value(self):
+        self.as_(self.anna, "POST", f"/UserItems/{TICKED}/UserData", {"PlayCount": 5})
+        status, body = self.as_(self.anna, "POST", f"/UserItems/{TICKED}/UserData", {"PlayCount": 3, "Played": True})
+        self.assertEqual((200, 3, True), (status, body["PlayCount"], body["Played"]))
+
+    def test_update_user_data_keeps_last_played_date_as_sent(self):
+        sent = "2026-11-01T09:30:15.1234567Z"
+        body = self.as_(self.anna, "POST", f"/UserItems/{TICKED}/UserData", {"LastPlayedDate": sent, "Played": True})[1]
+        self.assertEqual(self.stamp(sent), self.stamp(body["LastPlayedDate"]))
+        self.assertEqual("2026-11-01T09:30:15.1234560Z", self.data(self.anna)["LastPlayedDate"])
+        offset = self.as_(self.anna, "POST", f"/UserItems/{TICKED}/UserData", {"LastPlayedDate": "2026-11-01T10:30:15+01:00"})[1]
+        self.assertEqual("2026-11-01T09:30:15.0000000Z", offset["LastPlayedDate"])
+        self.assertEqual(400, self.as_(self.anna, "POST", f"/UserItems/{TICKED}/UserData", {"LastPlayedDate": "yesterday"})[0])
+
+    def test_update_user_data_leaves_fields_not_sent_alone_and_applies_the_rest(self):
+        m.user_state(TICKED, ANNA_ID).update(played=True, count=2, pos=0)
+        body = self.as_(self.anna, "POST", f"/UserItems/{TICKED}/UserData",
+                        {"IsFavorite": True, "PlayCount": None, "PlaybackPositionTicks": 70 * m.TICKS})[1]
+        self.assertEqual((True, 2, True, 70 * m.TICKS), (body["Played"], body["PlayCount"], body["IsFavorite"], body["PlaybackPositionTicks"]))
+
+    def test_a_badly_typed_field_is_a_400(self):
+        for bad in ({"PlayCount": "3"}, {"Played": "yes"}, {"PlaybackPositionTicks": 1.5}):
+            with self.subTest(body=bad):
+                self.assertEqual(400, self.as_(self.anna, "POST", f"/UserItems/{TICKED}/UserData", bad)[0])
+
+
+class PlaystateFlags(Profiles):
+    def test_userdata_ignores_dates_drops_play_count_and_last_played_date_only(self):
+        m.CONFIG["userdata_ignores_dates"] = True
+        body = self.as_(self.anna, "POST", f"/UserItems/{TICKED}/UserData",
+                        {"Played": True, "PlayCount": 7, "LastPlayedDate": "2026-11-01T09:30:15Z", "PlaybackPositionTicks": 0})[1]
+        self.assertEqual((True, 0), (body["Played"], body["PlayCount"]))
+        self.assertNotIn("LastPlayedDate", body)
+
+    def test_markplayed_counts_adds_one_on_every_call(self):
+        m.CONFIG["markplayed_counts"] = True
+        for _ in range(3):
+            self.as_(self.anna, "POST", f"/UserPlayedItems/{TICKED}")
+        self.assertEqual(3, self.data(self.anna)["PlayCount"])
+
+    def test_lose_reply_once_applies_the_first_write_then_closes_without_a_reply(self):
+        m.CONFIG["lose_reply_once"] = True
+        with self.assertRaises((urllib.error.URLError, http.client.HTTPException, ConnectionError)):
+            self.call("POST", f"/UserItems/{TICKED}/UserData", {"PlayCount": 2}, token=self.anna)
+        self.assertEqual(2, self.data(self.anna)["PlayCount"])  # it was applied
+        self.assertEqual(200, self.as_(self.anna, "POST", f"/UserPlayedItems/{TICKED}")[0])  # only the first is lost
+        self.assertEqual(2, self.data(self.anna)["PlayCount"])
+
+    def test_lose_reply_once_also_covers_mark_played(self):
+        m.CONFIG["lose_reply_once"] = True
+        with self.assertRaises((urllib.error.URLError, http.client.HTTPException, ConnectionError)):
+            self.call("POST", f"/UserPlayedItems/{TICKED}", token=self.anna)
+        self.assertTrue(self.data(self.anna)["Played"])
+
+    def test_no_userdata_get_404s_the_route_but_not_the_item(self):
+        m.CONFIG["no_userdata_get"] = True
+        self.assertEqual(404, self.as_(self.anna, "GET", f"/UserItems/{TICKED}/UserData")[0])
+        status, item = self.as_(self.anna, "GET", f"/Items/{TICKED}")
+        self.assertEqual((200, TICKED), (status, item["Id"]))
+        self.assertEqual(200, self.as_(self.anna, "POST", f"/UserItems/{TICKED}/UserData", {"Played": True})[0])
+
+    def test_refuse_userdata_403s_every_user_data_route_for_that_item_only(self):
+        m.CONFIG["refuse_userdata"] = TICKED
+        for method, path in (("GET", f"/UserItems/{TICKED}/UserData"), ("POST", f"/UserItems/{TICKED}/UserData"),
+                             ("POST", f"/UserPlayedItems/{TICKED}"), ("DELETE", f"/UserPlayedItems/{TICKED}"),
+                             ("POST", f"/UserFavoriteItems/{TICKED}"), ("DELETE", f"/UserFavoriteItems/{TICKED}")):
+            with self.subTest(method=method, path=path):
+                body = {"Played": True} if path.endswith("UserData") and method == "POST" else None
+                self.assertEqual(403, self.as_(self.anna, method, path, body)[0])
+        self.assertFalse(m.peek(TICKED, ANNA_ID)["played"])
+        other = m.guid("film-22")
+        self.assertEqual(200, self.as_(self.anna, "POST", f"/UserPlayedItems/{other}")[0])
+        m.STATE.pop((ANNA_ID, other), None)
+
+    def test_clock_skew_shifts_the_dates_the_server_writes_but_not_the_ones_sent(self):
+        m.CONFIG["clock_skew"] = -3600
+        before = m.datetime.now(m.timezone.utc)
+        body = self.as_(self.anna, "POST", f"/UserPlayedItems/{TICKED}")[1]
+        self.assertLess(abs((self.stamp(body["LastPlayedDate"]) - before).total_seconds() + 3600), 5)
+        sent = "2026-11-01T09:30:15.0000000Z"
+        self.assertEqual(sent, self.as_(self.anna, "POST", f"/UserItems/{TICKED}/UserData", {"LastPlayedDate": sent})[1]["LastPlayedDate"])
+
+
+class PlaystateTestRoutes(Profiles):
+    def test_mock_userdata_lists_one_users_touched_items_without_a_token(self):
+        self.as_(self.anna, "POST", f"/UserItems/{TICKED}/UserData", {"Played": True, "PlayCount": 2, "LastPlayedDate": "2026-11-01T09:30:15Z"})
+        status, _, raw = self.call("GET", "/mock/userdata?user=anna", token=None)
+        self.assertEqual(200, status)
+        self.assertEqual({"played": True, "count": 2, "pos": 0, "fav": False, "last": "2026-11-01T09:30:15.0000000Z"}, json.loads(raw)[TICKED])
+        self.assertNotIn(m.guid("film-5"), json.loads(raw))  # ben's seeded state is not anna's
+        self.assertIn(m.guid("film-5"), json.loads(self.call("GET", "/mock/userdata?user=ben", token=None)[2]))
+        self.assertEqual(404, self.call("GET", "/mock/userdata?user=nobody", token=None)[0])
+        self.assertEqual(400, self.call("GET", "/mock/userdata", token=None)[0])
+
+    def test_mock_userdata_post_is_another_device_changing_it(self):
+        status = self.call("POST", f"/mock/userdata?user=kid&item={TICKED}",
+                           {"played": True, "count": 3, "pos": 0, "fav": True, "last": "2026-11-02T08:00:00Z"}, token=None)[0]
+        self.assertEqual(204, status)
+        data = self.data(self.kid)
+        self.assertEqual((True, 3, True, "2026-11-02T08:00:00.0000000Z"), (data["Played"], data["PlayCount"], data["IsFavorite"], data["LastPlayedDate"]))
+        self.assertFalse(self.data(self.anna)["Played"])
+        self.assertEqual(204, self.call("POST", f"/mock/userdata?user=kid&item={TICKED}", {"last": None}, token=None)[0])
+        self.assertNotIn("LastPlayedDate", self.data(self.kid))
+        self.assertEqual(404, self.call("POST", f"/mock/userdata?user=kid&item={'f' * 32}", {"played": True}, token=None)[0])
+        self.assertEqual(404, self.call("POST", f"/mock/userdata?user=nobody&item={TICKED}", {"played": True}, token=None)[0])
+        self.assertEqual(400, self.call("POST", f"/mock/userdata?user=kid&item={TICKED}", {"count": "lots"}, token=None)[0])
+
+    def test_mock_playstate_lists_every_playstate_request_without_values(self):
+        self.as_(self.anna, "POST", f"/UserItems/{TICKED}/UserData?userId={ANNA_ID}", {"PlayCount": 9876, "Played": True})
+        self.as_(self.token, "POST", f"/UserPlayedItems/{TICKED}?datePlayed=2026-11-16T10:00:00Z")
+        self.as_(self.kid, "DELETE", f"/UserFavoriteItems/{TICKED}")
+        self.as_(self.anna, "GET", f"/UserItems/{TICKED}/UserData")
+        self.as_(self.anna, "GET", f"/Items/{TICKED}")  # not a playstate request
+        self.as_(self.anna, "POST", f"/UserPlayedItems/{TICKED}?userId={m.USER_ID}")  # refused, still listed
+        status, _, raw = self.call("GET", "/mock/playstate", token=None)
+        self.assertEqual(200, status)
+        rows = json.loads(raw)
+        self.assertEqual([("POST", f"/UserItems/{TICKED}/UserData", ANNA_ID, ANNA_ID, False, ["PlayCount", "Played"]),
+                          ("POST", f"/UserPlayedItems/{TICKED}", m.USER_ID, None, True, []),
+                          ("DELETE", f"/UserFavoriteItems/{TICKED}", KID_ID, None, False, []),
+                          ("GET", f"/UserItems/{TICKED}/UserData", ANNA_ID, None, False, []),
+                          ("POST", f"/UserPlayedItems/{TICKED}", ANNA_ID, m.USER_ID, False, [])],
+                         [(r["Method"], r["Path"], r["User"], r["UserId"], r["DatePlayed"], r["Fields"]) for r in rows])
+        self.assertNotIn("9876", raw.decode())
+        self.assertNotIn(self.anna, raw.decode())
+
+    def test_the_test_routes_answer_loopback_callers_only(self):
+        self.assertTrue(m.loopback("127.0.0.1") and m.loopback("::1") and m.loopback("::ffff:127.0.0.1"))
+        self.assertFalse(m.loopback("10.0.2.15") or m.loopback("192.168.1.20"))
+
+
+class PerAccountDownloads(Profiles):
+    def tearDown(self):
+        for name in ("ben", "anna", "kid"):
+            self.call("POST", f"/mock/users/{name}/allow-download")
+        m.reset_downloads()
+        super().tearDown()
+
+    def can(self, token):
+        return self.as_(token, "GET", f"/Items?ids={FILM}&fields=CanDownload")[1]["Items"][0]["CanDownload"]
+
+    def fetch(self, token):
+        return self.call("GET", DOWNLOAD, token=token)[0]
+
+    def test_every_account_can_download_by_default(self):
+        for token in (self.token, self.anna, self.kid):
+            self.assertIs(True, self.can(token))
+            self.assertEqual(200, self.fetch(token))
+
+    def test_one_account_can_be_refused_at_run_time_while_the_others_still_download(self):
+        self.assertEqual(204, self.call("POST", "/mock/users/kid/no-download")[0])
+        self.assertIs(False, self.can(self.kid))
+        self.assertEqual(403, self.fetch(self.kid))
+        self.assertIs(True, self.can(self.anna))
+        self.assertEqual(200, self.fetch(self.token))
+        _, me = self.as_(self.kid, "GET", "/Users/Me")
+        self.assertFalse(me["Policy"]["EnableContentDownloading"])
+        self.assertEqual(204, self.call("POST", "/mock/users/kid/allow-download")[0])
+        self.assertEqual(200, self.fetch(self.kid))
+
+    def test_the_per_account_switch_is_bens_alone_and_knows_its_users(self):
+        self.assertEqual(403, self.as_(self.anna, "POST", "/mock/users/kid/no-download")[0])
+        self.assertEqual(403, self.as_(self.kid, "POST", "/mock/users/kid/no-download")[0])
+        self.assertEqual(401, self.call("POST", "/mock/users/kid/no-download", token=None)[0])
+        self.assertEqual(404, self.call("POST", "/mock/users/nobody/no-download")[0])
+        self.assertEqual(200, self.fetch(self.kid))
+
+    def test_the_server_wide_switch_still_refuses_everyone(self):
+        self.assertEqual(204, self.call("POST", "/mock/no-download")[0])
+        for token in (self.token, self.anna, self.kid):
+            self.assertIs(False, self.can(token))
+            self.assertEqual(403, self.fetch(token))
+        self.call("POST", "/mock/allow-download")
+
+
 if __name__ == "__main__":
     unittest.main()

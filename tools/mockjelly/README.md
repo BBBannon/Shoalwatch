@@ -19,6 +19,7 @@ python -I tools/mockjelly/mock_jellyfin.py 8096
 | `--refuse` | Answer every `PlaybackInfo` request with `ErrorCode` `NotAllowed` (to see the app's refusal state) |
 | `--fail-rate P` | Answer a fraction P (0 to 1) of signed-in requests with a 500, to see error states. Sign-in and `/System/Info/Public` are never failed |
 | Download flags | One per way a real server might behave; see "Download routes and flags" below |
+| Playstate flags | One per way a real server might take a sync; see "Profiles, playstate and flags" below |
 | `--ben-not-admin` | ben is not an administrator: the Server admin entry must not appear |
 | `--pending-restart` | `/System/Info` says `HasPendingRestart` (the "Restart needed" notice) until a restart is requested |
 | `--admin-forbidden` | Every admin-only route answers 403 while `/Users/Me` still says ben is an administrator: the app must say "refused" and stay |
@@ -31,11 +32,12 @@ python -I tools/mockjelly/mock_jellyfin.py 8096
 | Address from this PC | `http://127.0.0.1:8096` |
 | User | `ben` (administrator unless `--ben-not-admin`) |
 | Password | `test-password` |
-| Second user | `kid` / `kid-password` (not an administrator; cannot download; Films only) |
-| Third user | `guest` (disabled; cannot sign in) |
+| Second user | `anna` / `test-password-2` (id `bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb`; not an administrator; can download; sees everything) |
+| Third user | `kid` / `kid-password` (not an administrator; can download; sees everything except the series Night Shift) |
+| Fourth user | `guest` (disabled; cannot sign in) |
 | Quick Connect | Reported as switched off |
 
-Each sign-in gets a fresh random token. `POST /Sessions/Logout` revokes it, after which its requests get 401. Restarting the server forgets every token and resets all watched and favourite state.
+Each sign-in gets a fresh random token. `POST /Sessions/Logout` revokes it, after which its requests get 401. A request's user is its token's user, and each user has watched and favourite state of their own. Restarting the server forgets every token and resets all of it.
 
 ## Catalogue
 
@@ -43,6 +45,7 @@ Each sign-in gets a fresh random token. `POST /Sessions/Logout` revokes it, afte
 - **TV** (tvshows): 3 series, 2 seasons each, 6 episodes per season. Harbour Lights is part-watched: season 1 and S2E1 played, S2E2 half-way, so Continue Watching has TV content. The app asks Next Up with `enableResumable=false`, as real Jellyfin honours it, so S2E2 is not repeated there until you mark it watched (then S2E3 is next up).
 - Ids are fixed 32-hex GUIDs, the same every run. Only the `Primary` image exists for each item (a plain solid colour from the item id, sized from `maxWidth`/`width`/`maxHeight`/`height`, with `ETag` and `Cache-Control`), except: three films and the series Night Shift have no image at all (empty `ImageTags`, image request 404) to exercise placeholders, and one film also has a `Backdrop` (`BackdropImageTags` set; `/Images/Backdrop[/0]` serves a 16:9 colour).
 - Mutations (played, favourite, user data) change in-memory state, so marking an episode played moves Next Up.
+- The seeded watched and favourite state above is **ben's**. anna and kid start with nothing watched.
 
 ## Routes
 
@@ -76,12 +79,13 @@ All need a token (401 otherwise). Why each flag exists, and what Jellyfin's own 
 
 | Route | Behaviour (no flags) |
 |---|---|
-| `GET /Items?ids=&fields=CanDownload,MediaSources&userId=` | The listed items, wherever they are in the catalogue. Only when `fields` asks for them: `CanDownload` (true for every film and episode, false for anything else) and `MediaSources` (films and episodes: one source, `Id` = item id, `Container` `mp4`, `Size` = the exact byte count of `clip.mp4`, `ETag` `a1b2c3`) |
+| `GET /Items?ids=&fields=CanDownload,MediaSources&userId=` | The listed items, wherever they are in the catalogue. Only when `fields` asks for them: `CanDownload` (true for every film and episode when the token's user may download, false for anything else) and `MediaSources` (films and episodes: one source, `Id` = item id, `Container` `mp4`, `Size` = the exact byte count of `clip.mp4`, `ETag` `a1b2c3`) |
 | `GET /Items/{id}/Download` | `clip.mp4` as `video/mp4` with `Accept-Ranges: bytes`, `ETag: "a1b2c3"` and `Last-Modified`. `Range: bytes=N-` gets `206` with an exact `Content-Range`; an `If-Range` that matches neither validator gets the whole file as `200`; an unsatisfiable range is `416`. 400 if any `api_key`-like query name is present (`api_key`, `ApiKey`, `X-Emby-Token`, `X-MediaBrowser-Token`, `X-Emby-Authorization`, any case). An unknown id: 404; a known item that is not a film or episode: 400 (Jellyfin's `ArgumentException` for an item with no file) |
 | `POST /Items/{id}/PlaybackInfo` with `EnableTranscoding: false` | As above, with no `TranscodingUrl` |
 | `GET /videos/{id}/hls/{playSessionId}/main.m3u8`, `.../seg{n}.ts` | The play session's own media playlist (`#EXT-X-PLAYLIST-TYPE:VOD`, five 2 s segments). Each segment URI is relative and ends `?api_key=MOCKLEAK`, which the app must strip (a request that keeps it is a 400). The same 400 rule now covers every media path (`/Download`, `/Videos/{id}/stream` and the HLS files) |
 | `GET /mock/downloads` | **Not a Jellyfin route; test only.** Each media request (`/Download`, `/stream`, HLS files), newest last: `Path` (no query), `Range`, `IfRange`, `PlaySessionId` (from the path, else the query), `Token` and `ApiKey` (`yes`/`no`). No token or query value is stored |
 | `POST /mock/no-download`, `/mock/allow-download` | **Not Jellyfin routes; test only.** Switch `--no-download` on or off while the server runs (a restart forgets every token, which signs the app's profiles out), to see a shared download taken away when the server later says no. Needs a token |
+| `POST /mock/users/{name}/no-download`, `/mock/users/{name}/allow-download` | **Not Jellyfin routes; test only.** Turn one account's `Policy.EnableContentDownloading` off or on while the server runs, so the child can be refused while the parent still downloads: that account's `CanDownload` becomes false and its `/Download` 403. ben's token only (403 otherwise); 404 for an unknown name. Everyone can download until switched off; `--no-download` and `/mock/no-download` still refuse everyone |
 
 | Flag | Behaviour (each changes one thing; any combination is allowed) |
 |---|---|
@@ -89,7 +93,7 @@ All need a token (401 otherwise). Why each flag exists, and what Jellyfin's own 
 | `--no-range` | `/Download` ignores `Range` and `If-Range`, sends no `Accept-Ranges` and always answers 200 with the whole file |
 | `--etag-changes` | Every `/Download` response has a new `ETag` and `Last-Modified`, so every `If-Range` mismatches |
 | `--octet-stream` | `/Download` answers `application/octet-stream` |
-| `--no-download` | `CanDownload: false`, and `/Download` is 403 |
+| `--no-download` | `CanDownload: false`, and `/Download` is 403, for every account |
 | `--candownload-missing` | `CanDownload` left out of `/Items`; `/Download` still allowed |
 | `--download-forbidden` | `CanDownload: true`, but `/Download` is 403 (the server's own policy disagrees) |
 | `--legacy-auth-only` | `/Download` and HLS segments are 401 unless an `api_key`-like query holds a token this server issued (the header is ignored for them); `/Items`, PlaybackInfo and the playlists accept the header. An `api_key` query is then not a 400 |
@@ -127,6 +131,64 @@ Flag by flag (start the server with the flag, then):
 --hls-idle-kill=2      curl -H "$H" -o seg1.ts http://127.0.0.1:8096/videos/$ID/hls/<PlaySessionId>/seg1.ts   # 404 after 2 s idle
 ```
 
+One account refused (ben's token in `H`): `curl -H "$H" -X POST http://127.0.0.1:8096/mock/users/kid/no-download`, then kid's `/Download` is 403 and ben's is not.
+
+## Profiles, playstate and flags (Milestone 5)
+
+**Profiles.** ben, anna and kid (see "Connect from the app") each have their own watched state. The token decides whose state a request reads and writes. A `userId` query naming anyone else is **403**, even for ben (Jellyfin refuses a non-admin acting for someone else; the stand-in refuses everyone, so a request sent as the wrong profile cannot pass). kid never sees the series Night Shift, its seasons or its episodes: `GET /Items/{id}` and every route by id are 404, and it is left out of `/Items`, `/Items/Latest`, `/Shows/NextUp` and `/UserItems/Resume`.
+
+| Route | Behaviour (no flags) |
+|---|---|
+| `GET /UserItems/{id}/UserData` | The token's user's `UserItemDataDto` (`Played`, `PlayCount`, `PlaybackPositionTicks`, `IsFavorite`, and `LastPlayedDate` only when set) |
+| `POST /UserItems/{id}/UserData` | Applies each non-null field as sent: `Played`, `PlayCount`, `PlaybackPositionTicks`, `IsFavorite`, and `LastPlayedDate` **as given, not now** (ISO 8601; no zone means UTC). Fields left out or null are left alone. A badly typed field or date is 400 |
+| `POST /UserPlayedItems/{id}` | Played, position 0, play count `max(count, 1)` (a repeated mark does not count twice), last played now. A `datePlayed` query is **400**: the app must never send one |
+| `DELETE /UserPlayedItems/{id}` | Not played, position 0, play count 0, no last played date |
+| `POST`/`DELETE /UserFavoriteItems/{id}` | Favourite on or off |
+
+| Flag | Behaviour (each changes one thing; any combination is allowed) |
+|---|---|
+| `--userdata-ignores-dates` | `POST /UserItems/{id}/UserData` ignores `PlayCount` and `LastPlayedDate` (applies the rest) |
+| `--markplayed-counts` | `POST /UserPlayedItems/{id}` adds one to the play count on every call, even when already played |
+| `--lose-reply-once` | The FIRST `POST /UserItems/*/UserData` or `POST /UserPlayedItems/*` is applied, then the connection is closed with no response (later ones answer normally) |
+| `--no-userdata-get` | `GET /UserItems/{id}/UserData` is 404 for every item (a server without the route); `/Items/{id}` still answers |
+| `--refuse-userdata=ITEMID` | Every user-data route for that item (the five above) is 403 |
+| `--clock-skew=SECONDS` | Every `LastPlayedDate` the server writes itself (mark played, a stop past 90%) is shifted by SECONDS (may be negative). Dates sent in `UserData` are kept as sent |
+
+**Test-only routes.** Not Jellyfin routes. No token needed; they answer callers on this machine only (403 from anywhere else), and the app never calls them.
+
+| Route | Behaviour |
+|---|---|
+| `GET /mock/userdata?user=<name>` | That user's state for every item touched (the seed counts), as `{itemId: {"played", "count", "pos", "fav", "last"}}`. 400 without `user`; 404 for an unknown name |
+| `POST /mock/userdata?user=<name>&item=<id>` | "Another device changed it": a JSON body with any of `played`, `count`, `pos`, `fav`, `last` (ISO 8601 or null) is applied to that user's state. 204; 404 for an unknown user or item; 400 for a badly typed field |
+| `GET /mock/playstate` | Every playstate request (the five routes above) in order, refused ones too: `Method`, `Path`, `User` (the token's user id), `UserId` (the query value, or null), `DatePlayed` (true when the query had one) and `Fields` (the body's field names, never their values) |
+
+By hand (set `H` to a token's header and `ID` as under "Playback"):
+
+```
+python -I tools/mockjelly/mock_jellyfin.py 8096 --markplayed-counts      # add any of the flags above
+curl -s -X POST http://127.0.0.1:8096/Users/AuthenticateByName -H "Content-Type: application/json" -d "{\"Username\":\"anna\",\"Pw\":\"test-password-2\"}"
+curl -H "$H" http://127.0.0.1:8096/UserItems/$ID/UserData
+curl -H "$H" -X POST -H "Content-Type: application/json" -d "{\"PlayCount\":2,\"LastPlayedDate\":\"2026-11-01T09:30:15Z\"}" http://127.0.0.1:8096/UserItems/$ID/UserData
+curl -H "$H" -X POST http://127.0.0.1:8096/UserPlayedItems/$ID
+curl -H "$H" -X DELETE http://127.0.0.1:8096/UserPlayedItems/$ID
+curl -H "$H" -X POST "http://127.0.0.1:8096/UserPlayedItems/$ID?datePlayed=2026-11-16T10:00:00Z"     # 400
+curl -H "$H" "http://127.0.0.1:8096/Items?userId=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"                    # 403 unless H is ben's
+curl "http://127.0.0.1:8096/mock/userdata?user=anna"
+curl -X POST -H "Content-Type: application/json" -d "{\"played\":true,\"count\":3,\"last\":\"2026-11-02T08:00:00Z\"}" "http://127.0.0.1:8096/mock/userdata?user=anna&item=$ID"
+curl http://127.0.0.1:8096/mock/playstate
+```
+
+Flag by flag (start the server with the flag, then, as anna):
+
+```
+--userdata-ignores-dates  curl -H "$H" -X POST -H "Content-Type: application/json" -d "{\"PlayCount\":7,\"Played\":true}" http://127.0.0.1:8096/UserItems/$ID/UserData   # PlayCount stays 0
+--markplayed-counts       curl -H "$H" -X POST http://127.0.0.1:8096/UserPlayedItems/$ID     # run twice: PlayCount 2
+--lose-reply-once         curl -H "$H" -X POST http://127.0.0.1:8096/UserPlayedItems/$ID     # curl: (52) Empty reply; /mock/userdata shows it played
+--no-userdata-get         curl -H "$H" http://127.0.0.1:8096/UserItems/$ID/UserData          # 404, while /Items/$ID is 200
+--refuse-userdata=$ID     curl -H "$H" -X POST http://127.0.0.1:8096/UserPlayedItems/$ID     # 403
+--clock-skew=-3600        curl -H "$H" -X POST http://127.0.0.1:8096/UserPlayedItems/$ID     # LastPlayedDate an hour ago
+```
+
 Run the tests with `python -I tools/mockjelly/test_mock_jellyfin.py`. They start the server in-process on a free local port (127.0.0.1).
 
 ## Try it by hand
@@ -162,14 +224,14 @@ curl -H "$H" http://127.0.0.1:8096/mock/reports
 
 ## Admin routes
 
-In `mock_admin.py`. All need a token this server issued (401 otherwise). Admin-only routes answer **403** to `kid` (and to ben under `--admin-forbidden` or after `/mock/demote`). A disabled user's tokens get 401 everywhere. Shapes follow the 12.4.0 reference. Some answers deliberately carry things the app must never show or keep: `RemoteEndPoint` on sessions, folder `Locations`, `LocalAddress` and paths in `/System/Info`, the IP address in sign-in activity entries, and an `AccessToken` on every device.
+In `mock_admin.py`. All need a token this server issued (401 otherwise). Admin-only routes answer **403** to `anna` and `kid` (and to ben under `--admin-forbidden` or after `/mock/demote`). A disabled user's tokens get 401 everywhere. Shapes follow the 12.4.0 reference. Some answers deliberately carry things the app must never show or keep: `RemoteEndPoint` on sessions, folder `Locations`, `LocalAddress` and paths in `/System/Info`, the IP address in sign-in activity entries, and an `AccessToken` on every device.
 
 Set `H` as above. `SID`, `TID` and `UID` are ids from the lists.
 
 | Route | Behaviour | Example |
 |---|---|---|
 | `GET /Users/Me` | The token's user with `Policy` (`IsAdministrator`, `IsDisabled`, `EnableContentDownloading`, `EnableAllFolders`, `EnabledFolders`, both provider ids and `"MockFutureField": 7`) | `curl -H "$H" http://127.0.0.1:8096/Users/Me` |
-| `GET /Users` | Admin: ben, kid and guest. Anyone else: only themselves | `curl -H "$H" http://127.0.0.1:8096/Users` |
+| `GET /Users` | Admin: ben, anna, kid and guest. Anyone else: only themselves | `curl -H "$H" http://127.0.0.1:8096/Users` |
 | `GET /Users/{id}` | Admin: anyone. Anyone else: only themselves (403) | `curl -H "$H" http://127.0.0.1:8096/Users/$UID` |
 | `POST /Users/{id}/Policy` | Admin only. 400 unless the body has both provider ids **and** `MockFutureField: 7` (so the app must post back what it read); applies `IsDisabled` only | `curl -H "$H" -H "Content-Type: application/json" -d @policy.json http://127.0.0.1:8096/Users/$UID/Policy` |
 | `GET /Sessions` | `activeWithinSeconds` accepted. Admin: kid on Living room TV (transcoding Harbour Lights S2 E3), ben on Ben's laptop (a film, paused), kid on Kid's tablet (idle), plus one per signed-in token. Anyone else: only their own | `curl -H "$H" "http://127.0.0.1:8096/Sessions?activeWithinSeconds=960"` |

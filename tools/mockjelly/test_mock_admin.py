@@ -114,7 +114,7 @@ class Rights(AdminServed):
                 self.assertEqual(403, self.as_kid(method, path, {} if method == "POST" else None)[0])
 
     def test_users_list_is_everyone_for_an_admin_and_only_yourself_otherwise(self):
-        self.assertEqual({m.USER_ID, KID_ID, GUEST_ID}, {u["Id"] for u in self.as_ben("GET", "/Users")[1]})
+        self.assertEqual({m.USER_ID, a.ANNA_ID, KID_ID, GUEST_ID}, {u["Id"] for u in self.as_ben("GET", "/Users")[1]})
         self.assertEqual([KID_ID], [u["Id"] for u in self.as_kid("GET", "/Users")[1]])
         self.assertEqual(403, self.as_kid("GET", f"/Users/{m.USER_ID}")[0])
         self.assertEqual(200, self.as_ben("GET", f"/Users/{KID_ID}")[0])

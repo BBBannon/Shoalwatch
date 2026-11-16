@@ -17,6 +17,7 @@ PROVIDERS = {"AuthenticationProviderId": "Jellyfin.Server.Implementations.Users.
 PAIR_RE = re.compile(r'(\w+)="([^"]*)"')
 COMMANDS = {"stop", "pause", "unpause", "nexttrack", "previoustrack", "seek", "rewind", "fastforward", "playpause"}
 S = {}  # all admin state, rebuilt by setup()
+ANNA_ID = "b" * 32  # a second grown-up (Milestone 5): fixed, not derived from a seed
 
 
 def iso(dt):
@@ -36,14 +37,14 @@ def policy(admin, downloads, all_folders, folders, disabled=False):
 def setup(server_id, ben_id, ben_name, guid, now, libraries, tokens=None, items=None):
     """(Re)build every piece of admin state. `tokens` is mock_jellyfin's live token set (revoked here); `items` its catalogue."""
     kid, guest = guid("user-kid"), guid("user-guest")
-    films = libraries[0][0] if libraries else ""
     EVENTS.clear()
     S.clear()
     S.update(now=now, guid=guid, server_id=server_id, ben=ben_id, kid=kid, tokens=tokens if tokens is not None else set(),
              items=items if items is not None else {}, pending=CONFIG["pending_restart"], issued={})
     S["users"] = {
         ben_id: {"Name": ben_name, "Password": None, "Seen": now, "Policy": policy(CONFIG["ben_admin"], True, True, [])},
-        kid: {"Name": "kid", "Password": "kid-password", "Seen": now - timedelta(minutes=5), "Policy": policy(False, False, False, [films])},
+        ANNA_ID: {"Name": "anna", "Password": "test-password-2", "Seen": now - timedelta(hours=1), "Policy": policy(False, True, True, [])},
+        kid: {"Name": "kid", "Password": "kid-password", "Seen": now - timedelta(minutes=5), "Policy": policy(False, True, True, [])},
         guest: {"Name": "guest", "Password": None, "Seen": None, "Policy": policy(False, True, True, [], disabled=True)},
     }
     S["libraries"] = [{"Id": lid, "Name": name, "Type": kind, "Progress": None} for lid, name, kind in libraries]
@@ -126,7 +127,7 @@ def seeded_activity(now, ben_id, ben_name, kid):
 
 # ------------------------------------------------------------------ sign-in and tokens
 def sign_in(creds):
-    """Kid's sign-in ({"Id", "Name"}); None for anything else (ben is mock_jellyfin's own; guest is disabled)."""
+    """Anna's or kid's sign-in ({"Id", "Name"}); None for anything else (ben is mock_jellyfin's own; guest is disabled)."""
     for uid, user in S.get("users", {}).items():
         if (isinstance(creds, dict) and user["Password"] and creds.get("Username") == user["Name"] and creds.get("Pw") == user["Password"]
                 and not user["Policy"]["IsDisabled"]):
@@ -144,6 +145,17 @@ def issued(token, user_id, authorization):
 def token_user(token):
     info = S["issued"].get(token)
     return info["User"] if info else S["ben"]
+
+
+def user_named(name):
+    """The id of the user with that name, or None."""
+    return next((uid for uid, user in S.get("users", {}).items() if user["Name"] == name), None)
+
+
+def may_download(uid):
+    """The user's own Policy.EnableContentDownloading (a token for no known user downloads as ben)."""
+    user = S.get("users", {}).get(uid)
+    return bool(user and user["Policy"]["EnableContentDownloading"])
 
 
 def live_tokens():
@@ -279,6 +291,14 @@ def handle(handler, method, path, q, raw, token):
             S["users"][S["ben"]]["Policy"]["IsAdministrator"] = low[1] == "promote"
             return handler.reply(204)
         return False
+    if method == "POST" and low[:2] == ["mock", "users"] and len(low) == 4 and low[3] in ("no-download", "allow-download"):
+        if uid != S["ben"]:
+            return handler.reply(403)
+        target = user_named(segs[2])
+        if target is None:
+            return handler.reply(404)
+        S["users"][target]["Policy"]["EnableContentDownloading"] = low[3] == "allow-download"
+        return handler.reply(204)
     if low[:1] == ["users"]:
         return users_route(handler, method, segs, low, uid, admin, elevated, raw, q)
     if low[:1] == ["sessions"]:

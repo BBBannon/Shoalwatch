@@ -7,6 +7,7 @@ reference in docs/reference) from a small in-memory catalogue. Plain http, no TL
 
 Each request logs one line: method, path (no query), auth yes/no, token yes/no, status. Never the token or password.
 Admin routes, extra users and the --ben-not-admin, --pending-restart and --admin-forbidden flags live in mock_admin.py.
+Watched state is per user: a request's user is its token's user (ben, anna or kid); playstate flags are in the README.
 """
 import argparse
 import email.utils
@@ -42,6 +43,14 @@ def guid(seed):
     return hashlib.md5(seed.encode()).hexdigest()
 
 
+ANNA_ID, KID_ID = mock_admin.ANNA_ID, guid("user-kid")
+CURRENT = threading.local()  # the user of the request this thread is answering; ben outside a request (the tests' direct calls)
+
+
+def current_user():
+    return getattr(CURRENT, "user", USER_ID)
+
+
 def norm(raw):
     """An id as Jellyfin accepts it: dashes optional, any case."""
     return raw.replace("-", "").lower()
@@ -62,7 +71,27 @@ def intq(q, name, default=None, maximum=None):
 
 
 def iso(dt):
-    return dt.strftime("%Y-%m-%dT%H:%M:%S.0000000Z")
+    dt = dt.astimezone(timezone.utc)
+    return dt.strftime("%Y-%m-%dT%H:%M:%S.") + f"{dt.microsecond:06d}0Z"
+
+
+DATE_RE = re.compile(r"(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,7}))?(Z|[+-]\d{2}:\d{2})?")
+
+
+def parse_date(text):
+    """An ISO 8601 date-time as Jellyfin sends and accepts it (no zone means UTC); BadRequest otherwise."""
+    found = DATE_RE.fullmatch(text) if isinstance(text, str) else None
+    if not found:
+        raise BadRequest("date")
+    y, mo, d, h, mi, sec = (int(found[n]) for n in range(1, 7))
+    zone = timezone.utc
+    if found[8] and found[8] != "Z":
+        sign = 1 if found[8][0] == "+" else -1
+        zone = timezone(sign * timedelta(hours=int(found[8][1:3]), minutes=int(found[8][4:6])))
+    try:
+        return datetime(y, mo, d, h, mi, sec, int((found[7] or "0").ljust(6, "0")[:6]), zone).astimezone(timezone.utc)
+    except ValueError:
+        raise BadRequest("date")
 
 
 # ---------------------------------------------------------------- catalogue
@@ -103,7 +132,15 @@ def build_catalogue():
                 add({"Id": guid(f"episode-{s}-{sn}-{ep}"), "Type": "Episode", "Name": f"Episode {ep}", "ParentId": season["Id"], "Index": ep,
                      "ParentIndex": sn, "SeriesId": series["Id"], "SeriesName": title, "SeasonId": season["Id"], "SeasonName": season["Name"],
                      "Runtime": 45 * 60 * TICKS, "Overview": f"Episode {ep} of season {sn} of {title}.", "Aspect": 1.778, "Year": 2015 + s * 3 + sn})
+    HIDDEN[KID_ID] = {guid("series-2"), *descendants(guid("series-2"))}  # kid never sees Night Shift
     mock_admin.setup(SERVER_ID, USER_ID, USER_NAME, guid, NOW, [(FILMS_ID, "Films", "movies"), (TV_ID, "TV", "tvshows")], tokens=TOKENS, items=ITEMS)
+
+
+HIDDEN = {}  # user id -> the item ids that user is not allowed to see (404 by id, left out of every list)
+
+
+def visible(item_id, uid=None):
+    return item_id not in HIDDEN.get(uid or current_user(), ())
 
 
 # ----------------------------------------------------------------- playback
@@ -170,7 +207,7 @@ def record_report(kind, body):
         if kind == "stopped" and item and isinstance(ticks, int) and not body.get("Failed"):
             # Measured against the clip that is actually served (PlaybackInfo says CLIP_TICKS), not the catalogue runtime.
             if ticks > CLIP_TICKS * PLAYED_AT:
-                mark(item["Id"], played=True, pos=0, count=user_state(item["Id"])["count"] + 1, stamp=True)
+                mark(item["Id"], played=True, pos=0, count=lambda c: c + 1, stamp=True)
             else:
                 mark(item["Id"], played=False, pos=max(ticks, 0), stamp=True)
 
@@ -187,11 +224,18 @@ def byte_range(header, size):
     return "bad" if start >= size or end < start else (start, end)
 
 
-STATE, LOCK = {}, threading.RLock()
+STATE, LOCK = {}, threading.RLock()  # (user id, item id) -> that user's watched state for the item
+BLANK = {"played": False, "pos": 0, "fav": False, "count": 0, "last": None, "rating": None, "likes": None}
 
 
-def user_state(item_id):
-    return STATE.setdefault(item_id, {"played": False, "pos": 0, "fav": False, "count": 0, "last": None, "rating": None, "likes": None})
+def user_state(item_id, uid=None):
+    """The user's state for the item, created when missing (for writing). The user is the request's unless named."""
+    return STATE.setdefault((uid or current_user(), item_id), dict(BLANK))
+
+
+def peek(item_id, uid=None):
+    """The user's state for reading: never creates an entry, so /mock/userdata lists only items touched. Do not change it."""
+    return STATE.get((uid or current_user(), item_id), BLANK)
 
 
 def seed_state():
@@ -201,7 +245,7 @@ def seed_state():
     for n in (5, 6, 7):
         s = user_state(film(n)); s.update(played=True, count=1, last=NOW - timedelta(days=n))
     for n in (2, 9, 30):
-        user_state(film(n))["fav"] = True
+        user_state(film(n))["fav"] = True  # all of it ben's: anna and kid start with nothing watched
     for sn, eps in ((1, range(1, 7)), (2, range(1, 2))):  # Harbour Lights: season 1 and S2E1 watched
         for ep in eps:
             user_state(guid(f"episode-0-{sn}-{ep}")).update(played=True, count=1, last=NOW - timedelta(days=20 - ep - 7 * (2 - sn)))
@@ -210,7 +254,7 @@ def seed_state():
 
 def when(item_id):
     """When the item was last played; never-played sorts as very old."""
-    return user_state(item_id)["last"] or NOW - timedelta(days=9999)
+    return peek(item_id)["last"] or NOW - timedelta(days=9999)
 
 
 def episodes_of(item_id):
@@ -226,10 +270,10 @@ def descendants(item_id):
 
 def user_data(item):
     iid = item["Id"]
-    st = user_state(iid)
+    st = peek(iid)
     if item["Type"] in ("Series", "Season"):
         eps = episodes_of(iid)
-        unplayed = sum(1 for e in eps if not user_state(e)["played"])
+        unplayed = sum(1 for e in eps if not peek(e)["played"])
         out = {"Played": unplayed == 0, "UnplayedItemCount": unplayed, "PlayCount": 0, "PlaybackPositionTicks": 0}
     else:
         out = {"Played": st["played"], "PlayCount": st["count"], "PlaybackPositionTicks": st["pos"]}
@@ -309,8 +353,8 @@ def list_items(q):
     term = q.get("searchterm", [""])[0].lower()
     out = []
     for iid in pool:
-        item, st = ITEMS[iid], user_state(iid)
-        if ids and iid not in ids or types and item["Type"].lower() not in types or term and term not in item["Name"].lower():
+        item, st = ITEMS[iid], peek(iid)
+        if not visible(iid) or ids and iid not in ids or types and item["Type"].lower() not in types or term and term not in item["Name"].lower():
             continue
         played = user_data(item)["Played"]
         if "isunplayed" in filters and played or "isplayed" in filters and not played or "isfavorite" in filters and not st["fav"]:
@@ -326,7 +370,9 @@ def list_items(q):
 def resume_items(q):
     parent = norm(q.get("parentid", [""])[0])
     scope = set(descendants(parent)) if parent else None
-    rows = [ITEMS[i] for i, st in list(STATE.items()) if st["pos"] > 0 and not st["played"] and (scope is None or i in scope) and ITEMS[i]["Type"] in ("Movie", "Episode")]
+    uid = current_user()
+    rows = [ITEMS[i] for (who, i), st in list(STATE.items()) if who == uid and visible(i) and st["pos"] > 0 and not st["played"]
+            and (scope is None or i in scope) and ITEMS[i]["Type"] in ("Movie", "Episode")]
     return page(sorted(rows, key=lambda i: when(i["Id"]), reverse=True), q)
 
 
@@ -335,11 +381,11 @@ def next_up(q):
     resumable = q.get("enableresumable", ["true"])[0].lower() != "false"  # false: leave out episodes already part way through
     rows = []
     for sid in CHILDREN.get(TV_ID, []):
-        if (series_id and sid != series_id) or (parent and parent not in (sid, TV_ID)):
+        if (series_id and sid != series_id) or (parent and parent not in (sid, TV_ID)) or not visible(sid):
             continue
         eps = sorted(episodes_of(sid), key=lambda e: (ITEMS[e]["ParentIndex"], ITEMS[e]["Index"]))
-        played = [n for n, e in enumerate(eps) if user_state(e)["played"]]
-        if played and played[-1] + 1 < len(eps) and (resumable or user_state(eps[played[-1] + 1])["pos"] == 0):
+        played = [n for n, e in enumerate(eps) if peek(e)["played"]]
+        if played and played[-1] + 1 < len(eps) and (resumable or peek(eps[played[-1] + 1])["pos"] == 0):
             rows.append((max(when(eps[n]) for n in played), ITEMS[eps[played[-1] + 1]]))
     return page([item for _, item in sorted(rows, key=lambda r: r[0], reverse=True)], q)
 
@@ -347,27 +393,122 @@ def next_up(q):
 def latest(q):
     parent = norm(q.get("parentid", [""])[0])
     kinds = ("Movie", "Series")
-    pool = [ITEMS[c] for c in (CHILDREN.get(parent, []) if parent else ORDER) if ITEMS[c]["Type"] in kinds]
+    pool = [ITEMS[c] for c in (CHILDREN.get(parent, []) if parent else ORDER) if ITEMS[c]["Type"] in kinds and visible(c)]
     limit = intq(q, "limit", 20)
     return [dto(i) for i in sorted(pool, key=lambda i: i["Created"], reverse=True)[:limit]]
 
 
+def server_now():
+    """The time the server stamps itself, moved by --clock-skew."""
+    return datetime.now(timezone.utc) + timedelta(seconds=CONFIG["clock_skew"])
+
+
 def mark(item_id, **changes):
+    """Change the request user's state for the item (each episode, for a series or season). A callable `count` maps the old
+    count to the new; `stamp` sets the last played date to the server's own now."""
     with LOCK:
         for target in episodes_of(item_id) or [item_id]:
             st = user_state(target)
-            st.update({k: v for k, v in changes.items() if k != "stamp"})
+            for k, v in changes.items():
+                if k != "stamp":
+                    st[k] = v(st[k]) if callable(v) else v
             if changes.get("stamp"):
-                st["last"] = datetime.now(timezone.utc)
+                st["last"] = server_now()
         return user_data(ITEMS[item_id])
 
 
+USER_DATA_FIELDS = {"Played": ("played", bool), "IsFavorite": ("fav", bool), "PlaybackPositionTicks": ("pos", int), "PlayCount": ("count", int),
+                    "Rating": ("rating", (int, float)), "Likes": ("likes", bool)}
+
+
+def typed(value, kind):
+    """bool is an int in Python; Jellyfin's JSON binding does not take one for the other, so neither does the mock."""
+    return isinstance(value, kind) and (kind is bool or not isinstance(value, bool))
+
+
 def update_user_data(item_id, body):
-    names = {"Played": "played", "IsFavorite": "fav", "PlaybackPositionTicks": "pos", "PlayCount": "count", "Rating": "rating", "Likes": "likes"}
-    changes = {names[k]: v for k, v in body.items() if k in names and v is not None}
-    if "LastPlayedDate" in body and body["LastPlayedDate"]:
-        changes["stamp"] = True
+    """UpdateItemUserData: each non-null field applied as sent; LastPlayedDate as given (not now). 400 for a badly typed field."""
+    changes = {}
+    for field, (key, kind) in USER_DATA_FIELDS.items():
+        if body.get(field) is not None:
+            if not typed(body[field], kind):
+                raise BadRequest(field)
+            changes[key] = body[field]
+    if body.get("LastPlayedDate") is not None:
+        changes["last"] = parse_date(body["LastPlayedDate"])
+    if CONFIG["userdata_ignores_dates"]:
+        changes.pop("count", None)
+        changes.pop("last", None)
     return mark(item_id, **changes)
+
+
+# ---------------------------------------------------------------- playstate (Milestone 5)
+# One flag per way a real server might take a sync (see the README); each user's state is their own.
+PLAYSTATE_FLAGS = {"userdata_ignores_dates": False, "markplayed_counts": False, "lose_reply_once": False, "no_userdata_get": False,
+                   "refuse_userdata": None, "clock_skew": 0}
+PLAYSTATE = []  # every playstate request, oldest first (read back at /mock/playstate); never a token or a field value
+PLAYSTATE_STATE = {"reply_lost": False}
+STATE_FIELDS = {"played": bool, "count": int, "pos": int, "fav": bool}
+
+
+def reset_playstate():
+    """Every playstate flag off and the playstate log empty (the tests call it between cases)."""
+    with LOCK:
+        CONFIG.update(PLAYSTATE_FLAGS)
+        PLAYSTATE.clear()
+        PLAYSTATE_STATE["reply_lost"] = False
+
+
+def playstate_route(method, segs):
+    """'userdata', 'played' or 'favourite' for a playstate path (segments lower-cased), else None."""
+    if len(segs) == 3 and segs[0] == "useritems" and segs[2] == "userdata" and method in ("GET", "POST"):
+        return "userdata"
+    if len(segs) == 2 and segs[0] in ("userplayeditems", "userfavoriteitems") and method in ("POST", "DELETE"):
+        return "played" if segs[0] == "userplayeditems" else "favourite"
+    return None
+
+
+def record_playstate(method, path, q, raw):
+    try:
+        body = json.loads(raw) if raw else {}
+    except ValueError:
+        body = {}
+    PLAYSTATE.append({"Method": method, "Path": path, "User": current_user(), "UserId": q.get("userid", [None])[0],
+                      "DatePlayed": "dateplayed" in q, "Fields": sorted(body) if isinstance(body, dict) else []})
+
+
+def loopback(address):
+    return address in ("127.0.0.1", "::1", "::ffff:127.0.0.1")
+
+
+def state_row(st):
+    return {"played": st["played"], "count": st["count"], "pos": st["pos"], "fav": st["fav"], "last": iso(st["last"]) if st["last"] else None}
+
+
+def mock_userdata(method, q, raw):
+    """GET: one user's state for every item touched. POST: "another device changed it". (status, body)."""
+    name = q.get("user", [""])[0]
+    if not name:
+        return 400, None
+    uid = mock_admin.user_named(name)
+    if uid is None:
+        return 404, None
+    if method == "GET":
+        return 200, {iid: state_row(st) for (who, iid), st in STATE.items() if who == uid}
+    iid = norm(q.get("item", [""])[0])
+    if iid not in ITEMS:
+        return 404, None
+    body = json_body(raw)
+    changes = {}
+    for key, kind in STATE_FIELDS.items():
+        if key in body:
+            if not typed(body[key], kind):
+                return 400, None
+            changes[key] = body[key]
+    if "last" in body:
+        changes["last"] = None if body["last"] is None else parse_date(body["last"])
+    user_state(iid, uid).update(changes)
+    return 204, None
 
 
 def png(item, width, height):
@@ -405,7 +546,7 @@ def can_download(item):
     """What /Items says in CanDownload: None when --candownload-missing leaves the field out."""
     if CONFIG["candownload_missing"]:
         return None
-    return playable(item) and not CONFIG["no_download"]
+    return playable(item) and not CONFIG["no_download"] and mock_admin.may_download(current_user())
 
 
 def download_fields(row, item, fields):
@@ -482,7 +623,7 @@ def record_download(path, segs, q, token, headers):
 
 
 # ------------------------------------------------------------------- server
-CONFIG = {"latency": 0.0, "fail_rate": 0.0, "refuse": False, **DOWNLOAD_FLAGS}
+CONFIG = {"latency": 0.0, "fail_rate": 0.0, "refuse": False, **DOWNLOAD_FLAGS, **PLAYSTATE_FLAGS}
 TOKENS = set()
 
 
@@ -535,6 +676,13 @@ class Handler(BaseHTTPRequestHandler):
         method = self.command
         low = path.lower()
         segs = path.strip("/").split("/")
+        CURRENT.user = USER_ID
+        if low in ("/mock/userdata", "/mock/playstate"):  # test-only, no token, this machine only
+            if not loopback(self.client_address[0]):
+                return self.reply(403)
+            if low == "/mock/playstate":
+                return self.reply(200, list(PLAYSTATE)) if method == "GET" else self.reply(404)
+            return self.reply(*mock_userdata(method, q, raw)) if method in ("GET", "POST") else self.reply(404)
         if method == "GET" and len(segs) >= 4 and segs[0].lower() == "items" and segs[2].lower() == "images":
             # like Jellyfin, artwork needs no token
             return self.image(ITEMS[norm(segs[1])], segs[3], q) if norm(segs[1]) in ITEMS else self.reply(404)
@@ -565,6 +713,12 @@ class Handler(BaseHTTPRequestHandler):
                 token = q[keyed[0]][0] if keyed else ""  # the legacy setting: the key in the query counts, the header does not
         if token not in TOKENS:
             return self.reply(401)
+        CURRENT.user = mock_admin.token_user(token)
+        if playstate_route(method, [x.lower() for x in segs]):
+            record_playstate(method, path, q, raw)
+        asked_for = q.get("userid", [""])[0]
+        if asked_for and norm(asked_for) != current_user():
+            return self.reply(403)  # nobody acts for someone else here, not even an administrator
         if random.random() < CONFIG["fail_rate"]:
             return self.reply(500)
         if method == "POST" and low == "/sessions/logout":
@@ -579,7 +733,7 @@ class Handler(BaseHTTPRequestHandler):
         """Playback routes. Returns None when the path is not one of them."""
         segs = path.strip("/").split("/")
         low = [x.lower() for x in segs]
-        item = lambda i: ITEMS.get(norm(i)) if ID_RE.fullmatch(i) else None
+        item = lambda i: ITEMS.get(norm(i)) if ID_RE.fullmatch(i) and visible(norm(i)) else None
         if method == "GET" and low == ["mock", "reports"]:
             return self.reply(200, list(REPORTS))
         if method == "GET" and low == ["mock", "downloads"]:
@@ -676,7 +830,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def download(self):
         """GET /Items/{id}/Download: the clip, with validators and (unless --no-range) Range and If-Range as ASP.NET Core serves files."""
-        if CONFIG["no_download"] or CONFIG["download_forbidden"]:
+        if CONFIG["no_download"] or CONFIG["download_forbidden"] or not mock_admin.may_download(current_user()):
             return self.reply(403)
         data = (MEDIA_DIR / "clip.mp4").read_bytes()
         etag, modified = validators()
@@ -700,10 +854,13 @@ class Handler(BaseHTTPRequestHandler):
     def authenticated(self, method, path, q, raw):
         segs = [x.lower() if n in (0, 2) else x for n, x in enumerate(path.strip("/").split("/"))]
         low = path.lower()
-        item = lambda i: ITEMS.get(norm(i))
+        item = lambda i: ITEMS.get(norm(i)) if visible(norm(i)) else None
         handled = self.playback(method, path, q, raw)
         if handled:
             return handled
+        kind = playstate_route(method, segs)
+        if kind:
+            return self.playstate(kind, method, item(segs[1]), q, raw)
         if method == "GET":
             if low == "/users/me":
                 return self.reply(200, {"Name": USER_NAME, "ServerId": SERVER_ID, "Id": USER_ID, "HasPassword": True})
@@ -727,23 +884,32 @@ class Handler(BaseHTTPRequestHandler):
                     season = norm(q.get("seasonid", [""])[0])
                     ids = episodes_of(season if season in ITEMS else series["Id"])
                     return self.reply(200, page(sorted((ITEMS[e] for e in ids), key=lambda e: (e["ParentIndex"], e["Index"])), q))
-            if len(segs) == 3 and segs[0] == "useritems" and segs[2] == "userdata" and item(segs[1]):
-                return self.reply(200, user_data(item(segs[1])))
-        elif len(segs) == 2 and segs[0] in ("userplayeditems", "userfavoriteitems") and item(segs[1]):
-            on = method == "POST"
-            if segs[0] == "userplayeditems":
-                changes = {"played": on, "pos": 0, "stamp": on}
-                if on:
-                    changes["count"] = 1
-                return self.reply(200, mark(item(segs[1])["Id"], **changes))
-            return self.reply(200, mark(item(segs[1])["Id"], fav=on))
-        elif method == "POST" and len(segs) == 3 and segs[0] == "useritems" and segs[2] == "userdata" and item(segs[1]):
-            try:
-                body = json.loads(raw or b"{}")
-            except ValueError:
-                return self.reply(400)
-            return self.reply(200, update_user_data(item(segs[1])["Id"], body if isinstance(body, dict) else {}))
         return False
+
+    def playstate(self, kind, method, target, q, raw):
+        """GET/POST /UserItems/{id}/UserData, POST/DELETE /UserPlayedItems/{id} and /UserFavoriteItems/{id}, for the token's user."""
+        if target is None:
+            return self.reply(404)
+        if CONFIG["refuse_userdata"] and norm(CONFIG["refuse_userdata"]) == target["Id"]:
+            return self.reply(403)
+        if kind == "userdata" and method == "GET":
+            return self.reply(404) if CONFIG["no_userdata_get"] else self.reply(200, user_data(target))
+        if kind == "favourite":
+            return self.reply(200, mark(target["Id"], fav=method == "POST"))
+        if kind == "played" and method == "DELETE":
+            return self.reply(200, mark(target["Id"], played=False, pos=0, count=0, last=None))
+        if kind == "played":
+            if "dateplayed" in q:
+                return self.reply(400)  # the app must never send one
+            counted = (lambda c: c + 1) if CONFIG["markplayed_counts"] else (lambda c: max(c, 1))
+            answer = mark(target["Id"], played=True, pos=0, count=counted, stamp=True)
+        else:
+            answer = update_user_data(target["Id"], json_body(raw))
+        if CONFIG["lose_reply_once"] and not PLAYSTATE_STATE["reply_lost"]:
+            PLAYSTATE_STATE["reply_lost"] = True  # applied, but the connection closes with no response at all
+            self.close_connection = True
+            return True
+        return self.reply(200, answer)
 
     def image(self, item, kind, q):
         kind = kind.lower()
@@ -783,16 +949,24 @@ def main():
     downloads.add_argument("--hls-recut", action="store_true", help="each PlaybackInfo gets a media playlist of a different shape")
     downloads.add_argument("--no-etag", action="store_true", help="/Download sends Last-Modified only, as real Jellyfin does")
     downloads.add_argument("--hls-idle-kill", type=float, metavar="SECONDS", help="a play session's segments are 404 after SECONDS idle")
+    sync = parser.add_argument_group("playstate", "one way a real server might take a sync each; any combination is allowed (see the README)")
+    sync.add_argument("--userdata-ignores-dates", action="store_true", help="POST /UserItems/{id}/UserData ignores PlayCount and LastPlayedDate")
+    sync.add_argument("--markplayed-counts", action="store_true", help="POST /UserPlayedItems/{id} adds one to the play count every time")
+    sync.add_argument("--lose-reply-once", action="store_true", help="the first user-data or mark-played write is applied, then no reply")
+    sync.add_argument("--no-userdata-get", action="store_true", help="GET /UserItems/{id}/UserData is 404 for every item")
+    sync.add_argument("--refuse-userdata", metavar="ITEMID", help="every user-data route for that item is 403")
+    sync.add_argument("--clock-skew", type=int, default=0, metavar="SECONDS", help="shift every LastPlayedDate the server writes itself")
     parser.add_argument("--ben-not-admin", action="store_true", help="ben is not an administrator (the Server admin entry must not show)")
     parser.add_argument("--pending-restart", action="store_true", help="System/Info says a restart is needed")
     parser.add_argument("--admin-forbidden", action="store_true", help="admin-only routes answer 403 while /Users/Me still says administrator")
     args = parser.parse_args()
     CONFIG.update(latency=args.latency_ms / 1000, fail_rate=args.fail_rate, refuse=args.refuse)
     CONFIG.update({name: getattr(args, name) for name in DOWNLOAD_FLAGS})
+    CONFIG.update({name: getattr(args, name) for name in PLAYSTATE_FLAGS})
     mock_admin.CONFIG.update(ben_admin=not args.ben_not_admin, pending_restart=args.pending_restart, admin_forbidden=args.admin_forbidden)
     build_catalogue()
     seed_state()
-    print(f"Mock Jellyfin (test stand-in) on {args.host}:{args.port}; user {USER_NAME}", flush=True)
+    print(f"Mock Jellyfin (test stand-in) on {args.host}:{args.port}; users {USER_NAME}, anna and kid", flush=True)
     ThreadingHTTPServer((args.host, args.port), Handler).serve_forever()
 
 
