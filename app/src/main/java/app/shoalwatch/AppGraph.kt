@@ -35,6 +35,7 @@ import app.shoalwatch.data.downloads.HlsFetcher
 import app.shoalwatch.data.downloads.Volumes
 import app.shoalwatch.data.downloads.SavedCopies
 import app.shoalwatch.data.downloads.SharingRecheck
+import app.shoalwatch.data.downloads.LocalPlaying
 import app.shoalwatch.data.servers.Connection
 import app.shoalwatch.ui.browse.connectionRegained
 import app.shoalwatch.data.downloads.savedRows
@@ -248,11 +249,13 @@ class AppGraph(private val appContext: Context) {
     }
     /** What the player and its subtitle loader ask: saved subtitles and skip markers for a saved copy, else the server. */
     internal val playerGateway: PlaybackGateway by lazy { SavedFirstPlaybackGateway(playbackGateway, savedCopies::media, database.downloadDao().savedRows(), downloadPaths) }
-    /** What a LOCAL play keeps for Milestone 5 to send (`offline_plays`). */
-    val offlinePlays: OfflinePlays by lazy { OfflinePlays(database.offlinePlayDao(), System::currentTimeMillis) }
+    /** What a LOCAL play keeps (`offline_plays`) until its outbox row is confirmed; recovered at start (`ShoalwatchApp`). */
+    val offlinePlays: OfflinePlays by lazy { OfflinePlays(database.offlinePlayDao(), System::currentTimeMillis, outboxStore, database.itemDao()) }
+    /** Which saved copies the player has open (memory only). */
+    internal val localPlaying: LocalPlaying by lazy { LocalPlaying() }
     /** The controller's reports: LOCAL plays stay on the phone, everything else goes to the server. */
     internal val routedReports: RoutedPlaybackReports by lazy {
-        RoutedPlaybackReports(playbackReports, LocalPlaybackReports(offlinePlays, playstateRepository, System::currentTimeMillis))
+        RoutedPlaybackReports(playbackReports, LocalPlaybackReports(offlinePlays, playstateRepository, System::currentTimeMillis, localPlaying) { _, _ -> })
     }
     /** What every browsing screen reads: saved rows first, refreshed behind them (see "Library repository" in docs/ARCHITECTURE.md). */
     /** The one record of local changes, shared by everything that writes server data or user changes: ordering by sequence, expiry by the monotonic clock. */
@@ -267,8 +270,8 @@ class AppGraph(private val appContext: Context) {
     private val playstateRepository: PlaystateRepository by lazy {
         PlaystateRepository(libraryRepository, outboxStore, { s -> syncScheduler.changed(s) }, appScope, Dispatchers.IO, System::currentTimeMillis)
     }
-    /** Progress reports and the final stop (also saved through `playstate`), best effort; see "Progress reports and teardown" in docs/ARCHITECTURE.md. */
-    val playbackReports: ServerPlaybackReports by lazy { ServerPlaybackReports(playbackGateway, playstate, addressSelector, appScope) }
+    /** Progress reports and the final stop (also saved through `playstate`, queued when the server missed it); see "Progress reports and teardown" in docs/ARCHITECTURE.md. */
+    val playbackReports: ServerPlaybackReports by lazy { ServerPlaybackReports(playbackGateway, playstate) }
     /** Who is playing: ended by the store hooks above and whenever the active session changes. */
     val activePlayback: ActivePlayback by lazy {
         ActivePlayback({ s -> serverStore.cachedToken(s.serverId, s.userId) != null }).also { a ->
@@ -319,6 +322,17 @@ class AppGraph(private val appContext: Context) {
     internal val onlineEvents: OnlineEvents by lazy { OnlineEvents(addressSelector, outboxStore.serversWithWork(), appScope) }
     /** When sending happens: after each change, at start (`ShoalwatchApp`), after a sign-in, on reconnection, and by the `shoalwatch-sync` job. */
     val syncScheduler: SyncScheduler by lazy { SyncScheduler({ WorkManager.getInstance(appContext) }, syncSender, outboxStore, onlineEvents, appScope) }
+
+    /** App start: offline plays no outbox row covers are queued first (never a PLAY), then the scheduler starts. */
+    fun startSync(): Job = appScope.launch {
+        try {
+            offlinePlays.recoverUnqueued()
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            app.shoalwatch.core.AppLog.w("Sync", "Recovering offline plays failed", e)
+        }
+        syncScheduler.start()
+    }
 
     // ---- Server admin (Milestone 6, data/admin). Live only: nothing here is cached, saved or kept for another profile.
     private val adminGateway: AdminGateway by lazy { AdminGateway(serverApi, deviceIdentity.deviceId) { s -> adminRights.allows(s) } }

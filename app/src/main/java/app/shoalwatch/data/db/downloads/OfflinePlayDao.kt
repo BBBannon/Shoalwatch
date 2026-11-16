@@ -5,7 +5,6 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
-import kotlinx.coroutines.flow.Flow
 
 /** `offline_plays`: what each profile watched from a saved copy (INSERT OR IGNORE + UPDATE, never REPLACE). */
 @Dao
@@ -31,8 +30,12 @@ abstract class OfflinePlayDao {
     @Query("DELETE FROM offline_plays WHERE serverId = :serverId AND userId = :userId AND itemId = :itemId AND updatedAt <= :occurredAt")
     internal abstract suspend fun deleteCovered(serverId: String, userId: String, itemId: String, occurredAt: Long): Int
 
-    @Query("SELECT COUNT(*) FROM offline_plays WHERE serverId = :serverId AND userId = :userId")
-    internal abstract fun count(serverId: String, userId: String): Flow<Int>
+    /** Plays no outbox row from an offline play covers (a process that died mid-play, or between a stop's two writes). */
+    @Query(
+        "SELECT * FROM offline_plays p WHERE NOT EXISTS (SELECT 1 FROM sync_outbox o WHERE o.serverId = p.serverId AND o.userId = p.userId " +
+            "AND o.itemId = p.itemId AND o.fromOfflinePlay = 1)",
+    )
+    internal abstract suspend fun unqueued(): List<OfflinePlayEntity>
 
     @Transaction
     internal open suspend fun position(serverId: String, userId: String, itemId: String, positionMs: Long, nowMs: Long) {

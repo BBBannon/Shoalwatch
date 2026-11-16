@@ -4,9 +4,13 @@ import app.shoalwatch.core.AppError
 import app.shoalwatch.data.db.DownloadTestBase
 import app.shoalwatch.data.library.LocalPlaystate
 import app.shoalwatch.data.servers.Session
+import app.shoalwatch.data.db.downloads.DownloadKey
+import app.shoalwatch.data.downloads.LocalPlaying
 import app.shoalwatch.data.sync.OfflinePlays
+import app.shoalwatch.data.sync.OutboxStore
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -23,7 +27,11 @@ class LocalPlaybackReportsTest : DownloadTestBase() {
             localFails?.let { throw it }
         }
     }
-    private val reports get() = LocalPlaybackReports(OfflinePlays(db.offlinePlayDao()) { clock }, playstate) { clock }
+    private val playing = LocalPlaying()
+    private val finishedFor = mutableListOf<Pair<Session, String>>()
+    private val reports by lazy {
+        LocalPlaybackReports(OfflinePlays(db.offlinePlayDao(), { clock }, OutboxStore(db) { clock }, db.itemDao()), playstate, { clock }, playing) { s, item -> finishedFor += s to item }
+    }
 
     private fun report(s: String = film, ms: Long, method: PlayMethod = PlayMethod.LOCAL) =
         PlaybackReport(s, PlaybackFakes.SOURCE, null, method, ms, paused = false, audioIndex = 1, subtitleIndex = null)
@@ -51,6 +59,39 @@ class LocalPlaybackReportsTest : DownloadTestBase() {
     @Test fun aFailureIsNotSentNeverThrown() = runBlocking {
         localFails = AppError.of(AppError.Kind.SERVER_NOT_FOUND)
         assertEquals(ReportOutcome.NotSent(AppError.Kind.SERVER_NOT_FOUND), reports.stopped(s1u1, report(ms = 1), finished = false))
+    }
+
+    @Test fun aFinishedStopCallsOnFinishedOnceAndAnUnfinishedOneDoesNot() = runBlocking {
+        reports.started(s1u1, report(ms = 0))
+        reports.stopped(s1u1, report(ms = 61_000), finished = false)
+        assertTrue(finishedFor.isEmpty())
+        reports.started(s1u1, report(ms = 0))
+        reports.stopped(s1u1, report(ms = 5_000_000), finished = true)
+        assertEquals(listOf(s1u1 to film), finishedFor)
+    }
+
+    @Test fun aFinishedStopThatCouldNotBeSavedDoesNotCallOnFinished() = runBlocking {
+        localFails = AppError.of(AppError.Kind.SERVER_NOT_FOUND)
+        reports.started(s1u1, report(ms = 0))
+        reports.stopped(s1u1, report(ms = 5_000_000), finished = true)
+        assertTrue(finishedFor.isEmpty())
+        assertFalse("the copy is let go even so", playing.isOpen(DownloadKey(s1u1.serverId, film)))
+    }
+
+    @Test fun theCopyIsOpenFromTheStartToTheStopAndTwoHoldersPairUp() = runBlocking {
+        val key = DownloadKey(s1u1.serverId, film)
+        var released = 0
+        reports.started(s1u1, report(ms = 0))
+        reports.started(s1u2, report(ms = 0)) // another profile's player on the same copy
+        playing.whenClosed(key) { released++ }
+        assertTrue(playing.isOpen(key))
+        reports.stopped(s1u1, report(ms = 1_000), finished = false)
+        assertEquals("one holder is still playing it", 0, released)
+        reports.stopped(s1u2, report(ms = 2_000), finished = false)
+        assertEquals(1, released)
+        assertFalse(playing.isOpen(key))
+        playing.whenClosed(key) { released++ }
+        assertEquals("not open: at once", 2, released)
     }
 
     @Test fun theRowsGoWithTheAccount() = runBlocking {

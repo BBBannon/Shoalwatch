@@ -1,7 +1,6 @@
 package app.shoalwatch.data.sync
 
 import app.shoalwatch.data.db.DownloadTestBase
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -9,9 +8,9 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** `offline_plays`: per profile, watched never undone, gone with the account, counted for Milestone 5. */
+/** `offline_plays`: per profile, watched never undone, gone with the account, recovered into the outbox. */
 class OfflinePlaysTest : DownloadTestBase() {
-    private val plays get() = OfflinePlays(db.offlinePlayDao()) { clock }
+    private val plays get() = OfflinePlays(db.offlinePlayDao(), { clock }, OutboxStore(db) { clock }, db.itemDao())
     private val film get() = id("film")
 
     private fun row(s: app.shoalwatch.data.servers.Session) = runBlocking { db.offlinePlayDao().get(s.serverId, s.userId, film) }
@@ -56,14 +55,23 @@ class OfflinePlaysTest : DownloadTestBase() {
         assertEquals(1, count("offline_plays"))
     }
 
-    @Test fun pendingCountsThisProfilesPlaysOnly() = runBlocking {
-        assertEquals(0, plays.pending(s1u1).first())
-        plays.position(s1u1, film, 1)
-        plays.position(s1u1, id("other"), 1)
-        plays.position(s1u2, film, 1)
-        assertEquals(2, plays.pending(s1u1).first())
-        assertEquals(1, plays.pending(s1u2).first())
-        assertEquals(0, plays.pending(s2u1).first())
+    @Test fun aRecoveredPlayIsQueuedAtItsOwnTimeWithItsMarkAndNeverAsAPlay() = runBlocking {
+        clock = 5_000
+        plays.stopped(s1u1, film, 5_300_000, finished = true)
+        clock = 7_000
+        plays.position(s1u2, film, 42_000)
+        assertEquals(2, plays.recoverUnqueued())
+        val rows = db.openHelper.readableDatabase.query("SELECT userId, kind, flag, positionMs, occurredAt, fromOfflinePlay, itemKind FROM sync_outbox ORDER BY seq").use { c ->
+            buildList { while (c.moveToNext()) add(listOf(c.getString(0), c.getString(1), c.getString(2), c.getString(3), c.getLong(4), c.getInt(5), c.getString(6))) }
+        }
+        assertEquals(
+            listOf(
+                listOf(s1u1.userId, "PLAYED", "1", null, 5_000L, 1, "OTHER"), // no item row: OTHER
+                listOf(s1u2.userId, "POSITION", null, "42000", 7_000L, 1, "OTHER"),
+            ),
+            rows,
+        )
+        assertEquals(2, count("sync_marks", "leftList = ''"))
     }
 
     @Test fun aMalformedIdWritesNothing() = runBlocking {

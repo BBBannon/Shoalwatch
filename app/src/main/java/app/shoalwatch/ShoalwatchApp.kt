@@ -29,7 +29,7 @@ class ShoalwatchApp : Application(), SingletonImageLoader.Factory, Configuration
         graph.watchDownloads() // WorkManager itself is reached only once something is queued (see MainActivity.onStart)
         graph.watchSharing() // the sharing re-ask on each session change and each time the server comes back
         graph.downloadHousekeeping.onStart() // requeue what a dead process left, sweep orphans, kick if anything waits
-        graph.syncScheduler.start() // send what the outbox holds, and again each time a server with rows comes back
+        graph.startSync() // queue what a dead process left in offline_plays, then send the outbox (and on each reconnection)
     }
 
     override val workManagerConfiguration: Configuration
