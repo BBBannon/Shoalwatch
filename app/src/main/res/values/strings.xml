@@ -614,6 +614,13 @@
     <string name="dl_after_finish_always">Always delete when finished</string>
     <string name="dl_after_finish_never">Never</string>
     <string name="dl_after_finish_help">Deleting frees the space. The show still appears in Downloads and the episode stays watched. For this profile only.</string>
+    <string name="dl_auto_next">Download next episodes automatically</string>
+    <string name="dl_auto_next_off">Off</string>
+    <string name="dl_auto_next_1">Next episode</string>
+    <string name="dl_auto_next_2">Next 2 episodes</string>
+    <string name="dl_auto_next_3">Next 3 episodes</string>
+    <string name="dl_auto_next_5">Next 5 episodes</string>
+    <string name="dl_auto_next_help">After you watch a downloaded episode, Shoalwatch downloads the next unwatched ones in the same quality. They wait for Wi-Fi unless you allowed mobile data. For this profile only.</string>
     <string name="dl_delete_shared">Delete shared downloads</string>
     <string name="dl_delete_shared_anyone">After anyone has watched</string>
     <string name="dl_delete_shared_everyone">After everyone has watched</string>

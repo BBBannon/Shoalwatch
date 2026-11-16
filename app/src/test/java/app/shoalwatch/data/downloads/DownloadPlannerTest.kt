@@ -137,6 +137,34 @@ class DownloadPlannerTest : DownloadTestBase() {
         assertTrue(RefreshTarget.Series(series.id) in refreshed)
     }
 
+    @Test fun nextUnwatchedTakesTheNextOnesAfterTheAnchorAcrossASeasonNeverSpecialsNorWatched() = runTest {
+        val eps = listOf(ep("e1", 1, 1), ep("e2", 1, 2), ep("e3", 1, 3), ep("f1", 2, 1), ep("f2", 2, 2), ep("f3", 2, 3), ep("sp1", 0, 1))
+        serverSeries(eps, watchedIds = setOf(eps[1].id, eps[2].id, eps[4].id))
+        val two = planner().plan(a, DownloadTarget.NextUnwatched(series.id, eps[1].id, 2), DownloadQuality.HIGH)
+        assertEquals("after e2: e3 and f2 are watched, Specials never", listOf(eps[3], eps[5]).map { it.id }, two.items.map { it.itemId })
+        val one = planner().plan(a, DownloadTarget.NextUnwatched(series.id, eps[0].id, 1), DownloadQuality.HIGH)
+        assertEquals(listOf(eps[3].id), one.items.map { it.itemId })
+        val five = planner().plan(a, DownloadTarget.NextUnwatched(series.id, eps[3].id, 5), DownloadQuality.HIGH)
+        assertEquals("only what there is; the anchor itself never", listOf(eps[5].id), five.items.map { it.itemId })
+        assertTrue("the specials season is never refreshed", RefreshTarget.Series(series.id, specials.id) !in refreshed)
+    }
+
+    @Test fun nextUnwatchedPlansNothingForAnAnchorInSpecialsOrNotInTheList() = runTest {
+        val eps = listOf(ep("e1", 1, 1), ep("e2", 1, 2), ep("sp1", 0, 1))
+        serverSeries(eps)
+        assertEquals(emptyList<PlannedItem>(), planner().plan(a, DownloadTarget.NextUnwatched(series.id, eps[2].id, 3), DownloadQuality.HIGH).items)
+        assertEquals(emptyList<PlannedItem>(), planner().plan(a, DownloadTarget.NextUnwatched(series.id, id("elsewhere"), 3), DownloadQuality.HIGH).items)
+    }
+
+    @Test fun nextUnwatchedStillAsksTheServerWhetherThisProfileMayDownload() = runTest {
+        val eps = listOf(ep("e1", 1, 1), ep("e2", 1, 2), ep("e3", 1, 3))
+        serverSeries(eps)
+        gateway.allow(eps[1].id, canDownload = false)
+        val plan = planner().plan(a, DownloadTarget.NextUnwatched(series.id, eps[0].id, 2), DownloadQuality.HIGH)
+        assertEquals(listOf(eps[2].id), plan.items.map { it.itemId })
+        assertEquals(listOf(Skipped(eps[1].id, SkipReason.NOT_ALLOWED)), plan.skipped)
+    }
+
     @Test fun anOriginalThatCannotPlayHereIsPlannedAsHigh() = runTest {
         val film = item("film")
         server[RefreshTarget.Item(film.id)] = listOf(row(film))

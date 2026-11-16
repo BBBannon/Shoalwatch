@@ -165,7 +165,10 @@ class FakeHousekeeping : app.shoalwatch.data.downloads.Housekeeping {
         settings.update { it + (s to (it[s] ?: app.shoalwatch.data.downloads.ProfileSettings()).copy(afterFinish = value)) }
     }
 
-    override suspend fun setAutoNext(s: Session, count: Int) { calls += "autoNext:${who(s)}:$count" }
+    override suspend fun setAutoNext(s: Session, count: Int) {
+        calls += "autoNext:${who(s)}:$count"
+        settings.update { it + (s to (it[s] ?: app.shoalwatch.data.downloads.ProfileSettings()).copy(autoNextCount = count)) }
+    }
 
     override fun sharedDelete(serverId: String): Flow<app.shoalwatch.data.downloads.SharedDelete> =
         shared.map { it[serverId] ?: app.shoalwatch.data.downloads.SharedDelete.ANYONE }.distinctUntilChanged()

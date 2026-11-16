@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Upsert
 import app.shoalwatch.data.downloads.AfterFinish
 import app.shoalwatch.data.downloads.SharedDelete
 import kotlinx.coroutines.flow.Flow
@@ -78,6 +79,46 @@ abstract class HousekeepingDao {
     /** The other accounts that see this shared download in their own offline library: what "Watched together" may mark. */
     @Query(SHARERS_SQL)
     internal abstract suspend fun sharers(serverId: String, userId: String, itemId: String): List<String>
+
+    // ---- auto-download next (one request per profile and series, the newest anchor winning)
+
+    /** The download [userId] may play (`OfflineLibraryDao.PLAYABLE_SQL`): what an anchor must be. */
+    @Query(OfflineLibraryDao.PLAYABLE_SQL)
+    internal abstract suspend fun playable(serverId: String, userId: String, itemId: String): DownloadEntity?
+
+    @Query("SELECT * FROM auto_next_requests WHERE serverId = :serverId AND userId = :userId AND seriesId = :seriesId")
+    internal abstract suspend fun autoNextRequest(serverId: String, userId: String, seriesId: String): AutoNextRequestEntity?
+
+    @Query("SELECT * FROM auto_next_requests WHERE serverId = :serverId AND userId = :userId ORDER BY requestedAt, seriesId")
+    internal abstract suspend fun autoNextRequests(serverId: String, userId: String): List<AutoNextRequestEntity>
+
+    @Query("SELECT * FROM auto_next_requests ORDER BY serverId, userId, requestedAt, seriesId")
+    internal abstract suspend fun allAutoNextRequests(): List<AutoNextRequestEntity>
+
+    @Query("SELECT DISTINCT serverId FROM auto_next_requests")
+    internal abstract fun observeAutoNextServers(): Flow<List<String>>
+
+    /** "Next episodes weren't downloaded automatically": a waiting request of this profile last found too little space. */
+    @Query("SELECT EXISTS (SELECT 1 FROM auto_next_requests WHERE serverId = :serverId AND userId = :userId AND blockedAt IS NOT NULL)")
+    internal abstract fun observeAutoNextBlocked(serverId: String, userId: String): Flow<Boolean>
+
+    @Upsert
+    internal abstract suspend fun upsertAutoNext(row: AutoNextRequestEntity)
+
+    /** Only the request as it was read: a newer anchor written meanwhile stays. */
+    @Query(
+        "DELETE FROM auto_next_requests WHERE serverId = :serverId AND userId = :userId AND seriesId = :seriesId " +
+            "AND anchorItemId = :anchorItemId AND requestedAt = :requestedAt",
+    )
+    internal abstract suspend fun deleteAutoNext(serverId: String, userId: String, seriesId: String, anchorItemId: String, requestedAt: Long): Int
+
+    @Query(
+        "UPDATE auto_next_requests SET tries = :tries, blockedAt = :blockedAt WHERE serverId = :serverId AND userId = :userId " +
+            "AND seriesId = :seriesId AND anchorItemId = :anchorItemId AND requestedAt = :requestedAt",
+    )
+    internal abstract suspend fun updateAutoNext(
+        serverId: String, userId: String, seriesId: String, anchorItemId: String, requestedAt: Long, tries: Int, blockedAt: Long?,
+    ): Int
 
     companion object {
         /**

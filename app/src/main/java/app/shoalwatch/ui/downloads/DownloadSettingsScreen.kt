@@ -40,11 +40,13 @@ data class DownloadSettingsActions(
     val onSharing: (Boolean) -> Unit,
     val onAfterFinish: (AfterFinish) -> Unit = {},
     val onDeleteShared: (SharedDelete) -> Unit = {},
+    val onAutoNext: (Int) -> Unit = {},
 )
 
 /**
  * "Download settings": mobile data, where new downloads go (the SD card only while one is mounted, with its plain warning),
- * the quality for new downloads, the active profile's "When a download finishes playing", the active server's sharing switch
+ * the quality for new downloads, the active profile's "When a download finishes playing" and
+ * "Download next episodes automatically", the active server's sharing switch
  * (and, while it is on, "Delete shared downloads"), and a link to the system notification settings when
  * notifications are off. Every row is 48dp or more and says its state; the screen scrolls (`AppScreen`).
  */
@@ -68,6 +70,9 @@ fun DownloadSettingsScreen(state: DownloadSettingsUiState, actions: DownloadSett
             Heading(stringResource(R.string.dl_after_finish))
             AFTER_FINISH.forEach { (value, label) -> QualityRow(stringResource(label), null, state.afterFinish == value) { actions.onAfterFinish(value) } }
             Help(stringResource(R.string.dl_after_finish_help))
+            Heading(stringResource(R.string.dl_auto_next))
+            AUTO_NEXT.forEach { (count, label) -> QualityRow(stringResource(label), null, state.autoNext == count) { actions.onAutoNext(count) } }
+            Help(stringResource(R.string.dl_auto_next_help))
             SwitchRow(stringResource(R.string.dl_share), stringResource(R.string.dl_share_body, state.serverName.orEmpty()), state.sharing, actions.onSharing)
             if (state.sharing) {
                 Heading(stringResource(R.string.dl_delete_shared))
@@ -90,6 +95,9 @@ fun DownloadSettingsScreen(state: DownloadSettingsUiState, actions: DownloadSett
 
 private val AFTER_FINISH = listOf(
     AfterFinish.ASK to R.string.dl_after_finish_ask, AfterFinish.ALWAYS to R.string.dl_after_finish_always, AfterFinish.NEVER to R.string.dl_after_finish_never,
+)
+private val AUTO_NEXT = listOf(
+    0 to R.string.dl_auto_next_off, 1 to R.string.dl_auto_next_1, 2 to R.string.dl_auto_next_2, 3 to R.string.dl_auto_next_3, 5 to R.string.dl_auto_next_5,
 )
 private val DELETE_SHARED = listOf(SharedDelete.ANYONE to R.string.dl_delete_shared_anyone, SharedDelete.EVERYONE to R.string.dl_delete_shared_everyone)
 

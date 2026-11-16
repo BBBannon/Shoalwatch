@@ -3,6 +3,8 @@ package app.shoalwatch.ui.downloads
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasText
@@ -17,6 +19,7 @@ import app.shoalwatch.ui.browse.BEN
 import app.shoalwatch.ui.browse.PHONE
 import app.shoalwatch.ui.browse.RenderBase
 import app.shoalwatch.ui.browse.TABLET
+import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.robolectric.annotation.Config
@@ -26,10 +29,11 @@ abstract class DownloadSettingsRenderBase : RenderBase() {
     private val calls = mutableListOf<String>()
     private val actions = DownloadSettingsActions(
         {}, {}, { _, _ -> }, {}, {}, onAfterFinish = { calls += "after:$it" }, onDeleteShared = { calls += "shared:$it" },
+        onAutoNext = { calls += "next:$it" },
     )
 
-    private fun showSettings(sharing: Boolean, after: AfterFinish = AfterFinish.ASK, deleteShared: SharedDelete = SharedDelete.ANYONE) = show {
-        DownloadSettingsScreen(DownloadSettingsUiState(BEN, "Den", DownloadSettings(), emptyList(), sharing, after, deleteShared), actions, notificationsOn = true)
+    private fun showSettings(sharing: Boolean, after: AfterFinish = AfterFinish.ASK, deleteShared: SharedDelete = SharedDelete.ANYONE, autoNext: Int = 0) = show {
+        DownloadSettingsScreen(DownloadSettingsUiState(BEN, "Den", DownloadSettings(), emptyList(), sharing, after, deleteShared, autoNext), actions, notificationsOn = true)
     }
 
     /** The last radio with [label] ("Ask each time" is also the quality group's first choice, above). */
@@ -44,6 +48,22 @@ abstract class DownloadSettingsRenderBase : RenderBase() {
         rule.onNode(hasText(text(R.string.dl_after_finish_help))).performScrollTo()
         radio(text(R.string.dl_after_finish_never)).performClick()
         assertEquals(listOf("after:NEVER"), calls)
+    }
+
+    @Test fun downloadNextEpisodesIsFiveRadiosOfAtLeast48dpThatSayWhichIsSelected() {
+        showSettings(sharing = false, autoNext = 3)
+        rule.onNode(hasText(text(R.string.dl_auto_next))).performScrollTo().assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading))
+        val labels = listOf(
+            0 to R.string.dl_auto_next_off, 1 to R.string.dl_auto_next_1, 2 to R.string.dl_auto_next_2, 3 to R.string.dl_auto_next_3, 5 to R.string.dl_auto_next_5,
+        )
+        for ((count, label) in labels) {
+            val node = radio(text(label)).assertHeightIsAtLeast(48.dp)
+            if (count == 3) node.assertIsSelected() else node.assertIsNotSelected()
+        }
+        rule.onNode(hasText(text(R.string.dl_auto_next_help))).performScrollTo()
+        radio(text(R.string.dl_auto_next_5)).performClick()
+        radio(text(R.string.dl_auto_next_off)).performClick()
+        assertEquals(listOf("next:5", "next:0"), calls)
     }
 
     @Test fun deleteSharedDownloadsIsAbsentWhileSharingIsOff() {

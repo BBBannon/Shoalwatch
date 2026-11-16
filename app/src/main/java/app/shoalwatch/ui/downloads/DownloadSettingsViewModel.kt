@@ -38,6 +38,8 @@ data class DownloadSettingsUiState(
     val afterFinish: AfterFinish = AfterFinish.ASK,
     /** The active server's "Delete shared downloads" (shown only while [sharing] is on). */
     val deleteShared: SharedDelete = SharedDelete.ANYONE,
+    /** The ACTIVE profile's own "Download next episodes automatically": 0 (Off), 1, 2, 3 or 5. */
+    val autoNext: Int = 0,
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -51,7 +53,7 @@ class DownloadSettingsViewModel(catalog: ServerCatalog, private val downloads: D
         val profile = if (s == null) flowOf(ProfileSettings()) else housekeeping.profileSettings(s)
         val rule = if (s == null) flowOf(SharedDelete.ANYONE) else housekeeping.sharedDelete(s.serverId)
         combine(downloads.settings, cards, sharing, profile, rule) { settings, cards, shared, mine, deleteShared ->
-            DownloadSettingsUiState(s, name, settings, cards, shared, mine.afterFinish, deleteShared)
+            DownloadSettingsUiState(s, name, settings, cards, shared, mine.afterFinish, deleteShared, mine.autoNextCount)
         }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, DownloadSettingsUiState())
 
@@ -73,6 +75,12 @@ class DownloadSettingsViewModel(catalog: ServerCatalog, private val downloads: D
     fun setAfterFinish(value: AfterFinish) {
         val s = state.value.session ?: return
         viewModelScope.launch { try { housekeeping.setAfterFinish(s, value) } catch (e: CancellationException) { throw e } catch (e: Exception) { Unit } }
+    }
+
+    /** For the active profile only, as itself: 0, 1, 2, 3 or 5. */
+    fun setAutoNext(count: Int) {
+        val s = state.value.session ?: return
+        viewModelScope.launch { try { housekeeping.setAutoNext(s, count) } catch (e: CancellationException) { throw e } catch (e: Exception) { Unit } }
     }
 
     /** Per server, as sharing itself: any signed-in profile may change it. */

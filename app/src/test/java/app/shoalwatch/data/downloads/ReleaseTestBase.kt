@@ -37,6 +37,9 @@ abstract class ReleaseTestBase : LibraryRepositoryTestBase() {
     protected val signedOut = mutableSetOf<Session>()
     protected val watchedCalls = mutableListOf<Pair<Session, String>>()
 
+    /** Auto-download next's `remember` calls, each with whether the download row was still there at the time. */
+    protected val rememberedCalls = mutableListOf<Triple<Session, String, Boolean>>()
+
     @Before fun openRelease() {
         store = DownloadStore(db, { now })
         releases = ReleaseStore(db, { now }, LibraryWriteLock.None)
@@ -48,6 +51,10 @@ abstract class ReleaseTestBase : LibraryRepositoryTestBase() {
         housekeeping = HousekeepingRepository(
             releases, db.housekeepingDao(), playstate, ReleasedFiles(paths, playing, appScope), { s, id -> synchronized(watchedCalls) { watchedCalls += s to id } },
             { s -> s !in signedOut }, appScope,
+            beforeRelease = { s, id ->
+                val there = count("downloads", "serverId = '${s.serverId}' AND itemId = '$id'") == 1
+                synchronized(rememberedCalls) { rememberedCalls += Triple(s, id, there) }
+            },
         )
     }
 

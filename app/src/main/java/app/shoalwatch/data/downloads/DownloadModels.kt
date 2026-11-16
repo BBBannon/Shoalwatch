@@ -73,6 +73,10 @@ sealed interface DownloadTarget {
     data class Series(val seriesId: String) : DownloadTarget
     /** Every unwatched episode of the series for this user, Specials left out. */
     data class Unwatched(val seriesId: String) : DownloadTarget
+    /** The first [count] unwatched episodes after [afterItemId] in the app's episode order (numbered seasons; Specials never). */
+    data class NextUnwatched(val seriesId: String, val afterItemId: String, val count: Int) : DownloadTarget {
+        override fun toString() = "NextUnwatched(count=$count)"
+    }
 }
 
 /**

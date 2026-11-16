@@ -86,6 +86,11 @@ internal class DownloadPlanner(
         is DownloadTarget.Series -> numbered(s, target.seriesId).map { it.item } to target.seriesId
         // No user data yet means never played: unwatched.
         is DownloadTarget.Unwatched -> numbered(s, target.seriesId).filter { it.userData?.played != true }.map { it.item } to target.seriesId
+        // After the anchor in episode order; an anchor in Specials or not listed plans nothing (it is not "in" the run).
+        is DownloadTarget.NextUnwatched -> numbered(s, target.seriesId).let { list ->
+            val at = list.indexOfFirst { it.item.id == target.afterItemId }
+            if (at < 0) emptyList() else list.drop(at + 1).filter { it.userData?.played != true }.take(target.count.coerceAtLeast(0)).map { it.item }
+        } to target.seriesId
     }
 
     /** Every numbered season's episodes, plus episodes with no season; Specials (season 0, or episode season number 0) left out. */

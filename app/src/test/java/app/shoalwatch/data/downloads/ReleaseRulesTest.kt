@@ -7,6 +7,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import app.shoalwatch.data.servers.Session
 import org.junit.Test
 
 /** Watch-and-delete's one rule, on real parts (see [ReleaseTestBase]). */
@@ -150,6 +151,26 @@ class ReleaseRulesTest : ReleaseTestBase() {
         assertFalse(hasRow(e1)); assertFalse(folder.exists())
         assertEquals("no PLAYED tick on top of the stop's PLAY", 0, playedRows(a, e1))
         assertEquals(listOf(a to e1.id), watchedCalls)
+    }
+
+    @Test fun autoDownloadNextIsRememberedWhileTheDownloadIsStillThereOnBothPaths() = runBlocking {
+        episodeSeen(a)
+        downloaded(a, e1)
+        assertEquals(ReleaseOutcome.DELETED, housekeeping.release(a, e1.id, together = false))
+        assertEquals("the press: remembered before the row went", listOf(Triple(a, e1.id, true)), rememberedCalls.toList())
+        downloaded(a, e2)
+        housekeeping.setAfterFinish(a, AfterFinish.ALWAYS)
+        housekeeping.onLocalFinished(a, e2.id)
+        settled()
+        assertEquals("the ALWAYS stop: the same", Triple(a, e2.id, true), rememberedCalls.last())
+        assertFalse(hasRow(e2))
+    }
+
+    @Test fun aReleaseThatIsNotYoursRemembersNothing() = runBlocking {
+        episodeSeen(a, b)
+        downloaded(a, e1)
+        assertEquals(ReleaseOutcome.NOT_YOURS, housekeeping.release(b, e1.id, together = false))
+        assertEquals(emptyList<Triple<Session, String, Boolean>>(), rememberedCalls.toList())
     }
 
     @Test fun askAndNeverKeepTheDownloadAtTheStop() = runBlocking {

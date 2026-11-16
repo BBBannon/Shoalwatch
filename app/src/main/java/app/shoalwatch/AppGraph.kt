@@ -115,7 +115,7 @@ import kotlinx.coroutines.launch
 import java.io.File
 
 /** Holds the app's lazy singletons (no DI framework). Later tasks add the rest of the data layer here. */
-class AppGraph(private val appContext: Context) {
+class AppGraph(internal val appContext: Context) {
     /** Lives as long as the process; for work that must outlive any screen (monitoring, address probing). */
     val appScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     val database: AppDatabase by lazy { AppDatabase.open(appContext) }

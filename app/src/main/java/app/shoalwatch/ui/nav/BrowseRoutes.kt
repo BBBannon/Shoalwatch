@@ -229,7 +229,7 @@ internal fun DownloadSettingsRoute(graph: AppGraph, nav: NavHostController) {
     val actions = remember(vm, nav) {
         app.shoalwatch.ui.downloads.DownloadSettingsActions(
             onBack = { nav.popBackStack() }, onMobileData = vm::setMobileData, onStorage = vm::setStorage, onQuality = vm::setDefaultQuality, onSharing = vm::setSharing,
-            onAfterFinish = vm::setAfterFinish, onDeleteShared = vm::setDeleteShared,
+            onAfterFinish = vm::setAfterFinish, onDeleteShared = vm::setDeleteShared, onAutoNext = vm::setAutoNext,
         )
     }
     app.shoalwatch.ui.downloads.DownloadSettingsScreen(state, actions)

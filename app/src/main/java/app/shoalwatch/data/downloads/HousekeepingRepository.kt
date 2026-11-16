@@ -23,7 +23,8 @@ import kotlinx.coroutines.launch
 /**
  * Implements [Housekeeping]. Watched marks go through [playstate] (each profile's own outbox, sent with its own token); the rule
  * is [ReleaseStore]'s; the files go through [files] once the player lets go. Actions run in [scope], the app's, so a press during
- * the credits finishes even if the player closes. [hasToken]: the profile is signed in. [onWatched]: auto-download next (Task 13).
+ * the credits finishes even if the player closes. [hasToken]: the profile is signed in. [onWatched]: auto-download next, after the
+ * release; [beforeRelease]: its request is written first, while the anchor's download (and so its quality) can still be read.
  */
 class HousekeepingRepository internal constructor(
     private val releases: ReleaseStore,
@@ -34,6 +35,7 @@ class HousekeepingRepository internal constructor(
     private val hasToken: (Session) -> Boolean,
     private val scope: CoroutineScope,
     private val io: CoroutineDispatcher = Dispatchers.IO,
+    private val beforeRelease: suspend (Session, String) -> Unit = { _, _ -> },
 ) : Housekeeping {
     override fun profileSettings(s: Session): Flow<ProfileSettings> = guarded(ProfileSettings()) {
         dao.observeProfile(s.serverId, s.userId).map { row -> row?.let { ProfileSettings(it.afterFinish, it.autoNextCount) } ?: ProfileSettings() }
@@ -80,6 +82,7 @@ class HousekeepingRepository internal constructor(
                 }
             }
         }
+        remember(s, itemId)
         val outcome = apply(releases.release(s, itemId))
         onWatched(s, itemId)
         outcome
@@ -89,6 +92,7 @@ class HousekeepingRepository internal constructor(
     internal fun onLocalFinished(s: Session, itemId: String) {
         scope.launch(io) {
             try {
+                remember(s, itemId)
                 if (dao.profile(s.serverId, s.userId)?.afterFinish == AfterFinish.ALWAYS) apply(releases.release(s, itemId))
                 onWatched(s, itemId)
             } catch (e: CancellationException) {
@@ -96,6 +100,17 @@ class HousekeepingRepository internal constructor(
             } catch (e: Exception) {
                 AppLog.w(TAG, "finished download not tidied", e)
             }
+        }
+    }
+
+    /** Auto-download next's request; its failure never stops a release. */
+    private suspend fun remember(s: Session, itemId: String) {
+        try {
+            beforeRelease(s, itemId)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            AppLog.w(TAG, "next episodes not remembered", e)
         }
     }
 

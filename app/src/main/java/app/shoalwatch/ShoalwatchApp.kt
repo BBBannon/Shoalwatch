@@ -30,6 +30,7 @@ class ShoalwatchApp : Application(), SingletonImageLoader.Factory, Configuration
         graph.watchSharing() // the sharing re-ask on each session change and each time the server comes back
         graph.downloadHousekeeping.onStart() // requeue what a dead process left, sweep orphans, kick if anything waits
         graph.startSync() // queue what a dead process left in offline_plays, then send the outbox (and on each reconnection)
+        graph.housekeepingParts.autoDownloadNext.start() // waiting "download next episodes" requests, now and on each reconnection
     }
 
     override val workManagerConfiguration: Configuration
