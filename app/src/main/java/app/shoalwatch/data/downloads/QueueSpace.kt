@@ -12,10 +12,10 @@ internal object QueueSpace {
     const val REMOVABLE_RESERVE = 256L shl 20
     private const val UNKNOWN_RUNTIME_MS = 45L * 60 * 1_000
 
-    /** Free space for [bytes] more, above the reserve. */
+    /** Free space for [bytes] more, above the reserve (saturating: no size can wrap round to fit). */
     fun fits(volumes: Volumes, row: DownloadEntity, bytes: Long): Boolean {
         val reserve = if (row.storage == StorageKind.INTERNAL) INTERNAL_RESERVE else REMOVABLE_RESERVE
-        return volumes.freeBytes(row.storage, row.volumeId) >= bytes.coerceAtLeast(0) + reserve
+        return volumes.freeBytes(row.storage, row.volumeId) >= bytes.coerceIn(0, Long.MAX_VALUE - reserve) + reserve
     }
 
     /** What is still to come, as far as is known before asking the server: an original's known total, a conversion's estimate. */

@@ -21,6 +21,19 @@ class DownloadQueueFailureTest : DownloadQueueTestBase() {
 
     private fun failure(item: app.shoalwatch.data.library.Item) = download(item)!!.let { it.state to it.failure }
 
+    /** Final review M-2: the fetcher is given the queue's own space rule (free space above the reserve), for a size only the response states. */
+    @Test fun theFileFetcherIsGivenTheQueuesSpaceRule() {
+        queued(a, f1)
+        playable()
+        fake.free[null] = QueueSpace.INTERNAL_RESERVE + (2L shl 30) // the fixture's Size (1.2 GB) fits
+        var rule: ((Long) -> Boolean)? = null
+        files.steps += { c -> rule = c.fits; FetchResult.Failed(DownloadFailure.NO_SPACE) }
+        drain()
+        assertTrue(rule!!(2L shl 30))
+        assertFalse("not one byte into the reserve", rule!!((2L shl 30) + 1))
+        assertEquals(DownloadState.FAILED to DownloadFailure.NO_SPACE, failure(f1))
+    }
+
     /**
      * Tasks 9-10 review I-2 (a). C (U2) queued the original with its CanDownload unknown; P (U1) then shared it with a confirmed
      * yes. C's sign-in is gone, so P fetches: C must not keep a copy fetched under P's permission.

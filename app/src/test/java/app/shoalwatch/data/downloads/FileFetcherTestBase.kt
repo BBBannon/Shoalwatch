@@ -46,10 +46,10 @@ abstract class FileFetcherTestBase : ServerApiTestBase() {
 
     /** One fetch, resuming from what the log last saved (as the queue would, from Room: the count, validator, total and restarts). */
     internal fun fetch(
-        expected: Long? = server.body.size.toLong(), resume: Boolean = true, f: FileFetcher = fetcher(),
+        expected: Long? = server.body.size.toLong(), resume: Boolean = true, f: FileFetcher = fetcher(), fits: (Long) -> Boolean = { true },
     ): FetchResult = runBlocking {
         val last = log.saves.lastOrNull()?.takeIf { resume }
-        f.fetch(route(), item, part, target, last?.done ?: 0, last?.validator, expected, last?.total, last?.restarts ?: 0, log)
+        f.fetch(route(), item, part, target, last?.done ?: 0, last?.validator, expected, last?.total, last?.restarts ?: 0, fits, log)
     }
 
     protected fun assertComplete() {

@@ -162,7 +162,9 @@ internal class DownloadQueue(
         var rerouted = false
         while (true) {
             val row = current(key)
-            val result = files.fetch(route, key.itemId, part, target, row.doneBytes, row.validator, playable.sizeBytes, row.totalBytes, row.restarts, fileProgress(j, row.doneBytes))
+            // The one space rule, for a size only the response states (final review M-2).
+            val fits = { bytes: Long -> QueueSpace.fits(volumes, row, bytes) }
+            val result = files.fetch(route, key.itemId, part, target, row.doneBytes, row.validator, playable.sizeBytes, row.totalBytes, row.restarts, fits, fileProgress(j, row.doneBytes))
             when (result) {
                 FetchResult.Done -> {
                     store.confirm(key, s.userId) // /Download served it to this sign-in: the server's own permission check passed

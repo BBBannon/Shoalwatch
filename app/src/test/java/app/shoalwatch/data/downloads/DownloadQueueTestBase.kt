@@ -29,7 +29,7 @@ import org.junit.rules.TemporaryFolder
 internal typealias FileStep = suspend (FileCall) -> FetchResult
 
 internal class FileCall(val itemId: String, val part: File, val target: File, val resumeFrom: Long, val validator: String?,
-                        val expected: Long?, val storedTotal: Long?, val restarts: Int, val progress: Progress)
+                        val expected: Long?, val storedTotal: Long?, val restarts: Int, val fits: (Long) -> Boolean, val progress: Progress)
 
 /** [OriginalFetch] answering from [steps] in order (then [whole]); each call is recorded. */
 internal class FakeFiles : OriginalFetch {
@@ -37,8 +37,8 @@ internal class FakeFiles : OriginalFetch {
     val steps = ArrayDeque<FileStep>()
 
     override suspend fun fetch(route: MediaRoute, itemId: String, part: File, target: File, resumeFrom: Long, validator: String?,
-                               expectedBytes: Long?, storedTotal: Long?, restarts: Int, progress: Progress): FetchResult {
-        val call = FileCall(itemId, part, target, resumeFrom, validator, expectedBytes, storedTotal, restarts, progress)
+                               expectedBytes: Long?, storedTotal: Long?, restarts: Int, fits: (Long) -> Boolean, progress: Progress): FetchResult {
+        val call = FileCall(itemId, part, target, resumeFrom, validator, expectedBytes, storedTotal, restarts, fits, progress)
         calls += call
         return (steps.removeFirstOrNull() ?: whole())(call)
     }

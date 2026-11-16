@@ -17,7 +17,7 @@ import java.io.File
 internal interface OriginalFetch {
     suspend fun fetch(
         route: MediaRoute, itemId: String, part: File, target: File, resumeFrom: Long, validator: String?,
-        expectedBytes: Long?, storedTotal: Long?, restarts: Int, progress: Progress,
+        expectedBytes: Long?, storedTotal: Long?, restarts: Int, fits: (Long) -> Boolean, progress: Progress,
     ): FetchResult
 }
 
