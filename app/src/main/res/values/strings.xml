@@ -411,7 +411,7 @@
     <string name="watched_together">Watched together</string>
     <string name="watched_together_label">Watched together: also mark it watched for the other profiles that share it</string>
     <string name="watched_keep">Keep download</string>
-    <string name="watched_always">This download is deleted when it closes, as set in Download settings.</string>
+    <string name="watched_always">This download is deleted when it closes, unless another profile still needs it, as set in Download settings.</string>
     <string name="watched_delete_button_spoken">Watched — delete download, button</string>
     <string name="watched_deleted">Marked as watched. The download is deleted when this closes.</string>
     <string name="watched_kept_for_others">Marked as watched. It stays on this phone for another profile.</string>

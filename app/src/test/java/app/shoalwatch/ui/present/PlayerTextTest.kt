@@ -25,6 +25,14 @@ class PlayerTextTest {
     private fun converting(reason: TranscodeReason, fellBack: Boolean = false) =
         PlayerText.streamInfo(strings, PlayMethod.TRANSCODE, setOf(reason), fellBack)
 
+    /** Tasks 11-12 review M2: with "Always delete", the line never promises a deletion the shared-download rule may not make. */
+    @Test fun theAlwaysLineSaysItMayStayForAnotherProfile() {
+        assertEquals(
+            "This download is deleted when it closes, unless another profile still needs it, as set in Download settings.",
+            strings.get(app.shoalwatch.R.string.watched_always),
+        )
+    }
+
     @Test fun directPlayAndDirectStreamSayWhatIsHappening() {
         assertEquals("Playing the original file.", PlayerText.streamInfo(strings, PlayMethod.DIRECT_PLAY, emptySet(), false))
         assertEquals(
