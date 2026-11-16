@@ -58,7 +58,12 @@ class AccountRulesTest : LibraryTestBase() {
             store.upsertAccount(Account(S1, U2, "bob", "tok-2"), makeActive = false)
             store.upsertAccount(Account(S2, U1, "ann", "tok-3"), makeActive = false)
             store.warmTokens()
+            // Each sign-in above kicked a drain on [scope]. Let them end before a test writes rows or sets the gateway's gate, or one
+            // of them sends a test's rows early (and ungated). A kick joins a live drain, or queues behind one that is ending (the
+            // profile lock), so awaiting it means none is left.
+            withTimeout(10_000) { listOf(s1u1, s1u2, s2u1).forEach { sender.kick(it).await() } }
         }
+        listOf(s1u1, s1u2, s2u1).forEach { assertTrue("no drain is left from the sign-ins", !sender.isDraining(it)) }
     }
 
     @After fun stopScope() = scope.cancel()
