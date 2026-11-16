@@ -8,6 +8,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import app.shoalwatch.AppGraph
+import app.shoalwatch.ui.admin.AdminRoutes
 import app.shoalwatch.ui.onboarding.AddServerActions
 import app.shoalwatch.ui.onboarding.AddServerScreen
 import app.shoalwatch.ui.onboarding.AddServerViewModel
@@ -83,7 +84,7 @@ internal fun SignInRoute(graph: AppGraph, nav: NavHostController, serverId: Stri
 
 @Composable
 internal fun ServersRoute(graph: AppGraph, nav: NavHostController) {
-    val vm = graphViewModel { ServersViewModel(graph.serverCatalog, graph.authenticator, graph.downloads::sharing) }
+    val vm = graphViewModel { ServersViewModel(graph.serverCatalog, graph.authenticator, sharing = graph.downloads::sharing, rights = graph.adminRights) }
     val state by vm.state.collectAsStateWithLifecycle()
     val actions = remember(vm) {
         ServersActions(
@@ -97,6 +98,7 @@ internal fun ServersRoute(graph: AppGraph, nav: NavHostController) {
             onConfirm = vm::confirm,
             onDismissConfirm = vm::dismissConfirm,
             onDismissNotice = vm::dismissNotice,
+            onAdmin = { nav.navigate(AdminRoutes.DASHBOARD) { launchSingleTop = true } },
         )
     }
     ServersScreen(state, actions)

@@ -1,0 +1,219 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Server admin (Milestone 6). Every admin word lives here, not in strings.xml, so the parallel branches merge cleanly. -->
+<resources>
+    <!-- Entry -->
+    <string name="admin_entry">Server admin</string>
+    <string name="admin_entry_cd">Server admin for %1$s</string>
+
+    <!-- Dashboard -->
+    <string name="admin_title">Server admin</string>
+    <string name="admin_version">Jellyfin %1$s</string>
+    <string name="admin_pending_restart_title">Restart needed</string>
+    <string name="admin_pending_restart_body">The server needs a restart to finish an update or a settings change.</string>
+    <string name="admin_shutting_down">The server is shutting down.</string>
+    <string name="admin_manage_heading">Manage</string>
+    <string name="admin_link_libraries">Libraries</string>
+    <string name="admin_link_libraries_detail">Scan for new files and see scan progress</string>
+    <string name="admin_link_tasks">Scheduled tasks</string>
+    <string name="admin_link_tasks_detail">See what runs, and run or stop a task</string>
+    <string name="admin_link_users">Users</string>
+    <string name="admin_link_users_detail">See accounts, and switch them on or off</string>
+    <string name="admin_link_activity">Activity</string>
+    <string name="admin_link_activity_detail">Recent sign-ins, playback and errors</string>
+    <string name="admin_link_devices">Devices</string>
+    <string name="admin_link_devices_detail">Signed-in devices, and remove one</string>
+    <string name="admin_link_power">Restart or shut down</string>
+    <string name="admin_link_power_detail">Restart or shut down the server</string>
+    <string name="admin_open_dashboard">Open the full dashboard in your browser</string>
+    <string name="admin_open_dashboard_note">For everything else. You’ll sign in again in the browser: Shoalwatch doesn’t pass on your sign-in.</string>
+    <string name="admin_no_browser">There’s no web browser on this phone to open the dashboard.</string>
+
+    <!-- Common -->
+    <string name="admin_checking">Checking you’re an administrator…</string>
+    <string name="admin_offline_title">You’re offline</string>
+    <string name="admin_offline_body">Server admin needs a connection to your server. Buttons are switched off until it’s back.</string>
+    <string name="admin_updated_at">Last updated %1$s</string>
+    <string name="admin_refresh">Refresh</string>
+    <string name="admin_dismiss">Dismiss</string>
+    <string name="admin_problem_offline">You’re offline. Server admin needs a connection to your server.</string>
+    <string name="admin_problem_network">Couldn’t reach the server. Try again.</string>
+    <string name="admin_problem_refused">The server refused that. Your account may not be allowed to do it.</string>
+    <string name="admin_problem_changed">What’s playing there has changed, so nothing was sent. The list has been refreshed.</string>
+    <string name="admin_problem_gone">That’s no longer on the server. The list has been refreshed.</string>
+    <string name="admin_problem_server">The server reported a problem. Try again later.</string>
+    <string name="admin_problem_connection">The connection to the server needs checking. Open Servers and accounts.</string>
+    <string name="admin_problem_other">Something went wrong. Try again.</string>
+    <string name="admin_refresh_failed">Couldn’t refresh just now. Showing what the server said earlier.</string>
+    <string name="admin_this_phone">This phone</string>
+    <string name="admin_you">You</string>
+    <string name="admin_unnamed_user">Unnamed user</string>
+    <string name="admin_unnamed_device">Unnamed device</string>
+    <string name="admin_untitled">Untitled</string>
+
+    <!-- Times -->
+    <string name="admin_time_just_now">Just now</string>
+    <string name="admin_time_minutes">%1$s min ago</string>
+    <string name="admin_time_today">Today at %1$s</string>
+    <string name="admin_time_yesterday">Yesterday at %1$s</string>
+    <string name="admin_never">Never</string>
+
+    <!-- Dialogs (Cancel is action_cancel) -->
+    <string name="admin_type_to_confirm">Type %1$s to confirm</string>
+    <string name="admin_type_exactly">Type the word exactly as shown.</string>
+    <string name="admin_message_label">Message</string>
+    <string name="admin_message_counter">%1$s of 200 characters</string>
+    <string name="admin_message_send">Send</string>
+
+    <!-- Plain words used by AdminText (Task 5); their screens come in Tasks 7, 8 and 10 -->
+    <string name="admin_session_episode">%1$s · S%2$s E%3$s · %4$s</string>
+    <string name="admin_session_episode_spoken">%1$s, season %2$s, episode %3$s, %4$s</string>
+    <string name="admin_session_device">%1$s · %2$s %3$s</string>
+    <string name="admin_session_device_no_version">%1$s · %2$s</string>
+    <string name="admin_session_progress">%1$s of %2$s</string>
+    <string name="admin_method_direct_play">Playing the original file.</string>
+    <string name="admin_method_direct_stream">Playing the original video. The server is repackaging it.</string>
+    <string name="admin_convert_video">The server is converting the video</string>
+    <string name="admin_convert_audio_only">The server is converting the sound only</string>
+    <string name="admin_convert_sentence">%1$s %2$s</string>
+    <string name="admin_convert_no_reason">%1$s.</string>
+    <string name="admin_reason_video_format">because the device can’t play its video format.</string>
+    <string name="admin_reason_audio_format">because the device can’t play its sound format.</string>
+    <string name="admin_reason_file_type">because the device can’t open its file type.</string>
+    <string name="admin_reason_subtitles">so it can draw the subtitles into the picture.</string>
+    <string name="admin_reason_bitrate">to fit a quality or bandwidth limit.</string>
+    <string name="admin_reason_hdr">so its HDR colours look right on that screen.</string>
+    <string name="admin_reason_audio_channels">to mix the sound down for the device.</string>
+    <string name="admin_reason_direct_play_failed">because the device couldn’t play the original.</string>
+    <string name="admin_kind_films">Films</string>
+    <string name="admin_kind_tv">TV</string>
+    <string name="admin_kind_music">Music</string>
+    <string name="admin_kind_collections">Collections</string>
+    <string name="admin_kind_mixed">Films and TV</string>
+    <string name="admin_kind_other">Other</string>
+    <string name="admin_outcome_completed">Completed</string>
+    <string name="admin_outcome_failed">Failed</string>
+    <string name="admin_outcome_cancelled">Stopped</string>
+    <string name="admin_outcome_aborted">Interrupted</string>
+    <string name="admin_severity_information">Information</string>
+    <string name="admin_severity_warning">Warning</string>
+    <string name="admin_severity_error">Error</string>
+    <string name="admin_severity_critical">Critical</string>
+    <!-- Who is watching -->
+    <string name="admin_watching_heading">Who is watching</string>
+    <string name="admin_watching_none">Nobody is watching anything right now.</string>
+    <string name="admin_watching_idle_heading">Connected, not playing</string>
+    <string name="admin_last_active">Last active %1$s</string>
+    <string name="admin_session_paused">Paused</string>
+    <string name="admin_session_message">Message</string>
+    <string name="admin_session_message_cd">Send a message to %1$s on %2$s</string>
+    <string name="admin_session_pause">Pause</string>
+    <string name="admin_session_pause_cd">Pause %1$s’s playback on %2$s</string>
+    <string name="admin_session_stop">Stop</string>
+    <string name="admin_session_stop_cd">Stop %1$s’s playback on %2$s</string>
+    <string name="admin_confirm_pause_title">Pause %1$s’s playback?</string>
+    <string name="admin_confirm_pause_body">%1$s on %2$s will pause. They can carry on when they like.</string>
+    <string name="admin_confirm_pause_action">Pause</string>
+    <string name="admin_confirm_stop_title">Stop %1$s’s playback?</string>
+    <string name="admin_confirm_stop_body">%1$s on %2$s will stop.</string>
+    <string name="admin_confirm_stop_action">Stop playback</string>
+    <string name="admin_message_title">Send a message to %1$s</string>
+    <string name="admin_message_body">It shows on %1$s for 10 seconds.</string>
+    <string name="admin_message_header">Message from %1$s</string>
+    <string name="admin_message_sent">Message sent to %1$s.</string>
+    <string name="admin_paused_done">Paused %1$s’s playback.</string>
+    <string name="admin_stopped_done">Stopped %1$s’s playback.</string>
+    <!-- Libraries -->
+    <string name="admin_libraries_title">Libraries</string>
+    <string name="admin_scan_all">Scan all libraries</string>
+    <string name="admin_scan_all_running">Scanning all libraries: %1$s%%</string>
+    <string name="admin_scan_all_running_unknown">Scanning all libraries…</string>
+    <string name="admin_scan">Scan</string>
+    <string name="admin_scan_cd">Scan %1$s</string>
+    <string name="admin_library_scanning">Scanning: %1$s%%</string>
+    <string name="admin_library_scanning_unknown">Scanning…</string>
+    <string name="admin_library_idle">Not scanning</string>
+    <string name="admin_scan_started_all">Scan of all libraries started.</string>
+    <string name="admin_scan_started">Scan of %1$s started.</string>
+    <string name="admin_libraries_empty">This server has no libraries yet.</string>
+
+    <!-- Scheduled tasks -->
+    <string name="admin_tasks_title">Scheduled tasks</string>
+    <string name="admin_task_idle">Not running</string>
+    <string name="admin_task_running">Running: %1$s%%</string>
+    <string name="admin_task_running_unknown">Running…</string>
+    <string name="admin_task_cancelling">Stopping…</string>
+    <string name="admin_task_last">Last run %1$s: %2$s</string>
+    <string name="admin_task_never">Not run yet</string>
+    <string name="admin_task_error">The server said: %1$s</string>
+    <string name="admin_task_run">Run now</string>
+    <string name="admin_task_run_cd">Run %1$s now</string>
+    <string name="admin_task_stop">Stop</string>
+    <string name="admin_task_stop_cd">Stop %1$s</string>
+    <string name="admin_confirm_task_stop_title">Stop %1$s?</string>
+    <string name="admin_confirm_task_stop_body">The task stops part way. It runs again at its next scheduled time, or you can run it now.</string>
+    <string name="admin_confirm_task_stop_action">Stop task</string>
+    <string name="admin_task_started">%1$s started.</string>
+    <string name="admin_task_category_other">Other</string>
+    <string name="admin_tasks_empty">This server reported no scheduled tasks.</string>
+    <!-- Users -->
+    <string name="admin_users_title">Users</string>
+    <string name="admin_user_admin">Administrator</string>
+    <string name="admin_user_disabled">Disabled</string>
+    <string name="admin_user_last_seen">Last seen %1$s</string>
+    <string name="admin_user_never_seen">Not seen yet</string>
+    <string name="admin_user_downloads_yes">Can download: yes</string>
+    <string name="admin_user_downloads_no">Can download: no</string>
+    <string name="admin_user_libraries_all">Libraries: all</string>
+    <string name="admin_user_libraries_none">Libraries: none</string>
+    <string name="admin_user_libraries_some">Libraries: %1$s</string>
+    <string name="admin_user_libraries_more">%1$s and %2$s more</string>
+    <string name="admin_user_libraries_count">Libraries: %1$s chosen</string>
+    <string name="admin_user_policy_unknown">This account’s settings couldn’t be read.</string>
+    <string name="admin_user_disable">Disable account</string>
+    <string name="admin_user_disable_cd">Disable %1$s’s account</string>
+    <string name="admin_user_enable">Enable account</string>
+    <string name="admin_user_enable_cd">Enable %1$s’s account</string>
+    <string name="admin_user_you_note">This is you. You can’t disable your own account here.</string>
+    <string name="admin_confirm_disable_title">Disable %1$s’s account?</string>
+    <string name="admin_confirm_disable_body">%1$s won’t be able to sign in or watch anything until you enable the account again.</string>
+    <string name="admin_confirm_disable_admin">%1$s is an administrator.</string>
+    <string name="admin_confirm_enable_title">Enable %1$s’s account?</string>
+    <string name="admin_confirm_enable_body">%1$s will be able to sign in and watch again.</string>
+    <string name="admin_user_disabled_done">%1$s’s account is disabled.</string>
+    <string name="admin_user_enabled_done">%1$s’s account is enabled.</string>
+    <string name="admin_users_note_dashboard">Resetting passwords and adding users are done in the full dashboard.</string>
+    <!-- Activity -->
+    <string name="admin_activity_title">Activity</string>
+    <string name="admin_activity_row_spoken">%1$s. %2$s. %3$s</string>
+    <string name="admin_activity_more">Show older entries</string>
+    <string name="admin_activity_limit">That’s as far back as Shoalwatch shows. The full log is in the dashboard.</string>
+    <string name="admin_activity_end">That’s everything in the log.</string>
+    <string name="admin_activity_empty">Nothing in the activity log yet.</string>
+
+    <!-- Devices -->
+    <string name="admin_devices_title">Devices</string>
+    <string name="admin_device_users">Signed in as %1$s</string>
+    <string name="admin_device_app">%1$s %2$s</string>
+    <string name="admin_device_last_seen">Last seen %1$s</string>
+    <string name="admin_device_remove">Remove</string>
+    <string name="admin_device_remove_cd">Remove %1$s</string>
+    <string name="admin_device_this_phone_note">This phone. To sign it out, use Sign out in Servers and accounts.</string>
+    <string name="admin_device_not_removable">This device can’t be removed from here. Use the full dashboard in your browser.</string>
+    <string name="admin_confirm_device_title">Remove %1$s?</string>
+    <string name="admin_confirm_device_body">The sign-in for %1$s on this device ends, and they’ll need to sign in on it again.</string>
+    <string name="admin_confirm_device_action">Remove device</string>
+    <string name="admin_device_removed">%1$s removed.</string>
+    <string name="admin_devices_empty">No devices are signed in.</string>
+    <!-- Restart or shut down -->
+    <string name="admin_power_title">Restart or shut down</string>
+    <string name="admin_restart">Restart server</string>
+    <string name="admin_shutdown">Shut down server</string>
+    <string name="admin_confirm_restart_title">Restart %1$s?</string>
+    <string name="admin_confirm_restart_body">Everyone watching will be stopped. The server is usually back within a minute or two.</string>
+    <string name="admin_word_restart">restart</string>
+    <string name="admin_confirm_shutdown_title">Shut down %1$s?</string>
+    <string name="admin_confirm_shutdown_body">Everyone watching will be stopped, and the server won’t come back until someone starts it again on the computer it runs on. Shoalwatch can’t start it.</string>
+    <string name="admin_word_shutdown">shut down</string>
+    <string name="admin_restart_requested">Restart requested. The server is usually back within a minute or two.</string>
+    <string name="admin_shutdown_requested">Shut-down requested. The server won’t come back until it’s started again on its computer.</string>
+</resources>

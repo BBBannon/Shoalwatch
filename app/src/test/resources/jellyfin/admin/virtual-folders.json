@@ -1,0 +1,11 @@
+[
+  {"Name": "TV", "Locations": ["/srv/media/tv"], "CollectionType": "tvshows", "LibraryOptions": {"Enabled": true, "PathInfos": [{"Path": "/srv/media/tv"}]}, "ItemId": "2B9F2C3E-4D5A-6B7C-8D9E-0F1A2B3C4D5E", "PrimaryImageItemId": "2b9f2c3e4d5a6b7c8d9e0f1a2b3c4d5e", "RefreshProgress": 42.7, "RefreshStatus": "Active"},
+  {"Name": "Films", "Locations": ["/srv/media/films"], "CollectionType": "movies", "LibraryOptions": {}, "ItemId": "1a9f2c3e4d5a6b7c8d9e0f1a2b3c4d5e", "RefreshProgress": null, "RefreshStatus": "Idle"},
+  {"Name": "Music", "Locations": ["/srv/media/music"], "CollectionType": "music", "ItemId": "3c9f2c3e4d5a6b7c8d9e0f1a2b3c4d5e", "RefreshStatus": "idle"},
+  {"Name": "Music videos", "Locations": [], "CollectionType": "musicvideos", "ItemId": "4c9f2c3e4d5a6b7c8d9e0f1a2b3c4d5e"},
+  {"Name": "Collections", "Locations": [], "CollectionType": "boxsets", "ItemId": "4d9f2c3e4d5a6b7c8d9e0f1a2b3c4d5e"},
+  {"Name": "Home videos", "Locations": ["/srv/media/home"], "CollectionType": "homevideos", "ItemId": "5e9f2c3e4d5a6b7c8d9e0f1a2b3c4d5e", "RefreshStatus": "Idle"},
+  {"Name": "Books", "Locations": ["/srv/media/books"], "CollectionType": "books", "ItemId": "5f9f2c3e4d5a6b7c8d9e0f1a2b3c4d5e"},
+  {"Name": "Everything", "Locations": ["/srv/media/mixed"], "CollectionType": "mixed", "ItemId": "6f9f2c3e4d5a6b7c8d9e0f1a2b3c4d5e", "RefreshProgress": 20, "RefreshStatus": "Idle"},
+  {"Name": "No type", "Locations": [], "ItemId": "7f9f2c3e4d5a6b7c8d9e0f1a2b3c4d5e"}
+]

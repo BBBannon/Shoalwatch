@@ -3,6 +3,12 @@ package app.shoalwatch
 import android.content.Context
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ProcessLifecycleOwner
+import app.shoalwatch.data.admin.Admin
+import app.shoalwatch.data.admin.AdminAccess
+import app.shoalwatch.data.admin.AdminRights
+import app.shoalwatch.data.admin.BrowserDashboard
+import app.shoalwatch.data.admin.DashboardOpener
+import app.shoalwatch.data.admin.api.AdminGateway
 import app.shoalwatch.data.api.ServerApi
 import app.shoalwatch.data.db.AppDatabase
 import app.shoalwatch.data.images.ArtworkDiskCaches
@@ -290,4 +296,15 @@ class AppGraph(private val appContext: Context) {
     /** What ViewModels use: the same stores without access tokens. */
     val serverCatalog: ServerCatalog by lazy { StoreCatalog(serverStore) }
     val authenticator: Authenticator by lazy { AuthenticatorImpl(authRepository) }
+
+    // ---- Server admin (Milestone 6, data/admin). Live only: nothing here is cached, saved or kept for another profile.
+    private val adminGateway: AdminGateway by lazy { AdminGateway(serverApi, deviceIdentity.deviceId) { s -> adminRights.allows(s) } }
+    /** What admin screens call: every request gated on [adminRights] (see "Server admin" in docs/ARCHITECTURE.md). */
+    val admin: Admin get() = adminGateway
+    /** Whether the active account is a server-confirmed administrator; forgets on every active-session change. */
+    val adminRights: AdminRights by lazy {
+        AdminAccess(adminGateway::me).also { a -> appScope.launch { serverCatalog.activeSession().collect(a::sessionChanged) } }
+    }
+    /** Opens the server's own web dashboard in the browser, on the verified address, with no sign-in passed. */
+    val browserDashboard: DashboardOpener by lazy { BrowserDashboard(addressSelector) }
 }
