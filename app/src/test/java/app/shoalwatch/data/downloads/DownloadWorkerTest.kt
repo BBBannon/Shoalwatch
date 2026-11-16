@@ -50,7 +50,7 @@ class DownloadWorkerTest {
         return false
     }
 
-    private fun worker(): DownloadWorker = TestListenableWorkerBuilder<DownloadWorker>(context).setWorkerFactory(ShoalwatchWorkerFactory { parts() })
+    private fun worker(): DownloadWorker = TestListenableWorkerBuilder<DownloadWorker>(context).setWorkerFactory(ShoalwatchWorkerFactory({ parts() }, { error("not the sync job") }))
         .setForegroundUpdater(recordingUpdater).build()
 
     private val manager get() = context.getSystemService(android.app.NotificationManager::class.java)
@@ -152,11 +152,11 @@ class DownloadWorkerTest {
         val recording = object : WorkerFactory() {
             override fun createWorker(appContext: Context, workerClassName: String, workerParameters: WorkerParameters): ListenableWorker? {
                 captured = workerParameters
-                return ShoalwatchWorkerFactory { parts() }.createWorker(appContext, workerClassName, workerParameters)
+                return ShoalwatchWorkerFactory({ parts() }, { error("not the sync job") }).createWorker(appContext, workerClassName, workerParameters)
             }
         }
         assertTrue(TestListenableWorkerBuilder<DownloadWorker>(context).setWorkerFactory(recording).build() is DownloadWorker)
-        assertEquals(null, ShoalwatchWorkerFactory { parts() }.createWorker(context, "com.example.Evil", captured!!))
-        assertEquals(null, ShoalwatchWorkerFactory { parts() }.createWorker(context, "androidx.work.impl.workers.DiagnosticsWorker", captured!!))
+        assertEquals(null, ShoalwatchWorkerFactory({ parts() }, { error("not the sync job") }).createWorker(context, "com.example.Evil", captured!!))
+        assertEquals(null, ShoalwatchWorkerFactory({ parts() }, { error("not the sync job") }).createWorker(context, "androidx.work.impl.workers.DiagnosticsWorker", captured!!))
     }
 }

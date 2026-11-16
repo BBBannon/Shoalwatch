@@ -43,6 +43,13 @@ import app.shoalwatch.data.playback.LocalPlaybackReports
 import app.shoalwatch.data.playback.RoutedPlaybackReports
 import app.shoalwatch.data.playback.SavedFirstPlaybackGateway
 import app.shoalwatch.data.sync.OfflinePlays
+import app.shoalwatch.data.sync.OnlineEvents
+import app.shoalwatch.data.sync.OutboxStore
+import app.shoalwatch.data.sync.SyncLanding
+import app.shoalwatch.data.sync.SyncScheduler
+import app.shoalwatch.data.sync.SyncSender
+import app.shoalwatch.data.sync.api.SyncGateway
+import app.shoalwatch.data.sync.api.SyncGatewayImpl
 import app.shoalwatch.data.downloads.api.DownloadGateway
 import app.shoalwatch.data.downloads.api.DownloadGatewayImpl
 import app.shoalwatch.data.playback.engine.SavedMediaProbe
@@ -120,7 +127,7 @@ class AppGraph(private val appContext: Context) {
             libraryRepository.forget(server, user); artworkEviction.onAccountGone(server)
             downloadHousekeeping.onAccountGone(server, user) // the ownership rule; a 401 keeps the account row, so nothing goes
         },
-        onAccountSignedIn = { server, user -> libraryRepository.forget(server, user) },
+        onAccountSignedIn = { server, user -> libraryRepository.forget(server, user); syncScheduler.signedIn(server, user) },
     ) }
     val httpClientFactory: HttpClientFactory by lazy { HttpClientFactory(appContext) }
     val deviceIdentity: DeviceIdentity by lazy { DeviceIdentity.load(appContext) }
@@ -296,6 +303,24 @@ class AppGraph(private val appContext: Context) {
     /** What ViewModels use: the same stores without access tokens. */
     val serverCatalog: ServerCatalog by lazy { StoreCatalog(serverStore) }
     val authenticator: Authenticator by lazy { AuthenticatorImpl(authRepository) }
+
+    // ---- Sync-back (Milestone 5, data/sync): see "Sync outbox" in docs/ARCHITECTURE.md.
+    internal val outboxStore: OutboxStore by lazy { OutboxStore(database, System::currentTimeMillis) }
+    internal val syncGateway: SyncGateway by lazy { SyncGatewayImpl(serverApi, libraryGateway) }
+    /** Until the tidy-up actions queue rows (Task 7), a landed row simply goes. */
+    private val syncLanding: SyncLanding by lazy {
+        object : SyncLanding {
+            override suspend fun confirmed(s: Session, seq: Long) { outboxStore.take(seq) }
+            override suspend fun overruled(s: Session, seq: Long) { outboxStore.take(seq) }
+        }
+    }
+    /** Sends each profile's rows in order, as that profile; what the sync job awaits (`ShoalwatchWorkerFactory`). */
+    internal val syncSender: SyncSender by lazy {
+        SyncSender(outboxStore, syncGateway, syncLanding, { s -> serverStore.cachedToken(s.serverId, s.userId) != null }, { serverStore.awaitWarmed() }, appScope)
+    }
+    internal val onlineEvents: OnlineEvents by lazy { OnlineEvents(addressSelector, outboxStore.serversWithWork(), appScope) }
+    /** When sending happens: after each change, at start (`ShoalwatchApp`), after a sign-in, on reconnection, and by the `shoalwatch-sync` job. */
+    val syncScheduler: SyncScheduler by lazy { SyncScheduler({ WorkManager.getInstance(appContext) }, syncSender, outboxStore, onlineEvents, appScope) }
 
     // ---- Server admin (Milestone 6, data/admin). Live only: nothing here is cached, saved or kept for another profile.
     private val adminGateway: AdminGateway by lazy { AdminGateway(serverApi, deviceIdentity.deviceId) { s -> adminRights.allows(s) } }
