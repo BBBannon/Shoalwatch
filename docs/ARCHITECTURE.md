@@ -45,6 +45,7 @@ app.shoalwatch
 │   │   │            DownloadSettingsEntity, OfflinePlayEntity, ReleasedEpisodeEntity, ProfileDownloadSettingsEntity, AutoNextRequestEntity, Converters, DownloadDao, OfflineLibraryDao (+ OfflineRow, SeriesSummaryRow), OfflinePlayDao,
 │   │   │            DownloadStore (+ DownloadKey, RemoveOutcome, LibraryWriteLock); see "Download tables" under "Library cache"
 │   │   ├── playback/ TrackChoiceEntity, TrackChoiceDao (Room v3, see "Track choices" under "Library cache")
+│   │   ├── sync/    OutboxEntity, SyncMarkEntity, SyncStateEntity, SyncConverters (Room v5), OutboxDao (+ OutboxRow, OutboxCounts, OutboxAccount); see "Sync outbox"
 │   │   └── library/ the library cache: ItemEntity, UserDataEntity, ViewEntity, ListEntryEntity, ListStateEntity, ItemKindConverter, ItemRow (joined read), LibraryMappers,
 │   │                ItemDao, ListDao, ViewDao, LibraryMaintenanceDao, LibraryStore (writes that span tables); see "Library cache"
 │   ├── servers/     Server (+ ServerSummary), Account, Session, JellyfinId, ServerStore, ServerNet (+ ServerNetDraft), DeviceIdentity, JellyfinGateway(+Impl),
@@ -78,7 +79,7 @@ app.shoalwatch
 │   │                DownloadScheduler, DownloadNotifications, DownloadHousekeeping (removal rules, reconfirm), SharingRecheck (when the re-ask runs),
 │   │                Downloads (the seam screens use) + DownloadRepository; api/ DownloadDtos, DownloadGateway (+ DownloadFacts, DownloadGatewayImpl);
 │   │                see "Downloads (`data/downloads`)"
-│   ├── sync/        OfflinePlays (the `offline_plays` record Milestone 5's outbox sends; see "Offline playback"), SyncModels (`ChangeKind`)
+│   ├── sync/        OfflinePlays (the `offline_plays` record Milestone 5's outbox sends; see "Offline playback"), SyncModels (`ChangeKind`, `Change`, `SyncStatus`, `DrainResult`, `ServerUserData`, `UserDataUpdate`), OutboxStore (see "Sync outbox")
 └── ui/          theme, nav, components, one package per screen group (see "UI" below); ui/downloads: the Downloads tab, the offline series screen,
                  the sheet, the buttons and settings, and Removal (what a Delete asks and removes), all through the `Downloads` seam
 ```
@@ -634,6 +635,22 @@ The on-phone copy of what the server told us, and the only thing browsing screen
 **What screens must do:** catch `AppError` from each call and show its `userMessage` (a rolled-back change reverts on screen by itself, because the screen observes Room); a list filtered by favourites needs `Library.refresh` to show a favourite change; an action completes even if the calling screen has gone, so a screen never needs to retry or clean up.
 
 Tests: `PlaystateResumeTest`, `PlaystatePlayedTest`, `PlaystateSeriesTest`, `PlaystateConcurrencyTest`, `PlaystateRestoreTest` (order, shared badges, revoked mid-action), `PlaystateRefreshRaceTest`, `PlaystateStalenessTest` (the rule, ordering, acknowledgement), `PlaystateStampTest`, `PlaystateCoalesceTest`, `PlaystateSweepTest`, `LocalChangeLogTest`, `SourceShapeTest` (no main file over 400 lines or 45% blank) (fake gateway, real in-memory Room through the real `LibraryRepository`, injected clock).
+
+## Sync outbox (`data/sync`: `OutboxStore`)
+
+SPEC §3.2: a profile's watched-state changes are kept on the phone until the server confirms them, item by item, and are sent in order, once, and only as that profile. Milestone 5 builds this in layers; the scheduler, the worker and the move of the tidy-up actions onto the outbox come in later tasks.
+
+**`OutboxStore`** (`data/sync`, over `OutboxDao` in `data/db/sync`) is the only writer of `sync_outbox` and `sync_marks`.
+
+- `enqueue(session, change, marks, refreshKeys)` must run inside the caller's transaction, so the local change and its row commit (or roll back) together. It refuses (`IllegalArgumentException`, fixed words) an id that is not a normalised `JellyfinId`, an empty list key, a refresh key that is empty or holds a comma, and refresh keys over 2,000 characters joined.
+- **Coalescing:** a new PLAYED, FAVOURITE or POSITION replaces any row of the same (profile, item, kind) that is still there (unsent, or in flight), marks and all, and takes a new `seq` at the end. PLAY is never coalesced: each is a separate watch. A row replaced while in flight is simply not found by its later `take`, which returns null: the newer row carries it.
+- **Order (`head`)**, reading a profile's rows in `seq` order, 50 at a time: a row deferred by a 5xx that is not yet stuck and not yet due holds back the whole profile (null). A **stuck** row (`serverErrors >= 10`) not yet due is passed over, and so is every later row for the same item, so one item the server keeps refusing cannot block the rest and nothing for that item overtakes it. A stuck row is still sent when it is due.
+- `markSending` is committed before a request leaves: `sentOnce = 1`, `attempts + 1`, and for PLAY the absolute count, kept if already set (`COALESCE`). `deferAfterServerError`: `serverErrors + 1`, `notBefore = now + min(60 s × 2^(serverErrors − 1), 6 h)`.
+- `take(seq)` deletes the row and its marks in one transaction and returns `Landed`: the row's item, kinds, date, `refreshKeys`, and `unmarked`, the items it marked (plainly or as having left a list) that no other row of that profile still marks. `hasMark` and `leftList` answer the same per profile.
+- A row whose `kind` this version cannot read is deleted on read, with its marks, and logged in fixed words.
+- `status(session, signedIn)`: waiting rows, stuck rows, `needsSignIn` (rows waiting and not signed in), `lastSyncedAt` from `sync_state`. It and `serversWithWork` are guarded like the store's reads (`ReadHealth`): a failed read emits `SyncStatus.NONE` (or no servers) and never throws. `touchSynced` writes `sync_state` only for an account that still exists.
+
+Tests: `OutboxStoreTest`, `OutboxOrderTest` (in-memory Room).
 
 ## Download files (`DownloadPaths`, `Volumes`, `DownloadPrefs`)
 

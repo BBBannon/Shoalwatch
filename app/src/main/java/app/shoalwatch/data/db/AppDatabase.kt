@@ -33,6 +33,7 @@ import app.shoalwatch.data.db.library.ViewEntity
 import app.shoalwatch.data.db.library.VisibleItemEntity
 import app.shoalwatch.data.db.playback.TrackChoiceDao
 import app.shoalwatch.data.db.playback.TrackChoiceEntity
+import app.shoalwatch.data.db.sync.OutboxDao
 import app.shoalwatch.data.db.sync.OutboxEntity
 import app.shoalwatch.data.db.sync.SyncConverters
 import app.shoalwatch.data.db.sync.SyncMarkEntity
@@ -67,6 +68,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun downloadDao(): DownloadDao
     abstract fun offlineLibraryDao(): OfflineLibraryDao
     abstract fun offlinePlayDao(): OfflinePlayDao
+    abstract fun outboxDao(): OutboxDao
 
     companion object {
         const val FILE_NAME = "shoalwatch.db"
