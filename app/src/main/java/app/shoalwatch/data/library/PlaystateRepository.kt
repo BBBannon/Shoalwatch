@@ -76,7 +76,8 @@ class PlaystateRepository internal constructor(
     /**
      * "Watched — delete download" pressed while the saved copy plays (Tasks 11-12 review I1): watched on this phone only, nothing
      * queued, because the coming LOCAL stop's PLAY carries the watch to the server (a PLAYED tick as well would count it twice).
-     * Its pending marker is kept (no refresh is asked for), so the server's older copy does not undo the tick before the stop.
+     * Its pending marker is kept (no refresh is asked for), so the server's older copy does not undo the tick before the stop; the
+     * queue's idle clean-up spares it too, because the caller saved the offline play first (`ItemDao.NO_OFFLINE_PLAY`).
      */
     override suspend fun markWatchedHere(s: Session, itemId: String) =
         act(s, itemId, kick = false, keepPending = true) { item -> local.played(s, item, true) to null }

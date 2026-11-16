@@ -84,7 +84,8 @@ class HousekeepingRepository internal constructor(
         // Nothing changes, not even watched, for a download this profile may not see (the same answer as none at all).
         if (!releases.choice(s, itemId, signedIn(s)).canRelease) return@action ReleaseOutcome.NOT_YOURS
         // In the player, the stop's PLAY carries this watch to the server; a PLAYED tick as well would count it twice (review I1).
-        if (inPlayer(s, itemId)) markHere(s, itemId) else playstate.setPlayed(s, itemId, true)
+        val here = inPlayer(s, itemId)
+        if (here) markHere(s, itemId) else playstate.setPlayed(s, itemId, true)
         if (together) {
             for (other in releases.sharers(s, itemId, signedIn(s))) {
                 try {
@@ -98,7 +99,7 @@ class HousekeepingRepository internal constructor(
         }
         remember(s, itemId)
         val outcome = apply(releases.release(s, itemId, watchedBy = setOf(s.userId))) // the rule is told directly that [s] watched
-        onWatched(s, itemId)
+        if (!here) onWatched(s, itemId) // in the player, the stop's [onLocalFinished] runs it, once (Tasks 13-14 review M2)
         outcome
     }
 

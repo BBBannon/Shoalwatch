@@ -35,7 +35,8 @@ class PressThenStopCountTest : ReleaseTestBase() {
         plays = OfflinePlays(db.offlinePlayDao(), { now }, outbox, db.itemDao())
         // As the app wires it: the player's copy is open while it plays, and the press knows it (HousekeepingParts).
         pressing = HousekeepingRepository(
-            releases, db.housekeepingDao(), playstate, ReleasedFiles(paths, playing, appScope), { _, _ -> }, { true }, appScope,
+            releases, db.housekeepingDao(), playstate, ReleasedFiles(paths, playing, appScope),
+            { s, id -> synchronized(watchedCalls) { watchedCalls += s to id } }, { true }, appScope,
             volumes = fake.volumes, remove = { _, _ -> error("not used") },
             inPlayer = { s, id -> playing.watchedWhileOpen(s.userId, DownloadKey(s.serverId, id)) },
             markHere = { s, id -> plays.watched(s, id); playstate.markWatchedHere(s, id) },
@@ -92,6 +93,32 @@ class PressThenStopCountTest : ReleaseTestBase() {
         drain()
         assertTrue(server.copy(a, film.id).played)
         assertEquals(1, server.copy(a, film.id).playCount)
+    }
+
+    /** Tasks 13-14 review M2: auto-download next runs once, at the stop, not also at the press (whose refresh could hide the tick). */
+    @Test fun anInPlayerPressLeavesAutoDownloadNextToTheStop() = runBlocking {
+        seen(a, film)
+        downloaded(a, film)
+        reports.started(a, report)
+        pressing.release(a, film.id, together = false)
+        settled()
+        assertEquals("not at the press", emptyList<Pair<Any, String>>(), synchronized(watchedCalls) { watchedCalls.toList() })
+        reports.stopped(a, report, finished = true)
+        settled()
+        assertEquals("once, at the stop", listOf(a to film.id), synchronized(watchedCalls) { watchedCalls.toList() })
+    }
+
+    /** Tasks 13-14 review M2: the press's tick keeps its marker past the queue going idle, so a refresh before the stop cannot undo it. */
+    @Test fun thePressTickOutlastsTheIdleQueueAndARefreshBeforeTheStop() = runBlocking {
+        seen(a, film)
+        downloaded(a, film)
+        reports.started(a, report)
+        pressing.release(a, film.id, together = false)
+        settled() // the profile's queue has gone idle: its leftover clean-up has run
+        assertEquals("the marker is kept", 1, count("user_data", "itemId = '${film.id}' AND pendingSyncAt IS NOT NULL"))
+        gateway.itemFor = { row(film, app.shoalwatch.data.library.UserData(false, 0, null, 0, false, null, null)) } // the server's older copy
+        repo.refresh(a, app.shoalwatch.data.library.RefreshTarget.Item(film.id))
+        assertTrue("the refresh did not undo the tick", playedHere(a, film))
     }
 
     @Test fun aReleaseFromOutsideThePlayerStillQueuesTheTick() {
