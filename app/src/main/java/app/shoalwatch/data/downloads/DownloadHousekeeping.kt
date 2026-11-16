@@ -107,7 +107,7 @@ internal class DownloadHousekeeping(
                     val key = DownloadKey(s.serverId, id)
                     when (answers[id]?.canDownload) {
                         true -> store.confirm(key, s.userId)
-                        false -> store.refused(s, id)?.let { gone -> queue.forget(gone); DownloadRepository.deleteFiles(paths, gone) }
+                        false -> store.refused(s, id)?.let { gone -> queue.forget(gone); DownloadRepository.deleteFiles(paths, gone); unpinnedArtwork() }
                         null -> store.unconfirm(key, s.userId)
                     }
                 }
@@ -120,12 +120,7 @@ internal class DownloadHousekeeping(
     }
 
     /** Pictures whose item no download pins any more: row and file. */
-    private suspend fun unpinnedArtwork() {
-        for (art in store.unpinnedArtwork()) {
-            store.unpinArtwork(art)
-            runCatching { paths.deleteInside(paths.artworkFile(art.serverId, art.itemId, art.slot, art.tag)) }
-        }
-    }
+    private suspend fun unpinnedArtwork() = DownloadRepository.dropUnpinnedArtwork(store, paths)
 
     private suspend fun safely(what: String, block: suspend () -> Unit) = try {
         block()

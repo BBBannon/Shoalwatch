@@ -82,6 +82,19 @@ class DownloadRepositoryTest : DownloadHousekeepingTestBase() {
         assertEquals("deleted: its remembered conversion is forgotten (review I-4)", listOf(DownloadKey(S1, f1.id)), forgotten)
     }
 
+    /** Final review L-4: deleting a download takes the pictures only it pinned at once, not at the next start. */
+    @Test fun deletingADownloadDeletesThePicturesOnlyItPinned() = runBlocking {
+        queued(a, f1, f2)
+        db.downloadDao().pinArtwork(S1, f1.id, ArtworkSlot.PRIMARY, "tag1", 3, 0)
+        db.downloadDao().pinArtwork(S1, f2.id, ArtworkSlot.PRIMARY, "tag1", 3, 0)
+        val art = paths.artworkFile(S1, f1.id, ArtworkSlot.PRIMARY, "tag1").apply { parentFile!!.mkdirs(); writeBytes(ByteArray(3)) }
+        val kept = paths.artworkFile(S1, f2.id, ArtworkSlot.PRIMARY, "tag1").apply { parentFile!!.mkdirs(); writeBytes(ByteArray(3)) }
+        assertEquals(RemoveOutcome.Deleted(DownloadKey(S1, f1.id)), repo.remove(a, f1.id))
+        assertEquals(emptyMap<ArtworkSlot, String>(), db.downloadDao().pinnedArtwork(S1, f1.id))
+        assertFalse(art.exists())
+        assertTrue("still pinned by its own download", kept.exists())
+    }
+
     @Test fun anOwnerRemovingASeasonDeletesEachOfItsEpisodesFoldersAndNothingElse() = runBlocking {
         val e1 = ep("e1", 1, 1); val e2 = ep("e2", 1, 2); val other = ep("e3", 2, 1)
         seen(a, series, season1, e1, e2, other)
