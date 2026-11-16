@@ -56,6 +56,20 @@ class OnlineEventsTest {
         assertEquals(listOf("one", "one"), got)
     }
 
+    /** Carried from review M4: a re-probe (Checking, then Online) is not after Offline; Offline on the way is, once. */
+    @Test fun aReconnectionSaysWhetherTheServerWasOfflineSinceItWasLastOnline() = runTest {
+        state("one").value = home
+        val events = OnlineEvents(connections, servers, backgroundScope)
+        val got = mutableListOf<OnlineEvents.Reconnection>()
+        backgroundScope.launch { events.reconnections.collect { got += it } }
+        runCurrent()
+        for (next in listOf(Connection.Checking(home), home, Connection.Checking(home), Connection.Offline(), Connection.Checking(), home, away)) {
+            state("one").value = next
+            runCurrent()
+        }
+        assertEquals(listOf(false, true, false).map { OnlineEvents.Reconnection("one", it) }, got)
+    }
+
     @Test fun onlineOnAnotherAddressEmitsOnce() = runTest {
         state("one").value = home
         val got = collected()

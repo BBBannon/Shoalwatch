@@ -49,9 +49,10 @@ class SyncScheduler internal constructor(
      */
     fun start(): Job {
         scope.launch {
-            online.cameOnline.collect { serverId ->
-                // After a timeout the re-probe's Online is no reconnection: held, with a back-off (a change, start and sign-in never are).
-                if (!sender.holdsReconnection(serverId)) withWork { it.serverId == serverId }.forEach(sender::kick)
+            online.reconnections.collect { (serverId, afterOffline) ->
+                // After a timeout the re-probe's Online is no reconnection: held, with a back-off. One after Offline is never held,
+                // nor are a change, the start-up kick and a sign-in.
+                if (afterOffline || !sender.holdsReconnection(serverId)) withWork { it.serverId == serverId }.forEach(sender::kick)
                 onlineHandled.incrementAndGet()
             }
         }

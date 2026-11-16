@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.launch
 
@@ -17,11 +18,14 @@ import kotlinx.coroutines.launch
  * watched; one that leaves it is no longer watched. Nothing runs until something collects [cameOnline].
  */
 internal class OnlineEvents(private val connections: ServerConnections, private val servers: Flow<Set<String>>, private val scope: CoroutineScope) {
+    /** One [cameOnline], with [afterOffline]: the server was seen Offline since it was last Online (a real reconnection, not a re-probe). */
+    data class Reconnection(val serverId: String, val afterOffline: Boolean)
+
     /**
-     * A server id each time its connection becomes Online after being anything else (Checking, Offline, or a different Online).
+     * Each time a server's connection becomes Online after being anything else (Checking, Offline, or a different Online).
      * The first reading of a newly watched server never emits: whoever added it (a change, or the start-up kick) already sends.
      */
-    val cameOnline: SharedFlow<String> = channelFlow {
+    val reconnections: SharedFlow<Reconnection> = channelFlow {
         val watching = HashMap<String, Job>()
         servers.collect { ids ->
             (watching.keys - ids).forEach { watching.remove(it)?.cancel() }
@@ -29,12 +33,18 @@ internal class OnlineEvents(private val connections: ServerConnections, private 
         }
     }.shareIn(scope, SharingStarted.WhileSubscribed())
 
-    private suspend fun ProducerScope<String>.watch(serverId: String) {
+    /** [reconnections] as server ids. */
+    val cameOnline: Flow<String> = reconnections.map { it.serverId }
+
+    private suspend fun ProducerScope<Reconnection>.watch(serverId: String) {
         var last: Connection? = null
+        var offline = false
         connections.connection(serverId).collect { now ->
             val before = last
             last = now
-            if (now is Connection.Online && before != null && now != before) send(serverId)
+            if (now is Connection.Offline) offline = true
+            if (now is Connection.Online && before != null && now != before) send(Reconnection(serverId, afterOffline = offline))
+            if (now is Connection.Online) offline = false
         }
     }
 }
