@@ -21,6 +21,11 @@ import app.shoalwatch.core.AppError
 import app.shoalwatch.net.fingerprintForDisplay
 import app.shoalwatch.ui.onboarding.Check
 import app.shoalwatch.ui.servers.AccountItem
+import app.shoalwatch.data.sync.SyncStatus
+import app.shoalwatch.ui.browse.PHONE
+import app.shoalwatch.ui.browse.TABLET
+import app.shoalwatch.ui.downloads.assertNoTextUnder13sp
+import app.shoalwatch.ui.downloads.syncLineNode
 import app.shoalwatch.ui.servers.Destructive
 import app.shoalwatch.ui.servers.Confirm
 import app.shoalwatch.ui.servers.EditPane
@@ -129,6 +134,38 @@ class ManagementRenderTest {
         show(fontScale = 2f) { ServersScreen(servers, serversActions) }
         assertTrue(shown("Den"))
     }
+
+    // --- the sync line under each profile (Milestone 5) -------------------------------------------------------------
+
+    private val withSync = servers.copy(
+        servers = listOf(
+            ServerItem(
+                "s1", "Den", "10.10.3", certificateChanged = false,
+                accounts = listOf(
+                    AccountItem("u1", "ben", true, SyncStatus(waiting = 2, stuck = 0, needsSignIn = false, lastSyncedAt = null)),
+                    AccountItem("u2", "amy", false, SyncStatus(waiting = 1, stuck = 1, needsSignIn = false, lastSyncedAt = System.currentTimeMillis())),
+                    AccountItem("u3", "cal", false),
+                ),
+            ),
+        ),
+    )
+
+    private fun eachProfileHasItsOwnLine(fontScale: Float) {
+        show(fontScale) { ServersScreen(withSync, serversActions) }
+        val ben = rule.onAllNodesWithText("ben").fetchSemanticsNodes().first()
+        val amy = rule.onAllNodesWithText("amy").fetchSemanticsNodes().first()
+        val benLine = syncLineNode(rule, "2 changes waiting to sync")
+        val amyLine = syncLineNode(rule, "1 change your server keeps refusing.")
+        assertTrue("ben's line is under ben", benLine.boundsInRoot.top >= ben.boundsInRoot.bottom && benLine.boundsInRoot.bottom <= amy.boundsInRoot.top)
+        assertTrue("amy's line is under amy", amyLine.boundsInRoot.top >= amy.boundsInRoot.bottom)
+        assertTrue("a profile with nothing to say has no line", rule.onAllNodes(hasText(context.getString(R.string.sync_all_sent))).fetchSemanticsNodes().isEmpty())
+        assertNoTextUnder13sp(rule)
+    }
+
+    @Test @Config(qualifiers = PHONE) fun syncLinesOnAPhone() = eachProfileHasItsOwnLine(1f)
+    @Test @Config(qualifiers = PHONE) fun syncLinesOnAPhoneAtTwiceTheFontSize() = eachProfileHasItsOwnLine(2f)
+    @Test @Config(qualifiers = TABLET) fun syncLinesOnATablet() = eachProfileHasItsOwnLine(1f)
+    @Test @Config(qualifiers = TABLET) fun syncLinesOnATabletAtTwiceTheFontSize() = eachProfileHasItsOwnLine(2f)
 
     // --- connection settings ------------------------------------------------------------------------------------
 

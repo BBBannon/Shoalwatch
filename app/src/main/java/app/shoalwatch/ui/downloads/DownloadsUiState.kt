@@ -5,6 +5,7 @@ import app.shoalwatch.data.downloads.OfflineLibrary
 import app.shoalwatch.data.downloads.OfflineSeries
 import app.shoalwatch.data.downloads.QueueStatus
 import app.shoalwatch.data.servers.Session
+import app.shoalwatch.data.sync.SyncStatus
 
 /**
  * The Downloads tab, for the active [session] only (empty and [loading] until that session's first answer). [localFailure]:
@@ -19,6 +20,8 @@ data class DownloadsUiState(
     val loading: Boolean = true,
     val localFailure: Boolean = false,
     val confirmRemove: RemoveRequest? = null,
+    /** This session's changes waiting to reach the server (the line under the top bar). */
+    val sync: SyncStatus = SyncStatus.NONE,
 ) {
     val empty: Boolean get() = !loading && !localFailure && library.inProgress.isEmpty() && library.films.isEmpty() && library.series.isEmpty()
 

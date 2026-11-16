@@ -79,7 +79,7 @@ app.shoalwatch
 │   │                DownloadScheduler, DownloadNotifications, DownloadHousekeeping (removal rules, reconfirm), SharingRecheck (when the re-ask runs), LocalPlaying (which saved copies the player holds),
 │   │                Downloads (the seam screens use) + DownloadRepository; api/ DownloadDtos, DownloadGateway (+ DownloadFacts, DownloadGatewayImpl);
 │   │                see "Downloads (`data/downloads`)"
-│   ├── sync/        OfflinePlays (the `offline_plays` record of LOCAL plays, and their recovery into the outbox at start; see "Offline playback"), SyncModels (`ChangeKind`, `Change`, `SyncStatus`, `DrainResult`, `ServerUserData`, `UserDataUpdate`), OutboxStore, ConflictRule, SyncSender (+ SyncLanding), SyncScheduler, SyncWorker, OnlineEvents, api/SyncGateway (+ SyncGatewayImpl, UpdateUserItemDataBody, SyncJson) (see "Sync outbox")
+│   ├── sync/        OfflinePlays (the `offline_plays` record of LOCAL plays, and their recovery into the outbox at start; see "Offline playback"), SyncModels (`ChangeKind`, `Change`, `SyncStatus`, `DrainResult`, `ServerUserData`, `UserDataUpdate`), OutboxStore, ConflictRule, SyncSender (+ SyncLanding), SyncScheduler, SyncWorker, OnlineEvents, Sync (+ SyncRepository: the seam screens use; see "Sync seam"), api/SyncGateway (+ SyncGatewayImpl, UpdateUserItemDataBody, SyncJson) (see "Sync outbox")
 └── ui/          theme, nav, components, one package per screen group (see "UI" below); ui/downloads: the Downloads tab, the offline series screen,
                  the sheet, the buttons and settings, and Removal (what a Delete asks and removes), all through the `Downloads` seam
 ```
@@ -699,6 +699,15 @@ No row is ever deleted for failing: only a confirmation, an overruling answer fr
 - **Sign-in:** the store hook `onAccountSignedIn` calls `signedIn(server, user)`, which kicks that profile (and schedules the job) if it has rows.
 
 Tests: `OutboxStoreTest`, `OutboxOrderTest` (in-memory Room); `ConflictRuleTest`; `SyncGatewayTest`, `SyncGatewayHostileTest` (real `ServerApi` and OkHttp, MockWebServer; a quoted `"true"` for `Played` is read as true by the shared decoder, any other string is `SERVER_ERROR`); `SyncSenderTest`, `SyncSenderFailureTest` (`FakeSyncGateway`, real `OutboxStore`); `SyncIsolationTest` (two accounts on one server, real `ServerApi`: every request carries its row's own token and `userId`, and none of a removed account's); `SyncSchedulerTest`, `ClosedAfterTickTest` (`WorkManagerTestInitHelper`, `SynchronousExecutor`); `SyncWorkerTest` (`TestListenableWorkerBuilder` through `ShoalwatchWorkerFactory`); `OnlineEventsTest` (virtual time).
+
+### Sync seam (`Sync`, `SyncRepository`; the sync line)
+
+What screens use; they never name the outbox or the sender. Every read is for one `Session`, and nothing of one profile is ever read for another.
+- **`status(s)`**: `OutboxStore.status` for that profile, with `needsSignIn` true when it has rows and its token is not loaded (`ServerStore.usableAccounts`, the same set the lists and `active()` use). Never throws: a failed read emits `SyncStatus.NONE`.
+- **`waiting(s)`**: the count; 0 when the outbox cannot be read (a closed database's own cancellation counts as a failed read; a real cancellation propagates).
+- **`sendNow(s, timeoutMs)`**: kicks (or joins) the profile's one drain and waits for it at most `timeoutMs`, then returns what is still waiting. Only the wait ends at the timeout: the drain runs on in the app scope, so a request in flight is not cut off. Never throws.
+
+**The sync line** (`SyncText`, pure; `SyncStatusLine`): under the Downloads tab's top bar (the active session, the first item of its list, so at twice the text size it scrolls away) and under each profile on Servers and accounts. In order: needs a sign-in ("Sign in again to send 3 changes."), changes the server keeps refusing (`stuck`, with any others waiting on the detail line), changes waiting ("3 changes waiting to sync", "They're sent when your server can be reached."), then "All your changes are on your server." Nothing is shown when nothing waits and the profile has never synced. "Last synced at 14:05" today, else "Last synced on 12 November", in the phone's time zone, `Locale.UK` with digits 0-9 (counts are passed as text, so they are 0-9 too). Plain text (14sp and up) that wraps, read by TalkBack as one element; it is a polite live region only in the frame its main words change, so a new "Last synced" time alone is not announced.
 
 ## Download files (`DownloadPaths`, `Volumes`, `DownloadPrefs`)
 

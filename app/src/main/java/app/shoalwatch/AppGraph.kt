@@ -47,6 +47,8 @@ import app.shoalwatch.data.sync.OfflinePlays
 import app.shoalwatch.data.sync.OnlineEvents
 import app.shoalwatch.data.sync.OutboxStore
 import app.shoalwatch.data.sync.SyncLanding
+import app.shoalwatch.data.sync.Sync
+import app.shoalwatch.data.sync.SyncRepository
 import app.shoalwatch.data.sync.SyncScheduler
 import app.shoalwatch.data.sync.SyncSender
 import app.shoalwatch.data.sync.api.SyncGateway
@@ -322,6 +324,8 @@ class AppGraph(private val appContext: Context) {
     internal val onlineEvents: OnlineEvents by lazy { OnlineEvents(addressSelector, outboxStore.serversWithWork(), appScope) }
     /** When sending happens: after each change, at start (`ShoalwatchApp`), after a sign-in, on reconnection, and by the `shoalwatch-sync` job. */
     val syncScheduler: SyncScheduler by lazy { SyncScheduler({ WorkManager.getInstance(appContext) }, syncSender, outboxStore, onlineEvents, appScope) }
+    /** What screens read and ask (see "Sync seam" in docs/ARCHITECTURE.md): each profile's waiting changes, and "send them now". */
+    val sync: Sync by lazy { SyncRepository(outboxStore, syncSender, serverStore.usableAccounts) }
 
     /** App start: offline plays no outbox row covers are queued first (never a PLAY), then the scheduler starts. */
     fun startSync(): Job = appScope.launch {

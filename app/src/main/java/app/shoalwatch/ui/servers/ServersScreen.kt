@@ -42,6 +42,7 @@ import app.shoalwatch.ui.components.Loading
 import app.shoalwatch.ui.components.NoticeCard
 import app.shoalwatch.ui.components.PrimaryButton
 import app.shoalwatch.ui.components.Tone
+import app.shoalwatch.ui.downloads.SyncStatusLine
 
 class ServersActions(
     val onBack: () -> Unit,
@@ -168,4 +169,6 @@ private fun AccountRow(serverId: String, account: AccountItem, actions: ServersA
             Text(stringResource(R.string.sign_out))
         }
     }
+    // Its own element under the row, lined up with the name (icon 24dp + gap 12dp).
+    SyncStatusLine(account.sync, System.currentTimeMillis(), Modifier.fillMaxWidth().padding(start = 36.dp, bottom = 8.dp))
 }

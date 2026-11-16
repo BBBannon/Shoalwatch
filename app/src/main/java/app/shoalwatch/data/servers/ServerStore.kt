@@ -104,6 +104,8 @@ class ServerStore(
      * consistently, exactly as a request for it would be refused (`NOT_SIGNED_IN`). Changed under [tokenLock].
      */
     private val usable = MutableStateFlow<Set<Pair<String, String>>>(emptySet())
+    /** Accounts whose token is loaded now (what can send). Not secret. */
+    val usableAccounts: StateFlow<Set<Pair<String, String>>> = usable
 
     /**
      * The live token lookup handed to `ServerNet.authenticated`: no database or decryption per request. Null

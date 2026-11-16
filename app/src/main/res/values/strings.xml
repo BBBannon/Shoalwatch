@@ -600,4 +600,22 @@
     <string name="dl_signout_downloads">Downloads that only this profile kept are deleted from this phone.</string>
     <string name="dl_signout_shared">Shared downloads stay for the other profiles that can see them.</string>
     <string name="dl_remove_downloads">Its downloads are deleted from this phone too.</string>
+
+    <!-- Sync-back (Milestone 5): the line under Downloads' top bar and under each profile in Servers -->
+    <string name="sync_all_sent">All your changes are on your server.</string>
+    <string name="sync_last_at">Last synced at %1$s</string>
+    <string name="sync_last_on">Last synced on %1$s</string>
+    <plurals name="sync_waiting">
+        <item quantity="one">%1$s change waiting to sync</item>
+        <item quantity="other">%1$s changes waiting to sync</item>
+    </plurals>
+    <string name="sync_waiting_detail">They\'re sent when your server can be reached.</string>
+    <plurals name="sync_sign_in">
+        <item quantity="one">Sign in again to send %1$s change.</item>
+        <item quantity="other">Sign in again to send %1$s changes.</item>
+    </plurals>
+    <plurals name="sync_stuck">
+        <item quantity="one">%1$s change your server keeps refusing. Shoalwatch will try again later.</item>
+        <item quantity="other">%1$s changes your server keeps refusing. Shoalwatch will try again later.</item>
+    </plurals>
 </resources>

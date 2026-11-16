@@ -68,6 +68,8 @@ fun DownloadsScreen(state: DownloadsUiState, actions: DownloadsActions, messages
             }
         }
         LazyColumn(Modifier.fillMaxSize()) {
+            // First in the list, so at twice the text size it scrolls away with the rest instead of holding half the screen.
+            if (session != null) item(key = "sync") { SyncStatusLine(state.sync, System.currentTimeMillis(), Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) }
             when {
                 session == null || state.loading -> Unit
                 state.localFailure -> item {

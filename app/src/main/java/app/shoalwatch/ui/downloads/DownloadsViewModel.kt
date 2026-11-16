@@ -10,6 +10,8 @@ import app.shoalwatch.data.servers.Connection
 import app.shoalwatch.data.servers.ServerCatalog
 import app.shoalwatch.data.servers.ServerConnections
 import app.shoalwatch.data.servers.Session
+import app.shoalwatch.data.sync.Sync
+import app.shoalwatch.data.sync.SyncStatus
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
@@ -45,6 +47,8 @@ class DownloadsViewModel(
     private val catalog: ServerCatalog,
     private val connections: ServerConnections,
     private val downloads: Downloads,
+    /** The session's changes waiting to sync (the line under the top bar). */
+    sync: Sync,
     private val reconfirm: suspend (Session) -> Unit = {},
 ) : ViewModel() {
     private val attempt = MutableStateFlow(0)
@@ -67,7 +71,14 @@ class DownloadsViewModel(
         if (s == null) flowOf(null) else connections.connection(s.serverId).map { s to (it is Connection.Online) }
     }
 
-    val state: StateFlow<DownloadsUiState> = combine(catalog.activeSession(), content, online, downloads.queue, confirm) { s, c, on, queue, ask ->
+    /** The confirm waiting for a yes, and the sync status read for that session (null: no session). */
+    private val asks: Flow<Pair<Pair<Session, RemoveRequest>?, Pair<Session, SyncStatus>?>> = combine(
+        confirm,
+        catalog.activeSession().flatMapLatest { s -> if (s == null) flowOf(null) else sync.status(s).map { s to it } },
+        ::Pair,
+    )
+
+    val state: StateFlow<DownloadsUiState> = combine(catalog.activeSession(), content, online, downloads.queue, asks) { s, c, on, queue, (ask, synced) ->
         val mine = c?.takeIf { it.session == s }
         DownloadsUiState(
             session = s,
@@ -77,6 +88,7 @@ class DownloadsViewModel(
             loading = s != null && mine?.library == null && mine?.failed != true,
             localFailure = mine?.failed == true,
             confirmRemove = ask?.takeIf { it.first == s }?.second,
+            sync = synced?.takeIf { it.first == s }?.second ?: SyncStatus.NONE,
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, DownloadsUiState())
 

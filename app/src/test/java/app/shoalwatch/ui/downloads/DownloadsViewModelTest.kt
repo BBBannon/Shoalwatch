@@ -24,6 +24,8 @@ import app.shoalwatch.ui.browse.SERVER_ID
 import app.shoalwatch.ui.browse.account
 import app.shoalwatch.ui.browse.entry
 import app.shoalwatch.ui.testServer
+import app.shoalwatch.ui.browse.FakeSync
+import app.shoalwatch.data.sync.SyncStatus
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.toList
@@ -44,10 +46,11 @@ class DownloadsViewModelTest {
     private val catalog = FakeCatalog(listOf(testServer(id = SERVER_ID)), listOf(account(BEN, "ben"), account(AMY, "amy")), account(BEN, "ben"))
     private val connections = FakeConnections()
     private val downloads = FakeDownloads()
+    private val sync = FakeSync()
     private val reconfirmed = mutableListOf<Session>()
     private val online = Connection.Online(address("http://192.168.1.10:8096"), isHome = true)
 
-    private fun vm() = DownloadsViewModel(catalog, connections, downloads) { reconfirmed += it }
+    private fun vm() = DownloadsViewModel(catalog, connections, downloads, sync) { reconfirmed += it }
 
     private fun film(n: Int, name: String, owned: Boolean = true, state: DownloadState = DownloadState.COMPLETE) = OfflineEntry(
         entry(n, name = name),
@@ -55,6 +58,19 @@ class DownloadsViewModelTest {
     )
 
     private fun library(vararg films: OfflineEntry) = OfflineLibrary(emptyList(), films.toList(), emptyList())
+
+    @Test fun theSyncLineIsTheActiveSessionsOwnAndFollowsASwitch() = runTest(UnconfinedTestDispatcher()) {
+        sync.set(BEN, waiting = 3)
+        sync.set(AMY, waiting = 1, needsSignIn = true)
+        val vm = vm()
+        assertEquals(3, vm.state.value.sync.waiting)
+        sync.set(BEN, waiting = 0, lastSyncedAt = 5L)
+        assertEquals(SyncStatus(0, 0, false, 5L), vm.state.value.sync)
+        catalog.setActive(SERVER_ID, AMY.userId)
+        assertEquals("Amy's own status, never Ben's", SyncStatus(1, 0, true, null), vm.state.value.sync)
+        catalog.activeFlow.value = null
+        assertEquals(SyncStatus.NONE, vm.state.value.sync)
+    }
 
     @Test fun switchingAccountRestartsAndTheOldProfilesTitlesNeverAppear() = runTest(UnconfinedTestDispatcher()) {
         downloads.libraryFlow(BEN).value = library(film(1, "Ben's Film"))
@@ -76,7 +92,7 @@ class DownloadsViewModelTest {
         val slow = object : app.shoalwatch.data.downloads.Downloads by downloads {
             override fun library(s: Session) = if (s == AMY) flow { hold.collect { if (it) emit(library(film(2, "Amy's Film"))) } } else downloads.library(s)
         }
-        val vm = DownloadsViewModel(catalog, connections, slow)
+        val vm = DownloadsViewModel(catalog, connections, slow, sync)
         catalog.activeFlow.value = account(AMY, "amy")
         assertTrue(vm.state.value.loading)
         assertTrue(vm.state.value.library.films.isEmpty())
@@ -120,7 +136,7 @@ class DownloadsViewModelTest {
         val failing = object : app.shoalwatch.data.downloads.Downloads by downloads {
             override suspend fun pause(s: Session, itemId: String) = throw AppError.of(AppError.Kind.UNKNOWN)
         }
-        val vm = DownloadsViewModel(catalog, connections, failing)
+        val vm = DownloadsViewModel(catalog, connections, failing, sync)
         val messages = mutableListOf<SessionMessage>()
         val job = launch { vm.messages.toList(messages) }
         vm.pause(entry(1).item.id)
@@ -134,7 +150,7 @@ class DownloadsViewModelTest {
         val flaky = object : app.shoalwatch.data.downloads.Downloads by downloads {
             override fun library(s: Session) = flow { if (fail) throw IllegalStateException("disk"); emit(library(film(1, "Film"))) }
         }
-        val vm = DownloadsViewModel(catalog, connections, flaky)
+        val vm = DownloadsViewModel(catalog, connections, flaky, sync)
         assertTrue(vm.state.value.localFailure)
         assertFalse(vm.state.value.loading)
         fail = false

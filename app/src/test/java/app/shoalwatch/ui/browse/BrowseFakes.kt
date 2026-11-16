@@ -20,6 +20,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 
 val EMPTY_HOME = Home(emptyList(), Freshness.Fresh, HomeRow(emptyList(), Freshness.Fresh), HomeRow(emptyList(), Freshness.Fresh), emptyList())
 val EMPTY_LISTING = Listing(emptyList(), null, Freshness.Fresh, canLoadMore = false)
@@ -109,4 +112,28 @@ class FakePlaystate : Playstate {
     override suspend fun removeFromContinueWatching(s: Session, itemId: String) = record("remove:${who(s)}:$itemId")
     override suspend fun recordStop(s: Session, itemId: String, positionMs: Long, finished: Boolean, reached: Boolean) =
         record("stop:${who(s)}:$itemId:$positionMs:$finished" + if (reached) "" else ":unsent")
+}
+
+/**
+ * A `Sync` the tests drive by hand: [statuses] per session (a session not in it has nothing waiting), every [sendNow] recorded
+ * with its timeout in [sent]; [onSendNow] runs inside it (a test may hold it, or record the order against a sign-out).
+ */
+class FakeSync : app.shoalwatch.data.sync.Sync {
+    val statuses = MutableStateFlow<Map<Session, app.shoalwatch.data.sync.SyncStatus>>(emptyMap())
+    val sent = java.util.concurrent.CopyOnWriteArrayList<Pair<Session, Long>>()
+    var onSendNow: suspend (Session) -> Unit = {}
+
+    fun set(s: Session, waiting: Int, stuck: Int = 0, needsSignIn: Boolean = false, lastSyncedAt: Long? = null) =
+        statuses.update { it + (s to app.shoalwatch.data.sync.SyncStatus(waiting, stuck, needsSignIn, lastSyncedAt)) }
+
+    override fun status(s: Session): Flow<app.shoalwatch.data.sync.SyncStatus> =
+        statuses.map { it[s] ?: app.shoalwatch.data.sync.SyncStatus.NONE }.distinctUntilChanged()
+
+    override suspend fun waiting(s: Session): Int = statuses.value[s]?.waiting ?: 0
+
+    override suspend fun sendNow(s: Session, timeoutMs: Long): Int {
+        sent += s to timeoutMs
+        onSendNow(s)
+        return waiting(s)
+    }
 }

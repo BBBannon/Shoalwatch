@@ -1,6 +1,14 @@
 package app.shoalwatch.ui.downloads
 
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.junit4.ComposeContentTestRule
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.unit.isSpecified
+import app.shoalwatch.data.sync.SyncStatus
+import org.junit.Assert.assertNull
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
@@ -171,11 +179,76 @@ abstract class DownloadsRenderBase : RenderBase() {
     private fun stringsPlural(id: Int, n: Int, vararg more: Any): String =
         androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>().resources.getQuantityString(id, n, n.toString(), *more)
 
+    // --- the sync line (Milestone 5) -----------------------------------------------------------------------------
+
+    private fun synced(status: SyncStatus, lib: OfflineLibrary = OfflineLibrary(emptyList(), listOf(e(2, "A Film")), emptyList())) =
+        show { DownloadsScreen(DownloadsUiState(BEN, lib, loading = false, sync = status), actions, emptyFlow(), SnackbarHostState(), onOpenSettings = {}) }
+
+    @Test fun theSyncLineSitsUnderTheTopBarAsOneElement() {
+        synced(SyncStatus(waiting = 3, stuck = 0, needsSignIn = false, lastSyncedAt = null))
+        val line = syncLineNode(rule, "3 changes waiting to sync")
+        val spoken = line.config.getOrNull(SemanticsProperties.Text)?.joinToString(" ") { it.text }.orEmpty()
+        assertTrue("one element with both lines: $spoken", "3 changes waiting to sync" in spoken && text(R.string.sync_waiting_detail) in spoken)
+        val title = rule.onAllNodesWithText(text(R.string.downloads_title)).fetchSemanticsNodes().first()
+        val films = rule.onAllNodesWithText(text(R.string.dl_section_films)).fetchSemanticsNodes().first()
+        assertTrue("under the top bar", line.boundsInRoot.top >= title.boundsInRoot.bottom)
+        assertTrue("above the content", line.boundsInRoot.bottom <= films.boundsInRoot.top)
+        assertNoTextUnder13sp(rule)
+    }
+
+    @Test fun nothingToSayShowsNoLine() {
+        synced(SyncStatus.NONE)
+        assertNotShown(text(R.string.sync_all_sent))
+        assertTrue(rule.onAllNodes(hasText("sync", substring = true, ignoreCase = true)).fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test fun allSentSaysWhenItLastSynced() {
+        synced(SyncStatus(0, 0, false, System.currentTimeMillis()))
+        assertShown(text(R.string.sync_all_sent))
+        assertTrue(rule.onAllNodes(hasText("Last synced at", substring = true)).fetchSemanticsNodes().isNotEmpty())
+    }
+
+    @Test fun theLongestLineWrapsAndStaysReadable() {
+        synced(SyncStatus(waiting = 9, stuck = 4, needsSignIn = false, lastSyncedAt = System.currentTimeMillis()))
+        assertShown("4 changes your server keeps refusing. Shoalwatch will try again later.")
+        assertNoTextUnder13sp(rule)
+    }
+
+    @Test fun itIsALiveRegionOnlyWhenTheCountChanges() {
+        val status = mutableStateOf(SyncStatus(2, 0, false, null))
+        show { DownloadsScreen(DownloadsUiState(BEN, OfflineLibrary(emptyList(), emptyList(), emptyList()), loading = false, sync = status.value), actions, emptyFlow(), SnackbarHostState()) }
+        assertNull("not announced when first shown", syncLineNode(rule, "2 changes").config.getOrNull(SemanticsProperties.LiveRegion))
+        status.value = SyncStatus(3, 0, false, null)
+        rule.waitForIdle()
+        assertEquals(LiveRegionMode.Polite, syncLineNode(rule, "3 changes").config.getOrNull(SemanticsProperties.LiveRegion))
+        status.value = SyncStatus(0, 0, false, 1L)
+        rule.waitForIdle()
+        assertEquals("the count went to 0", LiveRegionMode.Polite, syncLineNode(rule, text(R.string.sync_all_sent)).config.getOrNull(SemanticsProperties.LiveRegion))
+        status.value = SyncStatus(0, 0, false, 2L)
+        rule.waitForIdle()
+        assertNull("only the time changed", syncLineNode(rule, text(R.string.sync_all_sent)).config.getOrNull(SemanticsProperties.LiveRegion))
+    }
+
     @Test fun aLocalFailureOffersTryAgain() {
         screen(OfflineLibrary(emptyList(), emptyList(), emptyList()), failed = true)
         assertShown(text(R.string.dl_failed_locally))
         rule.onAllNodesWithText(text(R.string.action_retry))[0].performClick()
         assertEquals(listOf("tryAgain"), calls)
+    }
+}
+
+/** The merged node that holds [main] (the sync line is one element). */
+internal fun syncLineNode(rule: ComposeContentTestRule, main: String) =
+    rule.onAllNodes(hasText(main, substring = true)).fetchSemanticsNodes().firstOrNull() ?: error("no sync line: $main")
+
+/** Every text drawn is at least 13sp (read from each node's laid-out text style). */
+internal fun assertNoTextUnder13sp(rule: ComposeContentTestRule) {
+    val nodes = rule.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsActions.GetTextLayoutResult), useUnmergedTree = true).fetchSemanticsNodes()
+    assertTrue("no text was found", nodes.isNotEmpty())
+    for (node in nodes) {
+        val results = mutableListOf<TextLayoutResult>()
+        node.config[SemanticsActions.GetTextLayoutResult].action?.invoke(results)
+        for (r in results) assertTrue("text under 13sp: ${r.layoutInput.text}", r.layoutInput.style.fontSize.isSpecified && r.layoutInput.style.fontSize.value >= 13f)
     }
 }
 

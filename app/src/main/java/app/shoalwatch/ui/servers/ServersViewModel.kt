@@ -10,6 +10,9 @@ import app.shoalwatch.data.servers.AccountSummary
 import app.shoalwatch.data.servers.Authenticator
 import app.shoalwatch.data.servers.ServerSummary
 import app.shoalwatch.data.servers.ServerCatalog
+import app.shoalwatch.data.servers.Session
+import app.shoalwatch.data.sync.Sync
+import app.shoalwatch.data.sync.SyncStatus
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -26,7 +29,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-data class AccountItem(val userId: String, val userName: String, val isActive: Boolean)
+/** [sync]: this profile's changes waiting to reach the server (the line under it). */
+data class AccountItem(val userId: String, val userName: String, val isActive: Boolean, val sync: SyncStatus = SyncStatus.NONE)
 
 data class ServerItem(
     val id: String,
@@ -73,16 +77,27 @@ class ServersViewModel(
     private val sharing: (String) -> Flow<Boolean> = { flowOf(false) },
     /** Who may see "Server admin" (Milestone 6); null shows it nowhere. */
     private val rights: AdminRights? = null,
+    /** Each profile's waiting changes, sent first on sign-out and removal; null shows no line and sends nothing. */
+    private val sync: Sync? = null,
 ) : ViewModel() {
     private data class Local(val confirm: Confirm? = null, val busy: Boolean = false, val error: String? = null, val notice: ServersNotice? = null)
 
     private val local = MutableStateFlow(Local())
 
-    private val rows: Flow<List<Pair<ServerSummary, List<AccountSummary>>>> = catalog.servers.flatMapLatest { servers ->
+    private val rows: Flow<List<Pair<ServerSummary, List<Pair<AccountSummary, SyncStatus>>>>> = catalog.servers.flatMapLatest { servers ->
         if (servers.isEmpty()) {
             flowOf(emptyList())
         } else {
-            combine(servers.map { catalog.accounts(it.id) }) { lists -> servers.zip(lists.toList()) }
+            combine(servers.map { withSync(catalog.accounts(it.id)) }) { lists -> servers.zip(lists.toList()) }
+        }
+    }
+
+    /** Each account with its own session's sync status (read as that session only). */
+    private fun withSync(accounts: Flow<List<AccountSummary>>): Flow<List<Pair<AccountSummary, SyncStatus>>> = accounts.flatMapLatest { list ->
+        if (sync == null || list.isEmpty()) {
+            flowOf(list.map { it to SyncStatus.NONE })
+        } else {
+            combine(list.map { a -> sync.status(Session(a.serverId, a.userId)).map { a to it } }) { it.toList() }
         }
     }
 
@@ -104,7 +119,7 @@ class ServersViewModel(
                     ServerItem(
                         id = server.id, name = server.name, version = server.version,
                         certificateChanged = server.pinInvalid,
-                        accounts = accounts.map { AccountItem(it.userId, it.userName, it.serverId == active?.serverId && it.userId == active.userId) },
+                        accounts = accounts.map { (it, synced) -> AccountItem(it.userId, it.userName, it.serverId == active?.serverId && it.userId == active.userId, synced) },
                     )
                 },
                 confirm = local.confirm, busy = local.busy, error = local.error, notice = local.notice,
