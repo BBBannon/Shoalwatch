@@ -484,6 +484,15 @@ class Downloads(Served):
         self.assertIs(False, self.items()[0]["CanDownload"])
         self.assertEqual(403, self.raw(DOWNLOAD)[0])
 
+    def test_no_download_can_be_switched_at_run_time_and_needs_a_token(self):
+        self.assertEqual(401, self.call("POST", "/mock/no-download", token=None)[0])
+        self.assertEqual(204, self.call("POST", "/mock/no-download")[0])
+        self.assertIs(False, self.items()[0]["CanDownload"])
+        self.assertEqual(403, self.raw(DOWNLOAD)[0])
+        self.assertEqual(204, self.call("POST", "/mock/allow-download")[0])
+        self.assertIs(True, self.items()[0]["CanDownload"])
+        self.assertEqual(200, self.raw(DOWNLOAD)[0])
+
     def test_candownload_missing_leaves_the_field_out_and_still_serves(self):
         m.CONFIG["candownload_missing"] = True
         self.assertNotIn("CanDownload", self.items()[0])

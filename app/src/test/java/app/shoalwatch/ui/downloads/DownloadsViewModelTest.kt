@@ -164,7 +164,18 @@ class DownloadsViewModelTest {
         assertEquals(listOf(BEN, BEN, AMY), reconfirmed)
     }
 
-    @Test fun theOfflineSeriesFollowsTheSessionAndAMalformedIdIsGone() = runTest(UnconfinedTestDispatcher()) {
+    /** Walkthrough W-3: the view model outlives a tab switch, so coming back to the tab asks again (the re-check is rate limited). */
+    @Test fun comingBackToTheTabReChecksAgainWhileOnlineAndNeverOffline() = runTest(UnconfinedTestDispatcher()) {
+        connections.stateFor(SERVER_ID).value = online
+        val vm = vm()
+        vm.opened()
+        assertEquals(listOf(BEN, BEN), reconfirmed)
+        connections.stateFor(SERVER_ID).value = Connection.Offline()
+        vm.opened()
+        assertEquals("nothing asked offline", listOf(BEN, BEN), reconfirmed)
+    }
+
+    @Test fun theOfflineSeriesFollowsTheSessionAndAMalformedIdIsGone()= runTest(UnconfinedTestDispatcher()) {
         val series = entry(50).item.id
         downloads.seriesFlow(BEN, series).value = OfflineSeries(entry(50), emptyList())
         val vm = OfflineSeriesViewModel(series, catalog, downloads)
