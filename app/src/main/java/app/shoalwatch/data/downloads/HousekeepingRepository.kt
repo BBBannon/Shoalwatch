@@ -90,7 +90,9 @@ class HousekeepingRepository internal constructor(
                 try {
                     playstate.setPlayed(Session(s.serverId, other), itemId, true) // that profile's OWN outbox, sent as itself
                 } catch (e: AppError) {
-                    if (e.kind != AppError.Kind.SERVER_NOT_FOUND) throw e // the item is no longer shown to it: skipped
+                    // Skipped, never half-done (Tasks 11-12 review M3): SERVER_NOT_FOUND means it is no longer shown to that profile;
+                    // any other failure is logged by kind and the release goes on (EVERYONE then keeps it if that profile has not watched).
+                    if (e.kind != AppError.Kind.SERVER_NOT_FOUND) AppLog.w(TAG, "a profile watching together was not marked: ${e.kind}")
                 }
             }
         }

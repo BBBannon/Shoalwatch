@@ -95,6 +95,32 @@ class ReleaseRulesTest : ReleaseTestBase() {
         assertEquals(0, playedRows(b, e1))
     }
 
+    /**
+     * Tasks 11-12 review M3, decided as continue: one "Watched together" mark that fails (here a database failure for B) is logged
+     * by its kind and skipped; the releaser's own mark and the rule still go ahead, never half-done.
+     */
+    @Test fun oneFailedTogetherMarkIsSkippedAndTheReleaseStillCompletes() = runBlocking {
+        sharing(true)
+        seen(a, film); seen(b, film)
+        val folder = downloaded(a, film)
+        confirm(b, film)
+        val failing = object : app.shoalwatch.data.library.Playstate by playstate {
+            override suspend fun setPlayed(s: app.shoalwatch.data.servers.Session, itemId: String, played: Boolean) {
+                if (s == b) throw app.shoalwatch.core.AppError.of(app.shoalwatch.core.AppError.Kind.UNKNOWN)
+                playstate.setPlayed(s, itemId, played)
+            }
+        }
+        val together = HousekeepingRepository(
+            releases, db.housekeepingDao(), failing, ReleasedFiles(paths, playing, appScope), { _, _ -> }, { true }, appScope,
+            volumes = fake.volumes, remove = { _, _ -> error("not used") },
+        )
+        assertEquals(ReleaseOutcome.DELETED, together.release(a, film.id, together = true))
+        settled()
+        assertFalse(folder.exists())
+        assertTrue(playedHere(a, film))
+        assertFalse("B's mark failed: B is not marked", playedHere(b, film))
+    }
+
     @Test fun aFilmIsDeletedWithNoTombstone() = runBlocking {
         seen(a, film)
         val folder = downloaded(a, film)
