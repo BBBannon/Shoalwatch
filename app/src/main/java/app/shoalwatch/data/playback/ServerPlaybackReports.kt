@@ -12,8 +12,8 @@ import kotlinx.coroutines.CancellationException
  * saved library ([Playstate.recordStop]). Best effort: a failure is logged by its kind only and becomes [ReportOutcome.NotSent].
  *
  * **A stop the server did not hear** because it could not be reached (`OFFLINE`, `NETWORK`, `TIMEOUT`, `SERVER_ERROR`) is
- * `recordStop(..., reached = false)`: finished is watched on the phone at once with a PLAYED tick queued in the durable outbox,
- * otherwise the position is queued as POSITION with its time. The outbox sends it, in order, when the server is back (this class
+ * `recordStop(..., reached = false)`: the position is queued as POSITION with its time. A finished stop is watched on the phone at
+ * once with a PLAYED tick queued, reached or not (review I1). The outbox sends it, in order, when the server is back (this class
  * never resends a stop: a session report is never replayed). Any other failure is saved on the phone only (`reached = true`, as
  * before). `NOT_SIGNED_IN` (nothing was sent) records nothing, and neither does a stop whose send overlapped a [forget] of its
  * own account or server.

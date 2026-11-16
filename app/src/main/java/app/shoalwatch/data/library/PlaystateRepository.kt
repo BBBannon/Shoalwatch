@@ -58,7 +58,8 @@ class PlaystateRepository internal constructor(
         act(s, itemId) { item ->
             val p = positionMs.coerceAtLeast(0)
             when {
-                finished -> local.played(s, item, true) to if (reached) null else change(item, ChangeKind.PLAYED, flag = true)
+                // Always queued (review I1): "Finished" can fire at the Outro, below the server's own 90% "played" mark. Absolute, so never counted twice.
+                finished -> local.played(s, item, true) to change(item, ChangeKind.PLAYED, flag = true)
                 else -> local.stoppedAt(s, item.item.itemId, p) to if (reached) null else change(item, ChangeKind.POSITION, positionMs = p)
             }
         }

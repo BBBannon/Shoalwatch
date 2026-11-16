@@ -35,8 +35,9 @@ interface Playstate {
 
     /**
      * Where playback stopped, for this user. [reached]: the stop report reached the server.
-     * finished && reached: watched on this phone, nothing queued (the report did it).
-     * finished && !reached: watched, and a PLAYED tick queued (never a PLAY: the server may already count it from its own session).
+     * finished: watched on this phone, and a PLAYED tick queued whether or not the report reached the server (Tasks 6-8 review I1:
+     * "Finished" fires at the Outro start or 90%, and the server marks a stop played only from 90%). Never a PLAY: the server may
+     * count it from its own session, and the tick is absolute (`AlreadyThere` when the server has it played), so it cannot count twice.
      * !finished: the position on this phone; queued as POSITION only when !reached.
      */
     suspend fun recordStop(s: Session, itemId: String, positionMs: Long, finished: Boolean, reached: Boolean = true)

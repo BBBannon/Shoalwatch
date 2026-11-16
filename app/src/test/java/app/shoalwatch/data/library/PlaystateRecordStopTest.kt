@@ -9,7 +9,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Where playback stopped, saved on this phone: queued only when the stop report did not reach the server. */
+/** Where playback stopped, saved on this phone: a finished stop always queues a PLAYED tick; a position only when the stop report did not reach the server. */
 class PlaystateRecordStopTest : PlaystateTestBase() {
     private fun stop(label: String, positionMs: Long, finished: Boolean = false, reached: Boolean = true) =
         runBlocking { playstate.recordStop(s1u1, id(label), positionMs, finished, reached) }
@@ -36,17 +36,38 @@ class PlaystateRecordStopTest : PlaystateTestBase() {
         assertNoPending()
     }
 
-    @Test fun aFinishedStopTheServerHeardIsWatchedHereWithNothingQueued() {
+    /**
+     * Tasks 6-8 review I1: "Finished" fires at the Outro start, which can be below the server's 90% "played" mark, so a stop the
+     * server heard leaves it unplayed with a resume point. A PLAYED tick is queued for every finished stop, so the server ends
+     * played and the phone stays watched, out of Continue Watching.
+     */
+    @Test fun aFinishedStopAtTheOutroBelowNinetyPercentEndsPlayedOnTheServerToo() {
+        val a = id("a")
         save(film("a", ud(positionMs = 60_000)))
         saveResume(film("a", ud(positionMs = 60_000)))
+        // What the server did with the stop report at 87%: a resume point, not played.
+        sync.copies[s1u1 to a] = app.shoalwatch.data.sync.ServerUserData(played = false, playCount = 0, positionMs = 6_090_000, favourite = false, lastPlayedAt = null)
+        gateway.resumeFor = { if (gateway.count("setPlayed") > 0) emptyList() else listOf(film("a", ud(positionMs = 6_090_000))) }
+        stop("a", 6_090_000, finished = true)
+        drain()
+        assertEquals("the server is told it was watched", listOf("setPlayed:$a:true"), gateway.calls.filter { it.startsWith("setPlayed") })
+        assertEquals(0, queued())
+        assertTrue("watched on the phone", userData("a")!!.played)
+        assertEquals(emptyList<String>(), resumeIds())
+        assertNoPending()
+    }
+
+    @Test fun aFinishedStopTheServerAlreadyCountedSendsNothingMore() {
+        save(film("a", ud(positionMs = 60_000)))
+        saveResume(film("a", ud(positionMs = 60_000)))
+        sync.copies[s1u1 to id("a")] = app.shoalwatch.data.sync.ServerUserData(played = true, playCount = 1, positionMs = 0, favourite = false, lastPlayedAt = null)
         stop("a", 7_000_000, finished = true)
         drain()
-        assertEquals("the stop report did it", 0, gateway.count("setPlayed"))
+        assertEquals("already there: no second write, so no second play", 0, gateway.count("setPlayed"))
         assertEquals(0, queued())
         assertTrue(userData("a")!!.played)
         assertEquals(0, userData("a")!!.positionMs)
         assertEquals(emptyList<String>(), resumeIds())
-        assertTrue(gateway.count("resume") >= 1)
         assertNoPending()
     }
 

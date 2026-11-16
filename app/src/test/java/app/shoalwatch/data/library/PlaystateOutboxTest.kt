@@ -73,9 +73,13 @@ class PlaystateOutboxTest : PlaystateTestBase() {
         reset()
 
         playstate.recordStop(s1u1, a, 8_000, finished = false, reached = true)
-        playstate.recordStop(s1u1, a, 8_000, finished = true, reached = true)
         settle()
         assertEquals("the stop report reached the server", emptyList<Row>(), rows())
+
+        playstate.recordStop(s1u1, a, 8_000, finished = true, reached = true)
+        settle()
+        assertEquals("finished is always a PLAYED tick (review I1), never a PLAY", listOf(Row("PLAYED", 1, null, "resume,nextUp", false)), rows())
+        reset()
 
         playstate.recordLocalStop(s1u1, a, 9_000, finished = false)
         settle()
@@ -85,7 +89,7 @@ class PlaystateOutboxTest : PlaystateTestBase() {
         playstate.recordLocalStop(s1u1, a, 0, finished = true)
         settle()
         assertEquals(listOf(Row("PLAY", null, null, "resume,nextUp", true)), rows())
-        assertEquals(7, changedFor.size) // every queued change asked for a send; the two reached stops did not
+        assertEquals(8, changedFor.size) // every queued change asked for a send; the reached unfinished stop did not
     }
 
     @Test fun aFailureAfterTheLocalWriteLeavesNeitherTheChangeNorTheRow() = runBlocking {
