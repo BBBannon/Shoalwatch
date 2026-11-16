@@ -1,7 +1,10 @@
 package app.shoalwatch.data.playback
 
-/** How the server delivers the file: as it is, remuxed, or converted. */
-enum class PlayMethod { DIRECT_PLAY, DIRECT_STREAM, TRANSCODE }
+/**
+ * How the server delivers the file: as it is, remuxed, or converted; or LOCAL, the copy saved on this phone (Milestone 4),
+ * which plays as DIRECT_PLAY would and is never reported to the server in this milestone.
+ */
+enum class PlayMethod { DIRECT_PLAY, DIRECT_STREAM, TRANSCODE, LOCAL }
 
 /** Streaming caps. MAXIMUM still sends a ceiling, because the server treats a missing one as its own default. */
 enum class Quality(val maxBitrate: Int, val maxWidth: Int?) {

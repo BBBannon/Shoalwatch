@@ -3,6 +3,7 @@ package app.shoalwatch.data.api
 import app.shoalwatch.core.AppError
 import app.shoalwatch.data.servers.Connection
 import app.shoalwatch.data.servers.DeviceIdentity
+import app.shoalwatch.data.servers.JellyfinId
 import app.shoalwatch.data.servers.ServerClients
 import app.shoalwatch.data.servers.ServerConnections
 import app.shoalwatch.data.servers.ServerNet
@@ -116,7 +117,20 @@ class ServerApi(
      * selector no longer has that address verified or the server's settings or accounts change (its client is evicted), and every
      * request still reads the token live, so a sign-out stops it too. The player then asks for a new route.
      */
-    internal suspend fun mediaRoute(session: Session): MediaRoute = withContext(io) {
+    internal suspend fun mediaRoute(session: Session): MediaRoute = route(session, itemId = null)
+
+    /**
+     * [mediaRoute]'s steps 1 to 3 exactly, for a download. The guard allows the `/videos/` prefix as for the player AND, for GET
+     * and HEAD only, the one exact path `<base>/Items/<itemId>/Download` for this validated [itemId] (where the server applies its
+     * own download permission). Another item's download, any other `/Items` path and any other API stay refused. An [itemId]
+     * that is not a normalised `JellyfinId` is `SERVER_NOT_FOUND`, with nothing sent.
+     */
+    internal suspend fun downloadRoute(session: Session, itemId: String): MediaRoute {
+        if (JellyfinId.parseOrNull(itemId)?.value != itemId) throw AppError.of(AppError.Kind.SERVER_NOT_FOUND)
+        return route(session, itemId)
+    }
+
+    private suspend fun route(session: Session, itemId: String?): MediaRoute = withContext(io) {
         store.awaitWarmed()
         val online = selector.awaitOnline(session.serverId) ?: throw AppError.of(AppError.Kind.OFFLINE)
         val server = store.server(session.serverId) ?: throw AppError.of(AppError.Kind.SERVER_NOT_FOUND)
@@ -137,11 +151,13 @@ class ServerApi(
             clients.evict(session.serverId, server.addresses)
             throw AppError.of(AppError.Kind.OFFLINE)
         }
+        val baseSegments = base.pathSegments.filter { it.isNotEmpty() }
         val guard = GuardedCallFactory(
             client,
             authority = online.address.authority,
-            videosPrefix = (base.pathSegments.filter { it.isNotEmpty() } + "videos").joinToString("/", prefix = "/"),
+            videosPrefix = (baseSegments + "videos").joinToString("/", prefix = "/"),
             scheme = base.scheme,
+            exactPath = itemId?.let { baseSegments + listOf("Items", it, "Download") },
             // Still signed in, still the verified address, and still the client for the server's current settings (a settings or
             // account change evicts it).
             stale = {

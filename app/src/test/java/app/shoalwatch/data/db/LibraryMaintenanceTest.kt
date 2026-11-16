@@ -148,6 +148,25 @@ class LibraryMaintenanceTest : LibraryTestBase() {
         assertEquals(emptySet<String>(), itemIds(S2))
     }
 
+    @Test fun aPinnedSeriesKeepsItsSeasonsListAndAnUnpinnedOneLosesIt() = runBlocking {
+        val seasons = { series: String -> listOf(row(item("$series-s1", ItemKind.SEASON, seriesId = series, indexNumber = 1))) }
+        library.writePage(s1u1, "seasons:${id("kept")}", 0, seasons("kept"), 1, longAgo, requestedAtSeq = 0)
+        library.writePage(s1u1, "seasons:${id("gone")}", 0, seasons("gone"), 1, longAgo, requestedAtSeq = 0)
+        library.writePage(s1u1, "children:${id("kept")}", 0, seasons("kept"), 1, longAgo, requestedAtSeq = 0)
+        library.writeItems(s1u1, listOf(row(item("kept", ItemKind.SERIES)), row(item("gone", ItemKind.SERIES))), longAgo, requestedAtSeq = 0)
+        library.writeItems(s2u1, listOf(row(item("kept", ItemKind.SERIES))), longAgo, requestedAtSeq = 0)
+        library.writePage(s2u1, "seasons:${id("kept")}", 0, seasons("kept"), 1, longAgo, requestedAtSeq = 0)
+        pin("kept")
+        sql("UPDATE items SET pinned = 0 WHERE serverId = ?", S2) // only S1's row of the series is pinned
+        library.evict(now, EvictionPolicy(Duration.ZERO, Duration.ZERO, 0))
+        assertEquals(1, db.listDao().countEntries(S1, U1, "seasons:${id("kept")}"))
+        assertEquals(1, count("list_state", "serverId = '$S1' AND listKey = 'seasons:${id("kept")}'"))
+        assertEquals("only the seasons list is kept", 0, db.listDao().countEntries(S1, U1, "children:${id("kept")}"))
+        assertEquals(0, db.listDao().countEntries(S1, U1, "seasons:${id("gone")}"))
+        assertEquals(0, count("list_state", "serverId = '$S1' AND listKey = 'seasons:${id("gone")}'"))
+        assertEquals("a pin on one server keeps nothing on another", 0, db.listDao().countEntries(S2, U1, "seasons:${id("kept")}"))
+    }
+
     @Test fun evictingAnEmptyCacheDoesNothing() = runBlocking {
         val counts = library.evict(now)
         assertEquals(0, counts.listEntries + counts.listStates + counts.items + counts.userData)

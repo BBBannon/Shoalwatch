@@ -53,7 +53,29 @@ class PlaybackResolverTest {
         assertEquals(U1, body.userId)
         assertEquals(PlayMethod.DIRECT_PLAY, resolved.plan.method)
         assertEquals(listOf(session), routesMade)
-        assertSame(session, resolved.route.session)
+        assertSame(session, resolved.route!!.session)
+    }
+
+    @Test fun checkOriginalAsksForDirectPlayOnlyAtMaximumAndMakesNoRoute() = runTest {
+        gateway.answer(fixtureInfo("direct-play.json"))
+        val info = resolver(StandardTestDispatcher(testScheduler)).checkOriginal(session, ITEM)
+        val body = gateway.bodies.single()
+        assertEquals(listOf("playbackInfo:$ITEM"), gateway.calls)
+        assertTrue(body.enableDirectPlay)
+        assertFalse("no conversion is set up", body.enableDirectStream || body.enableTranscoding)
+        assertFalse(body.allowVideoStreamCopy || body.allowAudioStreamCopy || body.alwaysBurnInSubtitleWhenTranscoding)
+        assertEquals(Quality.MAXIMUM.maxBitrate, body.maxStreamingBitrate)
+        assertEquals(Quality.MAXIMUM.maxBitrate, body.deviceProfile.maxStreamingBitrate)
+        assertEquals(-1, body.subtitleStreamIndex)
+        assertEquals(null, body.audioStreamIndex)
+        assertEquals(U1, body.userId)
+        assertEquals(1, info.sources.size)
+        assertTrue("checking makes no route", routesMade.isEmpty())
+    }
+
+    @Test fun checkOriginalPassesTheGatewaysFailureOn() = runTest {
+        gateway.failWith = AppError.of(AppError.Kind.OFFLINE)
+        assertEquals(AppError.Kind.OFFLINE, failureOf { resolver(StandardTestDispatcher(testScheduler)).checkOriginal(session, ITEM) }.kind)
     }
 
     @Test fun aBurnInCarriesTheQualitysPictureSizeCeilingAsAForcedTranscodeDoes() = runTest {

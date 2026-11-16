@@ -84,6 +84,10 @@ abstract class ItemDao {
     @Query(EPISODES_SQL)
     abstract suspend fun getEpisodes(serverId: String, userId: String, seriesId: String, seasonId: String?): List<ItemRow>
 
+    /** A series' stored seasons this user was shown (a season row's own `seriesId`), in season order with Specials last. For the download planner. */
+    @Query(SEASONS_SQL)
+    abstract suspend fun getSeasons(serverId: String, userId: String, seriesId: String): List<ItemRow>
+
     @Query(SEARCH_SQL)
     protected abstract suspend fun searchByPattern(serverId: String, userId: String, pattern: String, kinds: List<String>, limit: Int): List<ItemRow>
 
@@ -129,12 +133,12 @@ abstract class ItemDao {
     @Query("UPDATE user_data SET pendingSyncAt = :nowMs WHERE serverId = :serverId AND userId = :userId AND itemId = :itemId")
     internal abstract suspend fun markPending(serverId: String, userId: String, itemId: String, nowMs: Long): Int
 
-    /** Every row with an unconfirmed local change, for every user and server (the start-up sweep's snapshot). */
-    @Query("SELECT * FROM user_data WHERE pendingSyncAt IS NOT NULL")
+    /** Every row with an unconfirmed local change, for every user and server (the start-up sweep's snapshot), except one kept for an offline play. */
+    @Query("SELECT * FROM user_data WHERE pendingSyncAt IS NOT NULL AND $NO_OFFLINE_PLAY")
     internal abstract suspend fun pendingRows(): List<UserDataEntity>
 
-    /** Clears every marker of one user (the local values stay); returns how many rows had one. */
-    @Query("UPDATE user_data SET pendingSyncAt = NULL WHERE serverId = :serverId AND userId = :userId AND pendingSyncAt IS NOT NULL")
+    /** Clears every marker of one user (the local values stay), except one kept for an offline play; returns how many rows had one. */
+    @Query("UPDATE user_data SET pendingSyncAt = NULL WHERE serverId = :serverId AND userId = :userId AND pendingSyncAt IS NOT NULL AND $NO_OFFLINE_PLAY")
     internal abstract suspend fun clearPendingFor(serverId: String, userId: String): Int
 
     @Query("UPDATE user_data SET pendingSyncAt = NULL WHERE serverId = :serverId AND userId = :userId AND itemId = :itemId")
@@ -219,6 +223,13 @@ abstract class ItemDao {
         /** Well under SQLite's bound-variable limit on every Android version. */
         private const val ID_CHUNK = 500
 
+        /**
+         * The row has no offline play waiting for Milestone 5 (SPEC 3.2: a sync never undoes an offline watch before it is sent), so
+         * its marker may be cleared by the start-up sweep or the idle clean-up.
+         */
+        internal const val NO_OFFLINE_PLAY =
+            "NOT EXISTS (SELECT 1 FROM offline_plays op WHERE op.serverId = user_data.serverId AND op.userId = user_data.userId AND op.itemId = user_data.itemId)"
+
         private const val FROM_ITEMS_AND_USER_DATA =
             "FROM items i JOIN visible_items v ON v.serverId = i.serverId AND v.userId = :userId AND v.itemId = i.itemId " +
                 "LEFT JOIN user_data u ON u.serverId = i.serverId AND u.userId = :userId AND u.itemId = i.itemId "
@@ -231,6 +242,12 @@ abstract class ItemDao {
                 "WHERE i.serverId = :serverId AND i.seriesId = :seriesId AND i.kind = 'EPISODE' AND (:seasonId IS NULL OR i.seasonId = :seasonId) " +
                 "ORDER BY CASE WHEN i.parentIndexNumber IS NULL THEN 1 WHEN i.parentIndexNumber = 0 THEN 2 ELSE 0 END, COALESCE(i.parentIndexNumber, 0), " +
                 "i.indexNumber IS NULL, i.indexNumber, COALESCE(i.sortName, i.name), i.itemId"
+
+        private const val SEASONS_SQL =
+            "SELECT $ROW_COLUMNS $FROM_ITEMS_AND_USER_DATA" +
+                "WHERE i.serverId = :serverId AND i.seriesId = :seriesId AND i.kind = 'SEASON' " +
+                "ORDER BY CASE WHEN i.indexNumber IS NULL THEN 1 WHEN i.indexNumber = 0 THEN 2 ELSE 0 END, COALESCE(i.indexNumber, 0), " +
+                "COALESCE(i.sortName, i.name), i.itemId"
 
         private const val SEARCH_SQL =
             "SELECT $ROW_COLUMNS $FROM_ITEMS_AND_USER_DATA" +

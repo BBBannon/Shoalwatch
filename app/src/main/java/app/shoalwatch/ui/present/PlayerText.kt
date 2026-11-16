@@ -2,6 +2,7 @@ package app.shoalwatch.ui.present
 
 import androidx.annotation.StringRes
 import app.shoalwatch.R
+import app.shoalwatch.data.downloads.DownloadQuality
 import app.shoalwatch.data.playback.PlayMethod
 import app.shoalwatch.data.playback.Quality
 import app.shoalwatch.data.playback.SegmentKind
@@ -14,10 +15,12 @@ import java.math.BigDecimal
 object PlayerText {
     /**
      * DIRECT_PLAY / DIRECT_STREAM in a sentence; TRANSCODE with its first reason (a fall back after this phone failed to play the
-     * original always says so, whatever the server's reason). Null before anything is known.
+     * original always says so, whatever the server's reason). LOCAL: the copy saved on this phone, and a conversion's quality.
+     * Null before anything is known.
      */
-    fun streamInfo(strings: Strings, method: PlayMethod?, reasons: Set<TranscodeReason>, fellBack: Boolean): String? = when (method) {
+    fun streamInfo(strings: Strings, method: PlayMethod?, reasons: Set<TranscodeReason>, fellBack: Boolean, saved: DownloadQuality? = null): String? = when (method) {
         null -> null
+        PlayMethod.LOCAL -> listOfNotNull(strings.get(R.string.stream_saved_copy), savedQuality(saved)?.let { strings.get(it) }).joinToString(" ")
         PlayMethod.DIRECT_PLAY -> strings.get(R.string.stream_direct_play)
         PlayMethod.DIRECT_STREAM -> strings.get(R.string.stream_direct_stream)
         PlayMethod.TRANSCODE -> {
@@ -25,6 +28,13 @@ object PlayerText {
             val reason = if (fellBack) R.string.stream_reason_fallback else reasons.firstNotNullOfOrNull(::reasonText)
             if (reason == null) strings.get(R.string.stream_transcode) else strings.get(R.string.stream_transcode_because, strings.get(reason))
         }
+    }
+
+    @StringRes private fun savedQuality(q: DownloadQuality?): Int? = when (q) {
+        DownloadQuality.HIGH -> R.string.stream_saved_high
+        DownloadQuality.MEDIUM -> R.string.stream_saved_medium
+        DownloadQuality.LOW -> R.string.stream_saved_low
+        DownloadQuality.ORIGINAL, null -> null
     }
 
     @StringRes private fun reasonText(r: TranscodeReason): Int? = when (r) {

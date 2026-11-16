@@ -25,7 +25,6 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.SessionCommands
-import app.shoalwatch.data.api.MediaRoute
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.flow.Flow
@@ -40,8 +39,9 @@ import okhttp3.Call
  * The one place ExoPlayer is touched; main thread only, as thin as it can be (the behaviour is in `PlaybackController`, the
  * rules in [MediaItems]). Covered on a device by the player smoke test.
  *
- * - **Bytes:** every request goes through the current item's `MediaRoute` call factory (the account's own guarded client) via
- *   `OkHttpDataSource`; there is no other data source. After [release] there is no route, so nothing more can be fetched.
+ * - **Bytes:** through [ItemBytes] only: a remote item's requests go through its `MediaRoute` call factory (the account's own
+ *   guarded client) via `OkHttpDataSource`; a saved item's files are read only inside its own folder. After [release] there is
+ *   no current item, so nothing more can be read.
  * - **Audio:** usage media / content movie, ExoPlayer handles audio focus and pauses when headphones go (reported as
  *   [EngineEvent.BecameNoisy]). No wake mode (the manifest has no `WAKE_LOCK`: the player screen keeps itself on).
  * - **Media session:** built at the first load (after any earlier player was ended), a unique id per engine; activity-scoped, no service, so no notification and no exported component. Controllers (headset,
@@ -57,15 +57,16 @@ class ExoPlayerEngine(context: Context) : PlayerEngine {
     private val flow = MutableSharedFlow<EngineEvent>(extraBufferCapacity = 64)
     override val events: Flow<EngineEvent> = flow
 
-    /** Read on Media3's loading threads. */
-    @Volatile private var route: MediaRoute? = null
-    private val calls = Call.Factory { request -> checkNotNull(route) { "No media route." }.callFactory.newCall(request) }
+    /** What is loaded now; read on Media3's loading threads (by [calls] and by `ItemBytes` at every open). */
+    @Volatile private var current: EngineItem? = null
+    private val calls = Call.Factory { request -> checkNotNull(current?.route) { "No media route." }.callFactory.newCall(request) }
 
     /**
      * What builds every media source and, through it, every extractor: with [PictureSubtitles] as its only subtitle parsers, so
      * no text track inside a file is ever parsed by Media3 (subtitle-parsers review I-1). A test reads it.
      */
-    internal val mediaSources = DefaultMediaSourceFactory(OkHttpDataSource.Factory(calls)).setSubtitleParserFactory(PictureSubtitles)
+    internal val mediaSources = DefaultMediaSourceFactory(ItemBytes.Factory(OkHttpDataSource.Factory(calls)) { current })
+        .setSubtitleParserFactory(PictureSubtitles)
 
     private val player: ExoPlayer = ExoPlayer.Builder(appContext)
         .setMediaSourceFactory(mediaSources)
@@ -158,11 +159,12 @@ class ExoPlayerEngine(context: Context) : PlayerEngine {
 
     override fun load(item: EngineItem, startMs: Long, playWhenReady: Boolean) {
         check(!released) { "Engine released." }
-        route = item.route
+        current = item
         if (session == null) {
             session = MediaSession.Builder(appContext, sessionPlayer).setId(SESSION_ID + "-" + sessions.incrementAndGet()).setCallback(ControllerRules)
                 .setBitmapLoader(NoArtwork).build()
         }
+        textOff() // before the new item: Media3 must never pick one of its text tracks by default (Milestone 3 carried n-1)
         player.setMediaItem(MediaItems.build(item, title, subtitle), startMs)
         player.prepare()
         player.playWhenReady = playWhenReady
@@ -209,7 +211,7 @@ class ExoPlayerEngine(context: Context) : PlayerEngine {
         surface?.let(player::clearVideoSurfaceHolder)
         surface = null
         player.release()
-        route = null
+        current = null
     }
 
     /** The Nth audio group and the Nth picture-subtitle group of what the stream has; text off unless a picture track is chosen. */
@@ -228,6 +230,13 @@ class ExoPlayerEngine(context: Context) : PlayerEngine {
             wanted.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
         }
         val parameters = wanted.build()
+        if (parameters != player.trackSelectionParameters) player.trackSelectionParameters = parameters
+    }
+
+    /** Text off and no text override; [pictureOrdinal] is kept, and applied to the new item's tracks once they are known. */
+    private fun textOff() {
+        val parameters = player.trackSelectionParameters.buildUpon().clearOverridesOfType(C.TRACK_TYPE_TEXT)
+            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
         if (parameters != player.trackSelectionParameters) player.trackSelectionParameters = parameters
     }
 

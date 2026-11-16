@@ -66,7 +66,7 @@ internal class PlayerViewModelTest : PlaybackControllerTestBase() {
     @Before fun main() = Dispatchers.setMain(dispatcher)
     @After fun reset() = Dispatchers.resetMain()
 
-    private fun TestScope.vm(saved: SavedStateHandle = SavedStateHandle(), from: StartFrom = StartFrom.RESUME): PlayerViewModel {
+    private fun TestScope.vm(saved: SavedStateHandle = SavedStateHandle(), from: StartFrom = StartFrom.RESUME, settle: Boolean = true): PlayerViewModel {
         val factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T =
@@ -74,7 +74,7 @@ internal class PlayerViewModelTest : PlaybackControllerTestBase() {
                 PlayerViewModel(ep1, from, saved, catalog, { s, _ -> made += s; controllerFor(s, backgroundScope) }, settings, quality,
                     { serverId -> reprobed += serverId; onReprobe() }) as T
         }
-        return ViewModelProvider.create(store, factory)[PlayerViewModel::class.java].also { runCurrent() }
+        return ViewModelProvider.create(store, factory)[PlayerViewModel::class.java].also { if (settle) runCurrent() }
     }
 
     private fun TestScope.playing(vm: PlayerViewModel) {
@@ -232,6 +232,28 @@ internal class PlayerViewModelTest : PlaybackControllerTestBase() {
         vm.onHostStopped(); runCurrent()
         assertEquals(Phase.PAUSED, vm.state.value.playback.phase)
         assertFalse(engine.isPlaying)
+    }
+
+    /** Milestone 3 carried n-2: a stop that comes before the controller exists is kept, so the first load starts paused. */
+    @Test fun aHostStopBeforeTheControllerExistsIsKeptAndTheFirstLoadStartsPaused() = runTest(dispatcher) {
+        val vm = vm(settle = false)
+        vm.onHostStopped()
+        runCurrent()
+        assertEquals(1, engine.loads.size)
+        assertFalse("the first load starts paused", engine.playWhenReady)
+        assertTrue("a headset cannot start it either", engine.stoppedHost)
+        vm.onHostStarted(); runCurrent()
+        assertFalse(engine.stoppedHost)
+    }
+
+    @Test fun aHostStopAndStartBothBeforeTheControllerLeaveTheFirstLoadPlaying() = runTest(dispatcher) {
+        val vm = vm(settle = false)
+        vm.onHostStopped()
+        vm.onHostStarted()
+        runCurrent()
+        assertEquals(1, engine.loads.size)
+        assertTrue(engine.playWhenReady)
+        assertFalse(engine.stoppedHost)
     }
 
     @Test fun aSleepTimerThatFiresIsSaidOnceButTurningItOffIsNot() = runTest(dispatcher) {

@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -33,7 +34,8 @@ data class ServerItem(
 
 /** A destructive action waiting for the user's explicit confirmation. */
 sealed interface Confirm {
-    data class SignOut(val serverId: String, val userId: String, val userName: String, val serverName: String) : Confirm
+    /** [sharing]: the server shares downloads between profiles (the dialog then says shared ones stay for the others). */
+    data class SignOut(val serverId: String, val userId: String, val userName: String, val serverName: String, val sharing: Boolean = false) : Confirm
 
     /** [accountNames] are the sign-ins that will go with the server. */
     data class RemoveServer(val serverId: String, val serverName: String, val accountNames: List<String>) : Confirm
@@ -60,6 +62,8 @@ data class ServersUiState(
 class ServersViewModel(
     private val catalog: ServerCatalog,
     private val auth: Authenticator,
+    /** "Share downloads between profiles" for a server (the sign-out dialog's second line). */
+    private val sharing: (String) -> Flow<Boolean> = { flowOf(false) },
 ) : ViewModel() {
     private data class Local(val confirm: Confirm? = null, val busy: Boolean = false, val error: String? = null, val notice: ServersNotice? = null)
 
@@ -93,7 +97,12 @@ class ServersViewModel(
     fun askSignOut(serverId: String, userId: String) {
         val server = state.value.servers.firstOrNull { it.id == serverId } ?: return
         val account = server.accounts.firstOrNull { it.userId == userId } ?: return
-        local.update { it.copy(confirm = Confirm.SignOut(serverId, userId, account.userName, server.name), error = null, notice = null) }
+        val ask = Confirm.SignOut(serverId, userId, account.userName, server.name)
+        local.update { it.copy(confirm = ask, error = null, notice = null) }
+        viewModelScope.launch {
+            val on = try { sharing(serverId).first() } catch (e: CancellationException) { throw e } catch (e: Exception) { false }
+            local.update { if (it.confirm == ask) it.copy(confirm = ask.copy(sharing = on)) else it }
+        }
     }
 
     fun askRemoveServer(serverId: String) {

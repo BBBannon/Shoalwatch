@@ -86,7 +86,7 @@ class SessionChangeNavigationTest {
                     LaunchedEffect(signedIn) { if (signedIn) nav.toHome() }
                     Text("sign in")
                 }
-                browsingDestinations(library = { Text("library") }, series = { _, _, _ -> Text("series") }, item = { Text("item") }, player = { _, _ -> Text("player") })
+                browsingDestinations(library = { Text("library") }, series = { _, _, _ -> Text("series") }, item = { Text("item") }, player = { _, _ -> Text("player") }, downloadedSeries = { Text("downloaded") })
             }
         }
         rule.waitForIdle()

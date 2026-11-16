@@ -1,6 +1,7 @@
 package app.shoalwatch.data.playback.engine
 
 import app.shoalwatch.data.api.MediaRoute
+import app.shoalwatch.data.downloads.SavedMedia
 import app.shoalwatch.data.playback.StreamSource
 import android.view.SurfaceHolder
 import kotlinx.coroutines.flow.Flow
@@ -59,8 +60,14 @@ interface VideoOutput {
     fun detach(holder: SurfaceHolder)
 }
 
-/** What to load: the URL is built inside the engine module from the route; it never leaves `data/playback`. Never printed. */
-class EngineItem internal constructor(internal val route: MediaRoute, internal val source: StreamSource) {
+/**
+ * What to load: a remote stream (the URL is built inside the engine module from the route; it never leaves `data/playback`) or
+ * a saved copy, read only inside its own folder (`ItemBytes`). Exactly one of the two. Never printed.
+ */
+class EngineItem private constructor(internal val route: MediaRoute?, internal val source: StreamSource?, internal val saved: SavedMedia?) {
+    internal constructor(route: MediaRoute, source: StreamSource) : this(route, source, null)
+    internal constructor(saved: SavedMedia) : this(null, null, saved)
+
     override fun toString() = "EngineItem(<redacted>)"
 }
 

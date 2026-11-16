@@ -47,6 +47,18 @@ interface Playstate {
     suspend fun recordStop(s: Session, itemId: String, positionMs: Long, finished: Boolean)
 }
 
+/**
+ * What a LOCAL play (a saved copy, Milestone 4) does to the saved library: implemented by [PlaystateRepository]. Milestone 5's
+ * outbox sends it; until then the marker stays, and the start-up sweep and the idle clean-up spare rows with an offline play.
+ */
+interface LocalPlaystate {
+    /**
+     * Same per-user queue and write gate as the other actions; sets the local value (finished: watched; otherwise the position)
+     * with the pending marker; no server call, no rollback, no refresh. SERVER_NOT_FOUND for an item this user was not shown.
+     */
+    suspend fun recordLocalStop(s: Session, itemId: String, positionMs: Long, finished: Boolean)
+}
+
 /** A list the server recomputes after an action, for [LibraryRepository] to refresh. Repository-internal vocabulary, not a screen API. */
 internal sealed interface Recompute {
     data object Resume : Recompute

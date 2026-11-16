@@ -71,6 +71,17 @@ abstract class SeriesRenderBase : RenderBase() {
 
     private fun showSeries(state: SeriesUiState) = show { SeriesScreen(state, actions, emptyFlow(), snackbar) }
 
+    /** Tasks 13-16 review M-12: each episode row carries its own Download inside the series screen. */
+    @Test fun eachEpisodeRowOffersItsOwnDownloadOnTheScreen() {
+        val asked = mutableListOf<String>()
+        val controls = app.shoalwatch.ui.downloads.DownloadControls(emptyMap(), onDownload = { asked += it }, onRetry = {}, onOpenDownloads = {})
+        show { SeriesScreen(ready, actions, emptyFlow(), snackbar, controls) }
+        val label = text(R.string.dl_episode_download, "1", "2")
+        scrollTo(hasContentDescription(label))
+        rule.onNodeWithContentDescription(label).performClick()
+        assertEquals(listOf(id(2)), asked)
+    }
+
     @Test fun showsTheTitleFactsAndAPlainTextOverview() {
         showSeries(ready)
         assertShown("Tidal")

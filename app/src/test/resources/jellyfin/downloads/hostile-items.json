@@ -1,0 +1,18 @@
+{
+  "Items": [
+    { "Id": "c0000000000000000000000000000001", "CanDownload": true, "MediaSources": [ { "Id": "abc", "Size": -5, "Container": "mkv" } ] },
+    { "Id": "c0000000000000000000000000000002", "CanDownload": true, "MediaSources": [ { "Id": "abc", "Size": 274877906945 } ] },
+    { "Id": "c0000000000000000000000000000003", "CanDownload": true, "MediaSources": [ { "Id": "abc", "Size": 1024.5 } ] },
+    { "Id": "c0000000000000000000000000000004", "CanDownload": true, "MediaSources": [ { "Id": "a/b", "ETag": "x\"y", "Size": 274877906944 } ] },
+    { "Id": "c0000000000000000000000000000005", "CanDownload": true, "MediaSources": [ { "Id": "abc", "Container": "mp4,mov", "Size": "12" } ] },
+    { "Id": "c0000000000000000000000000000006", "CanDownload": 1, "MediaSources": [ { "Id": "abc", "Container": "../x" } ] },
+    { "Id": "c0000000000000000000000000000006", "CanDownload": true },
+    { "Id": "not-a-guid", "CanDownload": true },
+    { "Id": 7, "CanDownload": true },
+    "a bare string",
+    null,
+    { "Id": "c0000000000000000000000000000007", "CanDownload": true, "MediaSources": "nope" },
+    { "Id": "c0000000000000000000000000000008", "CanDownload": true, "MediaSources": [ { "Id": 12 } ] },
+    { "Id": "d0000000000000000000000000000009", "CanDownload": true }
+  ]
+}

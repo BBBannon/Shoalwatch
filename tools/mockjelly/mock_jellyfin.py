@@ -3,11 +3,12 @@
 Standard library only. Serves the endpoints the app uses (shapes taken from the official Jellyfin 12.4.0 OpenAPI
 reference in docs/reference) from a small in-memory catalogue. Plain http, no TLS, no real security: never expose it.
 
-    python -I mock_jellyfin.py [port] [--latency-ms N] [--fail-rate P] [--host H]
+    python -I mock_jellyfin.py [port] [--latency-ms N] [--fail-rate P] [--host H] [--refuse] [download flags, see the README]
 
 Each request logs one line: method, path (no query), auth yes/no, token yes/no, status. Never the token or password.
 """
 import argparse
+import email.utils
 import hashlib
 import json
 import random
@@ -118,7 +119,7 @@ def flag(body, q, name):
     return q.get(name.lower(), ["true"])[0].lower() != "false"
 
 
-def media_source(item_id, direct_play, direct_stream, play_session_id):
+def media_source(item_id, direct_play, direct_stream, play_session_id, transcoding=True):
     streams = [
         {"Index": 0, "Type": "Video", "Codec": "h264", "Profile": "Constrained Baseline", "Width": 320, "Height": 180, "BitDepth": 8, "VideoRange": "SDR",
          "VideoRangeType": "SDR", "AverageFrameRate": 24.0, "RealFrameRate": 24.0, "IsDefault": True, "IsExternal": False, "DisplayTitle": "180p H264 SDR"},
@@ -133,7 +134,7 @@ def media_source(item_id, direct_play, direct_stream, play_session_id):
               "Size": (MEDIA_DIR / "clip.mp4").stat().st_size, "Bitrate": 1_000_000, "IsRemote": False, "SupportsTranscoding": True,
               "SupportsDirectPlay": direct_play, "SupportsDirectStream": direct_stream, "MediaStreams": streams, "HasSegments": True,
               "DefaultAudioStreamIndex": 1}
-    if not direct_play:
+    if not direct_play and transcoding:
         source["TranscodingUrl"] = (f"/videos/{item_id}/master.m3u8?MediaSourceId={item_id}&PlaySessionId={play_session_id}"
                                     "&TranscodeReasons=ContainerBitrateExceedsLimit&api_key=MOCKLEAK")  # api_key is deliberate: the app must strip it
         source["TranscodingSubProtocol"] = "hls"
@@ -291,11 +292,11 @@ def in_order(items, q):
 def list_items(q):
     parent = norm(q.get("parentid", [""])[0])
     recursive = q.get("recursive", ["false"])[0].lower() == "true"
+    ids = {norm(i) for i in csv(q, "ids")}
     if parent:
         pool = descendants(parent) if recursive else CHILDREN.get(parent, [])
-    else:
-        pool = [i for i in ORDER if recursive or ITEMS[i]["Type"] == "CollectionFolder"]
-    ids = {norm(i) for i in csv(q, "ids")}
+    else:  # like Jellyfin, ids name items wherever they are
+        pool = [i for i in ORDER if ids or recursive or ITEMS[i]["Type"] == "CollectionFolder"]
     types, filters = {t.lower() for t in csv(q, "includeitemtypes")}, {f.lower() for f in csv(q, "filters")}
     term = q.get("searchterm", [""])[0].lower()
     out = []
@@ -307,7 +308,11 @@ def list_items(q):
         if "isunplayed" in filters and played or "isplayed" in filters and not played or "isfavorite" in filters and not st["fav"]:
             continue
         out.append(item)
-    return page(in_order(out, q), q)
+    listed = page(in_order(out, q), q)
+    fields = {f.lower() for f in csv(q, "fields")}
+    for row in listed["Items"]:
+        download_fields(row, ITEMS[row["Id"]], fields)
+    return listed
 
 
 def resume_items(q):
@@ -365,8 +370,111 @@ def png(item, width, height):
     return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)) + chunk(b"IDAT", raw) + chunk(b"IEND", b"")
 
 
+# ---------------------------------------------------------------- downloads
+# One flag per way a real server might behave (Milestone 4 Task 1; see the README and research/2026-11-downloads-spike.md).
+DOWNLOAD_FLAGS = {"drop_after": None, "no_range": False, "etag_changes": False, "octet_stream": False, "no_download": False,
+                  "candownload_missing": False, "download_forbidden": False, "legacy_auth_only": False, "hls_recut": False,
+                  "hls_idle_kill": None, "no_etag": False}
+ETAG = "a1b2c3"
+API_KEY_NAMES = {"api_key", "apikey", "x-emby-token", "x-mediabrowser-token", "x-emby-authorization"}  # compared lower-cased
+DOWNLOADS = []  # each media request, newest last (read back at /mock/downloads); never a token or a query value
+SESSIONS = {}  # play session id -> {"item", "shape": [segment seconds], "last": monotonic time, "dead"}
+SESSION_RE = re.compile(r"[0-9a-f]{32}")
+SESSION_SEGMENT_RE = re.compile(r"seg(\d{1,4})\.ts")
+MEDIA_STATE = {"drop_used": False, "validators": 0, "sessions": 0}
+
+
+def reset_downloads():
+    """Every download flag off and every download record gone (the tests call it between cases)."""
+    with LOCK:
+        CONFIG.update(DOWNLOAD_FLAGS)
+        DOWNLOADS.clear()
+        SESSIONS.clear()
+        MEDIA_STATE.update(drop_used=False, validators=0, sessions=0)
+
+
+def can_download(item):
+    """What /Items says in CanDownload: None when --candownload-missing leaves the field out."""
+    if CONFIG["candownload_missing"]:
+        return None
+    return playable(item) and not CONFIG["no_download"]
+
+
+def download_fields(row, item, fields):
+    """Adds CanDownload and MediaSources to an /Items row, only when asked for in fields (as Jellyfin's DtoService does)."""
+    if "candownload" in fields and can_download(item) is not None:
+        row["CanDownload"] = can_download(item)
+    if "mediasources" in fields and playable(item):
+        source = media_source(item["Id"], True, True, None)
+        source["ETag"] = ETAG
+        row["MediaSources"] = [source]
+
+
+def validators():
+    """(ETag without quotes, Last-Modified) for this /Download response; --etag-changes makes a new pair every time."""
+    if CONFIG["etag_changes"]:
+        MEDIA_STATE["validators"] += 1
+        n = MEDIA_STATE["validators"]
+        return f"{ETAG}x{n}", email.utils.formatdate(NOW.timestamp() + n, usegmt=True)
+    return ETAG, email.utils.formatdate(NOW.timestamp(), usegmt=True)
+
+
+def if_range_matches(if_range, etag, modified):
+    """As ASP.NET Core serves a file: with --no-etag an entity tag cannot be compared and is ignored (the range is served),
+    and a date matches when the file was not modified after it; otherwise the ETag or the exact date must match."""
+    if not CONFIG["no_etag"]:
+        return if_range in (f'"{etag}"', modified)
+    if if_range.startswith('"') or if_range.startswith("W/"):
+        return True
+    try:
+        return email.utils.parsedate_to_datetime(modified) <= email.utils.parsedate_to_datetime(if_range)
+    except (TypeError, ValueError):
+        return False
+
+
+def segment_shape():
+    """Segment lengths for a new play session: five 2 s segments, or with --hls-recut a different count and length each time."""
+    MEDIA_STATE["sessions"] += 1
+    if not CONFIG["hls_recut"]:
+        return [2.0] * 5
+    count = 5 - (MEDIA_STATE["sessions"] - 1) % 3  # 5, 4, 3, 5, ...
+    return [round(10.0 / count, 6)] * count
+
+
+def new_session(session, item_id):
+    SESSIONS[session] = {"item": item_id, "shape": segment_shape(), "last": time.monotonic(), "dead": False}
+
+
+def session_playlist(session):
+    shape = SESSIONS[session]["shape"]
+    lines = ["#EXTM3U", "#EXT-X-VERSION:3", f"#EXT-X-TARGETDURATION:{int(max(shape) + 0.999)}", "#EXT-X-MEDIA-SEQUENCE:0",
+             "#EXT-X-PLAYLIST-TYPE:VOD"]
+    for n, seconds in enumerate(shape):
+        lines += [f"#EXTINF:{seconds:.6f},", f"seg{n}.ts?api_key=MOCKLEAK"]  # relative, with a key the app must strip
+    return ("\n".join(lines + ["#EXT-X-ENDLIST"]) + "\n").encode()
+
+
+def media_kind(segs):
+    """'download', 'stream', 'playlist' or 'segment' for a media path; None for anything else."""
+    low = [x.lower() for x in segs]
+    if len(segs) == 3 and low[0] == "items" and low[2] == "download":
+        return "download"
+    if len(segs) == 3 and low[0] == "videos" and low[2] == "stream":
+        return "stream"
+    if len(segs) > 2 and segs[0] == "videos":  # the mock's own lower-case HLS paths
+        return "segment" if segs[-1].endswith(".ts") else "playlist"
+    return None
+
+
+def record_download(path, segs, q, token, headers):
+    in_path = segs[3] if len(segs) > 4 and segs[2] == "hls" and SESSION_RE.fullmatch(segs[3]) else None  # /videos/{id}/hls/{session}/...
+    session = in_path or (q.get("playsessionid") or [None])[0]
+    DOWNLOADS.append({"Path": path, "Range": headers.get("Range"), "IfRange": headers.get("If-Range"), "PlaySessionId": session,
+                      "Token": "yes" if token else "no", "ApiKey": "yes" if API_KEY_NAMES & set(q) else "no"})
+
+
 # ------------------------------------------------------------------- server
-CONFIG = {"latency": 0.0, "fail_rate": 0.0, "refuse": False}
+CONFIG = {"latency": 0.0, "fail_rate": 0.0, "refuse": False, **DOWNLOAD_FLAGS}
 TOKENS = set()
 
 
@@ -374,7 +482,7 @@ class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     status = 0
 
-    def reply(self, code, body=None, headers=None, raw=None, content_type="application/json"):
+    def reply(self, code, body=None, headers=None, raw=None, content_type="application/json", media=False):
         data = raw if raw is not None else (b"" if body is None else json.dumps(body).encode())
         self.status = code
         self.send_response(code)
@@ -383,6 +491,12 @@ class Handler(BaseHTTPRequestHandler):
         for k, v in (headers or {}).items():
             self.send_header(k, v)
         self.end_headers()
+        if media and data and CONFIG["drop_after"] is not None and not MEDIA_STATE["drop_used"]:
+            MEDIA_STATE["drop_used"] = True  # --drop-after: the first media body only, cut short, then the connection closes
+            self.wfile.write(data[:CONFIG["drop_after"]])
+            self.wfile.flush()
+            self.close_connection = True
+            return True
         self.wfile.write(data)
         return True
 
@@ -431,6 +545,14 @@ class Handler(BaseHTTPRequestHandler):
             TOKENS.add(issued)
             user = {"Name": USER_NAME, "ServerId": SERVER_ID, "Id": USER_ID, "HasPassword": True}
             return self.reply(200, {"User": user, "SessionInfo": {}, "AccessToken": issued, "ServerId": SERVER_ID})
+        media = media_kind(segs) if method == "GET" else None
+        if media:
+            record_download(path, segs, q, token, self.headers)
+            keyed = sorted(API_KEY_NAMES & set(q))
+            if keyed and not CONFIG["legacy_auth_only"]:
+                return self.reply(400)  # the app must never put a key in a URL
+            if CONFIG["legacy_auth_only"] and (keyed or media in ("download", "segment")):
+                token = q[keyed[0]][0] if keyed else ""  # the legacy setting: the key in the query counts, the header does not
         if token not in TOKENS:
             return self.reply(401)
         if random.random() < CONFIG["fail_rate"]:
@@ -448,6 +570,16 @@ class Handler(BaseHTTPRequestHandler):
         item = lambda i: ITEMS.get(norm(i)) if ID_RE.fullmatch(i) else None
         if method == "GET" and low == ["mock", "reports"]:
             return self.reply(200, list(REPORTS))
+        if method == "GET" and low == ["mock", "downloads"]:
+            return self.reply(200, list(DOWNLOADS))
+        if method == "POST" and low in (["mock", "no-download"], ["mock", "allow-download"]):
+            CONFIG["no_download"] = low[1] == "no-download"  # --no-download at run time: a restart would forget every token
+            return self.reply(204)
+        if method == "GET" and low[0] == "items" and len(segs) == 3 and low[2] == "download":
+            target = item(segs[1])
+            if not target:
+                return self.reply(404)
+            return self.download() if playable(target) else self.reply(400)  # Jellyfin: ArgumentException for a folder
         if method == "POST" and low[:2] == ["sessions", "playing"] and len(segs) <= 3:
             kind = {"": "start", "progress": "progress", "stopped": "stopped", "ping": "ping"}.get(low[2] if len(segs) == 3 else "")
             if kind is None:
@@ -471,30 +603,36 @@ class Handler(BaseHTTPRequestHandler):
             if CONFIG["refuse"]:
                 return self.reply(200, {"MediaSources": [], "ErrorCode": "NotAllowed"})
             session = secrets.token_hex(16)
-            source = media_source(target["Id"], flag(body, q, "EnableDirectPlay"), flag(body, q, "EnableDirectStream"), session)
+            transcoding = flag(body, q, "EnableTranscoding")
+            source = media_source(target["Id"], flag(body, q, "EnableDirectPlay"), flag(body, q, "EnableDirectStream"), session, transcoding)
+            if transcoding:
+                new_session(session, target["Id"])
             return self.reply(200, {"MediaSources": [source], "PlaySessionId": session})
         target = item(segs[1]) if method == "GET" and low[0] == "videos" and len(segs) > 1 else None
         if target and playable(target):
             if len(segs) == 3 and low[2] == "stream":
-                if any(name in ("api_key", "apikey") for name in q):  # q names are already lower-cased
-                    return self.reply(400)  # the app must never put a key in a URL
-                return self.clip(self.headers.get("Range", ""))
+                return self.clip(self.headers.get("Range", ""))  # a key in the query was already refused (dispatch)
             if len(segs) == 6 and low[3] == "subtitles" and SUBTITLE_FILE_RE.fullmatch(low[5]) and segs[4].isdigit() and int(segs[4]) in SUBTITLES:
                 name, content_type = SUBTITLES[int(segs[4])]
                 return self.reply(200, raw=(MEDIA_DIR / name).read_bytes(), content_type=content_type)
             if segs[0] == "videos":  # the lower-case path the mock puts in its own TranscodingUrl
-                return self.hls("/".join(segs[2:]))
+                return self.hls(target["Id"], "/".join(segs[2:]), q)
         return None
 
-    def hls(self, rest):
+    def hls(self, item_id, rest, q):
         if rest == "master.m3u8":
-            playlist = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=300000,RESOLUTION=320x180\nhls/main.m3u8\n"
+            session = q.get("playsessionid", [""])[0]
+            media = f"hls/{session}/main.m3u8" if session in SESSIONS else "hls/main.m3u8"  # a known play session is in the path
+            playlist = f"#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=300000,RESOLUTION=320x180\n{media}\n"
             return self.reply(200, raw=playlist.encode(), content_type="application/vnd.apple.mpegurl")
+        parts = rest.split("/")
+        if len(parts) == 3 and parts[0] == "hls" and parts[1] in SESSIONS and SESSIONS[parts[1]]["item"] == item_id:
+            return self.session_file(SESSIONS[parts[1]], parts[1], parts[2])
         if rest == "hls/main.m3u8":
             return self.reply(200, raw=(MEDIA_DIR / "hls" / "main.m3u8").read_bytes(), content_type="application/vnd.apple.mpegurl")
         found = HLS_SEGMENT_RE.fullmatch(rest)
         if found and (MEDIA_DIR / "hls" / found[1]).is_file():
-            return self.reply(200, raw=(MEDIA_DIR / "hls" / found[1]).read_bytes(), content_type="video/mp2t")
+            return self.reply(200, raw=(MEDIA_DIR / "hls" / found[1]).read_bytes(), content_type="video/mp2t", media=True)
         return self.reply(404)
 
     def clip(self, range_header):
@@ -504,10 +642,48 @@ class Handler(BaseHTTPRequestHandler):
         if span == "bad":
             return self.reply(416, headers={**headers, "Content-Range": f"bytes */{len(data)}"})
         if span is None:
-            return self.reply(200, raw=data, headers=headers, content_type="video/mp4")
+            return self.reply(200, raw=data, headers=headers, content_type="video/mp4", media=True)
         start, end = span
         headers["Content-Range"] = f"bytes {start}-{end}/{len(data)}"
-        return self.reply(206, raw=data[start:end + 1], headers=headers, content_type="video/mp4")
+        return self.reply(206, raw=data[start:end + 1], headers=headers, content_type="video/mp4", media=True)
+
+    def session_file(self, session, session_id, name):
+        """One play session's media playlist or segment; --hls-idle-kill ends a session whose segments went unasked for too long."""
+        if name == "main.m3u8":
+            return self.reply(200, raw=session_playlist(session_id), content_type="application/vnd.apple.mpegurl")
+        found = SESSION_SEGMENT_RE.fullmatch(name)
+        if not found or int(found[1]) >= len(session["shape"]):
+            return self.reply(404)
+        now, idle = time.monotonic(), CONFIG["hls_idle_kill"]
+        if session["dead"] or (idle is not None and now - session["last"] > idle):
+            session["dead"] = True
+            return self.reply(404)
+        session["last"] = now
+        data = (MEDIA_DIR / "hls" / f"seg{int(found[1]) % 5}.ts").read_bytes()
+        return self.reply(200, raw=data, content_type="video/mp2t", media=True)
+
+    def download(self):
+        """GET /Items/{id}/Download: the clip, with validators and (unless --no-range) Range and If-Range as ASP.NET Core serves files."""
+        if CONFIG["no_download"] or CONFIG["download_forbidden"]:
+            return self.reply(403)
+        data = (MEDIA_DIR / "clip.mp4").read_bytes()
+        etag, modified = validators()
+        headers = {"Last-Modified": modified} if CONFIG["no_etag"] else {"ETag": f'"{etag}"', "Last-Modified": modified}
+        content_type = "application/octet-stream" if CONFIG["octet_stream"] else "video/mp4"
+        if CONFIG["no_range"]:
+            return self.reply(200, raw=data, headers=headers, content_type=content_type, media=True)
+        headers["Accept-Ranges"] = "bytes"
+        span = byte_range(self.headers.get("Range", ""), len(data))
+        if_range = self.headers.get("If-Range")
+        if span is not None and if_range is not None and not if_range_matches(if_range, etag, modified):
+            span = None  # a validator that no longer matches: the whole file, as 200
+        if span == "bad":
+            return self.reply(416, headers={**headers, "Content-Range": f"bytes */{len(data)}"})
+        if span is None:
+            return self.reply(200, raw=data, headers=headers, content_type=content_type, media=True)
+        start, end = span
+        headers["Content-Range"] = f"bytes {start}-{end}/{len(data)}"
+        return self.reply(206, raw=data[start:end + 1], headers=headers, content_type=content_type, media=True)
 
     def authenticated(self, method, path, q, raw):
         segs = [x.lower() if n in (0, 2) else x for n, x in enumerate(path.strip("/").split("/"))]
@@ -583,8 +759,21 @@ def main():
     parser.add_argument("--latency-ms", type=int, default=0, help="delay every response by this many milliseconds")
     parser.add_argument("--fail-rate", type=float, default=0.0, help="fraction (0 to 1) of signed-in requests answered with a 500")
     parser.add_argument("--refuse", action="store_true", help="answer every PlaybackInfo request with ErrorCode NotAllowed")
+    downloads = parser.add_argument_group("downloads", "one real-server behaviour each; any combination is allowed (see the README)")
+    downloads.add_argument("--drop-after", type=int, metavar="BYTES", help="close the connection after BYTES body bytes, first media request only")
+    downloads.add_argument("--no-range", action="store_true", help="/Download ignores Range and If-Range and sends no Accept-Ranges")
+    downloads.add_argument("--etag-changes", action="store_true", help="every /Download has a new ETag and Last-Modified")
+    downloads.add_argument("--octet-stream", action="store_true", help="/Download answers application/octet-stream")
+    downloads.add_argument("--no-download", action="store_true", help="CanDownload false, and /Download is 403")
+    downloads.add_argument("--candownload-missing", action="store_true", help="CanDownload left out of /Items; /Download still allowed")
+    downloads.add_argument("--download-forbidden", action="store_true", help="CanDownload true, but /Download is 403")
+    downloads.add_argument("--legacy-auth-only", action="store_true", help="/Download and HLS segments refuse header auth and want api_key")
+    downloads.add_argument("--hls-recut", action="store_true", help="each PlaybackInfo gets a media playlist of a different shape")
+    downloads.add_argument("--no-etag", action="store_true", help="/Download sends Last-Modified only, as real Jellyfin does")
+    downloads.add_argument("--hls-idle-kill", type=float, metavar="SECONDS", help="a play session's segments are 404 after SECONDS idle")
     args = parser.parse_args()
     CONFIG.update(latency=args.latency_ms / 1000, fail_rate=args.fail_rate, refuse=args.refuse)
+    CONFIG.update({name: getattr(args, name) for name in DOWNLOAD_FLAGS})
     build_catalogue()
     seed_state()
     print(f"Mock Jellyfin (test stand-in) on {args.host}:{args.port}; user {USER_NAME}", flush=True)

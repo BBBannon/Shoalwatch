@@ -48,6 +48,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import app.shoalwatch.ui.downloads.DownloadControls
+import app.shoalwatch.ui.downloads.DetailDownloadButton
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -105,7 +107,7 @@ class DetailActions(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DetailScreen(state: DetailUiState, actions: DetailActions, messages: Flow<String>, snackbar: SnackbarHostState) {
+fun DetailScreen(state: DetailUiState, actions: DetailActions, messages: Flow<String>, snackbar: SnackbarHostState, download: DownloadControls? = null) {
     CollectMessages(messages, snackbar, state.session)
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -134,7 +136,7 @@ fun DetailScreen(state: DetailUiState, actions: DetailActions, messages: Flow<St
                 item == null || session == null -> Loading(actions.onBack)
                 else -> {
                     PullRefresh(isRefreshing = state.pulling, onRefresh = actions.onRefresh, modifier = Modifier.fillMaxSize(), belowStatusBar = true) {
-                        Content(state, item, session, actions)
+                        Content(state, item, session, actions, download)
                     }
                     RefreshLine(state.refreshing && !state.pulling, Modifier.statusBarsPadding().align(Alignment.TopCenter))
                 }
@@ -165,7 +167,7 @@ private fun Loading(onBack: () -> Unit) {
 }
 
 @Composable
-private fun Content(state: DetailUiState, entry: ItemWithUserData, session: Session, actions: DetailActions) {
+private fun Content(state: DetailUiState, entry: ItemWithUserData, session: Session, actions: DetailActions, download: DownloadControls?) {
     val strings = rememberStrings()
     val item = entry.item
     val data = entry.userData
@@ -210,6 +212,7 @@ private fun Content(state: DetailUiState, entry: ItemWithUserData, session: Sess
                         Text(stringResource(R.string.detail_play_from_start), style = MaterialTheme.typography.labelLarge)
                     }
                 }
+                if (download != null && (item.kind == ItemKind.MOVIE || item.kind == ItemKind.EPISODE)) DetailDownloadButton(item.id, download)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     WatchedButton(
                         stringResource(if (watched) R.string.sheet_mark_unwatched else R.string.sheet_mark_watched),

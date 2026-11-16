@@ -15,6 +15,8 @@ import kotlinx.coroutines.withContext
  * each user who really had a leftover has their lists aged so the server's copy arrives promptly and decides. In this
  * milestone an unconfirmed change may therefore be reverted. **Milestone 5 owns recovery:** a marker with no live action will
  * then mean "send this change", not "discard it", and this sweep (like the tidy-up queue's idle clean-up) must be revisited.
+ * Already in Milestone 4, a row that has an `offline_plays` row (watched from a saved copy) is never in the snapshot and never
+ * cleared here (`ItemDao.NO_OFFLINE_PLAY`): its marker waits for Milestone 5 to send the play.
  *
  * What it clears is exactly a SNAPSHOT of the rows that had a marker when it first managed to look (one query, the first
  * thing it does, before any entry point lets an action run), minus any row this process has touched since: so a retry, which can

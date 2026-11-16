@@ -25,13 +25,19 @@ internal object TrackRules {
      * whatever the play method). Everything else asks again: audio during DIRECT_STREAM or TRANSCODE (or a DIRECT_PLAY track the
      * stream does not match: then as a conversion, since a direct stream cannot change its audio), a picture track to be burned
      * in, an external picture track (always burned in), a burn-in, and leaving a burn-in ([keepConversion]: the item had to be
-     * converted anyway, after a decoder failure or an audio mismatch).
+     * converted anyway, after a decoder failure or an audio mismatch). LOCAL (a saved copy) never asks the server: every track is
+     * chosen in the player, nothing is burned in, and a language disagreement keeps the player's track (only [pending] asks the
+     * resolver again, which answers with the same saved copy).
      */
     fun step(
         plan: PlaybackPlan, audioIndex: Int?, subtitle: SubtitleTrack?, burnIn: Boolean, engineLanguages: List<String?>, keepConversion: Boolean,
         r: PlaybackRequest = plan.request, pending: Boolean = false,
     ): TrackStep {
         val audio = audioIndex ?: r.audioIndex ?: plan.audioIndex
+        if (plan.method == PlayMethod.LOCAL) {
+            val picture = subtitle?.takeIf { it.kind == SubtitleKind.PICTURE }
+            return TrackStep(r.copy(audioIndex = audio, pictureSubtitleIndex = picture?.index, burnInSubtitleIndex = null), pending, null)
+        }
         val direct = plan.method == PlayMethod.DIRECT_PLAY
         val burned = subtitle?.takeIf { burnIn || (it.kind == SubtitleKind.PICTURE && it.external) }
         val picture = subtitle?.takeIf { it.kind == SubtitleKind.PICTURE && burned == null }
@@ -63,9 +69,12 @@ internal object TrackRules {
     fun deliveryOf(plan: PlaybackPlan, track: SubtitleTrack, burnIn: Boolean): SubtitleDelivery = when {
         burnIn -> SubtitleDelivery.BURNED_IN
         track.kind != SubtitleKind.PICTURE -> SubtitleDelivery.FILE
-        plan.method == PlayMethod.DIRECT_PLAY && !track.external -> SubtitleDelivery.IN_STREAM
+        inPlayer(plan) && !track.external -> SubtitleDelivery.IN_STREAM
         else -> SubtitleDelivery.BURNED_IN
     }
+
+    /** DIRECT_PLAY and LOCAL: the file as it is, so its own tracks are switched in the player. */
+    fun inPlayer(plan: PlaybackPlan) = plan.method == PlayMethod.DIRECT_PLAY || plan.method == PlayMethod.LOCAL
 
     /**
      * The audio track's position among the stream's audio tracks (in Jellyfin's index order), or null when the stream does
@@ -133,7 +142,7 @@ internal class TrackControl(
         c.subtitle = track?.let { On(it.index, TrackRules.deliveryOf(plan, it, burnIn = false)) } ?: Off
         val step = TrackRules.step(plan, pick.audioIndex, track, burnIn = false, emptyList(), keepConversion = false)
         c.wanted = step.request
-        return if (step.reask) resolver.resolve(session, step.request, step.burnInFormat) else Resolved(TrackRules.withRequest(plan, step.request), resolved.route)
+        return if (step.reask) resolver.resolve(session, step.request, step.burnInFormat) else resolved.withPlan(TrackRules.withRequest(plan, step.request))
     }
 
     /** What the user's latest choices want ([PlayingItem.wanted]), or the playing plan's request before any. */
@@ -156,7 +165,7 @@ internal class TrackControl(
             c.wanted = again.request
             work.launch { if (host.current === c) host.reload(c) { resolver.resolve(session, again.request, again.burnInFormat) } }
         }
-        val direct = plan.method == PlayMethod.DIRECT_PLAY
+        val direct = TrackRules.inPlayer(plan)
         engine.selectAudio(plan.audioIndex?.takeIf { direct }?.let { TrackRules.audioOrdinal(plan, it, emptyList()) })
         engine.selectPictureSubtitle(track?.takeIf { delivery == SubtitleDelivery.IN_STREAM }?.let { TrackRules.pictureOrdinal(plan, it.index) })
         if (delivery != SubtitleDelivery.IN_STREAM) c.pictureFrame = SubtitleFrame.NONE
@@ -247,7 +256,7 @@ internal class TrackControl(
         c.wanted = step.request
         if (step.reask) return host.reload(c) { resolver.resolve(session, step.request, step.burnInFormat) }
         val next = TrackRules.withRequest(plan, step.request)
-        c.resolved = Resolved(next, resolved.route)
+        c.resolved = resolved.withPlan(next)
         prepare(c, next)
         host.tracksChanged(c)
     }

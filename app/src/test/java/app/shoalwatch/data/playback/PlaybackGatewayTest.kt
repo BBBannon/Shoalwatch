@@ -75,7 +75,7 @@ class PlaybackGatewayTest : PlaybackGatewayTestBase() {
                         SubtitleTrack(4, "Japanese - ASS", "jpn", "ass", SubtitleKind.STYLED_TEXT, forced = false, hearingImpaired = false, isDefault = true, external = false, fileFormat = "ass"),
                         SubtitleTrack(5, "English - PGSSUB - Forced", "eng", "pgssub", SubtitleKind.PICTURE, forced = true, hearingImpaired = false, isDefault = false, external = false),
                     ),
-                    defaultAudioIndex = 1, defaultSubtitleIndex = 4, hasSegments = true,
+                    defaultAudioIndex = 1, defaultSubtitleIndex = 4, hasSegments = true, sizeBytes = 1_234_567_890L,
                 ),
             ),
             refusal = null,

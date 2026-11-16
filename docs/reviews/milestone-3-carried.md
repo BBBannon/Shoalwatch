@@ -81,12 +81,12 @@ From the whole-milestone review of 15/11/2026 (branch `milestone-3`). Each line 
 
 All were fixed before the merge: N-1 (constant media id), N-2 (test), N-3 (wording), N-4 (headset play refused while the app is stopped), N-9 and N-10 (tidy). The subtitle findings were closed by replacing Media3's text parsers with the app's own (see `docs/ARCHITECTURE.md`, "Tracks and subtitles", and `docs/security/milestone-3-check.md`).
 
-## Added by the last review rounds (16/11/2026) — all carried
+## Added by the last review rounds (15/11/2026) — all carried
 
 | # | Point | Where | Decision |
 |---|---|---|---|
-| n-1 | Between two loads the picture-subtitle choice is applied to the old item's tracks; in that moment Media3 could pick a default text track, which fails that start safely ("Playback failed"); nothing is parsed | `engine/ExoPlayerEngine.kt` `load()` | Carry, do early in Milestone 4: turn text off in `load()` before `setMediaItem` |
-| n-2 | If the screen goes off in the few milliseconds before the player's controller exists, the stop is lost and the first load plays | `ui/player/PlayerViewModel.kt` | Carry: remember a stop that arrives before the controller |
+| n-1 | Between two loads the picture-subtitle choice is applied to the old item's tracks; in that moment Media3 could pick a default text track, which fails that start safely ("Playback failed"); nothing is parsed | `engine/ExoPlayerEngine.kt` `load()` | **Fixed in Milestone 4** (before Task 9): text is turned off in `load()` before `setMediaItem` |
+| n-2 | If the screen goes off in the few milliseconds before the player's controller exists, the stop is lost and the first load plays | `ui/player/PlayerViewModel.kt` | **Fixed in Milestone 4** (before Task 9): a stop before the controller is remembered; the first load starts paused |
 | n-3 | The boundary test should allow only the four exact imports in `PictureSubtitles.kt` | `Media3BoundaryTest` | Carry (hardening) |
 | n-4 | No reflection test that the HLS path receives the picture-only subtitle factory | engine tests | Carry (hardening) |
 | n-5 | Past 32 style changes in one cue the rest of the cue takes the last style | `engine/SubtitleScanner.kt` | Carry: documented behaviour; revisit only if a real file shows it |

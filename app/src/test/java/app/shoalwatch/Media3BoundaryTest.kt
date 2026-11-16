@@ -16,6 +16,8 @@ class Media3BoundaryTest {
     private val outsideEngine = listOf(
         "import androidx.media3.exoplayer", "import androidx.media3.datasource", "import androidx.media3.session", "import androidx.media3.ui",
         "import androidx.media3.extractor", "import androidx.media3.common.text",
+        // The saved-file reader is opened only by ItemBytes, after its inside-the-folder check (Milestone 4 Task 9).
+        "SavedMediaDataSource",
     )
     private val nowhere = listOf(
         "DefaultHttpDataSource", "DefaultDataSource", "CacheDataSource", "FileDataSource", "EventLogger", "setWakeMode",
@@ -75,8 +77,13 @@ class Media3BoundaryTest {
         for (b in players) assertTrue("a player without the engine's media source factory: $b", ".setMediaSourceFactory(mediaSources)" in b)
         for (b in sessions) assertTrue("a media session without the loader that loads nothing: $b", ".setBitmapLoader(" in b)
         fun count(word: String) = Regex(Regex.escape(word)).findAll(text).count()
-        assertEquals("every media source factory is over OkHttpDataSource", count("DefaultMediaSourceFactory("), count("DefaultMediaSourceFactory(OkHttpDataSource.Factory("))
-        assertEquals("one media source factory, the engine's", 1, count("DefaultMediaSourceFactory("))
+        // Milestone 4 Task 9: every media source factory reads through ItemBytes, which reads only the current item's bytes.
+        assertEquals("every media source factory is over ItemBytes and OkHttpDataSource", count("DefaultMediaSourceFactory("), count(ITEM_BYTES))
+        assertEquals("two media source factories, the player's and the saved-copy probe's", 2, count("DefaultMediaSourceFactory("))
+        for (file in listOf("ExoPlayerEngine.kt", "SavedMediaProbe.kt")) {
+            val source = sources().single { it.path.replace('\\', '/').endsWith("/data/playback/engine/$file") }.readText()
+            assertTrue("$file builds its media sources over ItemBytes", ITEM_BYTES in source && PICTURES_ONLY in source)
+        }
         assertEquals("every media source factory is given only the picture parsers", count("DefaultMediaSourceFactory("), count(PICTURES_ONLY))
         assertEquals("no other subtitle parser factory is set anywhere", count(".setSubtitleParserFactory("), count(PICTURES_ONLY))
     }
@@ -96,9 +103,15 @@ class Media3BoundaryTest {
         }
         assertTrue(violations(listOf(engine to listOf("val s = f$PICTURES_ONLY"))).isEmpty())
         assertEquals(1, violations(listOf(engine to listOf("val s = f.setSubtitleParserFactory(Other)"))).size)
+        // Still caught after ItemBytes arrived: a file source anywhere, even inside the engine.
+        assertEquals(listOf("$engine:1: val f = FileDataSource.Factory()"), violations(listOf(engine to listOf("val f = FileDataSource.Factory()"))))
+        val downloads = "src/main/java/app/shoalwatch/data/downloads/DownloadVerifier.kt"
+        assertEquals(listOf("$downloads:1: val s = SavedMediaDataSource()"), violations(listOf(downloads to listOf("val s = SavedMediaDataSource()"))))
+        assertTrue(violations(listOf(engine to listOf("val s = SavedMediaDataSource()"))).isEmpty())
     }
 
     private companion object {
         const val PICTURES_ONLY = ".setSubtitleParserFactory(PictureSubtitles)"
+        const val ITEM_BYTES = "DefaultMediaSourceFactory(ItemBytes.Factory(OkHttpDataSource.Factory("
     }
 }

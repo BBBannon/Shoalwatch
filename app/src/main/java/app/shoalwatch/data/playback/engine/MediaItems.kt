@@ -18,14 +18,18 @@ internal object MediaItems {
     /**
      * The URI is the route's verified address + the source's path and query (`MediaRoute.url`, which never holds a credential:
      * the token travels only in the `Authorization` header). HLS is marked as such; no subtitle configurations (text subtitles
-     * are fetched and drawn by the app itself). The media id is [MEDIA_ID], the same for every item.
+     * are fetched and drawn by the app itself). The media id is [MEDIA_ID], the same for every item. A saved copy: see [uriOf].
      */
     fun build(item: EngineItem, title: String?, subtitle: String?): MediaItem = MediaItem.Builder()
-        .setUri(item.route.url(item.source).toString())
+        .setUri(uriOf(item))
         .setMediaId(MEDIA_ID)
-        .apply { if (item.source.hls) setMimeType(MimeTypes.APPLICATION_M3U8) }
+        .apply { if (item.saved?.hls ?: checkNotNull(item.source).hls) setMimeType(MimeTypes.APPLICATION_M3U8) }
         .setMediaMetadata(metadata(title, subtitle))
         .build()
+
+    /** A saved copy: its entry file's `file:` URI (read only through `ItemBytes`, inside its folder). */
+    private fun uriOf(item: EngineItem): String =
+        item.saved?.entry?.toURI()?.toString() ?: checkNotNull(item.route).url(checkNotNull(item.source)).toString()
 
     /** Width over height as shown, or null while the size is not known (Media3 says 0 for an unknown size). */
     fun aspectOf(width: Int, height: Int, pixelWidthHeightRatio: Float): Float? =

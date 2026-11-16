@@ -54,7 +54,7 @@ fun PlayerScreen(
 ) {
     val strings = rememberStrings()
     val p = state.playback
-    val streamLine = PlayerText.streamInfo(strings, p.method, p.transcodeReasons, p.fellBackToTranscode)
+    val streamLine = PlayerText.streamInfo(strings, p.method, p.transcodeReasons, p.fellBackToTranscode, p.savedQuality)
     val hdrLine = PlayerText.hdrLine(strings, p.videoRange, p.method, p.transcodeReasons, dolbyVisionScreen)
     val snackbar = remember { SnackbarHostState() }
     // Locked, the system Back (an edge swipe with the bars hidden) does not leave: it shows the lock and its hint instead.

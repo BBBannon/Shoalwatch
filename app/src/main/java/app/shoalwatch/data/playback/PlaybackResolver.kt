@@ -1,9 +1,11 @@
 package app.shoalwatch.data.playback
 
 import app.shoalwatch.data.api.MediaRoute
+import app.shoalwatch.data.downloads.SavedMedia
 import app.shoalwatch.data.playback.api.PlaybackGateway
 import app.shoalwatch.data.playback.api.PlaybackInfo
 import app.shoalwatch.data.playback.api.PlaybackInfoBody
+import app.shoalwatch.data.playback.engine.EngineItem
 import app.shoalwatch.data.servers.Session
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -16,20 +18,37 @@ import kotlinx.coroutines.withContext
  *
  * [routes] is `serverApi::mediaRoute` in production and a fake in tests. [io]: where the device capabilities are read (the
  * platform's codec list is not a main-thread read).
+ *
+ * **Saved copies first (Milestone 4):** [saved] is the one lookup of a verified copy this session may play (`SavedCopies.plan`:
+ * COMPLETE, visible to the session by the sharing rule, its storage mounted and its files the recorded size). When a request
+ * asks for no forced conversion and no burn-in, that copy wins and nothing is asked of the server (quality is ignored).
+ * [savedFailed] is told when a saved copy failed to decode, so it is re-checked in the background (`DownloadQueue.recheck`).
  */
 class PlaybackResolver internal constructor(
     private val gateway: PlaybackGateway,
     private val capabilities: CodecSupport,
     private val routes: suspend (Session) -> MediaRoute,
     private val io: CoroutineDispatcher = Dispatchers.Default,
+    /** A verified copy this session may play, or null. */
+    private val saved: suspend (Session, String) -> SavedPlan? = { _, _ -> null },
+    /** After a saved copy failed to decode: re-check it in the background. */
+    private val savedFailed: (Session, String) -> Unit = { _, _ -> },
 ) {
     /**
-     * Ask, decide, and (when [PlaybackDecision.needsForcedTranscode]) ask once more as a forced transcode. Throws AppError.
+     * The saved copy when there is one and [request] forces no conversion or burn-in; otherwise ask, decide, and (when
+     * [PlaybackDecision.needsForcedTranscode]) ask once more as a forced transcode. Throws AppError.
      * [burnInFormat]: the format (`SubtitleTrack.format`) of `request.burnInSubtitleIndex`, from the plan the user chose it in;
      * the device profile then lists it as Encode only. The route is asked for after the decision, so it is to the address
      * verified now.
      */
     suspend fun resolve(s: Session, request: PlaybackRequest, burnInFormat: String? = null): Resolved {
+        if (!request.forceTranscode && request.burnInSubtitleIndex == null) {
+            saved(s, request.itemId)?.let { copy -> return Resolved(TrackRules.withRequest(copy.plan, request), null, copy.media) }
+        }
+        return remote(s, request, burnInFormat)
+    }
+
+    private suspend fun remote(s: Session, request: PlaybackRequest, burnInFormat: String?): Resolved {
         var effective = request
         var info = ask(s, effective, burnInFormat)
         if (PlaybackDecision.needsForcedTranscode(effective, info)) {
@@ -41,9 +60,11 @@ class PlaybackResolver internal constructor(
 
     /**
      * After the player failed to decode a direct play / direct stream: the same request as a forced transcode, asked exactly
-     * once. Called at most once per item by the controller.
+     * once. Called at most once per item by the controller. A LOCAL plan is re-checked ([savedFailed]) and then streamed
+     * (the forced request skips the saved copy): from the server if it can be reached, else the gateway's `OFFLINE`.
      */
     suspend fun fallBack(s: Session, failed: PlaybackPlan): Resolved {
+        if (failed.method == PlayMethod.LOCAL) savedFailed(s, failed.itemId)
         val request = failed.request.copy(forceTranscode = true)
         val format = request.burnInSubtitleIndex?.let { i -> failed.subtitleTracks.firstOrNull { it.index == i }?.format }
         return planned(s, request, ask(s, request, format))
@@ -52,9 +73,35 @@ class PlaybackResolver internal constructor(
     /**
      * The same plan with a new route, asking the server nothing: for when the old route refused to send because it went stale
      * (`BlockedRequestException` with `OFFLINE` after a network change or a settings change). A route for a signed-out account
-     * fails here as `NOT_SIGNED_IN`, sending nothing.
+     * fails here as `NOT_SIGNED_IN`, sending nothing. A saved copy has no route: it is handed back as it is.
      */
-    suspend fun reroute(resolved: Resolved): Resolved = Resolved(resolved.plan, route(resolved.route.session))
+    suspend fun reroute(resolved: Resolved): Resolved {
+        val old = resolved.route ?: return resolved
+        return Resolved(resolved.plan, route(old.session))
+    }
+
+    /**
+     * Can the original play here as it is? PlaybackInfo with this phone's profile at MAXIMUM, EnableDirectPlay true and
+     * EnableDirectStream, EnableTranscoding and both stream copies false, so the server sets up no conversion. Used by the
+     * download planner (Milestone 4); makes no route. Throws AppError (the gateway's, unchanged).
+     */
+    internal suspend fun checkOriginal(s: Session, itemId: String): PlaybackInfo {
+        val profile = withContext(io) { DeviceProfileBuilder.build(capabilities.read(), Quality.MAXIMUM, false, null) }
+        val body = PlaybackInfoBody(
+            userId = s.userId,
+            maxStreamingBitrate = Quality.MAXIMUM.maxBitrate,
+            audioStreamIndex = null,
+            subtitleStreamIndex = -1,
+            deviceProfile = profile,
+            enableDirectPlay = true,
+            enableDirectStream = false,
+            enableTranscoding = false,
+            allowVideoStreamCopy = false,
+            allowAudioStreamCopy = false,
+            alwaysBurnInSubtitleWhenTranscoding = false,
+        )
+        return gateway.playbackInfo(s, itemId, body)
+    }
 
     private suspend fun planned(s: Session, request: PlaybackRequest, info: PlaybackInfo): Resolved =
         Resolved(PlaybackDecision.decide(request, info), route(s))
@@ -88,7 +135,26 @@ class PlaybackResolver internal constructor(
     }
 }
 
-/** A plan with the route its bytes come from. Never logged; both halves redact themselves. */
-class Resolved(val plan: PlaybackPlan, val route: MediaRoute) {
+/**
+ * A plan with where its bytes come from: a [route] to the server, or a [saved] copy on this phone (a LOCAL plan), exactly one
+ * of the two. Never logged; every part redacts itself.
+ */
+class Resolved(val plan: PlaybackPlan, val route: MediaRoute?, internal val saved: SavedMedia? = null) {
+    init {
+        require((route == null) != (saved == null)) { "Exactly one source." }
+        require((saved != null) == (plan.method == PlayMethod.LOCAL)) { "A saved copy plays as LOCAL, and only it does." }
+    }
+
+    /** What the engine loads: the saved copy, or the route with the plan's source. */
+    internal fun engineItem(): EngineItem = saved?.let { EngineItem(it) } ?: EngineItem(checkNotNull(route), plan.source)
+
+    /** The same source with [p] (tracks chosen in the player, no new play session). */
+    internal fun withPlan(p: PlaybackPlan): Resolved = Resolved(p, route, saved)
+
     override fun toString() = "Resolved(<redacted>)"
+}
+
+/** A verified copy this session may play, with its LOCAL plan ([SavedPlans.plan]). */
+internal class SavedPlan(val media: SavedMedia, val plan: PlaybackPlan) {
+    override fun toString() = "SavedPlan(<redacted>)"
 }

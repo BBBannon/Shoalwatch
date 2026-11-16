@@ -1,6 +1,7 @@
 package app.shoalwatch.ui.detail
 
 import app.shoalwatch.data.library.ItemImages
+import app.shoalwatch.data.library.ItemKind
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.getBoundsInRoot
@@ -59,6 +60,26 @@ abstract class DetailRenderBase : RenderBase() {
     private fun ready(entry: ItemWithUserData = film()) = DetailUiState(DetailPhase.READY, BEN, entry)
 
     private fun showDetail(state: DetailUiState) = show { DetailScreen(state, actions, emptyFlow(), snackbar) }
+
+    private val downloads = mutableListOf<String>()
+    private val controls = app.shoalwatch.ui.downloads.DownloadControls(emptyMap(), onDownload = { downloads += it }, onRetry = {}, onOpenDownloads = {})
+
+    /** Tasks 13-16 review M-12: the screen offers Download for a film or an episode only, never for a series or a folder. */
+    @Test fun downloadIsOfferedOnTheScreenForAFilmOrEpisodeButNotASeriesOrFolder() {
+        val download = text(R.string.dl_download)
+        val state = androidx.compose.runtime.mutableStateOf(ready())
+        show { DetailScreen(state.value, actions, emptyFlow(), snackbar, controls) }
+        rule.onAllNodes(hasText(download)).onFirst().performScrollTo().performClick()
+        assertEquals(listOf(id(7)), downloads)
+        state.value = ready(film().let { it.copy(item = it.item.copy(kind = ItemKind.EPISODE)) })
+        rule.waitForIdle()
+        assertTrue("an episode offers it", rule.onAllNodes(hasText(download)).fetchSemanticsNodes().isNotEmpty())
+        for (kind in listOf(ItemKind.SERIES, ItemKind.FOLDER)) {
+            state.value = ready(film().let { it.copy(item = it.item.copy(kind = kind)) })
+            rule.waitForIdle()
+            assertTrue("no Download for $kind", rule.onAllNodes(hasText(download)).fetchSemanticsNodes().isEmpty())
+        }
+    }
 
     @Test fun showsTheTitleFactsAndPlainTextOverview() {
         showDetail(ready())

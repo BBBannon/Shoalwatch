@@ -83,7 +83,7 @@ internal fun SignInRoute(graph: AppGraph, nav: NavHostController, serverId: Stri
 
 @Composable
 internal fun ServersRoute(graph: AppGraph, nav: NavHostController) {
-    val vm = graphViewModel { ServersViewModel(graph.serverCatalog, graph.authenticator) }
+    val vm = graphViewModel { ServersViewModel(graph.serverCatalog, graph.authenticator, graph.downloads::sharing) }
     val state by vm.state.collectAsStateWithLifecycle()
     val actions = remember(vm) {
         ServersActions(

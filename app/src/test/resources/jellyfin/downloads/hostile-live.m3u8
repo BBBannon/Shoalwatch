@@ -1,0 +1,7 @@
+#EXTM3U
+#EXT-X-TARGETDURATION:6
+#EXT-X-MEDIA-SEQUENCE:0
+#EXTINF:6.0,
+hls1/main/0.ts
+#EXTINF:6.0,
+hls1/main/1.ts

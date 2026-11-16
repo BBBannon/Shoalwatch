@@ -1,6 +1,11 @@
 package app.shoalwatch.ui.detail
 
 import androidx.lifecycle.ViewModel
+import app.shoalwatch.data.downloads.DownloadInfo
+import app.shoalwatch.data.downloads.DownloadTarget
+import app.shoalwatch.data.downloads.Downloads
+import app.shoalwatch.ui.downloads.DownloadActions
+import app.shoalwatch.ui.downloads.downloadStatuses
 import androidx.lifecycle.viewModelScope
 import app.shoalwatch.core.AppError
 import app.shoalwatch.data.library.Freshness
@@ -57,7 +62,16 @@ class DetailViewModel(
     connections: ServerConnections,
     private val library: Library,
     playstate: Playstate,
+    downloads: Downloads? = null,
 ) : ViewModel() {
+    /** The download sheet's steps (null when this screen offers no download). */
+    val downloadActions: DownloadActions? = downloads?.let { d -> DownloadActions(viewModelScope, d) { state.value.session } }
+    private val downloadsSeam = downloads
+
+    /** This item's download, for the active session only. */
+    val downloadStatus: StateFlow<Map<String, DownloadInfo>> = downloadStatuses(catalog, viewModelScope) { s ->
+        downloads?.status(s, itemId)?.map { info -> info?.let { mapOf(itemId to it) } ?: emptyMap() } ?: flowOf(emptyMap())
+    }
     private val actions = ItemActions(playstate, viewModelScope, connections) { state.value.session }
 
     /** Failure messages for a snackbar, each once. */
@@ -89,7 +103,13 @@ class DetailViewModel(
         }
             .stateIn(viewModelScope, SharingStarted.Eagerly, DetailUiState())
 
+    /** Opens the download sheet for this item ([film]: the title says "film"). */
+    fun download(film: Boolean) { state.value.session?.let { downloadActions?.ask(it, DownloadTarget.Item(itemId), film) } }
+
+    fun retryDownload() { state.value.session?.let { s -> viewModelScope.launch { runCatching { downloadsSeam?.retry(s, itemId) } } } }
+
     init {
+        viewModelScope.launch { catalog.activeSession().collect { downloadActions?.sessionChanged(it) } }
         viewModelScope.launch {
             connectionRegained(catalog, connections).collect { s -> actions.attempt(s) { library.refresh(s, RefreshTarget.Item(itemId)) } }
         }

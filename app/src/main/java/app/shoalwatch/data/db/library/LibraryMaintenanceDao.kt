@@ -18,14 +18,23 @@ abstract class LibraryMaintenanceDao {
     @Query("SELECT id FROM servers")
     abstract suspend fun serverIds(): List<String>
 
-    /** Entries of lists with no state refreshed at or after [cutoffMs] (including lists with no state at all). */
+    /**
+     * Entries of lists with no state refreshed at or after [cutoffMs] (including lists with no state at all), except the
+     * `seasons:<seriesId>` list of a pinned series: a downloaded series must still list its seasons after a month offline.
+     */
     @Query(
         "DELETE FROM list_entries WHERE serverId = :serverId AND NOT EXISTS (SELECT 1 FROM list_state s WHERE s.serverId = list_entries.serverId " +
-            "AND s.userId = list_entries.userId AND s.listKey = list_entries.listKey AND s.refreshedAt >= :cutoffMs)",
+            "AND s.userId = list_entries.userId AND s.listKey = list_entries.listKey AND s.refreshedAt >= :cutoffMs) " +
+            "AND NOT EXISTS (SELECT 1 FROM items i WHERE i.serverId = list_entries.serverId AND i.pinned = 1 " +
+            "AND i.itemId = substr(list_entries.listKey, 9) AND list_entries.listKey = 'seasons:' || i.itemId)",
     )
     protected abstract suspend fun deleteStaleEntries(serverId: String, cutoffMs: Long): Int
 
-    @Query("DELETE FROM list_state WHERE serverId = :serverId AND refreshedAt < :cutoffMs")
+    @Query(
+        "DELETE FROM list_state WHERE serverId = :serverId AND refreshedAt < :cutoffMs " +
+            "AND NOT EXISTS (SELECT 1 FROM items i WHERE i.serverId = list_state.serverId AND i.pinned = 1 " +
+            "AND i.itemId = substr(list_state.listKey, 9) AND list_state.listKey = 'seasons:' || i.itemId)",
+    )
     protected abstract suspend fun deleteStaleStates(serverId: String, cutoffMs: Long): Int
 
     @Query("DELETE FROM items WHERE $UNPROTECTED AND fetchedAt < :cutoffMs")
@@ -61,7 +70,7 @@ abstract class LibraryMaintenanceDao {
 
     /**
      * One transaction, in this order:
-     *  1. delete list entries and states for lists not refreshed since [listCutoffMs];
+     *  1. delete list entries and states for lists not refreshed since [listCutoffMs] (a pinned series keeps its `seasons:` list);
      *  1b. delete `visible_items` records not re-confirmed since [itemCutoffMs], unless pinned or in that user's current lists;
      *  2. delete unprotected items fetched before [itemCutoffMs];
      *  3. if the server still has more than [maxUnpinnedItems] unpinned items, delete the oldest-fetched unprotected ones

@@ -2,6 +2,11 @@ package app.shoalwatch.ui.series
 
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
+import app.shoalwatch.data.downloads.DownloadInfo
+import app.shoalwatch.data.downloads.DownloadTarget
+import app.shoalwatch.data.downloads.Downloads
+import app.shoalwatch.ui.downloads.DownloadActions
+import app.shoalwatch.ui.downloads.downloadStatuses
 import androidx.lifecycle.viewModelScope
 import app.shoalwatch.core.AppError
 import app.shoalwatch.data.library.Freshness
@@ -80,7 +85,20 @@ class SeriesViewModel(
     connections: ServerConnections,
     private val library: Library,
     playstate: Playstate,
+    private val downloads: Downloads? = null,
 ) : ViewModel() {
+    /** The download sheet's steps (null when this screen offers no download). */
+    val downloadActions: DownloadActions? = downloads?.let { d -> DownloadActions(viewModelScope, d) { state.value.session } }
+
+    /** The series' downloads by episode, for the active session only. */
+    val downloadStatus: StateFlow<Map<String, DownloadInfo>> = downloadStatuses(catalog, viewModelScope) { s -> downloads?.seriesStatus(s, seriesId) ?: flowOf(emptyMap()) }
+
+    fun downloadEpisode(episodeId: String) = askDownload(DownloadTarget.Item(episodeId))
+    fun downloadSeason(seasonId: String) = askDownload(DownloadTarget.Season(seriesId, seasonId))
+    fun downloadSeries() = askDownload(DownloadTarget.Series(seriesId))
+    fun downloadUnwatched() = askDownload(DownloadTarget.Unwatched(seriesId))
+    fun retryDownload(itemId: String) { state.value.session?.let { s -> viewModelScope.launch { runCatching { downloads?.retry(s, itemId) } } } }
+    private fun askDownload(target: DownloadTarget) { state.value.session?.let { downloadActions?.ask(it, target) } }
     private val actions = ItemActions(playstate, viewModelScope, connections) { state.value.session }
     private val picked: StateFlow<String?> = saved.getStateFlow<String?>(KEY_SEASON, null)
 
@@ -130,6 +148,7 @@ class SeriesViewModel(
             .stateIn(viewModelScope, SharingStarted.Eagerly, SeriesUiState())
 
     init {
+        viewModelScope.launch { catalog.activeSession().collect { downloadActions?.sessionChanged(it) } }
         viewModelScope.launch {
             connectionRegained(catalog, connections).collect { s -> actions.attempt(s) { library.refresh(s, refreshTarget()) } }
         }

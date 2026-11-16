@@ -118,6 +118,8 @@ internal class MediaSourceDto(
     @SerialName("DefaultAudioStreamIndex") val defaultAudioStreamIndex: Long? = null,
     @SerialName("DefaultSubtitleStreamIndex") val defaultSubtitleStreamIndex: Long? = null,
     @SerialName("HasSegments") val hasSegments: Boolean? = null,
+    /** Raw: only a whole JSON number counts (a fractional or string size must not cost the source). */
+    @SerialName("Size") val size: JsonElement? = null,
 )
 
 @Serializable

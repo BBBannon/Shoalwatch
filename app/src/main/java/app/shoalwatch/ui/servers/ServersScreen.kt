@@ -86,7 +86,13 @@ fun ServersScreen(state: ServersUiState, actions: ServersActions) {
             confirmLabel = stringResource(R.string.sign_out),
             onConfirm = actions.onConfirm,
             onDismiss = actions.onDismissConfirm,
-        ) { Text(stringResource(R.string.confirm_signout_body, confirm.serverName)) }
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stringResource(R.string.confirm_signout_body, confirm.serverName))
+                Text(stringResource(R.string.dl_signout_downloads))
+                if (confirm.sharing) Text(stringResource(R.string.dl_signout_shared))
+            }
+        }
         is Confirm.RemoveServer -> ConfirmDialog(
             title = stringResource(R.string.confirm_remove_title, confirm.serverName),
             confirmLabel = stringResource(R.string.action_remove),
@@ -97,6 +103,7 @@ fun ServersScreen(state: ServersUiState, actions: ServersActions) {
                 Text(stringResource(R.string.confirm_remove_body))
                 confirm.accountNames.forEach { BulletRow(stringResource(R.string.confirm_remove_account, it)) }
                 BulletRow(stringResource(R.string.confirm_remove_settings))
+                Text(stringResource(R.string.dl_remove_downloads))
                 if (confirm.accountNames.isNotEmpty()) Text(stringResource(R.string.confirm_remove_revoke))
             }
         }

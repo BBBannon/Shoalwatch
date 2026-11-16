@@ -21,7 +21,8 @@ internal object PlaybackRules {
     const val MAX_REROUTES = 3
 
     /**
-     * DECODER or FORMAT_UNSUPPORTED: fall back once unless already a transcode; NETWORK or HTTP_UNAUTHORISED: ask again once;
+     * DECODER or FORMAT_UNSUPPORTED: fall back once unless already a transcode (a LOCAL copy falls back once too: the resolver
+     * re-checks it and streams); NETWORK or HTTP_UNAUTHORISED: ask again once;
      * ROUTE_STALE: a new route, up to [MAX_REROUTES] in a row without Ready, then OFFLINE; NOT_SIGNED_IN: end as signed out;
      * anything else PLAYBACK_FAILED.
      */

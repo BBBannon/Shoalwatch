@@ -28,6 +28,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import app.shoalwatch.R
 import app.shoalwatch.data.playback.PlaybackRules
+import app.shoalwatch.data.playback.PlayMethod
 import app.shoalwatch.data.playback.Quality
 import app.shoalwatch.data.playback.SleepChoice
 import app.shoalwatch.data.playback.SleepState
@@ -69,7 +70,7 @@ private fun ColumnScope.TracksSheet(state: PlayerUiState, actions: PlayerActions
     val on = (p.subtitle as? SubtitleChoice.On)?.index
     ChoiceRow(stringResource(R.string.player_subtitles_off), on == null) { actions.onSelectSubtitle(null) }
     p.subtitleTracks.forEach { t -> ChoiceRow(t.label, t.index == on) { actions.onSelectSubtitle(t.index) } }
-    if (p.subtitleEffectsNotDrawn && on != null) {
+    if (p.subtitleEffectsNotDrawn && on != null && p.method != PlayMethod.LOCAL) { // a saved copy is never redrawn by the server
         Text(stringResource(R.string.subtitle_let_server_draw_detail), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
         OutlinedButton(onClick = { actions.onBurnIn(on) }, modifier = Modifier.padding(horizontal = 24.dp).heightIn(min = 48.dp)) {
             Text(stringResource(R.string.subtitle_let_server_draw))
@@ -81,6 +82,10 @@ private fun ColumnScope.TracksSheet(state: PlayerUiState, actions: PlayerActions
 private fun ColumnScope.QualitySheet(state: PlayerUiState, actions: PlayerActions) {
     val strings = rememberStrings()
     SheetHeading(R.string.player_quality)
+    if (state.playback.method == PlayMethod.LOCAL) {
+        Text(stringResource(R.string.player_quality_saved), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
+        return
+    }
     Quality.entries.forEach { q -> ChoiceRow(PlayerText.quality(strings, q), q == state.playback.quality) { actions.onQuality(q) } }
 }
 
@@ -107,7 +112,8 @@ private fun ColumnScope.SleepSheet(state: PlayerUiState, actions: PlayerActions)
 private fun ColumnScope.StreamInfoSheet(state: PlayerUiState, streamLine: String?, hdrLine: String?) {
     val strings = rememberStrings()
     SheetHeading(R.string.player_stream_info)
-    listOfNotNull(streamLine, hdrLine, PlayerText.quality(strings, state.playback.quality)).forEach {
+    val quality = PlayerText.quality(strings, state.playback.quality).takeIf { state.playback.method != PlayMethod.LOCAL }
+    listOfNotNull(streamLine, hdrLine, quality).forEach {
         Text(it, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp))
     }
 }

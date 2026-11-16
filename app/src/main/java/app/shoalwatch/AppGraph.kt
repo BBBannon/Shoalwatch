@@ -8,6 +8,39 @@ import app.shoalwatch.data.db.AppDatabase
 import app.shoalwatch.data.images.ArtworkDiskCaches
 import app.shoalwatch.data.images.ArtworkEviction
 import app.shoalwatch.data.images.ArtworkLoader
+import app.shoalwatch.data.images.PinnedArtwork
+import app.shoalwatch.data.db.downloads.DownloadStore
+import app.shoalwatch.data.db.downloads.LibraryWriteLock
+import app.shoalwatch.data.downloads.AndroidVolumes
+import app.shoalwatch.data.downloads.DownloadHousekeeping
+import app.shoalwatch.data.downloads.DownloadNotifications
+import app.shoalwatch.data.downloads.DownloadPlanner
+import app.shoalwatch.data.downloads.DownloadRepository
+import app.shoalwatch.data.downloads.Downloads
+import app.shoalwatch.data.downloads.DownloadPaths
+import app.shoalwatch.data.downloads.DownloadPrefs
+import app.shoalwatch.data.downloads.DownloadQueue
+import app.shoalwatch.data.downloads.DownloadScheduler
+import app.shoalwatch.data.downloads.DownloadVerifier
+import app.shoalwatch.data.downloads.DownloadWorker
+import app.shoalwatch.data.downloads.ExtrasFetcher
+import app.shoalwatch.data.downloads.FileFetcher
+import app.shoalwatch.data.downloads.HlsFetcher
+import app.shoalwatch.data.downloads.Volumes
+import app.shoalwatch.data.downloads.SavedCopies
+import app.shoalwatch.data.downloads.SharingRecheck
+import app.shoalwatch.data.servers.Connection
+import app.shoalwatch.ui.browse.connectionRegained
+import app.shoalwatch.data.downloads.savedRows
+import app.shoalwatch.data.db.downloads.DownloadKey
+import app.shoalwatch.data.playback.LocalPlaybackReports
+import app.shoalwatch.data.playback.RoutedPlaybackReports
+import app.shoalwatch.data.playback.SavedFirstPlaybackGateway
+import app.shoalwatch.data.sync.OfflinePlays
+import app.shoalwatch.data.downloads.api.DownloadGateway
+import app.shoalwatch.data.downloads.api.DownloadGatewayImpl
+import app.shoalwatch.data.playback.engine.SavedMediaProbe
+import androidx.work.WorkManager
 import app.shoalwatch.core.SystemMonotonicClock
 import app.shoalwatch.data.db.library.LocalChangeLog
 import app.shoalwatch.data.library.Library
@@ -74,10 +107,12 @@ class AppGraph(private val appContext: Context) {
         onServerRemoved = {
             activePlayback.end(it); playbackReports.forget(it)
             addressSelector.forget(it); libraryRepository.forget(it); artworkEviction.onServerRemoved(it)
+            downloadHousekeeping.onServerRemoved(it)
         },
         onAccountGone = { server, user ->
             activePlayback.end(server, user); playbackReports.forget(server, user)
             libraryRepository.forget(server, user); artworkEviction.onAccountGone(server)
+            downloadHousekeeping.onAccountGone(server, user) // the ownership rule; a 401 keeps the account row, so nothing goes
         },
         onAccountSignedIn = { server, user -> libraryRepository.forget(server, user) },
     ) }
@@ -97,8 +132,83 @@ class AppGraph(private val appContext: Context) {
     val artworkCaches: ArtworkDiskCaches by lazy { ArtworkDiskCaches(File(appContext.cacheDir, "artwork")) }
     /** The one image loader: it loads `ArtworkRef`s and nothing else (see "Artwork" in docs/ARCHITECTURE.md). Provided to every screen as `LocalArtworkLoader` and also set as Coil's singleton in `ShoalwatchApp`. */
     val imageLoader: ImageLoader by lazy {
-        ArtworkLoader.build(appContext, serverApi, { s -> serverStore.awaitWarmed(); serverStore.cachedToken(s.serverId, s.userId) != null }, artworkCaches)
+        ArtworkLoader.build(appContext, serverApi, { s -> serverStore.awaitWarmed(); serverStore.cachedToken(s.serverId, s.userId) != null }, artworkCaches, pinned = pinnedArtwork)
     }
+    /** Where download files go (internal storage, or an SD card by choice); the only code that names them. */
+    internal val downloadVolumes: Volumes by lazy { AndroidVolumes(appContext) }
+    internal val downloadPaths: DownloadPaths by lazy { DownloadPaths(downloadVolumes) }
+    /** The download rows, owners and pins; every pin is written under the library's write lock. */
+    internal val downloadStore: DownloadStore by lazy {
+        DownloadStore(database, System::currentTimeMillis, object : LibraryWriteLock {
+            override suspend fun <T> locked(block: suspend () -> T): T = libraryRepository.writeGated(block)
+        })
+    }
+    /** Device download settings (mobile data, storage, default quality) in the private `download_prefs` file. */
+    val downloadPrefs: DownloadPrefs by lazy { DownloadPrefs(appContext.getSharedPreferences("download_prefs", Context.MODE_PRIVATE)) }
+    internal val downloadGateway: DownloadGateway by lazy { DownloadGatewayImpl(serverApi) }
+    /** One item at a time; see "Download queue" in docs/ARCHITECTURE.md. Every byte through the account's guarded, pinned client. */
+    internal val downloadQueue: DownloadQueue by lazy {
+        DownloadQueue(
+            downloadStore, playbackResolver, { s, id -> serverApi.downloadRoute(s, id) }, downloadGateway,
+            FileFetcher(Dispatchers.IO, downloadVolumes), HlsFetcher(Dispatchers.IO, SystemMonotonicClock, downloadPaths, downloadVolumes),
+            ExtrasFetcher(playbackGateway, serverApi, database.itemDao(), database.downloadDao(), downloadPaths, pinnedArtwork),
+            DownloadVerifier(SavedMediaProbe(appContext), AndroidDeviceCapabilities(appContext), Dispatchers.IO),
+            downloadPaths, downloadVolumes, { s -> serverStore.cachedToken(s.serverId, s.userId) != null }, trackPreferences,
+            { systemCaptionDefaults(appContext) }, SystemMonotonicClock,
+        )
+    }
+    internal val downloadNotifications: DownloadNotifications by lazy { DownloadNotifications(appContext) }
+    internal val downloadPlanner: DownloadPlanner by lazy {
+        DownloadPlanner(library, database.itemDao(), downloadGateway, { s, id -> playbackResolver.checkOriginal(s, id) }, database.downloadDao(), downloadVolumes, downloadPrefs)
+    }
+    /** What screens use for downloads (see "Downloads seam" in docs/ARCHITECTURE.md). */
+    val downloads: Downloads by lazy {
+        DownloadRepository(
+            downloadStore, database.offlineLibraryDao(), database.itemDao(), downloadPlanner, downloadScheduler, downloadPrefs, downloadVolumes, downloadPaths, appScope,
+            removed = { downloadQueue.forget(it) },
+        )
+    }
+    /** The removal rules and the start-up tidy-up (see "Removal rules" in docs/ARCHITECTURE.md). */
+    internal val downloadHousekeeping: DownloadHousekeeping by lazy {
+        DownloadHousekeeping(
+            downloadStore, downloadPaths, downloadQueue, downloadScheduler, library, downloadGateway, appScope,
+            reachable = { id -> addressSelector.connection(id).value is Connection.Online },
+        )
+    }
+    /** WorkManager is reached only from here, on first use (initialised on demand with `ShoalwatchWorkerFactory`). */
+    val downloadScheduler: DownloadScheduler by lazy { DownloadScheduler({ WorkManager.getInstance(appContext) }, downloadPrefs) }
+
+    private val anyQueued: suspend () -> Boolean = { database.downloadDao().queuedCount() > 0 }
+
+    /** From app start: a change of "Use mobile data" replaces the work (WorkManager is reached only once something is queued). */
+    fun watchDownloads(): Job = downloadScheduler.watchSettings(appScope, anyQueued)
+
+    /** From app start: the sharing re-ask for the active profile on each session change and each time its server comes back. */
+    fun watchSharing(): Job = sharingRecheck.watch(serverCatalog.activeSession(), connectionRegained(serverCatalog, addressSelector))
+
+    /**
+     * The app's activity started: kick the download worker if anything is queued, and re-ask the sharing confirmations of the
+     * active profile (rate limited), off the main thread.
+     */
+    fun downloadsInFront() {
+        appScope.launch { downloadScheduler.inFront(anyQueued) }
+        appScope.launch { sharingRecheck.inFront(serverCatalog.activeSession()) }
+    }
+
+    /** When the strict sharing rule's 7-day re-ask runs, whichever screen is open (see "Sharing rule" in docs/ARCHITECTURE.md). */
+    internal val sharingRecheck: SharingRecheck by lazy {
+        SharingRecheck({ s, first -> downloadHousekeeping.reconfirm(s, first) }, ::serverReachable, appScope, SystemMonotonicClock)
+    }
+    private fun serverReachable(s: Session): Boolean = addressSelector.connection(s.serverId).value is Connection.Online
+    /** What `ShoalwatchWorkerFactory` hands the download worker. */
+    internal val downloadWorkerParts: DownloadWorker.Parts by lazy {
+        DownloadWorker.Parts(
+            downloadQueue, downloadNotifications, { downloadScheduler.report(it) }, { since -> database.downloadDao().completedSince(since) },
+            { downloadPrefs.settings.value.mobileData }, System::currentTimeMillis,
+        )
+    }
+    /** Pictures kept with downloads, consulted by the image loader after a disk-cache miss. */
+    val pinnedArtwork: PinnedArtwork by lazy { PinnedArtwork(database.downloadDao(), downloadPaths) }
     /** Clears a server's pictures when the server, or its last signed-in account, goes. */
     val artworkEviction: ArtworkEviction by lazy {
         ArtworkEviction(artworkCaches, { imageLoader.memoryCache }, { id -> serverStore.accounts(id).first().isNotEmpty() }, appScope, Dispatchers.IO)
@@ -108,7 +218,28 @@ class AppGraph(private val appContext: Context) {
     /** PlaybackInfo, playstate reports, segments and subtitle files as validated models (see "Playback endpoints" in docs/ARCHITECTURE.md). */
     internal val playbackGateway: PlaybackGateway by lazy { PlaybackGatewayImpl(serverApi) }
     /** PlaybackInfo, then direct play, direct stream or transcode, with a route to the address verified now (see "Playback decision" in docs/ARCHITECTURE.md). */
-    val playbackResolver: PlaybackResolver by lazy { PlaybackResolver(playbackGateway, AndroidDeviceCapabilities(appContext), serverApi::mediaRoute) }
+    val playbackResolver: PlaybackResolver by lazy {
+        PlaybackResolver(
+            playbackGateway, AndroidDeviceCapabilities(appContext), serverApi::mediaRoute,
+            saved = savedCopies::plan,
+            savedFailed = { s, id -> appScope.launch { downloadQueue.recheck(DownloadKey(s.serverId, id)) } },
+        )
+    }
+    /** The one lookup of a saved copy a session may play (see "Offline playback" in docs/ARCHITECTURE.md). */
+    internal val savedCopies: SavedCopies by lazy {
+        SavedCopies(
+            database.offlineLibraryDao(), database.downloadDao().savedRows(), downloadPaths,
+            reachable = ::serverReachable, recheck = { s, itemId -> sharingRecheck.request(s, itemId) },
+        )
+    }
+    /** What the player and its subtitle loader ask: saved subtitles and skip markers for a saved copy, else the server. */
+    internal val playerGateway: PlaybackGateway by lazy { SavedFirstPlaybackGateway(playbackGateway, savedCopies::media, database.downloadDao().savedRows(), downloadPaths) }
+    /** What a LOCAL play keeps for Milestone 5 to send (`offline_plays`). */
+    val offlinePlays: OfflinePlays by lazy { OfflinePlays(database.offlinePlayDao(), System::currentTimeMillis) }
+    /** The controller's reports: LOCAL plays stay on the phone, everything else goes to the server. */
+    internal val routedReports: RoutedPlaybackReports by lazy {
+        RoutedPlaybackReports(playbackReports, LocalPlaybackReports(offlinePlays, playstateRepository, System::currentTimeMillis))
+    }
     /** What every browsing screen reads: saved rows first, refreshed behind them (see "Library repository" in docs/ARCHITECTURE.md). */
     /** The one record of local changes, shared by everything that writes server data or user changes: ordering by sequence, expiry by the monotonic clock. */
     val localChanges: LocalChangeLog by lazy { LocalChangeLog(SystemMonotonicClock) }
@@ -118,7 +249,8 @@ class AppGraph(private val appContext: Context) {
     /** What the user chose to sort and filter each library by, for as long as the app is open (never saved to disk). */
     val browseMemory: BrowseMemory by lazy { BrowseMemory() }
     /** The tidy-up actions (remove from Continue Watching, mark watched, favourite): Room first, then the server, rolled back on failure (see "Tidy-up actions" in docs/ARCHITECTURE.md). */
-    val playstate: Playstate by lazy { PlaystateRepository(libraryGateway, libraryRepository, appScope, Dispatchers.IO, System::currentTimeMillis) }
+    val playstate: Playstate get() = playstateRepository
+    private val playstateRepository: PlaystateRepository by lazy { PlaystateRepository(libraryGateway, libraryRepository, appScope, Dispatchers.IO, System::currentTimeMillis) }
     /** Progress reports and the final stop (also saved through `playstate`), best effort; see "Progress reports and teardown" in docs/ARCHITECTURE.md. */
     val playbackReports: ServerPlaybackReports by lazy { ServerPlaybackReports(playbackGateway, playstate, addressSelector, appScope) }
     /** Who is playing: ended by the store hooks above and whenever the active session changes. */
@@ -134,7 +266,7 @@ class AppGraph(private val appContext: Context) {
      * so they never name the gateway, the resolver or a route.
      */
     fun playbackController(session: Session, scope: CoroutineScope, autoplayNext: () -> Boolean): PlaybackController = PlaybackController(
-        session, playerEngineFactory(), playbackResolver, playbackReports, playbackGateway, library, EpisodeNavigator(library),
+        session, playerEngineFactory(), playbackResolver, routedReports, playerGateway, library, EpisodeNavigator(library),
         activePlayback, scope, appScope, SystemMonotonicClock, autoplayNext, trackPreferences, subtitleLoader, { systemCaptionDefaults(appContext) },
     )
     /** Audio and subtitle choices per (server, user, series), in Room (see "Track choices" in docs/ARCHITECTURE.md). */
@@ -148,7 +280,7 @@ class AppGraph(private val appContext: Context) {
         QualityDefault(appContext.getSharedPreferences("playback_prefs", Context.MODE_PRIVATE)) { QualityDefault.activeNetworkMetered(appContext) }
     }
     /** Fetches and parses text subtitle files, off the main thread. */
-    internal val subtitleLoader: SubtitleLoader by lazy { SubtitleLoader(playbackGateway, Dispatchers.Default) }
+    internal val subtitleLoader: SubtitleLoader by lazy { SubtitleLoader(playerGateway, Dispatchers.Default) }
     /** Loads saved tokens into the store's live lookup. Started at app start; anything authenticated waits on `serverStore.awaitWarmed()` (or uses `awaitActive()`). */
     val tokensWarmed: Job by lazy { appScope.launch { serverStore.warmTokens() } }
     /** What the trust prompt reads; the UI never touches `HttpClientFactory` itself. */

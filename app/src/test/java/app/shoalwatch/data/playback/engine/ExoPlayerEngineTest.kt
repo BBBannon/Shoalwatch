@@ -80,6 +80,31 @@ class ExoPlayerEngineTest {
         engine.release()
     }
 
+    /**
+     * Milestone 3 carried n-1: a picture track chosen for the old item leaves text on; a new item must never be set while it is,
+     * or Media3 could pick one of the new item's text tracks by default before the tracks are applied again.
+     */
+    @Test fun textIsTurnedOffBeforeANewItemIsSet() {
+        val engine = ExoPlayerEngine(context)
+        val player = engine.sessionPlayer
+        engine.load(item(), 0, playWhenReady = false)
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon() // as a picture track of the old item leaves it
+            .setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_TEXT, false).build()
+        org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+        val order = mutableListOf<String>()
+        player.addListener(object : Player.Listener {
+            override fun onTrackSelectionParametersChanged(parameters: androidx.media3.common.TrackSelectionParameters) {
+                order += if (androidx.media3.common.C.TRACK_TYPE_TEXT in parameters.disabledTrackTypes) "text off" else "text on"
+            }
+            override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) { order += "item set" }
+        })
+        engine.load(item(), 0, playWhenReady = false)
+        org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+        assertEquals(listOf("text off", "item set"), order.distinct().take(2))
+        assertTrue(androidx.media3.common.C.TRACK_TYPE_TEXT in player.trackSelectionParameters.disabledTrackTypes)
+        engine.release()
+    }
+
     @Test fun theMediaSessionLoadsNoArtwork() {
         val loader = ExoPlayerEngine.NoArtwork
         assertFalse(loader.supportsMimeType("image/png"))

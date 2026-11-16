@@ -13,6 +13,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import app.shoalwatch.ui.shell.Tab
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,8 +36,10 @@ import app.shoalwatch.R
 import app.shoalwatch.data.playback.StartFrom
 import app.shoalwatch.data.servers.ServerCatalog
 import app.shoalwatch.data.servers.Session
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import androidx.navigation.NavHostController
 
 /** Screens and their paths. Server ids go through [Uri.encode] so any id is a safe path segment. */
@@ -64,6 +67,9 @@ internal object Routes {
     const val ARG_SERVER = "serverId"
     const val SIGN_IN = "sign_in/{$ARG_SERVER}"
     const val SERVER_EDIT = "server/{$ARG_SERVER}"
+    /** One downloaded series, offline (Milestone 4). A malformed id reads as "This is no longer available". */
+    const val DOWNLOADED_SERIES = "downloads/series/{$ARG_SERIES}"
+    const val DOWNLOAD_SETTINGS = "download_settings"
 
     fun home(fresh: Boolean = false) = "home?$ARG_FRESH=$fresh"
     fun library(viewId: String) = "library/${Uri.encode(viewId)}"
@@ -79,6 +85,7 @@ internal object Routes {
     }
 
     fun item(itemId: String) = "item/${Uri.encode(itemId)}"
+    fun downloadedSeries(seriesId: String) = "downloads/series/${Uri.encode(seriesId)}"
     fun player(itemId: String, from: StartFrom) = "play/${Uri.encode(itemId)}?$ARG_FROM=${if (from == StartFrom.RESUME) FROM_RESUME else FROM_START}"
     const val FROM_RESUME = "resume"
     const val FROM_START = "start"
@@ -94,13 +101,13 @@ internal object Routes {
  * onboarding; `play/{itemId}?from=` for the player; `servers` and `server/{serverId}` for management. Signing in clears the stack and lands on `home`.
  */
 @Composable
-fun AppRoot(graph: AppGraph) {
+fun AppRoot(graph: AppGraph, openTab: String? = null, onTabOpened: () -> Unit = {}) {
     val startup = graphViewModel { StartupViewModel(graph.serverCatalog) }
     when (startup.state.collectAsStateWithLifecycle().value) {
         StartupState.Loading -> SplashScreen()
         StartupState.Failed -> StartupFailedScreen(onRetry = startup::retry)
-        StartupState.Welcome -> AppNavHost(graph, Routes.WELCOME)
-        StartupState.Home -> AppNavHost(graph, Routes.HOME)
+        StartupState.Welcome -> AppNavHost(graph, Routes.WELCOME, null, onTabOpened)
+        StartupState.Home -> AppNavHost(graph, Routes.HOME, openTab, onTabOpened)
     }
 }
 
@@ -119,8 +126,15 @@ private fun AnimatedContentTransitionScope<NavBackStackEntry>.betweenTabs() =
     initialState.destination.route in TabRoutes && targetState.destination.route in TabRoutes
 
 @Composable
-private fun AppNavHost(graph: AppGraph, start: String) {
+private fun AppNavHost(graph: AppGraph, start: String, openTab: String?, onTabOpened: () -> Unit) {
     val nav = rememberNavController()
+    // The download notice's tap: the Downloads tab, over Home as every tab is.
+    LaunchedEffect(openTab) {
+        if (openTab == Routes.DOWNLOADS) {
+            nav.switchTab(Tab.DOWNLOADS)
+            onTabOpened()
+        }
+    }
     ClearBrowsingOnSessionChange(nav, graph.serverCatalog)
     val serverArg = listOf(navArgument(Routes.ARG_SERVER) { type = NavType.StringType })
     NavHost(
@@ -145,8 +159,10 @@ private fun AppNavHost(graph: AppGraph, start: String) {
             series = { id, season, episode -> SeriesRoute(graph, nav, id, season, episode) },
             item = { id -> DetailRoute(graph, nav, id) },
             player = { id, from -> PlayerRoute(graph, nav, id, from) },
+            downloadedSeries = { id -> OfflineSeriesRoute(graph, nav, id) },
         )
         composable(Routes.SERVERS) { ServersRoute(graph, nav) }
+        composable(Routes.DOWNLOAD_SETTINGS) { DownloadSettingsRoute(graph, nav) }
         composable(Routes.SERVER_EDIT, serverArg) { ServerEditRoute(graph, nav, it.arguments?.getString(Routes.ARG_SERVER).orEmpty()) }
     }
 }
@@ -185,19 +201,23 @@ internal fun ClearBrowsingOnSessionChange(nav: NavHostController, catalog: Serve
             previous = now
             if (first || was == null || now == was) return@collect
             val target = if (now == null && catalog.servers.first().isEmpty()) Routes.WELCOME else Routes.home()
-            // A sign-in as another account (from Servers) has already taken the app to a fresh Home, alone: leave that one be.
-            val here = nav.currentBackStackEntry
-            val alone = nav.currentBackStack.value.count { it.destination !is NavGraph } == 1
-            if (alone && here?.destination?.route == Routes.HOME && here.arguments?.getBoolean(Routes.ARG_FRESH) == true) {
+            // The store's answer can arrive on its own thread, and the navigation controller may only be touched on the main one.
+            // The effect's own dispatcher is the main one in the app; this holds it there whatever dispatcher runs the effect.
+            withContext(Dispatchers.Main.immediate) {
+                // A sign-in as another account (from Servers) has already taken the app to a fresh Home, alone: leave that one be.
+                val here = nav.currentBackStackEntry
+                val alone = nav.currentBackStack.value.count { it.destination !is NavGraph } == 1
+                if (alone && here?.destination?.route == Routes.HOME && here.arguments?.getBoolean(Routes.ARG_FRESH) == true) {
+                    nav.clearTabStates()
+                    return@withContext
+                }
+                val keep = here?.takeIf { it.destination.route in AccountRoutes }
+                if (keep != null) nav.popBackStack(keep.destination.id, inclusive = true, saveState = true)
+                // Before the new start: clearing a tab restores what it saved and pops it, which may take anything left with it.
                 nav.clearTabStates()
-                return@collect
+                nav.navigate(target) { popUpTo(nav.graph.id) { inclusive = true } }
+                if (keep != null) nav.navigate(keep.destination.id, keep.arguments, navOptions { restoreState = true })
             }
-            val keep = here?.takeIf { it.destination.route in AccountRoutes }
-            if (keep != null) nav.popBackStack(keep.destination.id, inclusive = true, saveState = true)
-            // Before the new start: clearing a tab restores what it saved and pops it, which may take anything left with it.
-            nav.clearTabStates()
-            nav.navigate(target) { popUpTo(nav.graph.id) { inclusive = true } }
-            if (keep != null) nav.navigate(keep.destination.id, keep.arguments, navOptions { restoreState = true })
         }
     }
 }
@@ -214,7 +234,11 @@ internal fun NavGraphBuilder.browsingDestinations(
     series: @Composable (seriesId: String, seasonId: String?, episodeId: String?) -> Unit,
     item: @Composable (itemId: String) -> Unit,
     player: @Composable (itemId: String, from: StartFrom) -> Unit,
+    downloadedSeries: @Composable (seriesId: String) -> Unit,
 ) {
+    composable(Routes.DOWNLOADED_SERIES, listOf(navArgument(Routes.ARG_SERIES) { type = NavType.StringType })) {
+        downloadedSeries(it.arguments?.getString(Routes.ARG_SERIES).orEmpty())
+    }
     composable(Routes.LIBRARY, listOf(navArgument(Routes.ARG_VIEW) { type = NavType.StringType })) {
         library(it.arguments?.getString(Routes.ARG_VIEW).orEmpty())
     }
