@@ -82,7 +82,8 @@ internal class DownloadHousekeeping(
      * rule), anything else removes it, and an explicit false also ends an ownership this sign-in never fetched (its files go if
      * it was the last owner: final review M-1). A refused item (the library revokes it and throws `SERVER_NOT_FOUND`, Tasks 11-12
      * review I-2) or one whose refresh fails otherwise (a 500, say: final review L-1) does not stop the rest or the permission
-     * check. Only offline or a sign-in that no longer works ([STOPS]) stops it, changing nothing more: it is asked again next time.
+     * check. Only offline, a sign-in that no longer works, or a transport or identity failure ([STOPS]: final review re-review
+     * L-d) stops it, changing nothing more: it is asked again next time.
      * [first]: the item about to play (a stale copy refused at play), asked about before the oldest (final review L-11).
      */
     suspend fun reconfirm(s: Session, first: String? = null) = withContext(io) {
@@ -132,8 +133,18 @@ internal class DownloadHousekeeping(
 
     private companion object {
         const val TAG = "DownloadHousekeeping"
-        /** The failures that end a re-ask: nothing more can be asked of the server with this sign-in now. */
-        val STOPS = setOf(AppError.Kind.OFFLINE, AppError.Kind.UNAUTHORISED, AppError.Kind.NOT_SIGNED_IN)
+        /**
+         * The failures that end a re-ask: nothing more can be asked of the server with this sign-in now (offline, signed out, or a
+         * transport or identity failure: a server that hangs ends the pass at once rather than one item at a time, final review
+         * re-review L-d). A server error, a refusal or anything unknown skips that one item.
+         */
+        val STOPS = setOf(
+            AppError.Kind.OFFLINE, AppError.Kind.UNAUTHORISED, AppError.Kind.NOT_SIGNED_IN,
+            AppError.Kind.NETWORK, AppError.Kind.TIMEOUT, AppError.Kind.TLS_UNTRUSTED, AppError.Kind.TLS_PIN_CHANGED,
+            AppError.Kind.CLEARTEXT_BLOCKED, AppError.Kind.CLIENT_CERT_REQUIRED, AppError.Kind.SERVER_MISMATCH,
+            AppError.Kind.SERVER_UNSUPPORTED, AppError.Kind.SECURE_CONNECTION_LOST, AppError.Kind.SECURE_CONNECTION_LOST_QUICK_CONNECT,
+            AppError.Kind.CONNECTION_CHANGED,
+        )
         const val LIMIT = 50
     }
 }

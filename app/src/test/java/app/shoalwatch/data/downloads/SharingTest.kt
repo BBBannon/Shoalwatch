@@ -256,6 +256,29 @@ class SharingTest : DownloadHousekeepingTestBase() {
         assertTrue(playing.id in facts.calls.single())
     }
 
+    /** Final review re-review L-d: a server that hangs, or whose identity changed, ends the pass at its first refresh. */
+    @Test fun aHangingOrUntrustedServerEndsTheReAskAtTheFirstFailure() = runBlocking {
+        val films = (1..3).map { item("h$it") }
+        seen(a, *films.toTypedArray()); queued(a, *films.toTypedArray()); complete(*films.toTypedArray())
+        repo.setSharing(a, true)
+        seen(b, *films.toTypedArray())
+        confirm(b, *films.toTypedArray())
+        clock += 8 * DAY
+        val kinds = listOf(
+            app.shoalwatch.core.AppError.Kind.NETWORK, app.shoalwatch.core.AppError.Kind.TIMEOUT,
+            app.shoalwatch.core.AppError.Kind.TLS_UNTRUSTED, app.shoalwatch.core.AppError.Kind.TLS_PIN_CHANGED,
+            app.shoalwatch.core.AppError.Kind.SERVER_MISMATCH, app.shoalwatch.core.AppError.Kind.SECURE_CONNECTION_LOST,
+        )
+        for (kind in kinds) {
+            refreshedIds.clear()
+            refreshFails = app.shoalwatch.core.AppError.of(kind)
+            housekeeping.reconfirm(b)
+            assertEquals("$kind: one refresh, then the pass ends", 1, refreshedIds.size)
+            assertTrue("$kind: no facts call", facts.calls.isEmpty())
+        }
+        assertTrue(films.all { store.isConfirmed(key(it), b.userId) })
+    }
+
     @Test fun aTransportFailureStopsReconfirmAndChangesNothing() = runBlocking {
         aDownloads()
         repo.setSharing(a, true)
