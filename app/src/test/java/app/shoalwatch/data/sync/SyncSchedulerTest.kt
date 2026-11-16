@@ -108,13 +108,10 @@ class SyncSchedulerTest : SyncSenderTestBase() {
         val two = connections.stateFor(s2u1.serverId)
         scheduler().start().join()
         settle("both tried and watched") { gateway.calls.size == 2 && one.subscriptionCount.value > 0 && two.subscriptionCount.value > 0 }
-        Thread.sleep(200) // both drains have made their one request and stopped; let them end
-        runCurrent()
+        settle("both drains have ended") { !sender.isDraining(s1u1) && !sender.isDraining(s2u1) } // a signal, not a sleep (review M8)
         assertEquals(2, gateway.calls.size)
         one.value = Connection.Online(address("https://den.example"), isHome = false)
-        settle("the first server's row went") { count("sync_outbox", "serverId = '$S1'") == 0 }
-        Thread.sleep(100)
-        runCurrent()
+        settle("the first server's row went and its drain ended") { count("sync_outbox", "serverId = '$S1'") == 0 && !sender.isDraining(s1u1) }
         assertEquals("one more send, for the server that came back", listOf(2, 1), listOf(s1u1, s2u1).map(::callsFor))
         assertEquals(1, count("sync_outbox"))
     }
