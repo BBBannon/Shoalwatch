@@ -86,16 +86,7 @@ internal class DownloadQueue(
     }
 
     /** Called after a playback failure of a saved copy: re-reads it and marks it FAILED(DAMAGED) if the fingerprint differs. */
-    suspend fun recheck(key: DownloadKey) {
-        val row = store.get(key)?.takeIf { it.state == DownloadState.COMPLETE } ?: return
-        val sha = row.sha256 ?: return
-        val folder = paths.itemFolder(key, row.storage, row.volumeId) ?: return // the card is out: nothing to say yet
-        val media = SavedMedia(key.serverId, key.itemId, folder, QueueSpace.entryOf(paths, row, folder) ?: return, row.container == HLS, row.quality, row.mediaSourceId ?: return)
-        if (!verifier.recheck(media, sha)) {
-            store.updateIf(key, setOf(DownloadState.COMPLETE)) { it.copy(state = DownloadState.FAILED, failure = DownloadFailure.DAMAGED) }
-            AppLog.w(TAG, "download damaged")
-        }
-    }
+    suspend fun recheck(key: DownloadKey) = QueueFiles.recheck(store, paths, verifier, key)
 
     private suspend fun run(j: QueueJob): QueueStep {
         var folder: File? = null
@@ -146,11 +137,7 @@ internal class DownloadQueue(
         extras.tracks(s, key, folder, playable.sourceId, playable.audio, playable.subtitles, DownloadQuality.ORIGINAL)
         val part = paths.partFile(folder, playable.container)
         val target = paths.mediaFile(folder, playable.container)
-        // A file saved under another container (the server remuxed it since) never stays beside this one (review Minor 9).
-        for (ext in DownloadPaths.MEDIA_EXTENSIONS - playable.container) {
-            paths.mediaFile(folder, ext).takeIf { it.exists() }?.let(paths::deleteInside)
-            paths.partFile(folder, ext).takeIf { it.exists() }?.let(paths::deleteInside)
-        }
+        QueueFiles.dropOtherContainers(paths, folder, playable.container)
         val fetched = QueueFetched(target, hls = false, shape = null, audioListed = playable.audio.isNotEmpty(), runtimeMs = playable.runtimeMs)
         // ONE sign-in's bytes (final review L-7): another owner's `.part` or renamed file goes; this one starts from zero.
         if (!store.isFetcher(key, s.userId)) {
@@ -171,14 +158,7 @@ internal class DownloadQueue(
                     store.confirm(key, s.userId) // /Download served it to this sign-in: the server's own permission check passed
                     return fetched
                 }
-                is FetchResult.Failed -> {
-                    // Refused for this owner: another owner may still fetch it under their own permission (review I-2 a).
-                    if (result.failure == DownloadFailure.NOT_ALLOWED && store.dropRefusedOwner(key, s.userId)) {
-                        store.updateIf(key, ACTIVE) { it.copy(state = DownloadState.QUEUED) }
-                        throw QueueEnds(QueueStep.Next)
-                    }
-                    throw QueueEnds(failed(key, result.failure))
-                }
+                is FetchResult.Failed -> if (result.failure == DownloadFailure.NOT_ALLOWED) refusedFor(key, s) else throw QueueEnds(failed(key, result.failure))
                 FetchResult.Unauthorised -> throw QueueEnds(unauthorised(key, s))
                 FetchResult.RestartConversion -> throw QueueEnds(retry(key, AppError.Kind.SERVER_ERROR))
                 is FetchResult.Retry -> {
@@ -215,6 +195,7 @@ internal class DownloadQueue(
             var audioListed = true
             if (conv == null) {
                 live.remove(key)
+                askedFirst(key, s)
                 val opened = open(key, s, folder)
                 conv = opened.first
                 audioListed = opened.second
@@ -238,6 +219,26 @@ internal class DownloadQueue(
                 }
             }
         }
+    }
+
+    /**
+     * `/videos/` checks no download permission, so a sign-in that is not yet this copy's fetcher is asked first (final review
+     * N-1): yes is its own confirmation, dated now; no ends its ownership ([refusedFor]); unknown never allows a conversion.
+     */
+    private suspend fun askedFirst(key: DownloadKey, s: Session) {
+        if (store.isFetcher(key, s.userId)) return
+        when (server(key) { gateway.facts(s, listOf(key.itemId)) }.firstOrNull { it.itemId == key.itemId }?.canDownload) {
+            true -> store.confirm(key, s.userId)
+            false -> refusedFor(key, s)
+            null -> throw QueueEnds(failed(key, DownloadFailure.NOT_ALLOWED))
+        }
+    }
+
+    /** Refused for this owner: another owner may still fetch it under their own permission (review I-2 a); the last one ends FAILED. */
+    private suspend fun refusedFor(key: DownloadKey, s: Session): Nothing {
+        if (!store.dropRefusedOwner(key, s.userId)) throw QueueEnds(failed(key, DownloadFailure.NOT_ALLOWED))
+        store.updateIf(key, ACTIVE) { it.copy(state = DownloadState.QUEUED) }
+        throw QueueEnds(QueueStep.Next)
     }
 
     /**

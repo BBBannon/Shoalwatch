@@ -163,8 +163,12 @@ abstract class DownloadQueueTestBase : DownloadTestBase() {
     internal fun drain(q: DownloadQueue = queue(), stop: () -> Boolean = { false }, statuses: MutableList<QueueStatus>? = null): QueueRun =
         runBlocking { q.drain(stop) { statuses?.add(it) } }
 
-    /** Queues [items] for [s] at [quality] (the server showed them first). */
+    /**
+     * Queues [items] for [s] at [quality] (the server showed them first). A conversion is planned only on a confirmed CanDownload,
+     * so the server's facts say true for it, as the queue asks again before it converts (final review N-1).
+     */
     internal fun queued(s: Session, vararg items: Item, quality: DownloadQuality = DownloadQuality.ORIGINAL) {
+        if (quality != DownloadQuality.ORIGINAL) items.forEach { facts.allow(it.id) }
         seen(s, *items)
         runBlocking { store.add(s, items.map { newDownload(it, quality) }) }
     }

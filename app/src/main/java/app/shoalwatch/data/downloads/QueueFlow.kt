@@ -4,6 +4,7 @@ import app.shoalwatch.core.AppError
 import app.shoalwatch.core.AppLog
 import kotlinx.coroutines.CancellationException
 import app.shoalwatch.data.db.downloads.DownloadKey
+import app.shoalwatch.data.db.downloads.DownloadStore
 import app.shoalwatch.data.playback.Resolved
 import java.io.File
 
@@ -33,6 +34,29 @@ internal object QueueFailures {
     /** Runs a best-effort part of a download (its extras): a failure is logged by class and skipped. */
     suspend fun bestEffort(tag: String, block: suspend () -> Unit) {
         try { block() } catch (e: CancellationException) { throw e } catch (e: Exception) { AppLog.w(tag, "download extras skipped: ${e.javaClass.simpleName}") }
+    }
+}
+
+/** The queue's file chores that need no queue state. */
+internal object QueueFiles {
+    /** Called after a playback failure of a saved copy: re-reads it and marks it FAILED(DAMAGED) if the fingerprint differs. */
+    suspend fun recheck(store: DownloadStore, paths: DownloadPaths, verifier: PlayableCheck, key: DownloadKey) {
+        val row = store.get(key)?.takeIf { it.state == DownloadState.COMPLETE } ?: return
+        val sha = row.sha256 ?: return
+        val folder = paths.itemFolder(key, row.storage, row.volumeId) ?: return // the card is out: nothing to say yet
+        val media = SavedMedia(key.serverId, key.itemId, folder, QueueSpace.entryOf(paths, row, folder) ?: return, row.container == QueueSpace.HLS, row.quality, row.mediaSourceId ?: return)
+        if (!verifier.recheck(media, sha)) {
+            store.updateIf(key, setOf(DownloadState.COMPLETE)) { it.copy(state = DownloadState.FAILED, failure = DownloadFailure.DAMAGED) }
+            AppLog.w("DownloadQueue", "download damaged")
+        }
+    }
+
+    /** A file saved under another container (the server remuxed it since) never stays beside this one (review Minor 9). */
+    fun dropOtherContainers(paths: DownloadPaths, folder: File, container: String) {
+        for (ext in DownloadPaths.MEDIA_EXTENSIONS - container) {
+            paths.mediaFile(folder, ext).takeIf { it.exists() }?.let(paths::deleteInside)
+            paths.partFile(folder, ext).takeIf { it.exists() }?.let(paths::deleteInside)
+        }
     }
 }
 

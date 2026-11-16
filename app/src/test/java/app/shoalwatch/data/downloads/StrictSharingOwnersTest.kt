@@ -141,5 +141,77 @@ class StrictSharingOwnersTest : DownloadHousekeepingTestBase() {
         assertEquals("the planner's confirmation is today's", clock, db.offlineLibraryDao().sharedConfirmedAt(S1, b.userId, film.id))
     }
 
+    /**
+     * Final review N-1: sharing on, A queues the film as a conversion, B joins it as "already on this phone", A's sign-in can no
+     * longer send (so the queue runs it under B's), three days pass and the server answers [bAnswer] about B's own CanDownload
+     * (null: it does not say). With [aLeaves], A is no longer an owner, so B is the only one.
+     */
+    private fun bRunsTheConversion(bAnswer: Boolean?, aLeaves: Boolean = false) = runBlocking {
+        store.setSharing(S1, true)
+        queued(a, film, quality = DownloadQuality.MEDIUM)
+        seen(b, film)
+        assertEquals(mapOf(film.id to app.shoalwatch.data.db.downloads.DownloadStore.Added.OwnerAdded), store.add(b, listOf(shareDownload(film))))
+        if (aLeaves) store.removeOwner(a, film.id)
+        tokens -= a
+        if (bAnswer == null) facts.known.remove(film.id) else facts.allow(film.id, canDownload = bAnswer)
+        clock += 3 * DAY
+        convertible()
+        drain()
+    }
+
+    private fun bFetched() = runBlocking { store.isFetcher(key(film), b.userId) }
+
+    @Test fun aConversionUnderAnOwnersSignInThatIsNotYetItsFetcherAsksThatSignInFirstAndANoDropsIt() {
+        bRunsTheConversion(bAnswer = false)
+        assertEquals("one question, about B's own permission", listOf(listOf(film.id)), facts.calls)
+        assertTrue("nothing was converted", hls.opens.isEmpty())
+        assertFalse(bFetched())
+        assertEquals(listOf(a.userId), owners())
+        assertFalse(runBlocking { store.isConfirmed(key(film), b.userId) })
+        assertFalse(download(film)!!.state == DownloadState.COMPLETE)
+        assertNull(plan(b))
+    }
+
+    @Test fun aNoForTheOnlyOwnerFailsTheConversionAsNotAllowed() {
+        bRunsTheConversion(bAnswer = false, aLeaves = true)
+        assertTrue(hls.opens.isEmpty())
+        assertEquals(DownloadState.FAILED to DownloadFailure.NOT_ALLOWED, download(film)!!.let { it.state to it.failure })
+        assertFalse(bFetched())
+        assertNull(plan(b))
+    }
+
+    @Test fun anUnknownAnswerNeverConvertsAndDoesNotMakeAFetcher() {
+        bRunsTheConversion(bAnswer = null)
+        assertTrue(hls.opens.isEmpty())
+        assertEquals(DownloadState.FAILED to DownloadFailure.NOT_ALLOWED, download(film)!!.let { it.state to it.failure })
+        assertFalse(bFetched())
+        assertNull(plan(b))
+    }
+
+    @Test fun aYesConfirmsThatSignInNowAndThenMakesItTheFetcher() {
+        bRunsTheConversion(bAnswer = true)
+        assertEquals(listOf(listOf(film.id)), facts.calls)
+        assertEquals(DownloadState.COMPLETE, download(film)!!.state)
+        assertTrue(bFetched())
+        assertEquals("B's own confirmation, dated now", 1, count("download_permissions", "userId = '${b.userId}' AND confirmedAt = $clock"))
+    }
+
+    /** Nit-3: an original is checked by `/Download` itself; a refusal for the only owner, after the mark, leaves nothing playable. */
+    @Test fun anOriginalRefusedByDownloadForTheOnlyOwnerAfterTheMarkEndsFailedWithNothingPlayable() = runBlocking {
+        store.setSharing(S1, true)
+        queued(a, film)
+        seen(b, film)
+        store.add(b, listOf(shareDownload(film)))
+        store.removeOwner(a, film.id)
+        tokens -= a
+        playable()
+        files.steps += FakeFiles.answer(FetchResult.Failed(DownloadFailure.NOT_ALLOWED))
+        drain()
+        assertTrue("no separate question for an original", facts.calls.isEmpty())
+        assertEquals(DownloadState.FAILED to DownloadFailure.NOT_ALLOWED, download(film)!!.let { it.state to it.failure })
+        assertNull(plan(b))
+        assertNull(db.offlineLibraryDao().getPlayable(S1, b.userId, film.id))
+    }
+
     private companion object { const val DAY = 24L * 60 * 60 * 1_000 }
 }
