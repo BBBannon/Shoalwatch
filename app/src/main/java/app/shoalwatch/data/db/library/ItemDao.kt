@@ -133,12 +133,12 @@ abstract class ItemDao {
     @Query("UPDATE user_data SET pendingSyncAt = :nowMs WHERE serverId = :serverId AND userId = :userId AND itemId = :itemId")
     internal abstract suspend fun markPending(serverId: String, userId: String, itemId: String, nowMs: Long): Int
 
-    /** Every row with an unconfirmed local change, for every user and server (the start-up sweep's snapshot), except one kept for an offline play. */
-    @Query("SELECT * FROM user_data WHERE pendingSyncAt IS NOT NULL AND $NO_OFFLINE_PLAY")
+    /** Every row with an unconfirmed local change no outbox row covers, for every user and server (the start-up sweep's snapshot), except one kept for an offline play. */
+    @Query("SELECT * FROM user_data WHERE pendingSyncAt IS NOT NULL AND $NO_OFFLINE_PLAY AND $NO_SYNC_MARK")
     internal abstract suspend fun pendingRows(): List<UserDataEntity>
 
-    /** Clears every marker of one user (the local values stay), except one kept for an offline play; returns how many rows had one. */
-    @Query("UPDATE user_data SET pendingSyncAt = NULL WHERE serverId = :serverId AND userId = :userId AND pendingSyncAt IS NOT NULL AND $NO_OFFLINE_PLAY")
+    /** Clears every marker of one user (the local values stay), except one an outbox row covers or kept for an offline play; returns how many rows had one. */
+    @Query("UPDATE user_data SET pendingSyncAt = NULL WHERE serverId = :serverId AND userId = :userId AND pendingSyncAt IS NOT NULL AND $NO_OFFLINE_PLAY AND $NO_SYNC_MARK")
     internal abstract suspend fun clearPendingFor(serverId: String, userId: String): Int
 
     @Query("UPDATE user_data SET pendingSyncAt = NULL WHERE serverId = :serverId AND userId = :userId AND itemId = :itemId")
@@ -227,6 +227,10 @@ abstract class ItemDao {
          * The row has no offline play waiting for Milestone 5 (SPEC 3.2: a sync never undoes an offline watch before it is sent), so
          * its marker may be cleared by the start-up sweep or the idle clean-up.
          */
+        /** No outbox row marks the row (Milestone 5): its marker means "send this", so only the row's landing may clear it. */
+        internal const val NO_SYNC_MARK =
+            "NOT EXISTS (SELECT 1 FROM sync_marks sm WHERE sm.serverId = user_data.serverId AND sm.userId = user_data.userId AND sm.itemId = user_data.itemId)"
+
         internal const val NO_OFFLINE_PLAY =
             "NOT EXISTS (SELECT 1 FROM offline_plays op WHERE op.serverId = user_data.serverId AND op.userId = user_data.userId AND op.itemId = user_data.itemId)"
 

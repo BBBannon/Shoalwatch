@@ -71,7 +71,11 @@ class LibraryStore(
             if (start > stored) return@withTransaction PageResult.Stale
             writeItems(s, page, now, requestedAtSeq = requestedAtSeq)
             // An item a local action took out of this list after this page was asked for stays out: the page is older than that.
-            val entries = page.filterNot { changes.removedFrom(s, it.item.id, listKey) && changes.newerThan(s, it.item.id, requestedAtSeq) }
+            // So does one an UNSENT change took out (its outbox row's departure mark), whenever the page was asked for: the server has not heard yet.
+            val unsent = db.outboxDao().leftList(s.serverId, s.userId, listKey).toSet()
+            val entries = page.filterNot {
+                it.item.id in unsent || (changes.removedFrom(s, it.item.id, listKey) && changes.newerThan(s, it.item.id, requestedAtSeq))
+            }
             lists.deleteEntriesFrom(s.serverId, s.userId, listKey, start)
             lists.insertEntries(entries.mapIndexed { i, row -> ListEntryEntity(s.serverId, s.userId, listKey, start + i, row.item.id) })
             val loaded = start + entries.size

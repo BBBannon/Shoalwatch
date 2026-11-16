@@ -10,7 +10,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Taking an item off Continue Watching, and the rules every action shares (optimistic first, exact rollback, errors unchanged). */
+/** Taking an item off Continue Watching, and the rules every action shares (saved at once, kept and queued when the send fails). */
 class PlaystateResumeTest : PlaystateTestBase() {
     private fun remove(label: String, s: Session = s1u1) = runBlocking { playstate.removeFromContinueWatching(s, id(label)) }
 
@@ -55,9 +55,9 @@ class PlaystateResumeTest : PlaystateTestBase() {
         assertEquals(listOf("Film a", "Film c"), seen.map { it.item.name })
         assertEquals(0, userData("b")!!.positionMs)
         assertNotNull(userData("b")!!.pendingSyncAt)
-        assertTrue(call.isActive)
+        call.await() // saved and queued: the action does not wait for the server
         release(held)
-        call.await()
+        settle()
         assertNoPending()
     }
 
@@ -85,69 +85,52 @@ class PlaystateResumeTest : PlaystateTestBase() {
         assertEquals(ids("a"), resumeIds())
     }
 
-    @Test fun aFailureRestoresTheRowAndTheListPositionExactlyAtHeadMiddleAndTail() {
-        for (label in listOf("a", "b", "c")) {
+    @Test fun aFailedSendKeepsTheChangeAndItsRowWhateverTheKind() {
+        val kinds = listOf(AppError.Kind.SERVER_ERROR, AppError.Kind.OFFLINE, AppError.Kind.NETWORK, AppError.Kind.TIMEOUT, AppError.Kind.UNAUTHORISED)
+        for (kind in kinds) {
             saveResume(film("a"), film("b"), film("c"))
-            val rowBefore = userData(label)
-            val stateBefore = runBlocking { listDao.getState(s1u1.serverId, s1u1.userId, ListKey.RESUME) }
-            gateway.failAll = AppError.Kind.SERVER_ERROR
-            val e = failure { playstate.removeFromContinueWatching(s1u1, id(label)) }
-            gateway.failAll = null
-            assertEquals(AppError.Kind.SERVER_ERROR, e.kind)
-            assertEquals(ids("a", "b", "c"), resumeIds())
-            assertEquals("row of $label", rowBefore, userData(label))
-            assertEquals(stateBefore, runBlocking { listDao.getState(s1u1.serverId, s1u1.userId, ListKey.RESUME) })
-            assertNoPending()
+            gateway.failOps["clearResume"] = kind
+            remove("b") // returns normally: nothing is thrown to the screen
+            drain()
+            assertEquals(kind.name, ids("a", "c"), resumeIds())
+            assertEquals(0, userData("b")!!.positionMs)
+            assertNotNull("kept until sent", userData("b")!!.pendingSyncAt)
+            assertEquals(1, queued())
+            assertEquals("one send, then the drain stops or defers", 1, gateway.count("clearResume"))
+            db.openHelper.writableDatabase.execSQL("DELETE FROM sync_outbox")
+            gateway.calls.clear()
         }
     }
 
-    @Test fun anItemWithNoUserDataRowGetsNoneLeftBehindAfterAFailure() {
+    @Test fun anItemWithNoUserDataRowIsKeptOffTheListWhileTheSendFails() {
         saveResume(row(item("a"), null))
-        gateway.failAll = AppError.Kind.NETWORK
-        failure { playstate.removeFromContinueWatching(s1u1, id("a")) }
-        assertNull(userData("a"))
-        assertEquals(ids("a"), resumeIds())
+        gateway.failOps["clearResume"] = AppError.Kind.NETWORK
+        remove("a")
+        drain()
+        assertEquals(emptyList<String>(), resumeIds())
+        assertEquals(1, queued())
     }
 
-    @Test fun theGatewaysErrorIsThrownUnchangedWhateverItsKind() {
-        saveResume(film("a"))
-        for (kind in listOf(AppError.Kind.OFFLINE, AppError.Kind.NETWORK, AppError.Kind.TIMEOUT, AppError.Kind.FORBIDDEN)) {
-            gateway.failAll = kind
-            val e = failure { playstate.removeFromContinueWatching(s1u1, id("a")) }
-            assertEquals(kind, e.kind)
-            assertEquals(AppError.of(kind).userMessage, e.message)
-        }
-        val mine = AppError(AppError.Kind.OFFLINE, "Exactly this")
-        gateway.failAll = null
-        gateway.throwOps["clearResume"] = mine
-        assertTrue(mine === failure { playstate.removeFromContinueWatching(s1u1, id("a")) })
-    }
-
-    @Test fun anUnexpectedExceptionBecomesAnAppErrorThatLeaksNothing() {
+    @Test fun anUnexpectedExceptionFromTheServerKeepsTheChangeAndLeaksNothing() {
         saveResume(film("a"))
         gateway.throwOps["clearResume"] = IllegalStateException("https://secret.example/token=abc")
-        val e = failure { playstate.removeFromContinueWatching(s1u1, id("a")) }
-        assertEquals(AppError.Kind.UNKNOWN, e.kind)
-        assertFalse(e.message!!.contains("secret"))
-        assertEquals(60_000, userData("a")!!.positionMs)
-        assertNoPending()
+        remove("a")
+        drain()
+        assertEquals(0, userData("a")!!.positionMs)
+        assertEquals(1, queued())
     }
 
-    @Test fun anUnauthorisedAnswerIsRolledBackAndThrown() {
+    @Test fun aRefusalForThisItemOverrulesTheChangeAndTheServersCopyComesBack() {
         saveResume(film("a"), film("b"))
-        gateway.failAll = AppError.Kind.UNAUTHORISED
-        val e = failure { playstate.removeFromContinueWatching(s1u1, id("a")) }
-        assertEquals(AppError.Kind.UNAUTHORISED, e.kind)
+        gateway.failOps["clearResume"] = AppError.Kind.FORBIDDEN
+        gateway.resumeFor = { listOf(film("a"), film("b")) }
+        gateway.itemFor = { film("a") }
+        remove("a")
+        drain()
+        assertEquals(0, queued())
         assertEquals(ids("a", "b"), resumeIds())
         assertEquals(60_000, userData("a")!!.positionMs)
         assertNoPending()
-    }
-
-    @Test fun oneGatewayCallPerActionEvenWhenItFails() {
-        saveResume(film("a"))
-        gateway.failAll = AppError.Kind.NETWORK
-        failure { playstate.removeFromContinueWatching(s1u1, id("a")) }
-        assertEquals(1, gateway.calls.size)
     }
 
     @Test fun aMalformedIdIsNotFoundWithNothingChangedOrSent() {

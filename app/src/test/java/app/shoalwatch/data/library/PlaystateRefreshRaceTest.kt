@@ -48,14 +48,21 @@ class PlaystateRefreshRaceTest : PlaystateTestBase() {
             "BEGIN SELECT RAISE(ABORT, 'no'); END",
     )
 
-    @Test fun aMarkerThatCannotBeClearedDoesNotFailAnActionTheServerAccepted() = runBlocking {
+    @Test fun aLandingThatCannotBeWrittenKeepsTheRowAndTheNextDrainLandsIt() = runBlocking {
         saveResume(film("a"), film("b"))
         gateway.resumeFor = { listOf(film("b")) }
         failClearingMarkerOf("a")
         playstate.removeFromContinueWatching(s1u1, id("a")) // returns normally
         settle()
-        assertEquals("the follow-up refresh still ran", 1, gateway.count("resume"))
-        assertEquals(1, pendingRows()) // left for the start-up sweep
+        assertEquals("the landing rolled back: the row stays", 1, queued())
+        assertEquals(1, pendingRows())
+        assertEquals("no refresh before it has landed", 0, gateway.count("resume"))
+        sql("DROP TRIGGER stuck")
+        sender.kick(s1u1)
+        settle()
+        assertEquals(0, queued())
+        assertNoPending()
+        assertEquals(1, gateway.count("resume"))
     }
 
     @Test fun aMarkerLeftByAFailedClearIsClearedOnceTheQueueIsIdleAgain() = runBlocking {
@@ -70,14 +77,14 @@ class PlaystateRefreshRaceTest : PlaystateTestBase() {
         assertNoPending()
     }
 
-    @Test fun oneUnclearableRowDoesNotKeepTheOthersPending() = runBlocking {
+    @Test fun aLandingIsAllOrNothing() = runBlocking {
         save(series(), season("s1", 1), ep("e1", "s1", 1), ep("e2", "s1", 2))
         saveList(ListKey.seasons(id("show")), season("s1", 1))
         failClearingMarkerOf("e2")
         playstate.setPlayed(s1u1, id("s1"), true)
         settle()
-        assertEquals(1, pendingRows())
+        assertEquals("every marker stays with its row", 3, pendingRows())
+        assertEquals(1, queued())
         assertTrue(userData("e1")!!.played)
-        assertEquals(null, userData("e1")!!.pendingSyncAt)
     }
 }

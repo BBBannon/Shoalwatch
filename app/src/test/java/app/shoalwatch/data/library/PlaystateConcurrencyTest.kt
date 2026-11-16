@@ -23,54 +23,54 @@ import org.junit.Test
 class PlaystateConcurrencyTest : PlaystateTestBase() {
     private suspend fun <T> kotlinx.coroutines.Deferred<T>.within5s() = withTimeout(5_000) { await() }
 
-    @Test fun twoRapidActionsOnOneItemRunOneAfterTheOther() = runBlocking {
+    @Test fun aSecondTapOnOneItemShowsAtOnceAndTheSendsGoInOrderOneAtATime() = runBlocking {
         save(film("a", ud()))
         val held = holdServer()
-        val first = background { playstate.setPlayed(s1u1, id("a"), true) }
-        until { gateway.count("setPlayed") == 1 }
-        val second = background { playstate.setPlayed(s1u1, id("a"), false) }
-        delay(150) // a negative check: long enough for an unserialised second action to have called the server
+        background { playstate.setPlayed(s1u1, id("a"), true) }.within5s()
+        until { gateway.count("setPlayed") == 1 } // the first send is at the server
+        background { playstate.setPlayed(s1u1, id("a"), false) }.within5s()
+        assertFalse("the second tap shows without waiting for the first's send", userData("a")!!.played)
         assertEquals(1, gateway.count("setPlayed"))
-        assertTrue(userData("a")!!.played)
         release(held)
-        first.within5s()
-        second.within5s()
         settle()
         assertEquals(listOf("setPlayed:${id("a")}:true", "setPlayed:${id("a")}:false"), gateway.calls.filter { it.startsWith("setPlayed") })
-        assertEquals("two mutations were at the server at once", 1, gateway.maxMutationsRunning)
+        assertEquals("two sends were at the server at once", 1, gateway.maxMutationsRunning)
         assertFalse(userData("a")!!.played)
+        assertEquals(0, queued())
         assertNoPending()
     }
 
-    @Test fun aSecondActionStartsFromTheFirstsFinishedStateEvenWhenTheFirstFails() = runBlocking {
+    @Test fun aFailedSendKeepsTheChangeAndALaterTapOnTheSameItemReplacesItsRow() = runBlocking {
         save(film("a", ud(favourite = false)))
-        val held = holdServer()
-        var calls = 0
-        gateway.onCall = { if (++calls == 1) gateway.failOps["setFavourite"] = AppError.Kind.NETWORK else gateway.failOps.clear() } // the first call fails, the second succeeds
-        val first = background { runCatching { playstate.setFavourite(s1u1, id("a"), true) } }
-        until { gateway.count("setFavourite") == 1 }
-        val second = background { runCatching { playstate.setFavourite(s1u1, id("a"), true) } }
-        delay(100)
-        release(held)
-        assertEquals(AppError.Kind.NETWORK, (first.within5s().exceptionOrNull() as AppError).kind)
-        assertTrue(second.within5s().isSuccess)
+        gateway.failOps["setFavourite"] = AppError.Kind.NETWORK
+        playstate.setFavourite(s1u1, id("a"), true)
+        settle()
         assertTrue(userData("a")!!.favourite)
+        assertEquals(1, queued())
+        playstate.setFavourite(s1u1, id("a"), false)
+        settle()
+        assertEquals("one row per item and kind", 1, queued())
+        gateway.failOps.clear()
+        sender.kick(s1u1)
+        settle()
+        val sends = gateway.calls.filter { it.startsWith("setFavourite") }
+        assertEquals("the first tap's one failed send", 1, sends.count { it.endsWith(":true") })
+        assertTrue("the replacing row went last", sends.last().endsWith(":false"))
+        assertFalse(userData("a")!!.favourite)
         assertNoPending()
     }
 
-    @Test fun actionsOnDifferentItemsOfOneUserAlsoWaitTheirTurn() = runBlocking {
+    @Test fun actionsOnDifferentItemsOfOneUserDoNotWaitForEachOthersSends() = runBlocking {
         save(film("a", ud()), film("b", ud()))
         val held = holdServer()
-        val first = background { playstate.setFavourite(s1u1, id("a"), true) }
+        background { playstate.setFavourite(s1u1, id("a"), true) }.within5s()
         until { gateway.count("setFavourite") == 1 }
-        val second = background { playstate.setFavourite(s1u1, id("b"), true) }
-        delay(150) // a negative check: long enough for an unqueued second action to have changed its row
-        assertFalse(userData("b")!!.favourite)
-        assertEquals(1, gateway.count("setFavourite"))
-        release(held)
-        first.within5s()
-        second.within5s()
+        background { playstate.setFavourite(s1u1, id("b"), true) }.within5s()
         assertTrue(userData("b")!!.favourite)
+        assertEquals("b's send waits its turn behind a's", 1, gateway.count("setFavourite"))
+        release(held)
+        settle()
+        assertEquals(listOf(id("a"), id("b")), gateway.calls.filter { it.startsWith("setFavourite") }.map { it.split(':')[1] })
         assertNoPending()
     }
 
@@ -90,18 +90,15 @@ class PlaystateConcurrencyTest : PlaystateTestBase() {
         assertEquals(ids("b"), resumeIds())
     }
 
-    @Test fun aCallerThatLeavesBeforeAFailureStillGetsTheRollback() = runBlocking {
+    @Test fun aCallerThatLeavesStraightAwayStillHasItsChangeKeptWhenTheSendFails() = runBlocking {
         saveResume(film("a"), film("b"))
-        val held = holdServer()
-        gateway.failAll = AppError.Kind.OFFLINE
+        gateway.failOps["clearResume"] = AppError.Kind.OFFLINE
         val call = background { playstate.removeFromContinueWatching(s1u1, id("a")) }
-        until { gateway.count("clearResume") == 1 }
         call.cancelAndJoin()
-        release(held)
         settle()
-        assertEquals(ids("a", "b"), resumeIds())
-        assertEquals(60_000, userData("a")!!.positionMs)
-        assertNoPending()
+        assertEquals(ids("b"), resumeIds())
+        assertEquals(0, userData("a")!!.positionMs)
+        assertEquals(1, queued())
     }
 
     @Test fun aCallerThatLeavesWhileQueuedBehindAnotherActionStillHasItRun() = runBlocking {
@@ -119,17 +116,6 @@ class PlaystateConcurrencyTest : PlaystateTestBase() {
         assertNoPending()
     }
 
-    @Test fun aFailureToRestoreStillClearsEveryMarkerAndRefreshesTheLists() = runBlocking {
-        saveResume(film("a"), film("b"))
-        gateway.failAll = AppError.Kind.SERVER_ERROR
-        gateway.onCall = { call -> if (call.startsWith("clearResume")) sql("DROP TABLE list_entries") } // the restore cannot put the entry back
-        val e = failure { playstate.removeFromContinueWatching(s1u1, id("a")) }
-        settle()
-        assertEquals("the original error, not the restore's", AppError.Kind.SERVER_ERROR, e.kind)
-        assertNoPending()
-        assertTrue("a forced refresh to reconverge with the server", gateway.count("resume") >= 1)
-    }
-
     @Test fun theMarkerIsClearedEvenIfTheFollowUpRefreshFails() = runBlocking {
         saveResume(film("a"))
         gateway.failOps["resume"] = AppError.Kind.OFFLINE
@@ -140,54 +126,56 @@ class PlaystateConcurrencyTest : PlaystateTestBase() {
 
     @Test fun anActionOnADeadAppScopeEndsInsteadOfHanging() = runBlocking {
         saveResume(film("a"))
-        val dead = PlaystateRepository(gateway, repo, CoroutineScope(Job().apply { cancel() }), Dispatchers.IO, { now })
+        val dead = PlaystateRepository(repo, outbox, { }, CoroutineScope(Job().apply { cancel() }), Dispatchers.IO, { now })
         try {
             withTimeout(5_000) { dead.removeFromContinueWatching(s1u1, id("a")) }
             fail("expected a cancellation")
         } catch (_: CancellationException) {
         }
         assertEquals(60_000, userData("a")!!.positionMs)
+        assertEquals(0, queued())
         assertTrue(gateway.calls.isEmpty())
     }
 
-    @Test fun theAppScopeShuttingDownMidCallStillPutsTheRowsBack() = runBlocking {
+    @Test fun theAppScopeEndingAfterTheChangeKeepsTheChangeAndItsRowForTheNextStart() = runBlocking {
         saveResume(film("a"), film("b"))
         val own = CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.Default)
-        val mine = PlaystateRepository(gateway, repo, own, Dispatchers.IO, { now })
-        holdServer()
-        val call = background { runCatching { mine.removeFromContinueWatching(s1u1, id("a")) } }
-        until { gateway.count("clearResume") == 1 }
+        val mine = PlaystateRepository(repo, outbox, { }, own, Dispatchers.IO, { now }) // nothing sends it in this "process"
+        mine.removeFromContinueWatching(s1u1, id("a"))
         own.coroutineContext[Job]!!.cancelAndJoin()
-        assertTrue(call.within5s().exceptionOrNull() is CancellationException)
-        assertEquals(ids("a", "b"), resumeIds())
-        assertEquals(60_000, userData("a")!!.positionMs)
-        assertNoPending()
+        assertEquals(ids("b"), resumeIds())
+        assertEquals(0, userData("a")!!.positionMs)
+        assertNotNull(userData("a")!!.pendingSyncAt)
+        assertEquals(1, queued())
     }
 
-    @Test fun theChangeAndItsUndoWaitForTheLibraryWriteGate() = runBlocking {
+    @Test fun theChangeAndItsLandingWaitForTheLibraryWriteGate() = runBlocking {
         val gate = Mutex()
-        val gated = PlaystateRepository(gateway, LibraryRepository(gateway, db, appScope, Dispatchers.IO, { now }, log, changes, gate), appScope, Dispatchers.IO, { now })
+        val gatedLibrary = LibraryRepository(gateway, db, appScope, Dispatchers.IO, { now }, log, changes, gate)
+        val gatedSender = app.shoalwatch.data.sync.SyncSender(outbox, sync, PlaystateLanding(gatedLibrary, outbox, db.offlinePlayDao()) { now }, { true }, {}, appScope, { now }, Dispatchers.IO)
+        val gated = PlaystateRepository(gatedLibrary, outbox, { s -> gatedSender.kick(s) }, appScope, Dispatchers.IO, { now })
         saveResume(film("a"))
+        gateway.resumeFor = { emptyList() }
         val held = holdMutation()
-        gateway.failAll = AppError.Kind.NETWORK
         gate.withLock {
-            val call = background { runCatching { gated.removeFromContinueWatching(s1u1, id("a")) } }
+            val call = background { gated.removeFromContinueWatching(s1u1, id("a")) }
             delay(150) // a negative check: long enough for an ungated write to have happened
             assertEquals(60_000, userData("a")!!.positionMs)
-            assertTrue(gateway.calls.isEmpty())
+            assertEquals(0, queued())
             gate.unlock()
-            until { gateway.count("clearResume") == 1 } // changed, and now at the server
-            assertEquals(0, userData("a")!!.positionMs)
-            gate.lock() // hold it again: the rollback must wait here too
+            call.within5s()
+            until { gateway.count("clearResume") == 1 } // changed, queued, and at the server
+            gate.lock() // the landing must wait here too
             held.release()
             delay(150)
-            assertEquals("not restored while the gate is held", 0, userData("a")!!.positionMs)
+            assertNotNull("not landed while the gate is held", userData("a")!!.pendingSyncAt)
+            assertEquals(1, queued())
             gate.unlock()
-            assertEquals(AppError.Kind.NETWORK, (call.within5s().exceptionOrNull() as AppError).kind)
+            until { queued() == 0 }
             gate.lock()
         }
-        assertEquals(60_000, userData("a")!!.positionMs)
-        assertEquals(ids("a"), resumeIds())
+        settle()
+        assertEquals(0, userData("a")!!.positionMs)
         assertNoPending()
     }
 

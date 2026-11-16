@@ -36,12 +36,12 @@ data class OwnedWork(val session: Session, val work: Work)
  * The one place the browsing screens call [Playstate], and the one place a screen's background calls are made safe. Each call
  * runs in [scope] (a ViewModel scope; the action itself is not abandoned if the screen goes), takes the [Session] it was asked
  * for, and:
- *  - puts an [OwnedWork] in [working] until the server has answered, because actions for one user run one at a time and a queued
- *    tap's change shows only when the one before it has reached the server: the control shows "working" so a tap never looks
- *    missed. The set is per session (see [forSession]): one user's pending action is never shown to, or allowed to block, another;
+ *  - puts an [OwnedWork] in [working] until the change is saved on this phone (and queued for the server; nothing waits for the
+ *    server, so offline a tick succeeds). The set is per session (see [forSession]): one user's pending action is never shown
+ *    to, or allowed to block, another;
  *  - ignores a second tap on the same control, for the same session, while its first is still working;
- *  - on an [AppError] sends its `userMessage` to [failures] (the change has already been put back by the layer below, and the
- *    screen shows it again because it observes the database); anything else becomes a plain "something went wrong" message. A
+ *  - on an [AppError] (now only what can still fail: an item this user was not shown, or a local failure, with nothing changed)
+ *    sends its `userMessage` to [failures]; anything else becomes a plain "something went wrong" message. A
  *    failure is only shown while its session is still the one on screen ([current]), checked when it is sent and again when it is
  *    about to be shown: it is dropped, not queued, for the next user;
  *  - after a success, runs [onDone] (a favourites-filtered list refreshes itself with it); if that fails the change is not reported

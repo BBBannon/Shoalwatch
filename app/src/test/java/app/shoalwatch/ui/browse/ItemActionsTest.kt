@@ -101,13 +101,25 @@ class ItemActionsTest {
         assertTrue(a.working.value.isEmpty())
     }
 
+    @Test fun anOfflineTickIsNotAnError() = runTest {
+        val connections = FakeConnections().apply { stateFor(BEN.serverId).value = app.shoalwatch.data.servers.Connection.Offline() }
+        val playstate = FakePlaystate() // saved on the phone and queued: the layer below returns normally offline
+        val a = ItemActions(playstate, CoroutineScope(main.dispatcher), connections) { BEN }
+        var followUp = 0
+        a.setPlayed(BEN, "x", true) { followUp++ }
+        assertEquals(listOf("played:ben:x:true"), playstate.calls)
+        assertEquals(1, followUp)
+        assertTrue(a.working.value.isEmpty())
+        a.failures.test { expectNoEvents(); cancelAndIgnoreRemainingEvents() }
+    }
+
     @Test fun aChangeThatFailedIsStillReportedWithItsOwnMessageAndTheFollowUpDoesNotRun() = runTest {
-        val playstate = FakePlaystate().apply { failWith = AppError.of(AppError.Kind.OFFLINE) }
+        val playstate = FakePlaystate().apply { failWith = AppError.of(AppError.Kind.SERVER_NOT_FOUND) } // what can still fail: an item this user was not shown
         val a = ItemActions(playstate, CoroutineScope(main.dispatcher), FakeConnections()) { BEN }
         var followUp = 0
         a.setFavourite(BEN, "x", true) { followUp++ }
         a.failures.test {
-            assertEquals(AppError.of(AppError.Kind.OFFLINE).userMessage, awaitItem())
+            assertEquals(AppError.of(AppError.Kind.SERVER_NOT_FOUND).userMessage, awaitItem())
             cancelAndIgnoreRemainingEvents()
         }
         assertEquals(0, followUp)

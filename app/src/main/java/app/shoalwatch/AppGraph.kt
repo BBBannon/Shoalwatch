@@ -59,6 +59,7 @@ import app.shoalwatch.data.db.library.LocalChangeLog
 import app.shoalwatch.data.library.Library
 import app.shoalwatch.data.library.LibraryRepository
 import app.shoalwatch.data.library.Playstate
+import app.shoalwatch.data.library.PlaystateLanding
 import app.shoalwatch.data.library.PlaystateRepository
 import app.shoalwatch.data.library.PrefsMaintenanceLog
 import app.shoalwatch.data.library.api.LibraryGateway
@@ -261,9 +262,11 @@ class AppGraph(private val appContext: Context) {
 
     /** What the user chose to sort and filter each library by, for as long as the app is open (never saved to disk). */
     val browseMemory: BrowseMemory by lazy { BrowseMemory() }
-    /** The tidy-up actions (remove from Continue Watching, mark watched, favourite): Room first, then the server, rolled back on failure (see "Tidy-up actions" in docs/ARCHITECTURE.md). */
+    /** The tidy-up actions (remove from Continue Watching, mark watched, favourite): saved on the phone and queued in the outbox at once (see "Tidy-up actions" in docs/ARCHITECTURE.md). */
     val playstate: Playstate get() = playstateRepository
-    private val playstateRepository: PlaystateRepository by lazy { PlaystateRepository(libraryGateway, libraryRepository, appScope, Dispatchers.IO, System::currentTimeMillis) }
+    private val playstateRepository: PlaystateRepository by lazy {
+        PlaystateRepository(libraryRepository, outboxStore, { s -> syncScheduler.changed(s) }, appScope, Dispatchers.IO, System::currentTimeMillis)
+    }
     /** Progress reports and the final stop (also saved through `playstate`), best effort; see "Progress reports and teardown" in docs/ARCHITECTURE.md. */
     val playbackReports: ServerPlaybackReports by lazy { ServerPlaybackReports(playbackGateway, playstate, addressSelector, appScope) }
     /** Who is playing: ended by the store hooks above and whenever the active session changes. */
@@ -307,13 +310,8 @@ class AppGraph(private val appContext: Context) {
     // ---- Sync-back (Milestone 5, data/sync): see "Sync outbox" in docs/ARCHITECTURE.md.
     internal val outboxStore: OutboxStore by lazy { OutboxStore(database, System::currentTimeMillis) }
     internal val syncGateway: SyncGateway by lazy { SyncGatewayImpl(serverApi, libraryGateway) }
-    /** Until the tidy-up actions queue rows (Task 7), a landed row simply goes. */
-    private val syncLanding: SyncLanding by lazy {
-        object : SyncLanding {
-            override suspend fun confirmed(s: Session, seq: Long) { outboxStore.take(seq) }
-            override suspend fun overruled(s: Session, seq: Long) { outboxStore.take(seq) }
-        }
-    }
+    /** What this phone does when a row is confirmed or overruled: markers clear, lists (and an overruled item) refresh. */
+    private val syncLanding: SyncLanding by lazy { PlaystateLanding(libraryRepository, outboxStore, database.offlinePlayDao(), System::currentTimeMillis) }
     /** Sends each profile's rows in order, as that profile; what the sync job awaits (`ShoalwatchWorkerFactory`). */
     internal val syncSender: SyncSender by lazy {
         SyncSender(outboxStore, syncGateway, syncLanding, { s -> serverStore.cachedToken(s.serverId, s.userId) != null }, { serverStore.awaitWarmed() }, appScope)

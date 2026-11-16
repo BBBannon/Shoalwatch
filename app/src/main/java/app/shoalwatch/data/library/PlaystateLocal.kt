@@ -15,7 +15,7 @@ internal data class RemovedEntry(val listKey: String, val itemId: String, val po
  *  - [badges]: the amount each season or series `unplayedItemCount` was moved by (not a snapshot: the badge is shared by sibling episodes);
  *  - [removed]: the list entries taken out, in the order they were taken out;
  *  - [recompute]: the lists the server recomputes, to refresh once it has agreed.
- * Everything needed to put the cache back ([PlaystateLocal.restore]) or to clear the pending markers ([markedIds]).
+ * What the outbox row records: the rows it marks ([markedIds]), the lists it took items out of ([removed]) and [recompute].
  */
 internal class Touched {
     val rows = LinkedHashMap<String, UserDataEntity?>()
@@ -28,8 +28,8 @@ internal class Touched {
 }
 
 /**
- * The local half of every tidy-up action: the optimistic change (always with the pending marker, always recorded in
- * [Touched] first) and its exact undo. Everything goes through [LibraryStore], so visibility and the pending rules are
+ * The local half of every tidy-up action: the change (always with the pending marker, always recorded in [Touched] first).
+ * There is no undo: the change stays until the server's copy replaces it (see `PlaystateLanding`). Everything goes through [LibraryStore], so visibility and the pending rules are
  * applied in one place. Callers run it inside the library write gate and one store transaction, one action at a time per
  * user. Every row is for the session's user only; item rows are looked up through the per-user visibility rule.
  */
@@ -146,52 +146,13 @@ internal class PlaystateLocal(private val store: LibraryStore, private val clock
         t.badges.merge(itemId, next - count, Int::plus)
     }
 
-    // ---- after the server has answered
+    // ---- markers
 
-    /** This user has no action running (the queue is idle), so no marker left on their rows can be live: clear them. */
+    /** This user has no action running (the queue is idle): clear every marker no outbox row covers (`ItemDao.clearPendingFor`). */
     suspend fun clearLeftovers(s: Session) = store.clearPendingFor(s)
 
-    /** The server agrees: the next refresh may overwrite these rows again (the local value stays). */
+    /** The server has these rows (a stop it heard): the next refresh may overwrite them again (the local value stays). */
     suspend fun clearPending(s: Session, itemIds: Collection<String>) = itemIds.forEach { store.clearPending(s, it) }
-
-    /**
-     * The server has confirmed the change. The confirmation is a change too: every row and removed entry is stamped again, so a
-     * request sent while the server call was in flight (after the optimistic write, so not older than it) but answered from
-     * the server's old state is older than this moment and cannot overwrite the result. Then the markers go. Same gate and
-     * transaction as the caller's. A request sent after this applies normally.
-     */
-    suspend fun confirm(s: Session, t: Touched) {
-        t.markedIds.forEach { store.noteChanged(s, it) }
-        t.removed.forEach { store.noteChanged(s, it.itemId, removedFrom = it.listKey) }
-        clearPending(s, t.markedIds)
-    }
-
-    /**
-     * Puts the cache back as it was. Rows set as a whole go back exactly (a row that did not exist is deleted) and NEVER with
-     * a marker: one action runs at a time per user, so no marker left on a row belongs to anyone else. A badge is moved back by
-     * what this action moved it by. Removed list entries go back in REVERSE order of removal (each was recorded after the
-     * earlier ones were gone, so undoing newest first puts each at its recorded position), unless a refresh has already put
-     * the item back, or the server has since stopped showing it to this user (it must not reappear in their list).
-     */
-    suspend fun restore(s: Session, t: Touched) {
-        for ((itemId, before) in t.rows) {
-            if (before == null) store.deleteUserData(s, itemId) else store.restoreUserData(before.copy(pendingSyncAt = null))
-        }
-        for ((itemId, moved) in t.badges) {
-            val count = store.userData(s, itemId)?.unplayedItemCount ?: continue
-            store.setUnplayedCount(s, itemId, (count - moved).coerceAtLeast(0), clock())
-        }
-        clearPending(s, t.badges.keys)
-        for (e in t.removed.asReversed()) {
-            if (e.position == NOT_IN_LIST) {
-                store.forgetRemoval(s, e.itemId, e.listKey)
-                continue
-            }
-            if (store.visibleItem(s, e.itemId) == null) continue
-            val now = store.entryIds(s, e.listKey)
-            if (e.itemId !in now) store.restoreEntry(s, e.listKey, e.position.coerceAtMost(now.size), e.itemId)
-        }
-    }
 
     private companion object {
         /** A [RemovedEntry] position meaning the item was not in the saved list: only the intent to keep it out was recorded. */

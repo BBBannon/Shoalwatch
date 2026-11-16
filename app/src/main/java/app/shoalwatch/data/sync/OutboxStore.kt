@@ -32,6 +32,8 @@ internal class OutboxStore(private val db: AppDatabase, private val now: () -> L
         val fromOfflinePlay: Boolean,
         val unmarked: List<String>,
         val refreshKeys: List<String>,
+        /** The (item, list key) departures the row carried. */
+        val leftLists: List<Pair<String, String>> = emptyList(),
     ) {
         override fun toString() = "Landed(<redacted>)"
     }
@@ -109,12 +111,14 @@ internal class OutboxStore(private val db: AppDatabase, private val now: () -> L
     suspend fun take(seq: Long): Landed? = db.withTransaction {
         val raw = dao.row(seq) ?: return@withTransaction null
         val row = readable(raw) ?: return@withTransaction null
-        val marked = dao.marksOf(seq).map { it.itemId }.distinct()
+        val marks = dao.marksOf(seq)
+        val marked = marks.map { it.itemId }.distinct()
         delete(seq)
         Landed(
             itemId = row.itemId, itemKind = row.itemKind, kind = row.kind, occurredAt = row.occurredAt, fromOfflinePlay = row.fromOfflinePlay,
             unmarked = marked.filterNot { dao.hasMark(row.serverId, row.userId, it) },
             refreshKeys = row.refreshKeys.split(',').filter { it.isNotEmpty() },
+            leftLists = marks.filter { it.leftList != PLAIN }.map { it.itemId to it.leftList },
         )
     }
 

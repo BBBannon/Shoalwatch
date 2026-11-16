@@ -1,31 +1,26 @@
 package app.shoalwatch.data.library
 
-import app.shoalwatch.core.AppError
+import app.shoalwatch.data.servers.JellyfinId
 import app.shoalwatch.data.servers.Session
 
 /**
  * The tidy-up actions on watched state: take an item off Continue Watching, mark watched or unwatched, favourite.
  * What every screen calls; see "Tidy-up actions" in docs/ARCHITECTURE.md.
  *
- * Screens observe Room, so an action is "change Room, then tell the server" and the screen updates at once. Each function
- * changes the saved rows first (marking them `pendingSyncAt`, so a refresh that lands meanwhile cannot undo the change),
- * then calls the server, and returns normally only when the server has accepted it. If the server call fails, the saved
- * rows are put back exactly as they were and the [AppError] is thrown: whatever the gateway threw, unchanged.
+ * Screens observe Room, so the screen updates at once. Each function saves the change on this phone (marking the rows
+ * `pendingSyncAt`, so a refresh cannot undo it before the server has it) and queues it in the durable outbox in the SAME
+ * transaction, then returns: nothing waits for the server, and offline an action succeeds. The outbox sends each profile's
+ * changes in order, once, as that profile; when the server's own copy wins (or it refuses the item), the server's copy shows.
  *
- * **Online only in this milestone.** Offline (or a lost connection) is a rolled-back failure: the gateway's own
- * `AppError` is thrown (for example `OFFLINE`: "You're offline. Showing what's saved on this phone where possible."), and the screen
- * shows that. Milestone 5 replaces the server call with a durable outbox behind this same interface: it will KEEP the
- * local change, leave the `pendingSyncAt` marker set, and queue the change instead of rolling back. The marker is the hook.
- *
- * A malformed id, or an item the server never showed this user, is `AppError(SERVER_NOT_FOUND)`: nothing is changed or sent.
- * The work (change, server call, clean-up) is not abandoned if the caller's scope is cancelled after the change is made;
- * cancelling stops the caller waiting, not the action. One action at a time runs per item and user: a second for the same item waits.
+ * A malformed id, or an item the server never showed this user, is `AppError(SERVER_NOT_FOUND)`: nothing is changed or queued.
+ * A local failure (the database) is an `AppError` too, with nothing changed. The work is not abandoned if the caller's scope
+ * is cancelled after it has started; cancelling stops the caller waiting, not the action.
  */
 interface Playstate {
     /**
      * Marks one item (film, episode) or a whole season or series watched or unwatched, for this user. Saved rows of the
-     * item (and, for a season or series, the cached episodes and seasons under it) change at once; the server's Continue
-     * Watching and Next Up are asked again afterwards.
+     * item (and, for a season or series, the cached episodes and seasons under it) change at once; one PLAYED change is queued
+     * for the item itself (the server marks a season's or series' children).
      */
     suspend fun setPlayed(s: Session, itemId: String, played: Boolean)
 
@@ -35,26 +30,24 @@ interface Playstate {
      */
     suspend fun setFavourite(s: Session, itemId: String, favourite: Boolean)
 
-    /** Removes an item from Continue Watching without marking it watched: its saved position goes back to the start. */
+    /** Removes an item from Continue Watching without marking it watched: its saved position goes back to the start (queued as POSITION 0). */
     suspend fun removeFromContinueWatching(s: Session, itemId: String)
 
     /**
-     * Saves where playback stopped, on this phone, for this user. finished = true is setPlayed(true) (local change, server call,
-     * rollback on failure, as today). finished = false sets the saved position only (no server call: the stop report carried it),
-     * noted in LocalChangeLog so an older refresh cannot undo it, then refreshes resume and nextUp. Same per-user queue and write
-     * gate as the other actions. Never called for an item this user was not shown (SERVER_NOT_FOUND, nothing changed).
+     * Where playback stopped, for this user. [reached]: the stop report reached the server.
+     * finished && reached: watched on this phone, nothing queued (the report did it).
+     * finished && !reached: watched, and a PLAYED tick queued (never a PLAY: the server may already count it from its own session).
+     * !finished: the position on this phone; queued as POSITION only when !reached.
      */
-    suspend fun recordStop(s: Session, itemId: String, positionMs: Long, finished: Boolean)
+    suspend fun recordStop(s: Session, itemId: String, positionMs: Long, finished: Boolean, reached: Boolean = true)
 }
 
-/**
- * What a LOCAL play (a saved copy, Milestone 4) does to the saved library: implemented by [PlaystateRepository]. Milestone 5's
- * outbox sends it; until then the marker stays, and the start-up sweep and the idle clean-up spare rows with an offline play.
- */
+/** What a LOCAL play (a saved copy, Milestone 4) does to the saved library: implemented by [PlaystateRepository]. */
 interface LocalPlaystate {
     /**
      * Same per-user queue and write gate as the other actions; sets the local value (finished: watched; otherwise the position)
-     * with the pending marker; no server call, no rollback, no refresh. SERVER_NOT_FOUND for an item this user was not shown.
+     * and queues it in the same transaction: finished is one PLAY at now, otherwise a POSITION, both marked as from an offline
+     * play. SERVER_NOT_FOUND for an item this user was not shown.
      */
     suspend fun recordLocalStop(s: Session, itemId: String, positionMs: Long, finished: Boolean)
 }
@@ -66,4 +59,28 @@ internal sealed interface Recompute {
     data class Seasons(val seriesId: String) : Recompute
     data class Episodes(val seriesId: String, val seasonId: String) : Recompute
     data class Item(val itemId: String) : Recompute
+}
+
+/** The outbox's form of a [Recompute]: "resume", "nextUp", "seasons:<id>", "episodes:<id>:<id>", "item:<id>". */
+internal fun Recompute.key(): String = when (this) {
+    Recompute.Resume -> "resume"
+    Recompute.NextUp -> "nextUp"
+    is Recompute.Seasons -> "seasons:$seriesId"
+    is Recompute.Episodes -> "episodes:$seriesId:$seasonId"
+    is Recompute.Item -> "item:$itemId"
+}
+
+/** The [Recompute] a key stands for; null for anything else (every id is checked again as a normalised `JellyfinId`). */
+internal fun parseRecompute(key: String): Recompute? {
+    val parts = key.split(':')
+    val ids = parts.drop(1)
+    if (ids.any { JellyfinId.parseOrNull(it)?.value != it }) return null
+    return when {
+        parts.size == 1 && parts[0] == "resume" -> Recompute.Resume
+        parts.size == 1 && parts[0] == "nextUp" -> Recompute.NextUp
+        parts.size == 2 && parts[0] == "seasons" -> Recompute.Seasons(ids[0])
+        parts.size == 3 && parts[0] == "episodes" -> Recompute.Episodes(ids[0], ids[1])
+        parts.size == 2 && parts[0] == "item" -> Recompute.Item(ids[0])
+        else -> null
+    }
 }

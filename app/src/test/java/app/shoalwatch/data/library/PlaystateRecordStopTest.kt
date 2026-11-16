@@ -9,10 +9,10 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Where playback stopped, saved on this phone: a position with no server call, or watched through setPlayed. */
+/** Where playback stopped, saved on this phone: queued only when the stop report did not reach the server. */
 class PlaystateRecordStopTest : PlaystateTestBase() {
-    private fun stop(label: String, positionMs: Long, finished: Boolean = false) =
-        runBlocking { playstate.recordStop(s1u1, id(label), positionMs, finished) }
+    private fun stop(label: String, positionMs: Long, finished: Boolean = false, reached: Boolean = true) =
+        runBlocking { playstate.recordStop(s1u1, id(label), positionMs, finished, reached) }
 
     @Test fun aPositionIsSavedWithNoServerCallAndTheItemComesBackInContinueWatching() {
         save(film("a", ud(positionMs = 0)))
@@ -36,25 +36,55 @@ class PlaystateRecordStopTest : PlaystateTestBase() {
         assertNoPending()
     }
 
-    @Test fun finishedIsMarkingWatched() {
+    @Test fun aFinishedStopTheServerHeardIsWatchedHereWithNothingQueued() {
         save(film("a", ud(positionMs = 60_000)))
         saveResume(film("a", ud(positionMs = 60_000)))
         stop("a", 7_000_000, finished = true)
         drain()
-        assertEquals(listOf("setPlayed:${id("a")}:true"), gateway.calls.filter { it.startsWith("setPlayed") })
+        assertEquals("the stop report did it", 0, gateway.count("setPlayed"))
+        assertEquals(0, queued())
         assertTrue(userData("a")!!.played)
         assertEquals(0, userData("a")!!.positionMs)
+        assertEquals(emptyList<String>(), resumeIds())
+        assertTrue(gateway.count("resume") >= 1)
         assertNoPending()
     }
 
-    @Test fun finishedRollsBackWhenTheServerRefuses() {
+    @Test fun aFinishedStopTheServerMissedIsWatchedAtOnceAndAPlayedTickIsSent() {
         save(film("a", ud(positionMs = 60_000)))
         gateway.failOps["setPlayed"] = AppError.Kind.OFFLINE
-        val e = failure { playstate.recordStop(s1u1, id("a"), 7_000_000, finished = true) }
-        assertEquals(AppError.Kind.OFFLINE, e.kind)
-        assertFalse(userData("a")!!.played)
-        assertEquals(60_000, userData("a")!!.positionMs)
+        stop("a", 7_000_000, finished = true, reached = false)
+        drain()
+        assertTrue(userData("a")!!.played)
+        assertEquals("PLAYED, never PLAY", 1, gateway.count("setPlayed"))
+        assertEquals(0, gateway.count("play"))
+        assertEquals(1, queued())
+        gateway.failOps.clear()
+        sender.kick(s1u1)
+        drain()
+        assertEquals(0, queued())
         assertNoPending()
+    }
+
+    @Test fun anUnfinishedStopTheServerMissedQueuesItsPosition() {
+        save(film("a", ud(positionMs = 0)))
+        stop("a", 420_000, reached = false)
+        drain()
+        assertEquals(420_000, userData("a")!!.positionMs)
+        assertEquals(listOf("setPosition:${id("a")}:420000"), gateway.calls.filter { it.startsWith("setPosition") })
+        assertEquals(0, queued())
+        assertNoPending()
+    }
+
+    @Test fun aStopTheServerHeardDoesNotClearTheMarkerOfAnEarlierUnsentChange() {
+        save(film("a", ud(positionMs = 0)))
+        gateway.failOps["setPosition"] = AppError.Kind.OFFLINE
+        stop("a", 100_000, reached = false)
+        drain()
+        stop("a", 200_000) // heard by the server, but the row before it is still waiting
+        drain()
+        assertEquals(1, queued())
+        assertEquals(1, pendingRows())
     }
 
     @Test fun aRefreshAskedBeforeTheStopCannotOverwriteTheNewPosition() = runBlocking {

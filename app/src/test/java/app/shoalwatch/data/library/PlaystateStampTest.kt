@@ -79,28 +79,28 @@ class PlaystateStampTest : PlaystateTestBase() {
         assertEquals(ids("b"), resumeIds())
     }
 
-    @Test fun aStalePageRequestedWhileTheChangeWasPendingIsDroppedForThatItemAfterARollbackAndTheNextRefreshHealsIt() = runBlocking {
+    /** The old `PlaystateRestoreTest` intent: a change the server refuses does not stay on screen; the refresh after it decides. */
+    @Test fun aRefusedChangeIsReplacedByTheServersCopyByTheRefreshAfterTheOverruling() = runBlocking {
         saveResume(film("a"), film("b"))
         val held = latch()
         val l = latch()
         gateway.onCall = { call -> if (call.startsWith("clearResume")) held.await() else if (call.startsWith("resume")) l.await() }
-        gateway.failOps["clearResume"] = app.shoalwatch.core.AppError.Kind.SERVER_ERROR
-        val call = background { runCatching { playstate.removeFromContinueWatching(s1u1, id("a")) } }
+        gateway.failOps["clearResume"] = app.shoalwatch.core.AppError.Kind.FORBIDDEN
+        playstate.removeFromContinueWatching(s1u1, id("a"))
         until { gateway.count("clearResume") == 1 }
         gateway.answerAtRequest = true
-        gateway.resumeFor = { listOf(film("a", ud(positionMs = 99_000)), film("b")) } // asked for during the pending window
-        val refreshing = background { repo.refresh(s1u1, RefreshTarget.Home) }
+        gateway.resumeFor = { listOf(film("a", ud(positionMs = 99_000)), film("b")) }
+        gateway.itemFor = { film("a", ud(positionMs = 99_000)) }
+        val refreshing = background { repo.refresh(s1u1, RefreshTarget.Home) } // asked for while the change was waiting
         until { gateway.count("resume") == 1 }
-        held.release() // the action fails and rolls back
-        withTimeout(5_000) { call.await() }
+        assertEquals("the waiting change stands against it", 0, userData("a")!!.positionMs)
+        held.release() // refused: overruled
         l.release()
         withTimeout(5_000) { refreshing.await() }
         settle()
-        assertEquals("the rolled-back value stands: the stale answer is dropped for that item", 60_000, userData("a")!!.positionMs)
+        assertEquals(0, queued())
+        assertEquals("the server's copy, from the refresh asked for after the overruling", 99_000, userData("a")!!.positionMs)
         assertEquals(ids("a", "b"), resumeIds())
-        gateway.answerAtRequest = false
-        repo.refresh(s1u1, RefreshTarget.Home) // asked for after the rollback: the server's value decides
-        assertEquals(99_000, userData("a")!!.positionMs)
         assertFalse(userData("a")!!.pendingSyncAt != null)
     }
 }

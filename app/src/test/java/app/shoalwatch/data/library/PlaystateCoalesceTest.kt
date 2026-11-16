@@ -17,6 +17,7 @@ class PlaystateCoalesceTest : PlaystateTestBase() {
         until { gateway.count("resume") == 1 }
         val calls = labels.map { x -> background { playstate.setPlayed(s1u1, id(x), true) } }
         withTimeout(10_000) { calls.forEach { it.await() } } // the actions do not wait for the held refresh
+        until { queued() == 0 } // and every send has landed, each asking for its lists, while the refresh is held
         gateway.resumeFor = { listOf(film("latest")) }
         l.release()
         withTimeout(10_000) { refreshing.await() }

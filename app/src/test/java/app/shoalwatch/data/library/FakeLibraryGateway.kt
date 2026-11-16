@@ -119,4 +119,7 @@ class FakeLibraryGateway : LibraryGateway {
     override suspend fun setFavourite(s: Session, itemId: String, favourite: Boolean) { enter("setFavourite", "$itemId:$favourite") }
 
     override suspend fun clearResume(s: Session, itemId: String) { enter("clearResume", itemId) }
+
+    /** A call that is not a [LibraryGateway] call (a sync send the tidy-up tests route here): logged, held and failed like one. */
+    suspend fun other(op: String, detail: String) { enter(op, detail) }
 }

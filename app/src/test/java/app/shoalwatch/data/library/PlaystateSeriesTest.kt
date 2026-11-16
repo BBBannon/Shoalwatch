@@ -53,22 +53,20 @@ class PlaystateSeriesTest : PlaystateTestBase() {
         assertNull(unplayed("s1"))
     }
 
-    @Test fun badgesAreVisibleAtOnceAndRolledBackOnFailure() = runBlocking {
+    @Test fun badgesAreVisibleAtOnceAndKeptWhenTheSendFails() = runBlocking {
         save(series(), season("s1", 1), ep("e1", "s1", 1))
-        val seasonBefore = userData("s1")
-        val seriesBefore = userData("show")
         val held = holdServer()
         gateway.failAll = AppError.Kind.TIMEOUT
-        val call = background { runCatching { playstate.setPlayed(s1u1, id("e1"), true) } }
+        background { playstate.setPlayed(s1u1, id("e1"), true) }.await()
         until { gateway.count("setPlayed") == 1 }
         assertEquals(2, unplayed("s1"))
         assertTrue(userData("s1")!!.pendingSyncAt != null)
         release(held)
-        assertEquals(AppError.Kind.TIMEOUT, (call.await().exceptionOrNull() as AppError).kind)
-        // the badge moves back by what it was moved by; `updatedAt` is the time of that last write, so it is not compared
-        assertEquals(seasonBefore!!.unplayedItemCount, userData("s1")!!.unplayedItemCount)
-        assertEquals(seriesBefore!!.unplayedItemCount, userData("show")!!.unplayedItemCount)
-        assertNoPending()
+        settle()
+        assertEquals(2, unplayed("s1"))
+        assertEquals(9, unplayed("show"))
+        assertEquals(1, queued())
+        assertEquals("the episode and both badges stay marked", 3, pendingRows())
     }
 
     @Test fun anotherUsersBadgesAreUntouched() {
@@ -140,21 +138,6 @@ class PlaystateSeriesTest : PlaystateTestBase() {
         assertEquals(0, userData("a")!!.playCount)
     }
 
-    @Test fun aFailedSeasonMarkRestoresEveryRowAndListEntry() {
-        savedShow()
-        val names = listOf("s1", "a", "b", "c", "d", "s2", "show", "film")
-        val before = names.associateWith { userData(it) }
-        val listBefore = resumeIds()
-        gateway.failAll = AppError.Kind.OFFLINE
-        assertEquals(AppError.Kind.OFFLINE, failure { playstate.setPlayed(s1u1, id("s1"), true) }.kind)
-        names.forEach { assertEquals("row $it", before[it], userData(it)) }
-        assertEquals(ids("film", "b", "d"), resumeIds()) // b (season 1) sat before d (season 2): their order is part of the undo
-        assertEquals(listBefore, resumeIds())
-        assertEquals(3, unplayed("s1"))
-        assertEquals(10, unplayed("show"))
-        assertNoPending()
-    }
-
     @Test fun anotherUsersEpisodesAreUntouchedBySeasonMark() {
         savedShow()
         save(series(), season("s1", 1), ep("a", "s1", 1), s = s1u2)
@@ -204,19 +187,13 @@ class PlaystateSeriesTest : PlaystateTestBase() {
         assertNull(unplayed("s2"))
     }
 
-    @Test fun aFailedSeriesMarkRestoresEverything() {
+    @Test fun aSeriesMarkThatCannotBeSentWaitsForTheSignInWithEverythingKept() {
         savedShow()
-        val names = listOf("show", "s1", "s2", "a", "b", "c", "d", "film")
-        val before = names.associateWith { userData(it) }
-        val listBefore = resumeIds()
         gateway.failAll = AppError.Kind.UNAUTHORISED
-        assertEquals(AppError.Kind.UNAUTHORISED, failure { playstate.setPlayed(s1u1, id("show"), true) }.kind)
-        names.forEach { assertEquals("row $it", before[it], userData(it)) }
-        assertEquals(ids("film", "b", "d"), resumeIds())
-        assertEquals(listBefore, resumeIds())
-        assertEquals(3, unplayed("s1"))
-        assertEquals(3, unplayed("s2"))
-        assertEquals(10, unplayed("show"))
-        assertNoPending()
+        played("show", true)
+        drain()
+        listOf("show", "s1", "s2", "a", "b", "c", "d").forEach { assertTrue("row $it", userData(it)!!.played) }
+        assertEquals(ids("film"), resumeIds())
+        assertEquals(1, queued())
     }
 }

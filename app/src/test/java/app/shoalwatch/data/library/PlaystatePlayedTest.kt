@@ -57,8 +57,9 @@ class PlaystatePlayedTest : PlaystateTestBase() {
         assertTrue(userData("a")!!.played)
         assertNotNull(userData("a")!!.pendingSyncAt)
         assertEquals(emptyList<String>(), resumeIds())
-        release(held)
         call.await()
+        release(held)
+        settle()
         assertNoPending()
     }
 
@@ -111,23 +112,16 @@ class PlaystatePlayedTest : PlaystateTestBase() {
         assertNoPending()
     }
 
-    @Test fun aFailureRestoresTheRowAndTheListExactly() {
+    @Test fun offlineTheChangeStaysOnScreenAndIsQueuedNotRolledBack() {
         saveResume(film("a"), film("b", ud(positionMs = 5_000, playCount = 2, lastPlayed = 77)), film("c"))
-        val rowBefore = userData("b")
         gateway.failAll = AppError.Kind.OFFLINE
-        val e = failure { playstate.setPlayed(s1u1, id("b"), true) }
-        assertEquals(AppError.Kind.OFFLINE, e.kind)
-        assertEquals(rowBefore, userData("b"))
-        assertEquals(ids("a", "b", "c"), resumeIds())
-        assertNoPending()
-        assertEquals("nothing is refreshed after a failure", 0, gateway.calls.count { it == "resume:24" })
-    }
-
-    @Test fun anItemWithNoRowGetsNoneLeftBehindAfterAFailure() {
-        save(row(item("a"), null))
-        gateway.failAll = AppError.Kind.NETWORK
-        failure { playstate.setPlayed(s1u1, id("a"), true) }
-        assertNull(userData("a"))
+        played("b", true) // returns normally
+        drain()
+        assertTrue(userData("b")!!.played)
+        assertEquals(ids("a", "c"), resumeIds())
+        assertEquals(1, queued())
+        assertEquals(1, pendingRows())
+        assertEquals("nothing is refreshed until the server has it", 0, gateway.calls.count { it == "resume:24" })
     }
 
     @Test fun anotherUsersWatchedStateIsUntouched() {
@@ -167,18 +161,18 @@ class PlaystatePlayedTest : PlaystateTestBase() {
         assertEquals(listOf("setFavourite:${id("a")}:true"), gateway.calls.toList())
     }
 
-    @Test fun favouriteIsVisibleBeforeTheServerAnswersAndRolledBackOnFailure() = runBlocking {
+    @Test fun favouriteIsVisibleBeforeTheServerAnswersAndKeptWhenTheSendFails() = runBlocking {
         save(film("a", ud(favourite = false)))
         val held = holdServer()
         gateway.failAll = AppError.Kind.TIMEOUT
-        val call = background { runCatching { playstate.setFavourite(s1u1, id("a"), true) } }
+        background { playstate.setFavourite(s1u1, id("a"), true) }.await()
         until { gateway.count("setFavourite") == 1 }
         assertTrue(userData("a")!!.favourite)
         assertNotNull(userData("a")!!.pendingSyncAt)
         release(held)
-        assertEquals(AppError.Kind.TIMEOUT, (call.await().exceptionOrNull() as AppError).kind)
-        assertFalse(userData("a")!!.favourite)
-        assertNoPending()
+        settle()
+        assertTrue(userData("a")!!.favourite)
+        assertEquals(1, queued())
     }
 
     @Test fun unfavouritingWorksAndAnotherUserKeepsTheirFavourite() {
@@ -187,12 +181,5 @@ class PlaystatePlayedTest : PlaystateTestBase() {
         runBlocking { playstate.setFavourite(s1u1, id("a"), false) }
         assertFalse(userData("a")!!.favourite)
         assertTrue(userData("a", s1u2)!!.favourite)
-    }
-
-    @Test fun favouritingAnItemWithNoRowRollsBackToNoRow() {
-        save(row(item("a"), null))
-        gateway.failAll = AppError.Kind.SERVER_ERROR
-        failure { playstate.setFavourite(s1u1, id("a"), true) }
-        assertNull(userData("a"))
     }
 }

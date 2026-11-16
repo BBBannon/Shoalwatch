@@ -27,6 +27,10 @@ abstract class OfflinePlayDao {
     )
     protected abstract suspend fun updateStop(serverId: String, userId: String, itemId: String, positionMs: Long, finished: Boolean, nowMs: Long)
 
+    /** A confirmed outbox row covered this play (it was written at or before the change the row carried): it has been sent. */
+    @Query("DELETE FROM offline_plays WHERE serverId = :serverId AND userId = :userId AND itemId = :itemId AND updatedAt <= :occurredAt")
+    internal abstract suspend fun deleteCovered(serverId: String, userId: String, itemId: String, occurredAt: Long): Int
+
     @Query("SELECT COUNT(*) FROM offline_plays WHERE serverId = :serverId AND userId = :userId")
     internal abstract fun count(serverId: String, userId: String): Flow<Int>
 

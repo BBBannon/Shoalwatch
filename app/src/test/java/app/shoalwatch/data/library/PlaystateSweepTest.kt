@@ -16,8 +16,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * A marker with no live action (the app died mid-action) is cleared once, at the first use of the library in a process,
- * before any refresh or action; the server's copy then decides. Milestone 5 owns recovery: it will send the change instead.
+ * A marker no outbox row covers and no live action owns (left by a process from before Milestone 5) is cleared once, at the
+ * first use of the library in a process, before any refresh or action; the server's copy then decides. A marker an outbox row
+ * covers means "send this" and is never swept (see `PlaystateOutboxTest`).
  */
 class PlaystateSweepTest : PlaystateTestBase() {
     /** What a process killed between the optimistic write and the server's answer leaves behind. */
@@ -47,6 +48,7 @@ class PlaystateSweepTest : PlaystateTestBase() {
         save(film("b", ud(favourite = false)))
         repo.refresh(s1u1, RefreshTarget.Item(id("a"))) // the start-up sweep has run
         offlinePlay("a")
+        gateway.failOps["play"] = AppError.Kind.OFFLINE // the play waits in the outbox
         playstate.recordLocalStop(s1u1, id("a"), 0, finished = true)
         assertTrue(userData("a")!!.played)
         assertNotNull(userData("a")!!.pendingSyncAt)
@@ -54,7 +56,7 @@ class PlaystateSweepTest : PlaystateTestBase() {
         playstate.setFavourite(s1u1, id("b"), true) // the queue goes idle after it: its clean-up runs
         settle()
         assertNotNull("the idle clean-up spares it", userData("a")!!.pendingSyncAt)
-        assertNull(userData("b")!!.pendingSyncAt)
+        assertEquals("b waits behind a's play, in order", 2, queued())
         gateway.itemFor = { film("a", ud(played = false)) }
         repo.refresh(s1u1, RefreshTarget.Item(id("a")))
         assertTrue("watched is never undone by a sync", userData("a")!!.played)
@@ -100,8 +102,9 @@ class PlaystateSweepTest : PlaystateTestBase() {
         repo.home(s1u1).first5s { it.resume.freshness == Freshness.Fresh }
         settle()
         val first = gateway.count("resume")
-        val other = PlaystateRepository(gateway, repo, appScope, Dispatchers.IO, { now })
+        val other = newPlaystate()
         other.setFavourite(s1u1, id("a"), true)
+        settle()
         assertNoPending()
         assertEquals(first, gateway.count("resume"))
     }
@@ -112,6 +115,7 @@ class PlaystateSweepTest : PlaystateTestBase() {
         leaveMarker("b", s1u2) // appears after the sweep: not swept again (a user whose queue goes idle clears only their own)
         repo.refresh(s1u1, RefreshTarget.Item(id("a")))
         playstate.setFavourite(s1u1, id("a"), true)
+        settle()
         assertEquals(1, pendingRows())
     }
 
@@ -120,7 +124,7 @@ class PlaystateSweepTest : PlaystateTestBase() {
         save(film("live", ud()))
         val gate = Mutex()
         val lib = LibraryRepository(gateway, db, appScope, Dispatchers.IO, { now }, log, changes, gate)
-        val gated = PlaystateRepository(gateway, lib, appScope, Dispatchers.IO, { now })
+        val gated = PlaystateRepository(lib, outbox, { s -> sender.kick(s) }, appScope, Dispatchers.IO, { now })
         val held = holdMutation()
         gate.withLock {
             val call = background { gated.setFavourite(s1u1, id("live"), true) }
@@ -136,6 +140,7 @@ class PlaystateSweepTest : PlaystateTestBase() {
             withTimeout(5_000) { call.await() }
             gate.lock()
         }
+        settle()
         assertNoPending()
     }
 
@@ -199,6 +204,7 @@ class PlaystateSweepTest : PlaystateTestBase() {
         assertEquals("a user with no leftover keeps their lists as they were", u2Before, runBlocking { listDao.getState(s1u2.serverId, s1u2.userId, "resume") }!!.refreshedAt)
         held.release()
         withTimeout(5_000) { action.await() }
+        settle()
         assertNoPending()
     }
 }

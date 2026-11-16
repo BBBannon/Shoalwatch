@@ -3,6 +3,12 @@ package app.shoalwatch.data.library
 import app.shoalwatch.core.AppError
 import app.shoalwatch.data.db.library.UserDataEntity
 import app.shoalwatch.data.servers.Session
+import app.shoalwatch.data.sync.OutboxStore
+import app.shoalwatch.data.sync.ServerUserData
+import app.shoalwatch.data.sync.SyncSender
+import app.shoalwatch.data.sync.UserDataUpdate
+import app.shoalwatch.data.sync.api.SyncGateway
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineScope
@@ -15,16 +21,58 @@ import org.junit.Assert.fail
 import org.junit.After
 import org.junit.Before
 
-/** The real [PlaystateRepository] on the real [LibraryRepository], a real in-memory Room and the [FakeLibraryGateway]. */
+/**
+ * The sync gateway the tidy-up tests use: every send reaches [server] (the [FakeLibraryGateway]) as the mutation it stands for,
+ * so it is logged, held and failed there like before Milestone 5: PLAYED is `setPlayed`, FAVOURITE `setFavourite`, POSITION 0
+ * `clearResume`; a position is `setPosition:<id>:<ms>` and a play `play:<id>`. The server's copy is [copies] (unknown by default).
+ */
+internal class LibrarySync(private val server: FakeLibraryGateway) : SyncGateway {
+    val copies = ConcurrentHashMap<Pair<Session, String>, ServerUserData>()
+    val gone: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
+    override suspend fun userData(s: Session, itemId: String): ServerUserData? = copies[s to itemId]
+
+    override suspend fun update(s: Session, itemId: String, body: UserDataUpdate) = when {
+        body.played == null -> if (body.positionMs == 0L) server.clearResume(s, itemId) else server.other("setPosition", "$itemId:${body.positionMs}")
+        body.lastPlayedAt != null -> server.other("play", itemId)
+        else -> server.setPlayed(s, itemId, body.played)
+    }
+
+    override suspend fun markPlayed(s: Session, itemId: String) = server.setPlayed(s, itemId, true)
+    override suspend fun markUnplayed(s: Session, itemId: String) = server.setPlayed(s, itemId, false)
+    override suspend fun favourite(s: Session, itemId: String, on: Boolean) = server.setFavourite(s, itemId, on)
+    override suspend fun itemGone(s: Session, itemId: String): Boolean = itemId in gone
+}
+
+/**
+ * The real [PlaystateRepository] on the real [LibraryRepository], a real in-memory Room, the real outbox, sender and
+ * [PlaystateLanding], and the [FakeLibraryGateway] as the server (through [LibrarySync]). Every drain runs in the app scope, so
+ * [settle] waits for the sends too.
+ */
 abstract class PlaystateTestBase : LibraryRepositoryTestBase() {
-    protected lateinit var playstate: PlaystateRepository
+    internal lateinit var playstate: PlaystateRepository
+    internal lateinit var outbox: OutboxStore
+    internal lateinit var sync: LibrarySync
+    internal lateinit var sender: SyncSender
+
+    /** Every session [PlaystateRepository] said had a new row, in order. */
+    protected val changedFor = java.util.concurrent.CopyOnWriteArrayList<Session>()
     protected val itemDao get() = db.itemDao()
     protected val listDao get() = db.listDao()
 
     @Before fun openPlaystate() {
         gateway.clockTick = { now += 1 } // a server round trip takes a moment, so what is asked after an action is strictly later than it
-        playstate = PlaystateRepository(gateway, repo, appScope, Dispatchers.IO, { now })
+        outbox = OutboxStore(db) { now }
+        sync = LibrarySync(gateway)
+        sender = SyncSender(outbox, sync, PlaystateLanding(repo, outbox, db.offlinePlayDao()) { now }, { true }, {}, appScope, { now }, Dispatchers.IO)
+        playstate = newPlaystate()
     }
+
+    /** A repository over the same database and outbox (a "new process" needs a new one of everything else too). */
+    internal fun newPlaystate() = PlaystateRepository(repo, outbox, { s -> changedFor += s; sender.kick(s) }, appScope, Dispatchers.IO, { now })
+
+    /** Rows waiting in the outbox (every profile). */
+    protected fun queued() = count("sync_outbox")
 
     protected fun ud(played: Boolean = false, positionMs: Long = 0, favourite: Boolean = false, playCount: Int = if (played) 1 else 0, unplayed: Int? = null, lastPlayed: Long? = null) =
         UserData(played, positionMs, null, playCount, favourite, lastPlayed?.let(java.time.Instant::ofEpochMilli), unplayed)

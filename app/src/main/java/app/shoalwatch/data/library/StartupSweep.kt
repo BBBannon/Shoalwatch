@@ -10,13 +10,12 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
- * The start-up sweep: clears the `pendingSyncAt` markers that a PREVIOUS process left behind (the app died mid-action), because
- * a marker with no live action would make its row ignore the server's copy for as long as it stands. The local values stay;
- * each user who really had a leftover has their lists aged so the server's copy arrives promptly and decides. In this
- * milestone an unconfirmed change may therefore be reverted. **Milestone 5 owns recovery:** a marker with no live action will
- * then mean "send this change", not "discard it", and this sweep (like the tidy-up queue's idle clean-up) must be revisited.
- * Already in Milestone 4, a row that has an `offline_plays` row (watched from a saved copy) is never in the snapshot and never
- * cleared here (`ItemDao.NO_OFFLINE_PLAY`): its marker waits for Milestone 5 to send the play.
+ * The start-up sweep: clears the `pendingSyncAt` markers that a PREVIOUS process left behind with nothing to send them. Since
+ * Milestone 5 a marker means "send this": a row that an outbox row marks (`ItemDao.NO_SYNC_MARK`) is never in the snapshot and
+ * never cleared here; the outbox sends it and its landing clears the marker. So is a row with an `offline_plays` row
+ * (`ItemDao.NO_OFFLINE_PLAY`). What is left is a leftover of a process killed before this milestone (or a database fault),
+ * which would make its row ignore the server's copy for as long as it stands: it is cleared, the local value stays, and each
+ * user who really had one has their lists aged so the server's copy arrives promptly and decides.
  *
  * What it clears is exactly a SNAPSHOT of the rows that had a marker when it first managed to look (one query, the first
  * thing it does, before any entry point lets an action run), minus any row this process has touched since: so a retry, which can

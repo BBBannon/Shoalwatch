@@ -76,6 +76,7 @@ class PlaystateStalenessTest : PlaystateTestBase() {
     @Test fun anAnswerAskedForAfterTheChangeAppliesNormally() = runBlocking {
         save(film("a", ud(favourite = false)))
         playstate.setFavourite(s1u1, id("a"), true)
+        settle() // sent and landed
         gateway.itemFor = { film("a", ud(favourite = false)) } // changed on another device since
         repo.refresh(s1u1, RefreshTarget.Item(id("a")))
         assertFalse("the server's value decides once it is asked after the change", userData("a")!!.favourite)
@@ -121,7 +122,7 @@ class PlaystateStalenessTest : PlaystateTestBase() {
         withTimeout(10_000) { calls.forEach { it.await() } }
         assertTrue("the refresh is still stuck", refreshing.isActive)
         labels.forEach { assertTrue(userData(it)!!.favourite) }
-        assertNoPending()
+        until { pendingRows() == 0 } // every send landed while the refresh is stuck
         l.release()
     }
 
@@ -133,6 +134,7 @@ class PlaystateStalenessTest : PlaystateTestBase() {
         gateway.clockTick = {}
         save(film("a", ud(favourite = false)))
         playstate.setFavourite(s1u1, id("a"), true)
+        settle() // sent and landed
         now -= hour // the phone's clock is corrected backwards
         gateway.itemFor = { film("a", ud(favourite = false)) } // changed on another device since
         repo.refresh(s1u1, RefreshTarget.Item(id("a")))
@@ -158,6 +160,7 @@ class PlaystateStalenessTest : PlaystateTestBase() {
         gateway.clockTick = {}
         save(film("a", ud(favourite = false)))
         playstate.setFavourite(s1u1, id("a"), true)
+        settle() // sent and landed
         gateway.itemFor = { film("a", ud(favourite = false)) }
         repo.refresh(s1u1, RefreshTarget.Item(id("a")))
         assertFalse(userData("a")!!.favourite)
