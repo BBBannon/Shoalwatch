@@ -33,6 +33,17 @@ interface AccountDao {
     @Query("SELECT * FROM accounts WHERE serverId = :serverId")
     suspend fun getForServer(serverId: String): List<AccountEntity>
 
+    /** Every account whose sign-in the server has not rejected (what a restart may load; Milestone 2 check I4). */
+    @Query("SELECT a.* FROM accounts a WHERE NOT EXISTS (SELECT 1 FROM rejected_sign_ins r WHERE r.serverId = a.serverId AND r.userId = a.userId)")
+    suspend fun getAllUsable(): List<AccountEntity>
+
+    /** Remembers a 401 for the account; throws if there is no such account (foreign key). */
+    @Query("INSERT OR IGNORE INTO rejected_sign_ins (serverId, userId, rejectedAt) VALUES (:serverId, :userId, :at)")
+    suspend fun reject(serverId: String, userId: String, at: Long)
+
+    @Query("DELETE FROM rejected_sign_ins WHERE serverId = :serverId AND userId = :userId")
+    suspend fun clearRejected(serverId: String, userId: String)
+
     /** An upsert, not REPLACE: REPLACE would delete the row and cascade away the active marker. */
     @Upsert
     suspend fun upsert(account: AccountEntity)

@@ -159,7 +159,7 @@ class ServerStore(
 
     @Volatile private var warmFailed = false
 
-    private val loadAccounts: suspend () -> List<AccountEntity> = accountSource ?: { accountDao.getAll() }
+    private val loadAccounts: suspend () -> List<AccountEntity> = accountSource ?: { accountDao.getAllUsable() } // a rejected sign-in is not loaded again (I4)
 
     /**
      * Completes when the first [warmTokens] has finished, successfully or not (a failed warm leaves the live
@@ -250,6 +250,7 @@ class ServerStore(
         tokenLock.withLock {
             db.withTransaction {
                 accountDao.upsert(AccountEntity(a.serverId, a.userId, a.userName, sealed))
+                accountDao.clearRejected(a.serverId, a.userId)
                 if (makeActive) accountDao.setActive(ActiveAccountEntity(0, a.serverId, a.userId))
             }
             tokens[a.serverId to a.userId] = a.accessToken
@@ -291,7 +292,8 @@ class ServerStore(
     /**
      * The server rejected this account's token (401): stop using it. The in-memory token goes, the account becomes unusable
      * (hidden from [accounts], [activeAccount] and [active], like any account without a loaded token), cached clients for
-     * the server are dropped, and [warmTokens] will not load it back. The database row stays: signing in again overwrites it.
+     * the server are dropped, and [warmTokens] will not load it back, after a restart too (`rejected_sign_ins`). The account row stays
+     * (its outbox rows wait): signing in again overwrites it and clears the rejection.
      * With [ifGeneration], nothing happens unless that is still the current [tokenGeneration], so a rejection of a sign-in
      * that has since been replaced does not sign the new one out. Runs to completion even if the caller is cancelled.
      */
@@ -301,6 +303,8 @@ class ServerStore(
         val done = tokenLock.withLock {
             if (ifGeneration != null && tokenGeneration(serverId, userId) != ifGeneration) return@withLock false
             rejected += key
+            // Kept across a restart (I4); if it cannot be written, the set above still holds it for this process.
+            try { accountDao.reject(serverId, userId, System.currentTimeMillis()) } catch (e: Exception) { AppLog.w(TAG, "Saving a rejected sign-in failed", e) }
             tokens.remove(key)
             usable.update { it - key }
             bump(key)

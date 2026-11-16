@@ -135,6 +135,46 @@ class ManagementRenderTest {
         assertTrue(shown("Den"))
     }
 
+    // --- what sign-out and removal do with changes not yet sent (Milestone 5) -------------------------------------
+
+    private fun plural(id: Int, n: Int) = context.resources.getQuantityString(id, n, n.toString())
+
+    @Test fun signOutWithChangesWaitingSaysTheyAreSentFirst() {
+        show { ServersScreen(servers.copy(confirm = Confirm.SignOut("s1", "u2", "amy", "Den", waiting = 3)), serversActions) }
+        assertTrue(shown("3 changes haven't reached your server yet. Shoalwatch will try to send them first. Any it can't send are deleted from this phone."))
+    }
+
+    @Test fun signOutWithOneChangeWaitingIsSingular() {
+        show { ServersScreen(servers.copy(confirm = Confirm.SignOut("s1", "u2", "amy", "Den", waiting = 1)), serversActions) }
+        assertTrue(shown("1 change hasn't reached your server yet. Shoalwatch will try to send it first. If it can't, the change is deleted from this phone."))
+    }
+
+    @Test fun signOutWithNothingWaitingSaysNothingAboutChanges() {
+        show { ServersScreen(servers.copy(confirm = Confirm.SignOut("s1", "u2", "amy", "Den")), serversActions) }
+        assertFalse(shown(plural(R.plurals.sign_out_waiting, 1)))
+        assertTrue(rule.onAllNodes(hasText("reached your server", substring = true)).fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test fun removingAServerWithChangesWaitingSaysTheyAreSentFirst() {
+        show { ServersScreen(servers.copy(confirm = Confirm.RemoveServer("s1", "Den", listOf("ben", "amy"), waiting = 2)), serversActions) }
+        assertTrue(shown("2 changes haven't reached this server yet. Shoalwatch will try to send them first. Any it can't send are deleted from this phone."))
+    }
+
+    @Test fun whileSendingTheButtonShowsASpinnerAndSendingChanges() {
+        show { ServersScreen(servers.copy(confirm = Confirm.SignOut("s1", "u2", "amy", "Den", waiting = 1), busy = true, sending = true), serversActions) }
+        assertTrue(shown("Sending changes…"))
+        val button = rule.onAllNodes(hasText("Sending changes…") and hasClickAction()).fetchSemanticsNodes().single()
+        assertTrue("not tappable again", button.config.contains(androidx.compose.ui.semantics.SemanticsProperties.Disabled))
+        assertTrue("the spinner is there", rule.onAllNodes(SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.ProgressBarRangeInfo), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
+    }
+
+    @Test @Config(qualifiers = PHONE) fun theSendingButtonFitsAtTwiceTheFontSize() {
+        show(2f) { ServersScreen(servers.copy(confirm = Confirm.SignOut("s1", "u2", "amy", "Den", waiting = 12), busy = true, sending = true), serversActions) }
+        assertTrue(shown("Sending changes…"))
+        assertTrue(shown(plural(R.plurals.sign_out_waiting, 12)))
+        assertNoTextUnder13sp(rule)
+    }
+
     // --- the sync line under each profile (Milestone 5) -------------------------------------------------------------
 
     private val withSync = servers.copy(

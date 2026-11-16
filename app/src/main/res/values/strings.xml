@@ -618,4 +618,14 @@
         <item quantity="one">%1$s change your server keeps refusing. Shoalwatch will try again later.</item>
         <item quantity="other">%1$s changes your server keeps refusing. Shoalwatch will try again later.</item>
     </plurals>
+    <!-- Sync-back (Milestone 5): what sign-out and removal do with changes not yet sent -->
+    <plurals name="sign_out_waiting">
+        <item quantity="one">%1$s change hasn\'t reached your server yet. Shoalwatch will try to send it first. If it can\'t, the change is deleted from this phone.</item>
+        <item quantity="other">%1$s changes haven\'t reached your server yet. Shoalwatch will try to send them first. Any it can\'t send are deleted from this phone.</item>
+    </plurals>
+    <plurals name="remove_server_waiting">
+        <item quantity="one">%1$s change hasn\'t reached this server yet. Shoalwatch will try to send it first. If it can\'t, the change is deleted from this phone.</item>
+        <item quantity="other">%1$s changes haven\'t reached this server yet. Shoalwatch will try to send them first. Any it can\'t send are deleted from this phone.</item>
+    </plurals>
+    <string name="sync_sending_first">Sending changes…</string>
 </resources>

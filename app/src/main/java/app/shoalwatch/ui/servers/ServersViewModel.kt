@@ -14,6 +14,12 @@ import app.shoalwatch.data.servers.Session
 import app.shoalwatch.data.sync.Sync
 import app.shoalwatch.data.sync.SyncStatus
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -43,11 +49,16 @@ data class ServerItem(
 
 /** A destructive action waiting for the user's explicit confirmation. */
 sealed interface Confirm {
-    /** [sharing]: the server shares downloads between profiles (the dialog then says shared ones stay for the others). */
-    data class SignOut(val serverId: String, val userId: String, val userName: String, val serverName: String, val sharing: Boolean = false) : Confirm
+    /**
+     * [sharing]: the server shares downloads between profiles (the dialog then says shared ones stay for the others). [waiting]: this
+     * profile's changes not yet on the server (the dialog says they are sent first, and any left are deleted).
+     */
+    data class SignOut(
+        val serverId: String, val userId: String, val userName: String, val serverName: String, val sharing: Boolean = false, val waiting: Int = 0,
+    ) : Confirm
 
-    /** [accountNames] are the sign-ins that will go with the server. */
-    data class RemoveServer(val serverId: String, val serverName: String, val accountNames: List<String>) : Confirm
+    /** [accountNames] are the sign-ins that will go with the server; [waiting] counts every one of their changes not yet sent. */
+    data class RemoveServer(val serverId: String, val serverName: String, val accountNames: List<String>, val waiting: Int = 0) : Confirm
 }
 
 /** Said after a sign-out or removal that worked on this phone but could not reach the server to revoke the sign-in. */
@@ -58,6 +69,8 @@ data class ServersUiState(
     val servers: List<ServerItem> = emptyList(),
     val confirm: Confirm? = null,
     val busy: Boolean = false,
+    /** Sending the waiting changes before a sign-out or removal (at most 10 s): the confirm button shows a spinner. */
+    val sending: Boolean = false,
     val error: String? = null,
     val notice: ServersNotice? = null,
     /** The server whose card shows "Server admin": the active account's, only while its server confirms it is an administrator. */
@@ -80,7 +93,9 @@ class ServersViewModel(
     /** Each profile's waiting changes, sent first on sign-out and removal; null shows no line and sends nothing. */
     private val sync: Sync? = null,
 ) : ViewModel() {
-    private data class Local(val confirm: Confirm? = null, val busy: Boolean = false, val error: String? = null, val notice: ServersNotice? = null)
+    private data class Local(
+        val confirm: Confirm? = null, val busy: Boolean = false, val sending: Boolean = false, val error: String? = null, val notice: ServersNotice? = null,
+    )
 
     private val local = MutableStateFlow(Local())
 
@@ -122,7 +137,7 @@ class ServersViewModel(
                         accounts = accounts.map { (it, synced) -> AccountItem(it.userId, it.userName, it.serverId == active?.serverId && it.userId == active.userId, synced) },
                     )
                 },
-                confirm = local.confirm, busy = local.busy, error = local.error, notice = local.notice,
+                confirm = local.confirm, busy = local.busy, sending = local.sending, error = local.error, notice = local.notice,
                 adminServerId = adminServerId,
             )
         }.stateIn(viewModelScope, SharingStarted.Eagerly, ServersUiState())
@@ -136,13 +151,20 @@ class ServersViewModel(
         local.update { it.copy(confirm = ask, error = null, notice = null) }
         viewModelScope.launch {
             val on = try { sharing(serverId).first() } catch (e: CancellationException) { throw e } catch (e: Exception) { false }
-            local.update { if (it.confirm == ask) it.copy(confirm = ask.copy(sharing = on)) else it }
+            val waiting = sync?.waiting(Session(serverId, userId)) ?: 0
+            local.update { if (it.confirm == ask) it.copy(confirm = ask.copy(sharing = on, waiting = waiting)) else it }
         }
     }
 
     fun askRemoveServer(serverId: String) {
         val server = state.value.servers.firstOrNull { it.id == serverId } ?: return
-        local.update { it.copy(confirm = Confirm.RemoveServer(serverId, server.name, server.accounts.map { a -> a.userName }), error = null, notice = null) }
+        val ask = Confirm.RemoveServer(serverId, server.name, server.accounts.map { a -> a.userName })
+        local.update { it.copy(confirm = ask, error = null, notice = null) }
+        val sync = sync ?: return
+        viewModelScope.launch {
+            val waiting = server.accounts.sumOf { sync.waiting(Session(serverId, it.userId)) }
+            local.update { if (it.confirm == ask) it.copy(confirm = ask.copy(waiting = waiting)) else it }
+        }
     }
 
     fun dismissConfirm() = local.update { it.copy(confirm = null) }
@@ -153,12 +175,55 @@ class ServersViewModel(
     fun confirm() {
         val pending = local.value.confirm ?: return
         if (local.value.busy) return // a second tap must not run it twice
+        val server = state.value.servers.firstOrNull { it.id == (pending as? Confirm.RemoveServer)?.serverId }
         run {
             when (pending) {
-                is Confirm.SignOut -> ServersNotice.SignedOutHereOnly.takeUnless { auth.signOut(pending.serverId, pending.userId) }
-                is Confirm.RemoveServer -> ServersNotice.RemovedHereOnly.takeUnless { auth.removeServer(pending.serverId) }
+                is Confirm.SignOut -> afterSending(listOf(Session(pending.serverId, pending.userId))) {
+                    ServersNotice.SignedOutHereOnly.takeUnless { auth.signOut(pending.serverId, pending.userId) }
+                }
+                is Confirm.RemoveServer -> afterSending(server?.accounts.orEmpty().map { Session(pending.serverId, it.userId) }) {
+                    ServersNotice.RemovedHereOnly.takeUnless { auth.removeServer(pending.serverId) }
+                }
             }
         }
+    }
+
+    /**
+     * Sends what [sessions] have waiting, each as itself and all in parallel, for [SEND_FIRST_MS] in all, then runs [then] whatever
+     * happened (whatever is still waiting goes with the account). If this screen goes away while sending, [then] still runs: a
+     * confirmed sign-out always happens.
+     */
+    private suspend fun afterSending(sessions: List<Session>, then: suspend () -> ServersNotice?): ServersNotice? {
+        val sync = sync
+        if (sync != null && sessions.isNotEmpty()) {
+            local.update { it.copy(sending = true) }
+            try {
+                withTimeoutOrNull(SEND_FIRST_MS) {
+                    coroutineScope { sessions.map { s -> async { sendQuietly(sync, s) } }.awaitAll() }
+                }
+            } catch (e: CancellationException) {
+                withContext(NonCancellable) { then() }
+                throw e
+            } finally {
+                local.update { it.copy(sending = false) }
+            }
+        }
+        return then()
+    }
+
+    private suspend fun sendQuietly(sync: Sync, s: Session) {
+        try {
+            sync.sendNow(s, SEND_FIRST_MS)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // The seam never throws; whatever is left goes with the account.
+        }
+    }
+
+    private companion object {
+        /** How long a sign-out or removal waits for the changes to be sent first. */
+        const val SEND_FIRST_MS = 10_000L
     }
 
     /** Runs [action]; what it returns is shown as the notice. */

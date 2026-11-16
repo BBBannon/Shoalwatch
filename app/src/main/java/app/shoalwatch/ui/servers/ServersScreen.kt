@@ -26,6 +26,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -89,9 +90,11 @@ fun ServersScreen(state: ServersUiState, actions: ServersActions) {
             confirmLabel = stringResource(R.string.sign_out),
             onConfirm = actions.onConfirm,
             onDismiss = actions.onDismissConfirm,
+            busyLabel = stringResource(R.string.sync_sending_first).takeIf { state.sending },
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(stringResource(R.string.confirm_signout_body, confirm.serverName))
+                if (confirm.waiting > 0) Text(pluralStringResource(R.plurals.sign_out_waiting, confirm.waiting, confirm.waiting.toString()))
                 Text(stringResource(R.string.dl_signout_downloads))
                 if (confirm.sharing) Text(stringResource(R.string.dl_signout_shared))
             }
@@ -101,6 +104,7 @@ fun ServersScreen(state: ServersUiState, actions: ServersActions) {
             confirmLabel = stringResource(R.string.action_remove),
             onConfirm = actions.onConfirm,
             onDismiss = actions.onDismissConfirm,
+            busyLabel = stringResource(R.string.sync_sending_first).takeIf { state.sending },
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(stringResource(R.string.confirm_remove_body))
@@ -108,6 +112,7 @@ fun ServersScreen(state: ServersUiState, actions: ServersActions) {
                 BulletRow(stringResource(R.string.confirm_remove_settings))
                 Text(stringResource(R.string.dl_remove_downloads))
                 if (confirm.accountNames.isNotEmpty()) Text(stringResource(R.string.confirm_remove_revoke))
+                if (confirm.waiting > 0) Text(pluralStringResource(R.plurals.remove_server_waiting, confirm.waiting, confirm.waiting.toString()))
             }
         }
         null -> Unit
