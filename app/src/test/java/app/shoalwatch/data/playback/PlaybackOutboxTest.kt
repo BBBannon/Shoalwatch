@@ -17,7 +17,7 @@ import org.junit.Test
  */
 class PlaybackOutboxTest : PlaystateTestBase() {
     private val playback = FakePlaybackGateway()
-    private val server by lazy { ServerPlaybackReports(playback, playstate) { s -> sender.kick(s) } }
+    private val server by lazy { ServerPlaybackReports(playback, playstate, stopsInFlight) { s -> sender.kick(s) } }
     private val finished = mutableListOf<Pair<Session, String>>()
     private val local by lazy {
         LocalPlaybackReports(OfflinePlays(db.offlinePlayDao(), { now }, outbox, db.itemDao()), playstate, { now }, LocalPlaying()) { s, item -> finished += s to item }
@@ -35,6 +35,30 @@ class PlaybackOutboxTest : PlaystateTestBase() {
     private fun unreachable() {
         playback.failOps["stopped"] = AppError.of(AppError.Kind.OFFLINE)
         gateway.failAll = AppError.Kind.OFFLINE // and the outbox cannot send either, so the rows stay to be read
+    }
+
+    /** Waits for a signal (no fixed sleep): fails after five seconds rather than hanging. */
+    private suspend fun until(what: String, test: () -> Boolean) {
+        kotlinx.coroutines.withTimeoutOrNull(5_000) { while (!test()) kotlinx.coroutines.yield() } ?: throw AssertionError("never: $what")
+    }
+
+    @Test fun aDrainAlreadyRunningNeverSendsAFinishedStopsTickBeforeTheReport() = runBlocking {
+        save(film("film", ud(positionMs = 60_000)), film("other", ud()))
+        val busy = holdCalls("setPlayed:${id("other")}")
+        playstate.setPlayed(s1u1, id("other"), true) // a drain starts for the profile and is held on its first row
+        until("the drain is sending") { gateway.calls.contains("setPlayed:${id("other")}:true") }
+        playback.gate = kotlinx.coroutines.CompletableDeferred()
+        val stop = async(kotlinx.coroutines.Dispatchers.IO) { server.stopped(s1u1, report(5_000_000), finished = true) }
+        until("the stop report is in flight") { playback.calls.contains("stopped@5000000") } // record #1 has queued its PLAYED tick
+        busy.release()
+        until("the running drain has ended") { !sender.isDraining(s1u1) }
+        assertEquals("nothing for the item while its report is in flight", 0, gateway.count("setPlayed:${id("film")}"))
+        assertEquals(1, rows().count { it.kind == "PLAYED" })
+        playback.gate?.complete(Unit)
+        stop.await()
+        settle()
+        assertEquals("sent once, after the report", 1, gateway.count("setPlayed:${id("film")}"))
+        assertEquals(0, queued())
     }
 
     @Test fun anUnsentUnfinishedStopQueuesOnePositionWithTheReportsPositionAndTime() = runBlocking {

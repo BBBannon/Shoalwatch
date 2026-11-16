@@ -43,6 +43,8 @@ internal class SyncSender(
     private val scope: CoroutineScope, // the app scope
     private val now: () -> Long = System::currentTimeMillis,
     private val io: CoroutineDispatcher = Dispatchers.IO,
+    /** Items whose stop report is in flight: passed over until it lands ([StopsInFlight]; Tasks 9-10 review I1). */
+    private val inFlight: StopsInFlight = StopsInFlight(),
 ) {
     /** One joined drain: [result] never fails; [work] is the part [forget] cancels; [again]: a kick joined it, so look once more before ending. */
     private class Running(val result: Deferred<DrainResult>) {
@@ -117,7 +119,7 @@ internal class SyncSender(
         while (true) {
             if (!hasToken(s)) return DrainResult.WAITING_FOR_SIGN_IN
             val row = try {
-                outbox.head(s, now())
+                outbox.head(s, now(), inFlight.of(s))
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 AppLog.w(TAG, "Reading the outbox failed", e)

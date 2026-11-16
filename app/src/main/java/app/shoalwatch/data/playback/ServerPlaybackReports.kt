@@ -5,6 +5,7 @@ import app.shoalwatch.core.AppLog
 import app.shoalwatch.data.library.Playstate
 import app.shoalwatch.data.playback.api.PlaybackGateway
 import app.shoalwatch.data.servers.Session
+import app.shoalwatch.data.sync.StopsInFlight
 import kotlinx.coroutines.CancellationException
 
 /**
@@ -20,6 +21,8 @@ import kotlinx.coroutines.CancellationException
 class ServerPlaybackReports internal constructor(
     private val gateway: PlaybackGateway,
     private val playstate: Playstate,
+    /** Shared with the sender: the item is held from the stop's first record until its report lands or fails (Tasks 9-10 review I1). */
+    private val inFlight: StopsInFlight = StopsInFlight(),
     /** Lets the outbox send for [Session] (`SyncScheduler.changed`): called after the stop report, so the report always goes first. */
     private val changed: (Session) -> Unit = {},
 ) : PlaybackReports {
@@ -36,11 +39,21 @@ class ServerPlaybackReports internal constructor(
      * finished stop's PLAYED tick, or a stop the server did not hear) is handed to the outbox only now, so the report goes first.
      */
     override suspend fun stopped(s: Session, r: PlaybackReport, finished: Boolean): ReportOutcome {
-        record(s, r, finished, reached = false)
-        val outcome = send("stop") { gateway.reportStopped(s, r) }
-        val kind = (outcome as? ReportOutcome.NotSent)?.kind
-        val heard = kind == null || (kind !in UNREACHED && kind != AppError.Kind.NOT_SIGNED_IN)
-        if (heard && !finished) record(s, r, finished = false, reached = true) else changed(s)
+        // Held for the whole report, so a drain already running for this profile cannot send the tick first (review I1).
+        inFlight.hold(s, r.itemId)
+        val outcome: ReportOutcome
+        val takenBack: Boolean
+        try {
+            record(s, r, finished, reached = false)
+            outcome = send("stop") { gateway.reportStopped(s, r) }
+            val kind = (outcome as? ReportOutcome.NotSent)?.kind
+            val heard = kind == null || (kind !in UNREACHED && kind != AppError.Kind.NOT_SIGNED_IN)
+            takenBack = heard && !finished
+            if (takenBack) record(s, r, finished = false, reached = true)
+        } finally {
+            inFlight.release(s, r.itemId)
+        }
+        if (!takenBack) changed(s) // a drain that passed over the item looks again
         return outcome
     }
 

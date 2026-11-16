@@ -52,6 +52,7 @@ import app.shoalwatch.data.sync.Sync
 import app.shoalwatch.data.sync.SyncRepository
 import app.shoalwatch.data.sync.SyncScheduler
 import app.shoalwatch.data.sync.SyncSender
+import app.shoalwatch.data.sync.StopsInFlight
 import app.shoalwatch.data.sync.api.SyncGateway
 import app.shoalwatch.data.sync.api.SyncGatewayImpl
 import app.shoalwatch.data.downloads.api.DownloadGateway
@@ -278,7 +279,9 @@ class AppGraph(private val appContext: Context) {
         PlaystateRepository(libraryRepository, outboxStore, { s -> syncScheduler.changed(s) }, appScope, Dispatchers.IO, System::currentTimeMillis)
     }
     /** Progress reports and the final stop (also saved through `playstate`, queued when the server missed it); see "Progress reports and teardown" in docs/ARCHITECTURE.md. */
-    val playbackReports: ServerPlaybackReports by lazy { ServerPlaybackReports(playbackGateway, playstate) { s -> syncScheduler.changed(s) } }
+    val playbackReports: ServerPlaybackReports by lazy { ServerPlaybackReports(playbackGateway, playstate, stopsInFlight) { s -> syncScheduler.changed(s) } }
+    /** Items whose stop report is in flight: the sender passes over their rows until it lands (Tasks 9-10 review I1). */
+    internal val stopsInFlight: StopsInFlight by lazy { StopsInFlight() }
     /** Who is playing: ended by the store hooks above and whenever the active session changes. */
     val activePlayback: ActivePlayback by lazy {
         ActivePlayback({ s -> serverStore.cachedToken(s.serverId, s.userId) != null }).also { a ->
@@ -324,7 +327,7 @@ class AppGraph(private val appContext: Context) {
     private val syncLanding: SyncLanding by lazy { PlaystateLanding(libraryRepository, outboxStore, database.offlinePlayDao(), System::currentTimeMillis) }
     /** Sends each profile's rows in order, as that profile; what the sync job awaits (`ShoalwatchWorkerFactory`). */
     internal val syncSender: SyncSender by lazy {
-        SyncSender(outboxStore, syncGateway, syncLanding, { s -> serverStore.cachedToken(s.serverId, s.userId) != null }, { serverStore.awaitWarmed() }, appScope)
+        SyncSender(outboxStore, syncGateway, syncLanding, { s -> serverStore.cachedToken(s.serverId, s.userId) != null }, { serverStore.awaitWarmed() }, appScope, inFlight = stopsInFlight)
     }
     internal val onlineEvents: OnlineEvents by lazy { OnlineEvents(addressSelector, outboxStore.serversWithWork(), appScope) }
     /** When sending happens: after each change, at start (`ShoalwatchApp`), after a sign-in, on reconnection, and by the `shoalwatch-sync` job. */

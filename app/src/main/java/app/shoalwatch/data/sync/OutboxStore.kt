@@ -74,10 +74,11 @@ internal class OutboxStore(private val db: AppDatabase, private val now: () -> L
 
     /**
      * The next row to send for [s]; null when nothing is due. In `seq` order: a deferred row (a 5xx, not yet stuck) holds back
-     * the whole profile until it is due; a stuck row not yet due is passed over, and so is every later row for its item.
+     * the whole profile until it is due; a stuck row not yet due is passed over, and so is every later row for its item. So are
+     * the rows of every item in [inFlight] (its stop report is on its way: Tasks 9-10 review I1).
      */
-    suspend fun head(s: Session, nowMs: Long): OutboxEntity? {
-        val held = HashSet<String>()
+    suspend fun head(s: Session, nowMs: Long, inFlight: Set<String> = emptySet()): OutboxEntity? {
+        val held = HashSet(inFlight)
         var after = 0L
         while (true) {
             val page = dao.rows(s.serverId, s.userId, after, PAGE)

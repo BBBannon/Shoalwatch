@@ -54,6 +54,8 @@ abstract class PlaystateTestBase : LibraryRepositoryTestBase() {
     internal lateinit var outbox: OutboxStore
     internal lateinit var sync: LibrarySync
     internal lateinit var sender: SyncSender
+    /** Shared by [sender] and any `ServerPlaybackReports` a test builds, as in the app. */
+    internal val stopsInFlight = app.shoalwatch.data.sync.StopsInFlight()
 
     /** Every session [PlaystateRepository] said had a new row, in order. */
     protected val changedFor = java.util.concurrent.CopyOnWriteArrayList<Session>()
@@ -64,7 +66,7 @@ abstract class PlaystateTestBase : LibraryRepositoryTestBase() {
         gateway.clockTick = { now += 1 } // a server round trip takes a moment, so what is asked after an action is strictly later than it
         outbox = OutboxStore(db) { now }
         sync = LibrarySync(gateway)
-        sender = SyncSender(outbox, sync, PlaystateLanding(repo, outbox, db.offlinePlayDao()) { now }, { true }, {}, appScope, { now }, Dispatchers.IO)
+        sender = SyncSender(outbox, sync, PlaystateLanding(repo, outbox, db.offlinePlayDao()) { now }, { true }, {}, appScope, { now }, Dispatchers.IO, stopsInFlight)
         playstate = newPlaystate()
     }
 
