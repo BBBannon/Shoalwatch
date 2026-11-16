@@ -2,32 +2,50 @@
 
 **Date:** 16/11/2026 · **Branch:** `milestone-4`, after the close-out fix wave (Task 17) and the final review's fix wave (the commits are listed in section 4) · **Scope:** SPEC §6, S1–S13, for downloads and offline playback
 
-This check was made by reading the code and the tests, and by the unit-test gate. Nothing in it was run on a device or against a real Jellyfin server.
+This check was made by reading the code and the tests, and by the unit-test gate. Its author ran nothing on a device; the controller's emulator results are in the next section. Nothing was run against a real Jellyfin server.
 
 - **Sources read:** the five task reviews of the milestone (`.superpowers/sdd/m4/tasks-*-review.md`), the task reports, the whole-milestone review (`.superpowers/sdd/m4/final-review.md`) and the code after its fix wave.
 - **The whole-milestone review** found 2 Medium, 11 Low and 4 Nit, plus one finding from the controller's emulator walkthrough (W-1). Each is fixed, or recorded here or in the carried list (section 4).
 
-## Device results — TO BE FILLED BY THE CONTROLLER
+## Device results (controller, 16/11/2026)
 
-> **TO BE FILLED BY THE CONTROLLER.** Nothing below this line in this box was run by the author of this document. Do not read anything here as a result.
->
-> - The on-device suite (`connectedDebugAndroidTest`), including `DownloadSmokeTest`: _not yet run_.
-> - The original and Medium download steps once with each stand-in flag (`--no-range`, `--etag-changes`, `--octet-stream`, `--candownload-missing`, `--download-forbidden`, `--legacy-auth-only`, `--hls-recut`, `--hls-idle-kill=5`): _not yet run_.
-> - The walkthrough against `tools/mockjelly` (`--drop-after=65536`): a film (Original); a season of 3 (Medium) with airplane mode mid-season; a kill and a reboot mid-download; mobile data on and off; an SD card and its ejection; offline play (subtitles, Skip intro, the position kept, the watched tick); a second and a third profile with sharing off and on; signing out the owner; removing the server: _not yet run_.
-> - The new deletes (an episode, a season, a series, as owner; none offered to another profile): _not yet run_.
-> - The sharing re-ask with the Downloads tab never opened (clock or server change): _not yet run_.
-> - Screenshots at font scale 1.0 and 2.0 and a TalkBack pass over every Downloads control, the sheet and the settings: _not yet run_.
-> - The final review's fixes: the notice says only "Downloading" / "Downloads finished"; signing the owner out online with the child's confirmation over a week old deletes the copy; the W-1 Original download of the stand-in's 10 s film reaches "Ready to watch": _not yet run_.
-> - The re-review's fixes: the Downloads tab's title and settings cog sit below the status bar and the cog opens the settings (W-2); a conversion queued by the parent and run under the child's sign-in with the child's download permission off on the stand-in never reaches "Ready to watch" for the child (N-1): _not yet run_.
+Run by the controller on an Android 14 emulator against `tools/mockjelly`, on the merged build (`merge-trial`: Milestone 6 plus this branch). Nothing here was run on a real phone or a real Jellyfin server. "Not run" means exactly that: the item rests on its unit tests and the code reading only.
+
+**Run and passed**
+
+- **On-device suite** (`connectedDebugAndroidTest`, 23 tests with Milestone 6's): 23 of 23 twice on `2832b29`, and 23 of 23 once on the final build (`5c25016`, with the W-3 fix). `DownloadSmokeTest` passed 3 of 3 on its own.
+  - **Not clean every time:** the first run after a cold boot failed `DownloadSmokeTest` at its "plays offline within 10 s" step, and a later run on the final build failed that step and `PlayerSmokeTest`'s "playback starts within 20 s" step. Both are playback-start time-outs; the second came with the PC at 3.8 GB free memory, minutes before Claude Code stopped the emulator for low memory. A confirming re-run was stopped the same way. Carried: re-run the suite on a quiet PC and, if it repeats, lengthen the two waits.
+- **Earlier on this branch alone** (`43b35b3`, before the re-review's wave): the suite 22 of 22; a film (Original) reaches "Ready to watch" with its subtitles and picture on disk (W-1); the notice says only "Downloads finished", with no title, count or progress; playing the downloaded film makes no server request; deleting as owner removes the files and the pinned picture; a whole series (12 episodes) downloads and lists by season; the settings' sharing text.
+- **W-2:** the Downloads title and the settings cog sit below the status bar (status bar 0 to 128 px, title from 170 px, cog from 181 px) and the cog opens Download settings. Portrait only.
+- **Two profiles, sharing on:** the parent downloads a season of 6 (Original). The child, signed in afterwards, sees nothing in Downloads until it has browsed to the series; then the season is listed for it, each episode marked "Downloaded by another profile", with a Play button and **no** "more" or delete button anywhere. The parent's own view keeps its "more" button.
+- **The weekly re-ask:** with the stand-in switched to refuse downloads (`POST /mock/no-download`) and the date moved on 8 days, the child's Play did not use the saved copy: it streamed from the server (PlaybackInfo and `/Videos/…/stream`), so the server decided. At the next re-ask the season left the child's Downloads; the parent still listed 6 episodes and all 6 files were still on disk. With downloads allowed again, the next re-ask gave the season back to the child.
+- **Offline, a confirmed child:** in airplane mode with the date moved on 30 days, the child played a shared episode to its end from the phone; the stand-in received no request.
+
+**Found in this walkthrough**
+
+- **W-3 (fixed, `9caa7dc`):** a shared download appeared for the child only after leaving the app and coming back at least five minutes after signing in. The first re-ask ran at sign-in with nothing to ask and used up the five-minute gap, and reopening the Downloads tab asked nothing. Now an empty re-ask does not count towards the gap and every opening of the tab asks. Checked again on the fixed build: the season appears on opening Downloads.
+  - **Left as it is (carried):** titles the child first browses to within five minutes after a re-ask that did ask wait for the next one (seen: 1 of 6 episodes at once, all 6 five minutes later).
+- **W-4 (carried):** when a sign-in is rejected (401) the app removes that account; with no account active the Downloads tab and the downloaded-series screen are blank, where Home says "You're not signed in".
+
+**Not run**
+
+- The original and Medium download steps with each stand-in flag (`--no-range`, `--etag-changes`, `--octet-stream`, `--candownload-missing`, `--download-forbidden`, `--legacy-auth-only`, `--hls-recut`, `--hls-idle-kill=5`), and any Medium (converted) download by hand.
+- `--drop-after` by hand (the on-device test does resume a cut download with `If-Range`); airplane mode mid-season; a kill and a reboot mid-download; mobile data on and off; an SD card and its ejection.
+- Offline play's subtitles, Skip intro, kept position and watched tick, by hand.
+- Sharing **off** with two profiles; a third profile; signing the owner out (including with the child's confirmation over a week old); removing the server.
+- The new deletes of an episode, a season and a series by hand (a film's delete was run).
+- The re-ask with the Downloads tab never opened.
+- Font scale 2.0 screenshots and a TalkBack pass.
+- **N-1** (a parent's queued conversion finished under the child's sign-in with the child's permission off) and **L-a** (a co-owner with no confirmed permission, offline): the stand-in's download permission is one switch for every account, and `--candownload-missing` needs a restart, which signs every profile out. Both rest on `StrictSharingOwnersTest` and `OfflineLibraryVisibilityTest`.
 
 ---
 
 ## 1. Summary verdict
 
-**Not yet signed off: code reading and unit tests only.** No finding from the five task reviews or the whole-milestone review is open at Critical, Important or Medium. The Minors, Lows and Nits are fixed, recorded as residual risks (section 5) or carried with a reason (`docs/reviews/milestone-4-carried.md`).
+**Not yet signed off: code reading, unit tests and a partial emulator walkthrough (see "Device results": what was run, and the list that was not).** No finding from the five task reviews or the whole-milestone review is open at Critical, Important or Medium. The Minors, Lows and Nits are fixed, recorded as residual risks (section 5) or carried with a reason (`docs/reviews/milestone-4-carried.md`).
 
 - **Still needed before sign-off:**
-  - the controller's device results above;
+  - the device steps listed as not run above;
   - Ben's confirmation of the five new permissions (two of them not named by SPEC S9) and the one exported job service that S10 does not list (section 5).
 - **Still unproven:** a real phone and Ben's server (section 6).
 
