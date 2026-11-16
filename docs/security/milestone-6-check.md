@@ -164,6 +164,14 @@ Run by the controller on 15/11/2026 on an Android 14 emulator (`shoalwatch_test2
 - [x] **Child profile (kid) signed in on the same emulator:** no "Server admin" entry, and no admin route requested with kid's token.
 - [ ] **Not done by hand:** the `--pending-restart`, `--ben-not-admin`, `--admin-forbidden` flags and `POST /mock/demote`; switching to kid while on Devices and signing out ben while on Users (the switch while on the dashboard is covered by `AdminSmokeTest`); airplane mode; that the restart button stays off until the word is complete (covered by unit tests only); the recents preview by eye; font scale 2.0; tablet; TalkBack.
 
+**On the merged build (Milestone 6 with Milestone 4), 16/11/2026:**
+
+- [x] **Flags** (`a114aa1`): `--pending-restart` shows the "Restart needed" notice and button; the restart dialog sends nothing with no word or with "resta" typed, and exactly one `POST /System/Restart` with "restart", then "Restart requested". `--admin-forbidden`: Libraries says "The server refused that. Your account may not be allowed to do it." (the same words on Users were not captured). `--ben-not-admin`: no "Server admin" entry and no admin request after sign-in.
+- [x] **`POST /mock/demote` while on Devices** (`5c25016`): on the next refresh the admin screens closed back to Servers and accounts and the "Server admin" entry was gone; after `/mock/promote` and a refresh it was back.
+- [x] **Airplane mode** (`5c25016`): Users says "You're offline. Server admin needs a connection to your server. Buttons are switched off until it's back."
+- [x] **Full gate and on-device suite on the merged build:** see "Device results" in `docs/security/milestone-4-check.md` (3,707 unit tests, stand-in 89; 23 of 23 on the final build once, with two playback-start time-outs on a memory-starved re-run, neither in an admin test).
+- [ ] **Still not done by hand:** switching to kid while on Devices and signing ben out while on Users (the admin screens have no account menu; the switch on the dashboard is `AdminSmokeTest`'s); `Disable` refused on Users under `--admin-forbidden`.
+
 ---
 
 ## 7. Status after the check (15/11/2026, branch `milestone-6`)
