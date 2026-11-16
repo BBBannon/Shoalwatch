@@ -97,4 +97,42 @@ class OfflineRecoveryTest : PlaystateTestBase() {
         settle()
         assertEquals("newer than what was sent: kept for the next recovery", 700_000L, dao.get(s1u1.serverId, s1u1.userId, id("a"))!!.positionMs)
     }
+
+    /**
+     * Final review I2: an offline play's POSITION row replaced by a later change (here "Remove from Continue Watching") left its
+     * offline_plays row uncovered, so the next start queued the old position again and put the item back in Continue Watching.
+     * Any confirmed PLAYED, POSITION or PLAY row now clears the offline plays it covers.
+     */
+    @Test fun aRemovalThatReplacedAnOfflinePlaysPositionIsNotUndoneAfterARestart() = runBlocking {
+        save(film("a"))
+        saveResume(film("a"))
+        gateway.failAll = AppError.Kind.OFFLINE
+        dao.stopped(s1u1.serverId, s1u1.userId, id("a"), 600_000, finished = false, nowMs = now) // played part way in airplane mode
+        playstate.recordLocalStop(s1u1, id("a"), 600_000, finished = false)
+        settle()
+        now += 60_000
+        playstate.removeFromContinueWatching(s1u1, id("a")) // still offline: POSITION 0 replaces the offline play's row
+        settle()
+        assertEquals(listOf("POSITION"), kinds())
+        gateway.failAll = null // online again
+        sender.kick(s1u1).await()
+        settle()
+        assertEquals(0, queued())
+        assertNull("the newer confirmed change covers the play", dao.get(s1u1.serverId, s1u1.userId, id("a")))
+        assertEquals("the restart queues nothing", 0, plays.recoverUnqueued())
+        assertEquals(0, queued())
+    }
+
+    @Test fun aConfirmedFavouriteDoesNotCoverAnOfflinePlay() = runBlocking {
+        save(film("a"))
+        gateway.failAll = AppError.Kind.OFFLINE
+        dao.position(s1u1.serverId, s1u1.userId, id("a"), 600_000, now) // died mid-play: nothing queued for it
+        now += 60_000
+        playstate.setFavourite(s1u1, id("a"), true)
+        settle()
+        gateway.failAll = null
+        sender.kick(s1u1).await()
+        settle()
+        assertEquals("a favourite says nothing about where playback stopped", 1, plays.recoverUnqueued())
+    }
 }

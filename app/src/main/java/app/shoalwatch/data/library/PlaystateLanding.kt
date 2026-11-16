@@ -2,6 +2,7 @@ package app.shoalwatch.data.library
 
 import app.shoalwatch.data.db.downloads.OfflinePlayDao
 import app.shoalwatch.data.servers.Session
+import app.shoalwatch.data.sync.ChangeKind
 import app.shoalwatch.data.sync.OutboxStore
 import app.shoalwatch.data.sync.SyncLanding
 
@@ -9,7 +10,7 @@ import app.shoalwatch.data.sync.SyncLanding
  * What this phone does when the sender is done with a row (see "Tidy-up actions" in docs/ARCHITECTURE.md). Under the library
  * write gate, in ONE transaction: the row goes ([OutboxStore.take]); every item it marked that no other row still marks has its
  * marker cleared and is noted in `LocalChangeLog` again, with the lists it left (so a refresh asked for before this moment
- * cannot overwrite it); an offline play the row carried is deleted once covered; `lastSyncedAt` is set. Then the lists the
+ * cannot overwrite it); an offline play the row covers (it carried one, or it is a later watched or position change) is deleted; `lastSyncedAt` is set. Then the lists the
  * server recomputes are refreshed, and when the server's copy won ([overruled]) the item too, so its copy replaces the local one.
  * A row already gone (a newer change replaced it while it was in flight) is nothing to do: the newer row carries it.
  */
@@ -33,7 +34,9 @@ internal class PlaystateLanding(
                     store.noteChanged(s, itemId)
                 }
                 row.leftLists.filter { (itemId, _) -> itemId in row.unmarked }.forEach { (itemId, list) -> store.noteChanged(s, itemId, removedFrom = list) }
-                if (row.fromOfflinePlay) offlinePlays.deleteCovered(s.serverId, s.userId, row.itemId, row.occurredAt)
+                // Any watched or position change the server now has supersedes an older offline play of the item, whether or not
+                // the row came from one: a later change may have replaced that play's own row (final review I2).
+                if (row.fromOfflinePlay || row.kind in COVERS_PLAYS) offlinePlays.deleteCovered(s.serverId, s.userId, row.itemId, row.occurredAt)
                 outbox.touchSynced(s)
                 row
             }
@@ -41,5 +44,9 @@ internal class PlaystateLanding(
         val lists = landed.refreshKeys.mapNotNull(::parseRecompute).toMutableSet()
         if (overruled) lists += Recompute.Item(landed.itemId)
         library.refreshInBackground(s, lists)
+    }
+
+    private companion object {
+        val COVERS_PLAYS = setOf(ChangeKind.PLAYED, ChangeKind.POSITION, ChangeKind.PLAY)
     }
 }
