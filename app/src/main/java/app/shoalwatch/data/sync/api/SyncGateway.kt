@@ -40,6 +40,9 @@ internal interface SyncGateway {
 
     /** True only when GET /Items/{id} is SERVER_NOT_FOUND AND GET /UserViews succeeds: the item is gone, not the route or the proxy. */
     suspend fun itemGone(s: Session, itemId: String): Boolean
+
+    /** GET /UserViews as [s]; returns only when the server answers for this profile, else throws its failure (final review I1). */
+    suspend fun profileAnswers(s: Session)
 }
 
 internal class SyncGatewayImpl(private val api: ServerApi, private val library: LibraryGateway) : SyncGateway {
@@ -84,6 +87,10 @@ internal class SyncGatewayImpl(private val api: ServerApi, private val library: 
             if (e.kind != AppError.Kind.SERVER_NOT_FOUND) throw e
             false
         }
+    }
+
+    override suspend fun profileAnswers(s: Session) {
+        library.views(s)
     }
 
     private fun withUser(s: Session) = listOf("userId" to s.userId)

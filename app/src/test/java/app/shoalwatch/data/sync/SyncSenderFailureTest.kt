@@ -114,11 +114,37 @@ class SyncSenderFailureTest : SyncSenderTestBase() {
         }
     }
 
-    @Test fun forbiddenIsTheServersAnswerAboutThisItem() {
+    /** Final review I1: a 403 is the server's answer about this item only when GET /UserViews answers for the profile. */
+    @Test fun forbiddenWithTheProfileAcceptedIsTheServersAnswerAboutThisItem() {
         val (a, b) = firstFails(AppError.Kind.FORBIDDEN)
         assertEquals(DrainResult.EMPTY, drain())
+        assertEquals(listOf("favourite", "views", "favourite"), gateway.ops())
         assertEquals(listOf(a), landing.overruled)
         assertEquals(listOf(b), landing.confirmed)
+    }
+
+    /** A proxy or WAF answering 403 to everything: every row is kept and deferred, none dropped, and the profile waits. */
+    @Test fun forbiddenEverywhereIsDeferredNeverDropped() {
+        val (a, b) = firstFails(AppError.Kind.FORBIDDEN)
+        gateway.failNext("views", AppError.Kind.FORBIDDEN)
+        assertEquals(DrainResult.BACKING_OFF, drain())
+        assertEquals(listOf("favourite", "views"), gateway.ops())
+        assertTrue(landing.overruled.isEmpty())
+        assertEquals(1, row(a)!!.serverErrors)
+        assertEquals("kept, never dropped", listOf(a, b), rawRows().map { it.seq })
+    }
+
+    @Test fun forbiddenWithTheViewsCheckFailingIsHandledByItsOwnKind() {
+        val (a, _) = firstFails(AppError.Kind.FORBIDDEN)
+        gateway.failNext("views", AppError.Kind.SERVER_NOT_FOUND)
+        assertEquals("a proxy's 404: deferred", DrainResult.BACKING_OFF, drain())
+        assertEquals(1, row(a)!!.serverErrors)
+        reset()
+        val (c, _) = firstFails(AppError.Kind.FORBIDDEN)
+        gateway.failNext("views", AppError.Kind.NETWORK)
+        assertEquals(DrainResult.WAITING_FOR_CONNECTION, drain())
+        assertEquals(0, row(c)!!.serverErrors)
+        assertTrue(landing.overruled.isEmpty())
     }
 
     @Test fun notFoundWithTheItemGoneIsOverruled() {

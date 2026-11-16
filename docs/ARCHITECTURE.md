@@ -734,7 +734,7 @@ SPEC §3.2: a profile's watched-state changes are kept on the phone until the se
 | `OFFLINE`, `NETWORK`, `TIMEOUT` | stays as it is | stops (order is kept): `WAITING_FOR_CONNECTION` |
 | `SERVER_ERROR` | deferred | goes on with the next head (none unless only stuck rows wait): `BACKING_OFF` |
 | `UNAUTHORISED`, `NOT_SIGNED_IN` | stays (`ServerApi` has already invalidated the token) | stops: `WAITING_FOR_SIGN_IN` |
-| `FORBIDDEN` | overruled (the server's answer about this item for this profile) | goes on |
+| `FORBIDDEN` | `GET /UserViews` answers as the profile: overruled (the server's answer about this item for this profile); it answers 403 or 404 too (a proxy or WAF refusing everything): deferred, never dropped (final review I1); any other failure of that check: by its own kind | goes on |
 | `SERVER_NOT_FOUND` | `itemGone` true: overruled; false (a redirect, a proxy): deferred, never dropped | goes on |
 | TLS kinds, `CLIENT_CERT_REQUIRED`, `CLEARTEXT_BLOCKED` | stays | stops (the user must fix the connection): `WAITING_FOR_CONNECTION` |
 | anything else, or a local database failure | stays | logged by kind or class; stops: `STOPPED` |

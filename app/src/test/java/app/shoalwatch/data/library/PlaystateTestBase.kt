@@ -42,6 +42,7 @@ internal class LibrarySync(private val server: FakeLibraryGateway) : SyncGateway
     override suspend fun markUnplayed(s: Session, itemId: String) = server.setPlayed(s, itemId, false)
     override suspend fun favourite(s: Session, itemId: String, on: Boolean) = server.setFavourite(s, itemId, on)
     override suspend fun itemGone(s: Session, itemId: String): Boolean = itemId in gone
+    override suspend fun profileAnswers(s: Session) = Unit
 }
 
 /**

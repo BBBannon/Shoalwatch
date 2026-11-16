@@ -102,6 +102,16 @@ class SyncGatewayTest : ServerApiTestBase() {
         assertFalse("found", gateway.itemGone(session, item))
     }
 
+    /** Final review I1: the check that proves a 403 is about the item, not the proxy: GET /UserViews as the profile. */
+    @Test fun profileAnswersAsksTheViewsAndPassesAFailureThrough() {
+        web.enqueue(json("""{"Items":[]}"""))
+        runBlocking { gateway.profileAnswers(session) }
+        val asked = next()
+        assertEquals("/UserViews", asked.requestUrl!!.encodedPath)
+        web.enqueue(json("{}", code = 403))
+        assertEquals(AppError.Kind.FORBIDDEN, failure { runBlocking { gateway.profileAnswers(session) } }.kind)
+    }
+
     @Test fun forbiddenPassesThrough() {
         web.enqueue(json("{}", code = 403))
         web.enqueue(json("{}", code = 403))

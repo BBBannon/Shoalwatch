@@ -258,7 +258,7 @@ internal class SyncSender(
         AppError.Kind.OFFLINE, AppError.Kind.NETWORK, AppError.Kind.TIMEOUT -> Outcome.Stop(DrainResult.WAITING_FOR_CONNECTION)
         AppError.Kind.SERVER_ERROR -> defer(row)
         AppError.Kind.UNAUTHORISED, AppError.Kind.NOT_SIGNED_IN -> Outcome.Stop(DrainResult.WAITING_FOR_SIGN_IN)
-        AppError.Kind.FORBIDDEN -> overrule(s, row)
+        AppError.Kind.FORBIDDEN -> forbidden(s, row)
         AppError.Kind.SERVER_NOT_FOUND -> notFound(s, row)
         AppError.Kind.TLS_UNTRUSTED, AppError.Kind.TLS_PIN_CHANGED, AppError.Kind.CLIENT_CERT_REQUIRED, AppError.Kind.CLEARTEXT_BLOCKED ->
             Outcome.Stop(DrainResult.WAITING_FOR_CONNECTION)
@@ -277,6 +277,20 @@ internal class SyncSender(
             return if (e.kind == AppError.Kind.SERVER_NOT_FOUND) defer(row) else failed(s, row, e.kind)
         }
         return if (gone) overrule(s, row) else defer(row)
+    }
+
+    /**
+     * The server's answer about this item only when the profile is otherwise accepted (GET /UserViews answers); a proxy or WAF
+     * answering 403 to everything, or a 404 from it: deferred like a 5xx, never dropped (final review I1, as [notFound]).
+     */
+    private suspend fun forbidden(s: Session, row: OutboxEntity): Outcome {
+        if (!hasToken(s)) return Outcome.Stop(DrainResult.WAITING_FOR_SIGN_IN)
+        try {
+            gateway.profileAnswers(s)
+        } catch (e: AppError) {
+            return if (e.kind == AppError.Kind.FORBIDDEN || e.kind == AppError.Kind.SERVER_NOT_FOUND) defer(row) else failed(s, row, e.kind)
+        }
+        return overrule(s, row)
     }
 
     private suspend fun overrule(s: Session, row: OutboxEntity): Outcome {

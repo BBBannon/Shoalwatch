@@ -83,6 +83,8 @@ internal class FakeSyncGateway : SyncGateway {
         return itemId in gone
     }
 
+    override suspend fun profileAnswers(s: Session) = call(Call(s, "views", ""))
+
     private suspend fun call(call: Call, apply: () -> Unit = {}) {
         calls += call
         gate?.let { arrivals.incrementAndGet(); it.await() }
