@@ -645,6 +645,14 @@
         <item quantity="one">%1$s change hasn\'t reached your server yet. Shoalwatch will try to send it first. If it can\'t, the change is deleted from this phone.</item>
         <item quantity="other">%1$s changes haven\'t reached your server yet. Shoalwatch will try to send them first. Any it can\'t send are deleted from this phone.</item>
     </plurals>
+    <string name="account_sign_in_expired">Sign-in expired</string>
+    <string name="account_sign_in_again">Sign in again</string>
+    <string name="account_sign_in_again_cd">Sign in again as %1$s</string>
+    <plurals name="remove_profile_waiting">
+        <item quantity="one">%1$s: %2$s change waiting</item>
+        <item quantity="other">%1$s: %2$s changes waiting</item>
+    </plurals>
+    <string name="remove_expired_not_sent">Changes waiting for a profile whose sign-in has expired can\'t be sent first. They are deleted from this phone.</string>
     <plurals name="remove_server_waiting">
         <item quantity="one">%1$s change hasn\'t reached this server yet. Shoalwatch will try to send it first. If it can\'t, the change is deleted from this phone.</item>
         <item quantity="other">%1$s changes haven\'t reached this server yet. Shoalwatch will try to send them first. Any it can\'t send are deleted from this phone.</item>

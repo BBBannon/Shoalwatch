@@ -35,8 +35,14 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-/** [sync]: this profile's changes waiting to reach the server (the line under it). */
-data class AccountItem(val userId: String, val userName: String, val isActive: Boolean, val sync: SyncStatus = SyncStatus.NONE)
+/**
+ * [sync]: this profile's changes waiting to reach the server (the line under it). [expired]: the server rejected its sign-in; it
+ * is listed with "Sign in again" so its waiting changes can still be sent, but it cannot be made active (Tasks 9-10 review I2).
+ */
+data class AccountItem(val userId: String, val userName: String, val isActive: Boolean, val sync: SyncStatus = SyncStatus.NONE, val expired: Boolean = false)
+
+/** One profile's changes not yet sent, for the Remove server dialog (a count and the profile's name; never an item). */
+data class ProfileWaiting(val userName: String, val waiting: Int, val expired: Boolean)
 
 data class ServerItem(
     val id: String,
@@ -57,8 +63,13 @@ sealed interface Confirm {
         val serverId: String, val userId: String, val userName: String, val serverName: String, val sharing: Boolean = false, val waiting: Int = 0,
     ) : Confirm
 
-    /** [accountNames] are the sign-ins that will go with the server; [waiting] counts every one of their changes not yet sent. */
-    data class RemoveServer(val serverId: String, val serverName: String, val accountNames: List<String>, val waiting: Int = 0) : Confirm
+    /**
+     * [accountNames] are the sign-ins that will go with the server (expired ones too); [waiting] counts every one of their changes
+     * not yet sent, and [profiles] says whose (only profiles with some; an expired one's cannot be sent first).
+     */
+    data class RemoveServer(
+        val serverId: String, val serverName: String, val accountNames: List<String>, val waiting: Int = 0, val profiles: List<ProfileWaiting> = emptyList(),
+    ) : Confirm
 }
 
 /** Said after a sign-out or removal that worked on this phone but could not reach the server to revoke the sign-in. */
@@ -99,20 +110,24 @@ class ServersViewModel(
 
     private val local = MutableStateFlow(Local())
 
-    private val rows: Flow<List<Pair<ServerSummary, List<Pair<AccountSummary, SyncStatus>>>>> = catalog.servers.flatMapLatest { servers ->
+    private val rows: Flow<List<Pair<ServerSummary, List<Triple<AccountSummary, Boolean, SyncStatus>>>>> = catalog.servers.flatMapLatest { servers ->
         if (servers.isEmpty()) {
             flowOf(emptyList())
         } else {
-            combine(servers.map { withSync(catalog.accounts(it.id)) }) { lists -> servers.zip(lists.toList()) }
+            combine(servers.map { withSync(usableThenExpired(it.id)) }) { lists -> servers.zip(lists.toList()) }
         }
     }
 
+    /** The server's usable accounts, then those whose sign-in expired (true = expired). */
+    private fun usableThenExpired(serverId: String): Flow<List<Pair<AccountSummary, Boolean>>> =
+        combine(catalog.accounts(serverId), catalog.expiredAccounts(serverId)) { ok, expired -> ok.map { it to false } + expired.map { it to true } }
+
     /** Each account with its own session's sync status (read as that session only). */
-    private fun withSync(accounts: Flow<List<AccountSummary>>): Flow<List<Pair<AccountSummary, SyncStatus>>> = accounts.flatMapLatest { list ->
+    private fun withSync(accounts: Flow<List<Pair<AccountSummary, Boolean>>>): Flow<List<Triple<AccountSummary, Boolean, SyncStatus>>> = accounts.flatMapLatest { list ->
         if (sync == null || list.isEmpty()) {
-            flowOf(list.map { it to SyncStatus.NONE })
+            flowOf(list.map { (a, expired) -> Triple(a, expired, SyncStatus.NONE) })
         } else {
-            combine(list.map { a -> sync.status(Session(a.serverId, a.userId)).map { a to it } }) { it.toList() }
+            combine(list.map { (a, expired) -> sync.status(Session(a.serverId, a.userId)).map { Triple(a, expired, it) } }) { it.toList() }
         }
     }
 
@@ -134,7 +149,9 @@ class ServersViewModel(
                     ServerItem(
                         id = server.id, name = server.name, version = server.version,
                         certificateChanged = server.pinInvalid,
-                        accounts = accounts.map { (it, synced) -> AccountItem(it.userId, it.userName, it.serverId == active?.serverId && it.userId == active.userId, synced) },
+                        accounts = accounts.map { (it, expired, synced) ->
+                            AccountItem(it.userId, it.userName, !expired && it.serverId == active?.serverId && it.userId == active.userId, synced, expired)
+                        },
                     )
                 },
                 confirm = local.confirm, busy = local.busy, sending = local.sending, error = local.error, notice = local.notice,
@@ -142,7 +159,12 @@ class ServersViewModel(
             )
         }.stateIn(viewModelScope, SharingStarted.Eagerly, ServersUiState())
 
-    fun switchTo(serverId: String, userId: String) = run { catalog.setActive(serverId, userId); null }
+    /** Only a usable account: an expired one is signed in again first. */
+    fun switchTo(serverId: String, userId: String) {
+        val account = state.value.servers.firstOrNull { it.id == serverId }?.accounts?.firstOrNull { it.userId == userId } ?: return
+        if (account.expired) return
+        run { catalog.setActive(serverId, userId); null }
+    }
 
     fun askSignOut(serverId: String, userId: String) {
         val server = state.value.servers.firstOrNull { it.id == serverId } ?: return
@@ -162,8 +184,9 @@ class ServersViewModel(
         local.update { it.copy(confirm = ask, error = null, notice = null) }
         val sync = sync ?: return
         viewModelScope.launch {
-            val waiting = server.accounts.sumOf { sync.waiting(Session(serverId, it.userId)) }
-            local.update { if (it.confirm == ask) it.copy(confirm = ask.copy(waiting = waiting)) else it }
+            val profiles = server.accounts.map { ProfileWaiting(it.userName, sync.waiting(Session(serverId, it.userId)), it.expired) }
+            val waiting = profiles.sumOf { it.waiting }
+            local.update { if (it.confirm == ask) it.copy(confirm = ask.copy(waiting = waiting, profiles = profiles.filter { p -> p.waiting > 0 })) else it }
         }
     }
 
@@ -182,7 +205,8 @@ class ServersViewModel(
                 is Confirm.SignOut -> afterSending(listOf(Session(pending.serverId, pending.userId))) {
                     ServersNotice.SignedOutHereOnly.takeUnless { auth.signOut(pending.serverId, pending.userId) }
                 }
-                is Confirm.RemoveServer -> afterSending(server?.accounts.orEmpty().map { Session(pending.serverId, it.userId) }) {
+                // An expired profile cannot send: only the usable ones are tried first (the dialog says so).
+                is Confirm.RemoveServer -> afterSending(server?.accounts.orEmpty().filterNot { it.expired }.map { Session(pending.serverId, it.userId) }) {
                     ServersNotice.RemovedHereOnly.takeUnless { auth.removeServer(pending.serverId) }
                 }
             }

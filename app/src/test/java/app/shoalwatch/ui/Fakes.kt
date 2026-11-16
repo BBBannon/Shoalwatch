@@ -138,6 +138,8 @@ class FakeProber : CertificateProber {
 class FakeCatalog(servers: List<Server> = emptyList(), accounts: List<AccountSummary> = emptyList(), active: AccountSummary? = null) : ServerCatalog {
     val serverList = MutableStateFlow(servers)
     val accountList = MutableStateFlow(accounts)
+    /** Accounts whose sign-in the server rejected (kept for their waiting changes; never active). */
+    val expiredList = MutableStateFlow<List<AccountSummary>>(emptyList())
     val activeFlow = MutableStateFlow(active)
     val warmed = CompletableDeferred<Unit>()
     val upserts = mutableListOf<Server>()
@@ -167,6 +169,7 @@ class FakeCatalog(servers: List<Server> = emptyList(), accounts: List<AccountSum
     override val activeAccount: Flow<AccountSummary?> = read(null) { activeFlow }
     override fun activeSession(): Flow<Session?> = activeAccount.map { a -> a?.let { Session(it.serverId, it.userId) } }
     override fun accounts(serverId: String): Flow<List<AccountSummary>> = read(emptyList()) { accountList.map { l -> l.filter { it.serverId == serverId } } }
+    override fun expiredAccounts(serverId: String): Flow<List<AccountSummary>> = read(emptyList()) { expiredList.map { l -> l.filter { it.serverId == serverId } } }
     override suspend fun server(id: String): Server? = serverList.value.firstOrNull { it.id == id }
 
     override suspend fun upsertServer(s: Server) {

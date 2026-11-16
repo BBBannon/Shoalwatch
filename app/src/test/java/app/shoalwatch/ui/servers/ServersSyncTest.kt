@@ -116,6 +116,41 @@ class ServersSyncTest {
         assertEquals("never another server's profile", setOf(bens, amys), sync.sent.map { it.first }.toSet())
     }
 
+    // ---- Tasks 9-10 review I2: a profile whose sign-in the server rejected
+
+    private val dan = AccountSummary("s1", "u4", "dan")
+    private val dans = Session("s1", "u4")
+
+    @Test fun aRejectedProfileIsListedAsExpiredWithItsOwnLineAndCannotBeSwitchedTo() = runTest(main.dispatcher) {
+        catalog.expiredList.value = listOf(dan)
+        sync.set(dans, waiting = 6, needsSignIn = true)
+        val vm = vm()
+        runCurrent()
+        val row = vm.state.value.servers.first { it.id == "s1" }.accounts.single { it.userName == "dan" }
+        assertTrue(row.expired)
+        assertFalse(row.isActive)
+        assertEquals(SyncStatus(6, 0, true, null), row.sync)
+        vm.switchTo("s1", "u4")
+        runCurrent()
+        assertTrue("never made active without signing in", catalog.activated.isEmpty())
+    }
+
+    @Test fun removingAServerCountsAndNamesEveryProfilesChangesIncludingAnExpiredOne() = runTest(main.dispatcher) {
+        catalog.expiredList.value = listOf(dan)
+        sync.set(bens, waiting = 1)
+        sync.set(dans, waiting = 6, needsSignIn = true)
+        val vm = vm()
+        runCurrent()
+        vm.askRemoveServer("s1"); runCurrent()
+        val ask = vm.state.value.confirm as Confirm.RemoveServer
+        assertEquals(7, ask.waiting)
+        assertEquals(listOf(ProfileWaiting("ben", 1, expired = false), ProfileWaiting("dan", 6, expired = true)), ask.profiles)
+        assertTrue("dan's sign-in goes with the server too", "dan" in ask.accountNames)
+        vm.confirm(); runCurrent()
+        advanceTimeBy(10_001)
+        assertEquals("an expired profile cannot send first: never sent as", setOf(bens, amys), sync.sent.map { it.first }.toSet())
+    }
+
     @Test fun withoutTheSyncSeamSignOutIsAsBefore() = runTest(main.dispatcher) {
         val vm = ServersViewModel(catalog, auth)
         vm.askSignOut("s1", "u2"); runCurrent()

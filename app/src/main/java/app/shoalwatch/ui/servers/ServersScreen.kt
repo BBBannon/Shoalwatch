@@ -57,6 +57,8 @@ class ServersActions(
     val onDismissConfirm: () -> Unit,
     val onDismissNotice: () -> Unit = {},
     val onAdmin: () -> Unit = {},
+    /** An expired sign-in: sign in again as that profile (its name filled in). */
+    val onSignInAgain: (serverId: String, userName: String) -> Unit = { _, _ -> },
 )
 
 /** Every saved server with its accounts: switch the active one, add, sign out, remove, open connection settings. */
@@ -113,6 +115,8 @@ fun ServersScreen(state: ServersUiState, actions: ServersActions) {
                 Text(stringResource(R.string.dl_remove_downloads))
                 if (confirm.accountNames.isNotEmpty()) Text(stringResource(R.string.confirm_remove_revoke))
                 if (confirm.waiting > 0) Text(pluralStringResource(R.plurals.remove_server_waiting, confirm.waiting, confirm.waiting.toString()))
+                confirm.profiles.forEach { BulletRow(pluralStringResource(R.plurals.remove_profile_waiting, it.waiting, it.userName, it.waiting.toString())) }
+                if (confirm.profiles.any { it.expired }) Text(stringResource(R.string.remove_expired_not_sent))
             }
         }
         null -> Unit
@@ -134,7 +138,9 @@ private fun ServerCard(server: ServerItem, actions: ServersActions, showAdmin: B
             if (server.accounts.isEmpty()) {
                 Text(stringResource(R.string.no_accounts), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 12.dp))
             } else {
-                Column(Modifier.padding(top = 8.dp).selectableGroup()) { server.accounts.forEach { AccountRow(server.id, it, actions) } }
+                Column(Modifier.padding(top = 8.dp).selectableGroup()) {
+                    server.accounts.forEach { if (it.expired) ExpiredAccountRow(server.id, it, actions) else AccountRow(server.id, it, actions) }
+                }
             }
             IconTextButton(stringResource(R.string.server_add_account), Icons.Filled.Add, { actions.onAddAccount(server.id) })
             IconTextButton(stringResource(R.string.server_settings), Icons.Filled.Settings, { actions.onSettings(server.id) })
@@ -145,6 +151,32 @@ private fun ServerCard(server: ServerItem, actions: ServersActions, showAdmin: B
             IconTextButton(stringResource(R.string.server_remove), Icons.Filled.Delete, { actions.onAskRemove(server.id) }, caution = true)
         }
     }
+}
+
+/**
+ * A profile whose sign-in the server rejected: "Sign-in expired" and "Sign in again" (its name filled in), with its sync line
+ * ("Sign in again to send 6 changes."). Not a radio: it cannot be made active until it is signed in again (Tasks 9-10 review I2).
+ */
+@Composable
+private fun ExpiredAccountRow(serverId: String, account: AccountItem, actions: ServersActions) {
+    val againLabel = stringResource(R.string.account_sign_in_again_cd, account.userName)
+    val signOutLabel = stringResource(R.string.sign_out_cd, account.userName)
+    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Icon(Icons.Filled.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+        Column(Modifier.weight(1f)) {
+            Text(account.userName, style = MaterialTheme.typography.bodyLarge)
+            Text(stringResource(R.string.account_sign_in_expired), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
+        }
+    }
+    Row(Modifier.fillMaxWidth().padding(start = 36.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        TextButton(onClick = { actions.onSignInAgain(serverId, account.userName) }, modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = againLabel }) {
+            Text(stringResource(R.string.account_sign_in_again))
+        }
+        TextButton(onClick = { actions.onAskSignOut(serverId, account.userId) }, modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = signOutLabel }) {
+            Text(stringResource(R.string.sign_out))
+        }
+    }
+    SyncStatusLine(account.sync, System.currentTimeMillis(), Modifier.fillMaxWidth().padding(start = 36.dp, bottom = 8.dp))
 }
 
 /** One account: tapping the row makes it the active one (shown by a tick and the word "Active"); "Sign out" is separate. */

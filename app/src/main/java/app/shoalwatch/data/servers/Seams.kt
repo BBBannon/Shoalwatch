@@ -5,6 +5,7 @@ import app.shoalwatch.data.servers.Session
 import app.shoalwatch.net.CertificateInfo
 import app.shoalwatch.net.ServerAddress
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -33,6 +34,12 @@ interface ServerCatalog {
     /** Who requests are made as: the active account, token-free. Waits for the token warm like [activeAccount]. */
     fun activeSession(): Flow<Session?>
     fun accounts(serverId: String): Flow<List<AccountSummary>>
+
+    /**
+     * The server's accounts whose sign-in the server rejected (a 401): kept, with their waiting changes, until signed in again,
+     * but never active or usable (Tasks 9-10 review I2). Token-free like [accounts].
+     */
+    fun expiredAccounts(serverId: String): Flow<List<AccountSummary>> = flowOf(emptyList())
     suspend fun server(id: String): Server?
     fun observeServer(id: String): Flow<Server?>
     suspend fun upsertServer(s: Server)
@@ -134,6 +141,7 @@ class StoreCatalog(private val store: ServerStore) : ServerCatalog {
     override val activeAccount = store.activeAccount
     override fun activeSession(): Flow<Session?> = store.activeAccount.map { a -> a?.let { Session(it.serverId, it.userId) } }.distinctUntilChanged()
     override fun accounts(serverId: String) = store.accounts(serverId)
+    override fun expiredAccounts(serverId: String) = store.accounts(serverId, expired = true)
     override suspend fun server(id: String) = store.server(id)
     override fun observeServer(id: String) = store.observeServer(id)
     override suspend fun upsertServer(s: Server) = store.upsertServer(s)

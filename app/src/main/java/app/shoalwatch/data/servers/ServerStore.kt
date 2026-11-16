@@ -182,11 +182,11 @@ class ServerStore(
         }
     }
 
-    /** A server's accounts, without tokens. */
-    fun accounts(serverId: String): Flow<List<AccountSummary>> = reads.guard("accounts", emptyList()) {
+    /** A server's accounts that can be used, without tokens; with [expired], those whose sign-in was rejected (kept for their changes). */
+    fun accounts(serverId: String, expired: Boolean = false): Flow<List<AccountSummary>> = reads.guard("accounts", emptyList()) {
         flow {
             awaitWarmed()
-            emitAll(combine(accountDao.observeRowsForServer(serverId), usable) { rows, ok -> rows.filter { it.key() in ok }.map { it.summary() } })
+            emitAll(combine(accountDao.observeRowsForServer(serverId), usable) { rows, ok -> rows.filter { (it.key() in ok) != expired }.map { it.summary() } })
         }
     }
 

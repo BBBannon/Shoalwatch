@@ -66,7 +66,9 @@ internal object Routes {
     const val PLAYER = "play/{$ARG_ITEM}?$ARG_FROM={$ARG_FROM}"
     const val SERVERS = "servers"
     const val ARG_SERVER = "serverId"
-    const val SIGN_IN = "sign_in/{$ARG_SERVER}"
+    /** [ARG_USER]: a profile's name to fill in (signing in again after the server rejected its sign-in); optional. */
+    const val ARG_USER = "user"
+    const val SIGN_IN = "sign_in/{$ARG_SERVER}?$ARG_USER={$ARG_USER}"
     const val SERVER_EDIT = "server/{$ARG_SERVER}"
     /** One downloaded series, offline (Milestone 4). A malformed id reads as "This is no longer available". */
     const val DOWNLOADED_SERIES = "downloads/series/{$ARG_SERIES}"
@@ -90,7 +92,7 @@ internal object Routes {
     fun player(itemId: String, from: StartFrom) = "play/${Uri.encode(itemId)}?$ARG_FROM=${if (from == StartFrom.RESUME) FROM_RESUME else FROM_START}"
     const val FROM_RESUME = "resume"
     const val FROM_START = "start"
-    fun signIn(serverId: String) = "sign_in/${Uri.encode(serverId)}"
+    fun signIn(serverId: String, userName: String? = null) = "sign_in/${Uri.encode(serverId)}" + (userName?.let { "?$ARG_USER=${Uri.encode(it)}" } ?: "")
     fun serverEdit(serverId: String) = "server/${Uri.encode(serverId)}"
 }
 
@@ -149,7 +151,9 @@ private fun AppNavHost(graph: AppGraph, start: String, openTab: String?, onTabOp
     ) {
         composable(Routes.WELCOME) { AddServerRoute(graph, nav, firstRun = true) }
         composable(Routes.ADD_SERVER) { AddServerRoute(graph, nav, firstRun = false) }
-        composable(Routes.SIGN_IN, serverArg) { SignInRoute(graph, nav, it.arguments?.getString(Routes.ARG_SERVER).orEmpty()) }
+        composable(Routes.SIGN_IN, serverArg + navArgument(Routes.ARG_USER) { type = NavType.StringType; nullable = true; defaultValue = null }) {
+            SignInRoute(graph, nav, it.arguments?.getString(Routes.ARG_SERVER).orEmpty(), it.arguments?.getString(Routes.ARG_USER))
+        }
         composable(Routes.HOME, listOf(navArgument(Routes.ARG_FRESH) { type = NavType.BoolType; defaultValue = false })) {
             HomeRoute(graph, nav, fresh = it.arguments?.getBoolean(Routes.ARG_FRESH) == true)
         }

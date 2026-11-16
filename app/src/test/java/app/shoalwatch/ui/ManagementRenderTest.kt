@@ -14,6 +14,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.Density
 import androidx.test.core.app.ApplicationProvider
 import app.shoalwatch.R
@@ -28,6 +30,7 @@ import app.shoalwatch.ui.downloads.assertNoTextUnder13sp
 import app.shoalwatch.ui.downloads.syncLineNode
 import app.shoalwatch.ui.servers.Destructive
 import app.shoalwatch.ui.servers.Confirm
+import app.shoalwatch.ui.servers.ProfileWaiting
 import app.shoalwatch.ui.servers.EditPane
 import app.shoalwatch.ui.servers.HeaderItem
 import app.shoalwatch.ui.servers.PaneActions
@@ -166,6 +169,27 @@ class ManagementRenderTest {
         val button = rule.onAllNodes(hasText("Sending changes…") and hasClickAction()).fetchSemanticsNodes().single()
         assertTrue("not tappable again", button.config.contains(androidx.compose.ui.semantics.SemanticsProperties.Disabled))
         assertTrue("the spinner is there", rule.onAllNodes(SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.ProgressBarRangeInfo), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
+    }
+
+    @Test fun anExpiredSignInSaysSoWithSignInAgainAndItsCountAndIsNotARadio() {
+        var again: Pair<String, String>? = null
+        val actions = ServersActions({}, {}, { _, _ -> error("not switchable") }, { _, _ -> }, {}, {}, {}, {}, {}, onSignInAgain = { s, name -> again = s to name })
+        val expired = AccountItem("u4", "dan", isActive = false, sync = app.shoalwatch.data.sync.SyncStatus(6, 0, true, null), expired = true)
+        val state = servers.copy(servers = servers.servers.take(1).map { it.copy(accounts = it.accounts + expired) })
+        show { ServersScreen(state, actions) }
+        assertTrue(shown(text(R.string.account_sign_in_expired)))
+        assertTrue(shown("Sign in again to send 6 changes."))
+        rule.onNode(hasContentDescription(text(R.string.account_sign_in_again_cd, "dan"))).performClick()
+        org.junit.Assert.assertEquals(state.servers.first().id to "dan", again)
+        rule.onNodeWithText("dan").performClick() // the name itself does nothing
+    }
+
+    @Test fun theRemoveDialogNamesEachProfilesWaitingChangesAndSaysAnExpiredOnesCannotBeSent() {
+        val ask = Confirm.RemoveServer("s1", "Den", listOf("ben", "dan"), waiting = 7, profiles = listOf(ProfileWaiting("ben", 1, false), ProfileWaiting("dan", 6, true)))
+        show { ServersScreen(servers.copy(confirm = ask), serversActions) }
+        assertTrue(shown(context.resources.getQuantityString(R.plurals.remove_profile_waiting, 1, "ben", "1")))
+        assertTrue(shown(context.resources.getQuantityString(R.plurals.remove_profile_waiting, 6, "dan", "6")))
+        assertTrue(shown(text(R.string.remove_expired_not_sent)))
     }
 
     @Test fun whileSendingCancelIsDisabled() {

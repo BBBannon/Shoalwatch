@@ -3,6 +3,7 @@ package app.shoalwatch.ui.nav
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -65,9 +66,12 @@ internal fun AddServerRoute(graph: AppGraph, nav: NavHostController, firstRun: B
 }
 
 @Composable
-internal fun SignInRoute(graph: AppGraph, nav: NavHostController, serverId: String) {
+internal fun SignInRoute(graph: AppGraph, nav: NavHostController, serverId: String, userName: String? = null) {
     val vm = graphViewModel(key = serverId) { SignInViewModel(serverId, graph.authenticator, graph.serverCatalog, graph.addressSelector) }
     val state by vm.state.collectAsStateWithLifecycle()
+    // "Sign in again" for an expired sign-in fills in that profile's name once (not again after a rotation the user typed over).
+    var prefilled by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+    LaunchedEffect(userName) { if (userName != null && !prefilled) { prefilled = true; vm.onUsernameChange(userName) } }
     LaunchedEffect(state.signedIn) { if (state.signedIn) nav.toHome() }
     val actions = remember(vm) {
         SignInActions(
@@ -94,6 +98,7 @@ internal fun ServersRoute(graph: AppGraph, nav: NavHostController) {
             onAskSignOut = vm::askSignOut,
             onAskRemove = vm::askRemoveServer,
             onAddAccount = { nav.navigate(Routes.signIn(it)) },
+            onSignInAgain = { serverId, userName -> nav.navigate(Routes.signIn(serverId, userName)) },
             onSettings = { nav.navigate(Routes.serverEdit(it)) },
             onConfirm = vm::confirm,
             onDismissConfirm = vm::dismissConfirm,
