@@ -32,6 +32,9 @@ import app.shoalwatch.data.db.library.UserDataEntity
 import app.shoalwatch.data.db.library.ViewDao
 import app.shoalwatch.data.db.library.ViewEntity
 import app.shoalwatch.data.db.library.VisibleItemEntity
+import app.shoalwatch.data.db.profile.ProfileDao
+import app.shoalwatch.data.db.profile.ProfileLockEntity
+import app.shoalwatch.data.db.profile.ProfilePlaybackEntity
 import app.shoalwatch.data.db.playback.TrackChoiceDao
 import app.shoalwatch.data.db.playback.TrackChoiceEntity
 import app.shoalwatch.data.db.sync.OutboxDao
@@ -53,8 +56,9 @@ import app.shoalwatch.data.db.sync.SyncStateEntity
         DownloadSettingsEntity::class, OfflinePlayEntity::class, DownloadPermissionEntity::class,
         OutboxEntity::class, SyncMarkEntity::class, SyncStateEntity::class, RejectedSignInEntity::class,
         ReleasedEpisodeEntity::class, ProfileDownloadSettingsEntity::class, AutoNextRequestEntity::class,
+        ProfileLockEntity::class, ProfilePlaybackEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 @TypeConverters(ItemKindConverter::class, Converters::class, SyncConverters::class)
@@ -71,13 +75,14 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun offlinePlayDao(): OfflinePlayDao
     abstract fun outboxDao(): OutboxDao
     abstract fun housekeepingDao(): HousekeepingDao
+    abstract fun profileDao(): ProfileDao
 
     companion object {
         const val FILE_NAME = "shoalwatch.db"
 
         fun open(context: Context): AppDatabase =
             Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, FILE_NAME)
-                .addMigrations(Migration1To2, Migration2To3, Migration3To4, Migration4To5)
+                .addMigrations(Migration1To2, Migration2To3, Migration3To4, Migration4To5, Migration5To6)
                 .build()
     }
 }
