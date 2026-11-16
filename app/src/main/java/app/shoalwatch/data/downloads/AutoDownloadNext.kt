@@ -89,7 +89,8 @@ internal class AutoDownloadNext(
         try {
             val plan = downloads.prepare(s, DownloadTarget.NextUnwatched(r.seriesId, r.anchorItemId, count), settings.defaultQuality ?: r.quality)
             if (plan.items.isEmpty()) return done(r)
-            if (!plan.enoughSpace) {
+            // All already on the phone (joined at 0 bytes): the space reserve is no reason to wait (Tasks 13-14 review M3).
+            if (!plan.enoughSpace && !plan.items.all { it.shareOnly }) {
                 // No partial batch: nothing is started; Storage says so, and the next start or trigger tries again.
                 dao.updateAutoNext(r.serverId, r.userId, r.seriesId, r.anchorItemId, r.requestedAt, r.tries, now())
                 return

@@ -13,6 +13,7 @@ import app.shoalwatch.ui.FakeConnections
 import app.shoalwatch.ui.address
 import app.shoalwatch.ui.browse.FakeDownloads
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -44,6 +45,8 @@ class AutoDownloadNextTest : DownloadTestBase() {
     private var items = 2
     private var enough = true
     private var failure: AppError? = null
+    /** Every planned item is already on the phone (joined at 0 bytes). */
+    private var shareOnly = false
 
     @Before fun setUp() {
         prefs = DownloadPrefs(ApplicationProvider.getApplicationContext<android.content.Context>().getSharedPreferences("auto-next-test", 0).also { it.edit().clear().commit() })
@@ -51,7 +54,8 @@ class AutoDownloadNextTest : DownloadTestBase() {
             targets += target to quality
             failure?.let { throw it }
             DownloadPlan(
-                s, quality, (1..items).map { PlannedItem(id("next$it"), quality, 100, false, true) }, emptyList(), 0, 100L * items, 1_000,
+                s, quality, (1..items).map { PlannedItem(id("next$it"), quality, if (shareOnly) 0 else 100, shareOnly, true) }, emptyList(), 0,
+                if (shareOnly) 0 else 100L * items, 1_000,
                 enough, StorageKind.INTERNAL, null, false,
             )
         }
@@ -162,6 +166,17 @@ class AutoDownloadNextTest : DownloadTestBase() {
         prefs.setMobileData(true)
         auto.runPending(a)
         assertEquals(listOf("prepare", "start:2"), downloads.calls)
+    }
+
+    /** Tasks 13-14 review M3: the next episodes are all on the phone already, so the space reserve is no reason to wait. */
+    @Test fun aPlanOfOnlyCopiesAlreadyHereIsStartedEvenWithLittleSpace() = runTest {
+        autoNext(a, 2)
+        shareOnly = true
+        enough = false // the planner's reserve (1 GiB internal) is more than is free
+        auto().onWatched(a, e1.id).join()
+        assertEquals(listOf("start:2"), started())
+        assertNull("no false \"not enough free space\": the request goes", request())
+        assertEquals(false, db.housekeepingDao().observeAutoNextBlocked(a.serverId, a.userId).first())
     }
 
     @Test fun notEnoughSpaceStartsNothingAndSetsBlockedAt() = runTest {

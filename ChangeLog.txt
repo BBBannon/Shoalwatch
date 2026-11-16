@@ -1,3 +1,4 @@
+v1.114 — 16/11/2026 — Storage no longer says the next episodes could not be downloaded for lack of space when they are already on the phone.
 v1.113 — 16/11/2026 — Pressing "Watched — delete download" just as the player closes no longer makes the next play of that download count as a full watch.
 v1.112 — 16/11/2026 — With "Always delete when finished", the player now says the download is deleted when it closes unless another profile still needs it.
 v1.111 — 16/11/2026 — "Watched together" now still deletes the download and marks you watched if one of the other profiles could not be marked.
