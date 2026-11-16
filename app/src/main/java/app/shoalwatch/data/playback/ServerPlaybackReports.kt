@@ -43,18 +43,18 @@ class ServerPlaybackReports internal constructor(
         // Held for the whole report, so a drain already running for this profile cannot send the tick first (review I1).
         inFlight.hold(s, r.itemId)
         val outcome: ReportOutcome
-        val takenBack: Boolean
         try {
             record(s, r, finished, reached = false)
             outcome = send("stop") { gateway.reportStopped(s, r) }
             val kind = (outcome as? ReportOutcome.NotSent)?.kind
             val heard = kind == null || kind in HEARD
-            takenBack = heard && !finished
-            if (takenBack) record(s, r, finished = false, reached = true)
+            if (heard && !finished) record(s, r, finished = false, reached = true)
         } finally {
             inFlight.release(s, r.itemId)
         }
-        if (!takenBack) changed(s) // a drain that passed over the item looks again
+        // After every hold (Tasks 11-12 review M1): a drain that passed over the item looks again, for what is left of the stop
+        // and for anything the user changed while the report was in flight. Cheap when nothing is due.
+        changed(s)
         return outcome
     }
 

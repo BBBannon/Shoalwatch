@@ -66,12 +66,16 @@ class ServerPlaybackReportsTest {
      * Tasks 6-8 review M3: the stop is saved and queued (not yet sent) BEFORE the report leaves, so a process death mid-send
      * cannot lose it; once the server has heard an unfinished stop its queued position goes again (never sent twice).
      */
-    @Test fun aHeardStopIsQueuedBeforeTheSendThenTakenBackAndNothingIsKicked() = runTest {
+    /**
+     * Tasks 11-12 review M1: the hold ends with a kick even when the heard stop took its own row back, so a change the user made
+     * while the report was in flight (passed over by a drain during the hold) is sent now, not at some later kick.
+     */
+    @Test fun aHeardStopIsQueuedBeforeTheSendThenTakenBackAndTheOutboxLooksAgain() = runTest {
         val r = reports()
         assertEquals(ReportOutcome.Sent, r.stopped(BEN, report(61_000), finished = false))
         assertEquals(listOf("stop:ben:$ITEM:61000:false:unsent", "stop:ben:$ITEM:61000:false"), playstate.calls)
         assertEquals(listOf("stopped@61000"), gateway.calls)
-        assertTrue("nothing left to send", kicked.isEmpty())
+        assertEquals("once the hold ends, as after every stop", listOf("kick:ben"), kicked)
     }
 
     @Test fun theStopIsDurableBeforeTheReportLeavesSoAKillMidSendLosesNothing() = runTest {
