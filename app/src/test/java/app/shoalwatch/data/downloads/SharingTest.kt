@@ -206,6 +206,39 @@ class SharingTest : DownloadHousekeepingTestBase() {
         assertTrue(repo.status(b, films[2].id).first() != null)
     }
 
+    /** Final review L-1: one item the server keeps failing on (a 500) does not stop the others being re-asked. */
+    @Test fun oneItemThatKeepsFailingDoesNotStopTheRestBeingReAsked() = runBlocking {
+        val films = (1..3).map { item("p$it") }
+        seen(a, *films.toTypedArray()); queued(a, *films.toTypedArray()); complete(*films.toTypedArray())
+        repo.setSharing(a, true)
+        seen(b, *films.toTypedArray())
+        confirm(b, films[0]) // the oldest confirmation, so it is asked first
+        clock += 1_000
+        confirm(b, films[1], films[2])
+        clock += 8 * DAY
+        refreshFailsFor[films[0].id] = app.shoalwatch.core.AppError.of(app.shoalwatch.core.AppError.Kind.SERVER_ERROR)
+        facts.allow(films[0].id, canDownload = true)
+        facts.allow(films[1].id, canDownload = false)
+        facts.allow(films[2].id, canDownload = true)
+        housekeeping.reconfirm(b)
+        assertEquals("every item is still refreshed", films.map { it.id }.toSet(), refreshedIds.toSet())
+        assertEquals("and the permission check runs", 1, facts.calls.size)
+        assertFalse("the explicit no for another item is applied", store.isConfirmed(key(films[1]), b.userId))
+        assertTrue(store.isConfirmed(key(films[2]), b.userId))
+    }
+
+    @Test fun aSignInThatNoLongerWorksStopsReconfirm() = runBlocking {
+        aDownloads()
+        repo.setSharing(a, true)
+        seen(b, film, series, season1, e1)
+        confirm(b, film)
+        clock += 8 * DAY
+        refreshFails = app.shoalwatch.core.AppError.of(app.shoalwatch.core.AppError.Kind.UNAUTHORISED)
+        housekeeping.reconfirm(b)
+        assertTrue("no facts call", facts.calls.isEmpty())
+        assertTrue(store.isConfirmed(key(film), b.userId))
+    }
+
     @Test fun aTransportFailureStopsReconfirmAndChangesNothing() = runBlocking {
         aDownloads()
         repo.setSharing(a, true)

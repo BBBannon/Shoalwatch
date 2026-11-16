@@ -80,8 +80,9 @@ internal class DownloadHousekeeping(
      * A 403 or 404 revokes that profile's record (the library's rule), so the item is hidden from it at once; the owner still
      * sees it. Then ONE `facts` call records this profile's own CanDownload: true is a confirmed permission (the strict sharing
      * rule), anything else removes it, and an explicit false also ends an ownership this sign-in never fetched (its files go if
-     * it was the last owner: final review M-1). A refused item (the library revokes it and throws `SERVER_NOT_FOUND`) does not stop the rest or the permission check
-     * (Tasks 11-12 review I-2); any other failure (offline, say) stops it, changing nothing more: it is asked again next time.
+     * it was the last owner: final review M-1). A refused item (the library revokes it and throws `SERVER_NOT_FOUND`, Tasks 11-12
+     * review I-2) or one whose refresh fails otherwise (a 500, say: final review L-1) does not stop the rest or the permission
+     * check. Only offline or a sign-in that no longer works ([STOPS]) stops it, changing nothing more: it is asked again next time.
      */
     suspend fun reconfirm(s: Session) = withContext(io) {
         val now = now()
@@ -91,8 +92,11 @@ internal class DownloadHousekeeping(
             for (id in ids) {
                 try {
                     library.refresh(s, RefreshTarget.Item(id))
-                } catch (e: AppError) {
-                    if (e.kind != AppError.Kind.SERVER_NOT_FOUND && e.kind != AppError.Kind.FORBIDDEN) throw e // refused: already revoked
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // Refused (already revoked), or this one item failed: the others are still asked (final review L-1).
+                    if (AppError.from(e).kind in STOPS) throw e
                 }
             }
             val asked = stale.map { it.first }
@@ -132,6 +136,8 @@ internal class DownloadHousekeeping(
 
     private companion object {
         const val TAG = "DownloadHousekeeping"
+        /** The failures that end a re-ask: nothing more can be asked of the server with this sign-in now. */
+        val STOPS = setOf(AppError.Kind.OFFLINE, AppError.Kind.UNAUTHORISED, AppError.Kind.NOT_SIGNED_IN)
         const val LIMIT = 50
     }
 }

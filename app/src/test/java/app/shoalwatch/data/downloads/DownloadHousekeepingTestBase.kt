@@ -44,6 +44,8 @@ abstract class DownloadHousekeepingTestBase : DownloadQueueTestBase() {
     internal val refused = mutableSetOf<String>()
     internal val refreshedIds = mutableListOf<String>()
     internal var refreshFails: app.shoalwatch.core.AppError? = null
+    /** Single items whose refresh throws this error (final review L-1). */
+    internal val refreshFailsFor = mutableMapOf<String, app.shoalwatch.core.AppError>()
 
     /** Whether the server can be reached now, as `AddressSelector` would say (the ownership rule reads it). */
     internal var serverReachable = false
@@ -53,6 +55,7 @@ abstract class DownloadHousekeepingTestBase : DownloadQueueTestBase() {
             val id = (target as RefreshTarget.Item).itemId
             refreshedIds += id
             refreshFails?.let { throw it }
+            refreshFailsFor[id]?.let { throw it }
             if (id in refused) {
                 library.revokeVisibility(s, id)
                 throw app.shoalwatch.core.AppError.of(app.shoalwatch.core.AppError.Kind.SERVER_NOT_FOUND)
