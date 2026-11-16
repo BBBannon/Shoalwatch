@@ -105,12 +105,12 @@ internal class DownloadQueue(
 
     private suspend fun run(j: QueueJob): QueueStep {
         var folder: File? = null
-        return try {
+        val step = kotlin.run attempt@{ try {
             val row = current(j.key)
-            val s = fetcherOf(j.key) ?: return failed(j.key, DownloadFailure.SIGN_IN_NEEDED)
-            val dir = paths.itemFolder(j.key, row.storage, row.volumeId)?.also { it.mkdirs() } ?: return failed(j.key, DownloadFailure.STORAGE_MISSING)
+            val s = fetcherOf(j.key) ?: return@attempt failed(j.key, DownloadFailure.SIGN_IN_NEEDED)
+            val dir = paths.itemFolder(j.key, row.storage, row.volumeId)?.also { it.mkdirs() } ?: return@attempt failed(j.key, DownloadFailure.STORAGE_MISSING)
             folder = dir
-            if (!QueueSpace.fits(volumes, row, QueueSpace.remaining(row))) return failed(j.key, DownloadFailure.NO_SPACE)
+            if (!QueueSpace.fits(volumes, row, QueueSpace.remaining(row))) return@attempt failed(j.key, DownloadFailure.NO_SPACE)
             j.status(null)
             val fetched = if (row.quality == DownloadQuality.ORIGINAL) original(j, s, dir) else conversion(j, s, dir)
             bestEffort { extras.segments(s, j.key) }
@@ -131,7 +131,12 @@ internal class DownloadQueue(
             // staying RUNNING at the head of the queue for ever (Tasks 9-10 review I-3). Logged by class only.
             AppLog.w(TAG, "download step failed: ${e.javaClass.simpleName}")
             retry(j.key, (e as? AppError)?.kind ?: AppError.Kind.UNKNOWN)
-        }
+        } }
+        // A removal the step did not see (it ended in a retry or a failure, with no later write to find the row gone), after
+        // which a fetcher may have made the folder again (`HlsFetcher.open`'s mkdirs, a part file): no folder is left behind
+        // (final review L-5). A new row of the same item cannot be running: this is the one drain.
+        folder?.let { dir -> if (store.get(j.key) == null) { live.remove(j.key); paths.deleteInside(dir) } }
+        return step
     }
 
     /** The earliest owner (by when they added it) that can still send. */

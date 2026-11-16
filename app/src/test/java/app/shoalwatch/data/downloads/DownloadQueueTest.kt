@@ -60,6 +60,25 @@ class DownloadQueueTest : DownloadQueueTestBase() {
         assertEquals(listOf<Long?>(10_000), verifier.runtimes)
     }
 
+    /**
+     * Final review L-5: a removal during a fetch whose result is a retry or a failure (no later write to find the row gone) still
+     * leaves no item folder behind: a fetcher may have made it again after the removal deleted it.
+     */
+    @Test fun aRemovalDuringAFetchThatEndsInARetryOrAFailureLeavesNoFolder() {
+        for (result in listOf<FetchResult>(FetchResult.Retry(AppError.Kind.NETWORK), FetchResult.Failed(DownloadFailure.SERVER_ERROR))) {
+            queued(a, f1)
+            playable()
+            files.steps += { c ->
+                runBlocking { store.removeOwner(a, f1.id) } // the Downloads tab's Cancel (its files already deleted)
+                c.part.parentFile!!.mkdirs(); c.part.writeBytes(ByteArray(10)) // and the fetcher writes on
+                result
+            }
+            drain()
+            assertNull(download(f1))
+            assertFalse("$result: no folder left", folder(f1).exists())
+        }
+    }
+
     @Test fun threeQueuedItemsCompleteInOrder() {
         queued(a, f1, f2, f3)
         playable(3)
