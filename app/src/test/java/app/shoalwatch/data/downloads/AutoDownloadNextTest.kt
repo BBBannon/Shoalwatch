@@ -184,6 +184,33 @@ class AutoDownloadNextTest : DownloadTestBase() {
         assertNull(request())
     }
 
+    /**
+     * Task 15 concern 2 (as e8693dd for sync): a NETWORK failure while the server is really gone sets the pause, and the probe
+     * then reads Offline. The server's return after Offline is a real reconnection and is never held by the pause.
+     */
+    @Test fun aReconnectionAfterOfflineIsNeverHeldByThePause() = runTest {
+        autoNext(a, 2)
+        connections.stateFor(a.serverId).value = Connection.Online(address("http://192.168.1.10:8096"), isHome = true)
+        watched.value = setOf(a.serverId)
+        val auto = auto()
+        auto.start()
+        runCurrent()
+        failure = AppError.of(AppError.Kind.NETWORK)
+        auto.onWatched(a, e1.id).join() // fails NETWORK: pause 1 min
+        assertNotNull("kept", request())
+        connections.stateFor(a.serverId).value = Connection.Checking(null)
+        runCurrent()
+        connections.stateFor(a.serverId).value = Connection.Offline() // the server is really gone
+        runCurrent()
+        failure = null
+        val handled = auto.onlineHandled.get()
+        connections.stateFor(a.serverId).value = Connection.Online(address("http://192.168.1.10:8096"), isHome = true) // back, inside the minute
+        eventually { auto.onlineHandled.get() == handled + 1 }
+        eventually { started().isNotEmpty() }
+        assertEquals(listOf("start:2"), started())
+        eventually { request() == null }
+    }
+
     @Test fun meteredWithMobileDataOffWaitsAndMobileDataOnRuns() = runTest {
         autoNext(a, 2)
         meteredNow = true

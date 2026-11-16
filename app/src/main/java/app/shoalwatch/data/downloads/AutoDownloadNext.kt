@@ -39,11 +39,11 @@ internal class AutoDownloadNext(
     /**
      * Per server, after a NETWORK or TIMEOUT failure: (ignore its cameOnline until, current pause). Such a failure makes ServerApi
      * re-probe, and the probe's new Online is a cameOnline, so without this a slow link would re-plan without end (Tasks 13-14
-     * review M4). The pause starts at [PAUSE_MIN_MS] and doubles to [PAUSE_MAX_MS]; a run that gets an answer ends it. Memory only.
+     * review M4). A return after Offline ([OnlineEvents.Reconnection.afterOffline]) is never held. The pause starts at [PAUSE_MIN_MS] and doubles to [PAUSE_MAX_MS]; a run that gets an answer ends it. Memory only.
      */
     private val paused = HashMap<String, Pair<Long, Long>>()
 
-    /** A test seam: counts each cameOnline event once it is fully handled. */
+    /** A test seam: counts each reconnection event once it is fully handled. */
     internal val onlineHandled = java.util.concurrent.atomic.AtomicInteger()
 
     /** (server, user, item) anchors already remembered in this process: a second report of the same watch is ignored. */
@@ -84,8 +84,9 @@ internal class AutoDownloadNext(
             for (s in sessions) runPending(s)
         }
         scope.launch(io) {
-            online.cameOnline.collect { serverId ->
-                if (isPaused(serverId)) { onlineHandled.incrementAndGet(); return@collect }
+            online.reconnections.collect { (serverId, afterOffline) ->
+                // The pause holds only a re-probe's Online; a return after Offline is a real reconnection and always runs.
+                if (!afterOffline && isPaused(serverId)) { onlineHandled.incrementAndGet(); return@collect }
                 val sessions = quietly { dao.allAutoNextRequests().filter { it.serverId == serverId }.map { Session(it.serverId, it.userId) }.distinct() } ?: emptyList()
                 for (s in sessions) runPending(s)
                 onlineHandled.incrementAndGet()
