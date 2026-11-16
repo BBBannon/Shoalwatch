@@ -1,3 +1,4 @@
+v1.113 — 16/11/2026 — Pressing "Watched — delete download" just as the player closes no longer makes the next play of that download count as a full watch.
 v1.112 — 16/11/2026 — With "Always delete when finished", the player now says the download is deleted when it closes unless another profile still needs it.
 v1.111 — 16/11/2026 — "Watched together" now still deletes the download and marks you watched if one of the other profiles could not be marked.
 v1.110 — 16/11/2026 — Pressing "Watched — delete download" at the end of an episode no longer counts the watch twice on your server, and the watch still reaches the server if the app is closed before the episode ends.
