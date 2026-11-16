@@ -75,6 +75,14 @@ class PlaystateRepository internal constructor(
             }
         }
 
+    /**
+     * "Watched — delete download" pressed while the saved copy plays (Tasks 11-12 review I1): watched on this phone only, nothing
+     * queued, because the coming LOCAL stop's PLAY carries the watch to the server (a PLAYED tick as well would count it twice).
+     * Its pending marker is kept (no refresh is asked for), so the server's older copy does not undo the tick before the stop.
+     */
+    override suspend fun markWatchedHere(s: Session, itemId: String) =
+        act(s, itemId, kick = false, keepPending = true) { item -> local.played(s, item, true) to null }
+
     /** A LOCAL play (a saved copy): a finished one is one PLAY at now (the play count goes up by one, once); else the position. */
     override suspend fun recordLocalStop(s: Session, itemId: String, positionMs: Long, finished: Boolean) =
         act(s, itemId) { item ->
@@ -91,7 +99,7 @@ class PlaystateRepository internal constructor(
 
     /** [change] makes the local change for the item as this user may see it, and says what to queue (null: nothing, the server has it). */
     /** [kick] false: the row is queued but no send is asked for (the caller asks once its own report has gone). */
-    private suspend fun act(s: Session, rawId: String, kick: Boolean = true, change: suspend (ItemRow) -> Pair<Touched, Change?>) {
+    private suspend fun act(s: Session, rawId: String, kick: Boolean = true, keepPending: Boolean = false, change: suspend (ItemRow) -> Pair<Touched, Change?>) {
         val id = JellyfinId.parseOrNull(rawId)?.value ?: throw AppError.of(AppError.Kind.SERVER_NOT_FOUND)
         val done = CompletableDeferred<Unit>()
         val mine = CompletableDeferred<Unit>()
@@ -99,7 +107,7 @@ class PlaystateRepository internal constructor(
         val work = scope.launch(io) {
             try {
                 before?.await() // never fails: a queue entry is only ever completed normally
-                done.completeWith(runCatching { perform(s, id, kick, change) })
+                done.completeWith(runCatching { perform(s, id, kick, keepPending, change) })
             } finally {
                 // Last in the queue means the queue is about to go idle: a marker no outbox row covers cannot be live, so it is cleared now.
                 try {
@@ -123,14 +131,14 @@ class PlaystateRepository internal constructor(
         }
     }
 
-    private suspend fun perform(s: Session, id: String, kick: Boolean, change: suspend (ItemRow) -> Pair<Touched, Change?>) {
+    private suspend fun perform(s: Session, id: String, kick: Boolean, keepPending: Boolean, change: suspend (ItemRow) -> Pair<Touched, Change?>) {
         val (touched, queued) = try {
             library.writeGated {
                 local.transaction {
                     val item = local.visibleItem(s, id) ?: throw AppError.of(AppError.Kind.SERVER_NOT_FOUND)
                     val (touched, queued) = change(item)
                     if (queued == null) {
-                        local.clearPending(s, touched.markedIds.filterNot { outbox.hasMark(s, it) }) // the server has it; an unsent row keeps its own
+                        if (!keepPending) local.clearPending(s, touched.markedIds.filterNot { outbox.hasMark(s, it) }) // the server has it; an unsent row keeps its own
                     } else {
                         val marks = OutboxStore.Marks(touched.markedIds, touched.removed.map { it.itemId to it.listKey })
                         outbox.enqueue(s, queued, marks, touched.recompute.map { it.key() })
@@ -143,7 +151,7 @@ class PlaystateRepository internal constructor(
         } catch (e: Exception) {
             throw AppError.from(e) // a transaction that throws leaves nothing changed, and nothing queued
         }
-        if (queued == null) library.refreshInBackground(s, touched.recompute) else if (kick) changed(s)
+        if (queued == null) { if (!keepPending) library.refreshInBackground(s, touched.recompute) } else if (kick) changed(s)
     }
 
     private suspend fun clearLeftovers(s: Session) {

@@ -35,8 +35,12 @@ internal class ReleaseStore(private val db: AppDatabase, private val now: () -> 
     private val offline = db.offlineLibraryDao()
     private val housekeeping = db.housekeepingDao()
 
-    /** One transaction under the lock. [s] must already be marked watched on this phone. */
-    suspend fun release(s: Session, itemId: String): Result = lock.locked { db.withTransaction { apply(s, verdict(s, itemId)) } }
+    /**
+     * One transaction under the lock. [watchedBy]: profiles the caller knows have watched it now (the releaser), counted by the
+     * EVERYONE rule whatever this phone's saved watched state says yet (Tasks 11-12 review I1); the rest are read from `user_data`.
+     */
+    suspend fun release(s: Session, itemId: String, watchedBy: Set<String> = emptySet()): Result =
+        lock.locked { db.withTransaction { apply(s, verdict(s, itemId, watchedBy)) } }
 
     /**
      * What [release] would do now, changing nothing (Storage's "Delete watched" summary): the same [verdict]. [bytes] is the
@@ -67,7 +71,7 @@ internal class ReleaseStore(private val db: AppDatabase, private val now: () -> 
         class Gone(val row: DownloadEntity, val tombstoneFor: List<String>, val shared: Boolean) : Verdict
     }
 
-    private suspend fun verdict(s: Session, itemId: String): Verdict {
+    private suspend fun verdict(s: Session, itemId: String, watchedBy: Set<String> = emptySet()): Verdict {
         val row = offline.getPlayable(s.serverId, s.userId, itemId) ?: return Verdict.NotYours
         val owners = dao.owners(s.serverId, itemId)
         if (dao.sharing(s.serverId) != true) {
@@ -76,7 +80,7 @@ internal class ReleaseStore(private val db: AppDatabase, private val now: () -> 
         }
         if ((housekeeping.deleteShared(s.serverId) ?: SharedDelete.ANYONE) == SharedDelete.EVERYONE) {
             val everyone = (owners + dao.accountsShown(s.serverId, itemId, Long.MIN_VALUE, Long.MAX_VALUE) + s.userId).toSet()
-            if (everyone.any { housekeeping.played(s.serverId, it, itemId) != true }) return Verdict.Wait
+            if (everyone.any { it !in watchedBy && housekeeping.played(s.serverId, it, itemId) != true }) return Verdict.Wait
         }
         return Verdict.Gone(row, (owners + s.userId).distinct(), shared = true)
     }

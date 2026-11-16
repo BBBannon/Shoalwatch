@@ -44,6 +44,9 @@ class HousekeepingRepository internal constructor(
     /** Storage: the mounted volumes, and `Downloads.remove` (Milestone 4's own-download removal, files with the last owner). */
     private val volumes: Volumes,
     private val remove: suspend (Session, String) -> RemoveOutcome,
+    /** The press while the player has the copy open (it remembers it for the stop) and the local-only mark (review I1). */
+    private val inPlayer: (Session, String) -> Boolean = { _, _ -> false },
+    private val markHere: suspend (Session, String) -> Unit = { _, _ -> },
 ) : Housekeeping {
     override fun profileSettings(s: Session): Flow<ProfileSettings> = guarded(ProfileSettings()) {
         dao.observeProfile(s.serverId, s.userId).map { row -> row?.let { ProfileSettings(it.afterFinish, it.autoNextCount) } ?: ProfileSettings() }
@@ -80,7 +83,8 @@ class HousekeepingRepository internal constructor(
     override suspend fun release(s: Session, itemId: String, together: Boolean): ReleaseOutcome = action {
         // Nothing changes, not even watched, for a download this profile may not see (the same answer as none at all).
         if (!releases.choice(s, itemId, signedIn(s)).canRelease) return@action ReleaseOutcome.NOT_YOURS
-        playstate.setPlayed(s, itemId, true)
+        // In the player, the stop's PLAY carries this watch to the server; a PLAYED tick as well would count it twice (review I1).
+        if (inPlayer(s, itemId)) markHere(s, itemId) else playstate.setPlayed(s, itemId, true)
         if (together) {
             for (other in releases.sharers(s, itemId, signedIn(s))) {
                 try {
@@ -91,7 +95,7 @@ class HousekeepingRepository internal constructor(
             }
         }
         remember(s, itemId)
-        val outcome = apply(releases.release(s, itemId))
+        val outcome = apply(releases.release(s, itemId, watchedBy = setOf(s.userId))) // the rule is told directly that [s] watched
         onWatched(s, itemId)
         outcome
     }
@@ -152,7 +156,7 @@ class HousekeepingRepository internal constructor(
         scope.launch(io) {
             try {
                 remember(s, itemId)
-                if (dao.profile(s.serverId, s.userId)?.afterFinish == AfterFinish.ALWAYS) apply(releases.release(s, itemId))
+                if (dao.profile(s.serverId, s.userId)?.afterFinish == AfterFinish.ALWAYS) apply(releases.release(s, itemId, watchedBy = setOf(s.userId)))
                 onWatched(s, itemId)
             } catch (e: CancellationException) {
                 throw e

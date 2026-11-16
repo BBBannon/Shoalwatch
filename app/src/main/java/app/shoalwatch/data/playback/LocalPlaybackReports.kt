@@ -37,15 +37,17 @@ class LocalPlaybackReports internal constructor(
 
     /** The offline play first (recovery covers a death between the two writes), then the local stop and its outbox row; then the copy is let go. */
     override suspend fun stopped(s: Session, r: PlaybackReport, finished: Boolean): ReportOutcome {
+        // A "watched" press during this play makes it a finished watch, even if it then stopped early or failed (review I1).
+        val done = playing.takeWatched(s.userId, DownloadKey(s.serverId, r.itemId)) || finished
         val outcome = try {
             kept("stop") {
-                plays.stopped(s, r.itemId, r.positionMs, finished)
-                playstate.recordLocalStop(s, r.itemId, r.positionMs, finished)
+                plays.stopped(s, r.itemId, r.positionMs, done)
+                playstate.recordLocalStop(s, r.itemId, r.positionMs, done)
             }
         } finally {
             playing.closed(DownloadKey(s.serverId, r.itemId))
         }
-        if (finished && outcome == ReportOutcome.Sent) onFinished(s, r.itemId)
+        if (done && outcome == ReportOutcome.Sent) onFinished(s, r.itemId)
         return outcome
     }
 

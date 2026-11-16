@@ -26,6 +26,8 @@ class LocalPlaybackReportsTest : DownloadTestBase() {
             local += "stop@$positionMs${if (finished) " finished" else ""} play=${play?.positionMs}"
             localFails?.let { throw it }
         }
+
+        override suspend fun markWatchedHere(s: Session, itemId: String) { local += "watchedHere" }
     }
     private val playing = LocalPlaying()
     private val finishedFor = mutableListOf<Pair<Session, String>>()
@@ -92,6 +94,23 @@ class LocalPlaybackReportsTest : DownloadTestBase() {
         assertFalse(playing.isOpen(key))
         playing.whenClosed(key) { released++ }
         assertEquals("not open: at once", 2, released)
+    }
+
+    /** Tasks 11-12 review I1: a "watched" press during the play makes that profile's stop a finished watch; only while open, only its own. */
+    @Test fun aWatchedPressWhileOpenMakesThatProfilesStopAFinishedWatch() = runBlocking {
+        val key = DownloadKey(s1u1.serverId, film)
+        assertFalse("not open: no press is remembered", playing.watchedWhileOpen(s1u1.userId, key))
+        reports.started(s1u1, report(ms = 0))
+        reports.started(s1u2, report(ms = 0))
+        assertTrue(playing.watchedWhileOpen(s1u1.userId, key))
+        reports.stopped(s1u2, report(ms = 1_000), finished = false)
+        reports.stopped(s1u1, report(ms = 2_000), finished = false) // stopped early (or failed) after the press
+        assertEquals(listOf("stop@1000 play=1000", "stop@2000 finished play=2000"), local)
+        assertEquals(listOf(s1u1 to film), finishedFor)
+        assertEquals(true, db.offlinePlayDao().get(s1u1.serverId, s1u1.userId, film)?.played)
+        reports.started(s1u1, report(ms = 0))
+        reports.stopped(s1u1, report(ms = 500), finished = false)
+        assertEquals("the press is forgotten at its stop", "stop@500 play=500", local.last())
     }
 
     @Test fun theRowsGoWithTheAccount() = runBlocking {

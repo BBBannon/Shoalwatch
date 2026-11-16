@@ -51,6 +51,9 @@ interface LocalPlaystate {
      * play. SERVER_NOT_FOUND for an item this user was not shown.
      */
     suspend fun recordLocalStop(s: Session, itemId: String, positionMs: Long, finished: Boolean)
+
+    /** Watched on this phone only, nothing queued: the press in the player, whose stop's PLAY carries it (review I1). */
+    suspend fun markWatchedHere(s: Session, itemId: String)
 }
 
 /** A list the server recomputes after an action, for [LibraryRepository] to refresh. Repository-internal vocabulary, not a screen API. */

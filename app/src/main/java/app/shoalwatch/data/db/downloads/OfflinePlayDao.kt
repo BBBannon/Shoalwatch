@@ -43,6 +43,19 @@ abstract class OfflinePlayDao {
         updatePosition(serverId, userId, itemId, positionMs, nowMs)
     }
 
+    @Query(
+        "UPDATE offline_plays SET played = 1, playedAt = CASE WHEN playedAt IS NULL THEN :nowMs ELSE playedAt END, updatedAt = :nowMs " +
+            "WHERE serverId = :serverId AND userId = :userId AND itemId = :itemId",
+    )
+    protected abstract suspend fun updateWatched(serverId: String, userId: String, itemId: String, nowMs: Long)
+
+    /** Marked watched in the middle of a play (the position is the last report's). */
+    @Transaction
+    internal open suspend fun watched(serverId: String, userId: String, itemId: String, nowMs: Long) {
+        insertOrIgnore(OfflinePlayEntity(serverId, userId, itemId, 0, played = false, playedAt = null, lastPlayedAt = nowMs, updatedAt = nowMs))
+        updateWatched(serverId, userId, itemId, nowMs)
+    }
+
     @Transaction
     internal open suspend fun stopped(serverId: String, userId: String, itemId: String, positionMs: Long, finished: Boolean, nowMs: Long) {
         insertOrIgnore(OfflinePlayEntity(serverId, userId, itemId, positionMs, played = false, playedAt = null, lastPlayedAt = nowMs, updatedAt = nowMs))

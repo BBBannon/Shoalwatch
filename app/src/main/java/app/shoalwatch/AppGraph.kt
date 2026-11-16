@@ -275,6 +275,7 @@ class AppGraph(internal val appContext: Context) {
     val browseMemory: BrowseMemory by lazy { BrowseMemory() }
     /** The tidy-up actions (remove from Continue Watching, mark watched, favourite): saved on the phone and queued in the outbox at once (see "Tidy-up actions" in docs/ARCHITECTURE.md). */
     val playstate: Playstate get() = playstateRepository
+    internal val localPlaystate: app.shoalwatch.data.library.LocalPlaystate get() = playstateRepository
     private val playstateRepository: PlaystateRepository by lazy {
         PlaystateRepository(libraryRepository, outboxStore, { s -> syncScheduler.changed(s) }, appScope, Dispatchers.IO, System::currentTimeMillis)
     }

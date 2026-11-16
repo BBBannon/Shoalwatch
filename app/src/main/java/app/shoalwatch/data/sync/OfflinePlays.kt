@@ -26,6 +26,15 @@ class OfflinePlays internal constructor(
         dao.position(s.serverId, s.userId, id, positionMs.coerceAtLeast(0), now())
     }
 
+    /**
+     * "Watched — delete download" pressed while the copy plays (review I1): its offline play is marked watched, so a process that
+     * dies before the stop still sends watched (recovery queues PLAYED, which never adds a count). Never cleared by a later stop.
+     */
+    suspend fun watched(s: Session, itemId: String) {
+        val id = idOf(itemId) ?: return
+        dao.watched(s.serverId, s.userId, id, now())
+    }
+
     suspend fun stopped(s: Session, itemId: String, positionMs: Long, finished: Boolean) {
         val id = idOf(itemId) ?: return
         dao.stopped(s.serverId, s.userId, id, positionMs.coerceAtLeast(0), finished, now())

@@ -1,5 +1,6 @@
 package app.shoalwatch
 
+import app.shoalwatch.data.db.downloads.DownloadKey
 import app.shoalwatch.data.db.downloads.ReleaseStore
 import app.shoalwatch.data.downloads.AutoDownloadNext
 import app.shoalwatch.data.downloads.HousekeepingRepository
@@ -31,5 +32,10 @@ internal class HousekeepingParts(graph: AppGraph) {
         beforeRelease = autoDownloadNext::remember,
         volumes = graph.downloadVolumes,
         remove = { s, id -> graph.downloads.remove(s, id) },
+        inPlayer = { s, id -> graph.localPlaying.watchedWhileOpen(s.userId, DownloadKey(s.serverId, id)) },
+        markHere = { s, id ->
+            graph.offlinePlays.watched(s, id) // first: a process that dies now still sends watched at the next start
+            graph.localPlaystate.markWatchedHere(s, id)
+        },
     )
 }
