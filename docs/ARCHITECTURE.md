@@ -35,7 +35,7 @@ Full design lives in `SPEC.md`. This page covers build, package map, the layer r
 app.shoalwatch
 ├── ShoalwatchApp, AppGraph, HousekeepingParts (watch-and-delete wiring)
 ├── core/        AppError, Ticks, dispatchers, logging (redacting), DisplayText (safe server strings)
-├── security/    SecretBox (Keystore AES-GCM), KeystoreKeyProvider, redaction helpers
+├── security/    SecretBox (Keystore AES-GCM), KeystoreKeyProvider, redaction helpers; PinRules (+ PinThrottle), PinCheck, PinHasher, ProfileLocks (+ ProfileProtection) (Milestone 7, see "Profile PINs")
 ├── net/         HttpClientFactory, TrustPolicy.kt (holds ServerNetConfig), PinnedTrustManager (+ PinAwareHostnameVerifier), KeyChainKeyManager,
 │                ClientCertWatch, CertificateInfo, AuthInterceptor, CustomHeaderInterceptor, AuthHeader, BlockedRequestException, CleartextGuard,
 │                ServerAddress, NetworkMonitor (+ AndroidNetworkMonitor)
@@ -125,6 +125,16 @@ The UI gets an opaque `SignInRoute` from `Authenticator.signInRoute(serverId)` b
 - **Sign-out** revokes the token only through that verified address (never by trying the saved addresses in turn), within 12 s, then removes the account here regardless (`NonCancellable`). If no address is verified the token is sent nowhere. A saved token that cannot be read (lost Keystore key) is not "nothing to revoke": `ServerStore.token` answers `StoredToken.Unreadable`, distinct from `Missing`, and `signOut` reports it exactly as an unreachable server. Either way the Servers screen says "Signed out on this phone. Shoalwatch couldn't sign you out on the server, so that sign-in may still be active there — you can remove it from the server's dashboard."
 - **Remove server** first revokes every account on it in parallel by the same rules (6 s overall), then deletes the server here regardless, with the same notice when any revocation did not reach the server or any saved token could not be read (`ServerStore.tokens` counts the unreadable ones; the readable ones are still revoked).
 - **Residual risk (plain http):** with an http address, nothing can authenticate the server: the id it reports is public, so on another network a device holding the same address can pass the identity check and capture what is sent. The https preference and the warnings shrink this; recommending HTTPS is the mitigation. Recorded in `docs/security/milestone-1-check.md`.
+
+## Profile PINs (`PinHasher`, `ProfileLocks`, Milestone 7)
+
+A protected profile has a row in `profile_locks` (see "Profile tables (Room v6)").
+
+- **The PIN** is 4 to 12 ASCII digits (`PinRules`), held only as a `CharArray`. Every `ProfileLocks` entry point (`protect`, `check`, `changePin`, `unprotect`) fills the arrays it was given with zeros before it returns, on every path; `PinHasher` only reads them and clears its own copy (`PBEKeySpec.clearPassword`) and the derived bytes.
+- **The verifier** is PBKDF2-HMAC-SHA256 (the platform's own `PBKDF2WithHmacSHA256`, no new dependency), 100,000 iterations, a 16-byte `SecureRandom` salt and a 32-byte result, written as `p1:<iterations>:<base64 salt>:<base64 hash>` and sealed by the existing Keystore `SecretBox`, so a copied database cannot be tried offline. The iteration count is read back from the blob, so it can be raised later without a migration. Comparison is constant-time (`MessageDigest.isEqual`). A blob that cannot be opened (the Keystore key is gone) or is not in that format is `PinCheck.Unreadable`, which counts nothing: only "Forgot PIN" helps.
+- **Waits:** five free tries, then 30 s doubling for each further wrong PIN, at most 15 minutes (`PinThrottle`). The count of wrong PINs is in Room (`failures`, back to 0 on a right PIN or a new PIN), so it survives a restart. The wait is timed only by the monotonic clock, from an anchor in memory per profile: the time of the last wrong PIN in this process or, if there was none, of the first check in this process. Killing the app therefore restarts the wait (never shortens it), and changing the phone's clock does nothing. While waiting, `check` answers `Wait(seconds, rounded up)` without opening the verifier or counting. One mutex serialises every check, so two checks at once cannot share a free try. `PinCheck.Wrong(0)` means the free tries are used up and the wait has started. Hashing and Room run on the IO dispatcher.
+- `changePin` refuses (`IllegalArgumentException`, nothing checked or counted) a new PIN that breaks `PinRules`: screens check it first. `clear` (internal) removes the protection after a password sign-in from "Forgot PIN".
+- No PIN, PIN length, verifier or profile id is logged; every new type has a redacting `toString()`.
 
 ## Authenticated requests (`ServerApi`)
 

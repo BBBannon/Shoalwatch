@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- App lock and profile protection (Milestone 7). Every lock word lives here, not in strings.xml. -->
+<resources>
+    <!-- PIN (Task 2) -->
+    <string name="pin_label">PIN</string>
+    <plurals name="pin_wrong">
+        <item quantity="one">That PIN isn’t right. 1 try left before a wait.</item>
+        <item quantity="other">That PIN isn’t right. %1$d tries left before a wait.</item>
+    </plurals>
+    <string name="pin_wrong_last">That PIN isn’t right. The next wrong PIN starts a wait.</string>
+    <string name="pin_wait">Too many wrong PINs. Try again in %1$s.</string>
+    <string name="pin_unreadable">This PIN can’t be checked on this phone any more. Use Forgot PIN.</string>
+    <string name="pin_rules">Use 4 to 12 digits.</string>
+</resources>
