@@ -72,7 +72,7 @@ abstract class PlaystateTestBase : LibraryRepositoryTestBase() {
     }
 
     /** A repository over the same database and outbox (a "new process" needs a new one of everything else too). */
-    internal fun newPlaystate() = PlaystateRepository(repo, outbox, { s -> changedFor += s; sender.kick(s) }, appScope, Dispatchers.IO, { now })
+    internal fun newPlaystate() = PlaystateRepository(repo, outbox, db.offlinePlayDao(), { s -> changedFor += s; sender.kick(s) }, appScope, Dispatchers.IO, { now })
 
     /** Rows waiting in the outbox (every profile). */
     protected fun queued() = count("sync_outbox")

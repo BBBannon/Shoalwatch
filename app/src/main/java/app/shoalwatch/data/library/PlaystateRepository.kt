@@ -1,6 +1,7 @@
 package app.shoalwatch.data.library
 
 import app.shoalwatch.core.AppError
+import app.shoalwatch.data.db.downloads.OfflinePlayDao
 import app.shoalwatch.data.db.library.ItemRow
 import app.shoalwatch.data.servers.JellyfinId
 import app.shoalwatch.data.servers.Session
@@ -35,6 +36,8 @@ import java.util.concurrent.ConcurrentHashMap
 class PlaystateRepository internal constructor(
     private val library: LibraryRepository,
     private val outbox: OutboxStore,
+    /** A heard stop covers the item's older offline plays (Milestone 5 re-review m1). */
+    private val offlinePlays: OfflinePlayDao,
     private val changed: (Session) -> Unit,
     private val scope: CoroutineScope,
     private val io: CoroutineDispatcher,
@@ -66,7 +69,11 @@ class PlaystateRepository internal constructor(
                 reached -> {
                     val id = item.item.itemId
                     // Up to this stop's own time (Tasks 11-12 review M5), so an overlapping later stop keeps its row.
-                    val newer = outbox.dropSameUntil(s, id, ChangeKind.POSITION, stoppedAt ?: clock())
+                    val until = stoppedAt ?: clock()
+                    val newer = outbox.dropSameUntil(s, id, ChangeKind.POSITION, until)
+                    // The server has the position as of the stop, so an older offline play of the item is covered: the next start
+                    // must not queue it again (Milestone 5 re-review m1). One written after the stop is newer, and kept.
+                    offlinePlays.deleteCovered(s.serverId, s.userId, id, until)
                     (if (newer) local.heard(s, id) else local.stoppedAt(s, id, p)) to null
                 }
                 else -> local.stoppedAt(s, item.item.itemId, p) to change(item, ChangeKind.POSITION, positionMs = p, at = stoppedAt)

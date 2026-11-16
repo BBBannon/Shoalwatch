@@ -124,7 +124,7 @@ class PlaystateSweepTest : PlaystateTestBase() {
         save(film("live", ud()))
         val gate = Mutex()
         val lib = LibraryRepository(gateway, db, appScope, Dispatchers.IO, { now }, log, changes, gate)
-        val gated = PlaystateRepository(lib, outbox, { s -> sender.kick(s) }, appScope, Dispatchers.IO, { now })
+        val gated = PlaystateRepository(lib, outbox, db.offlinePlayDao(), { s -> sender.kick(s) }, appScope, Dispatchers.IO, { now })
         val held = holdMutation()
         gate.withLock {
             val call = background { gated.setFavourite(s1u1, id("live"), true) }

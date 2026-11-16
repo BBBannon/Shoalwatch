@@ -66,7 +66,7 @@ Proved against the Milestone 4 + 6 merge base `2022ff7`:
 | Finding | Done |
 |---|---|
 | **I1** a 403 dropped rows with no proof | Fixed: overruled only when `GET /UserViews` answers as the profile; a 403 or 404 there defers (`SyncSenderFailureTest`, `SyncGatewayTest.profileAnswersAsksTheViewsAndPassesAFailureThrough`) |
-| **I2** an old offline position came back after a restart | Fixed: any confirmed PLAYED, POSITION or PLAY row clears the offline plays it covers (`OfflineRecoveryTest`) |
+| **I2** an old offline position came back after a restart | Fixed: any confirmed PLAYED, POSITION or PLAY row clears the offline plays it covers, and so does a heard online stop (re-review m1) (`OfflineRecoveryTest`) |
 | **M2** a stop cut off mid-send waits for the next start | Documented in ARCHITECTURE ("Progress reports and teardown") |
 | **M5** the stand-in leaked Night Shift episodes to `kid` by `seasonId` | Fixed in `tools/mockjelly` with its test |
 | **M7** auto-download next held after a real outage | Fixed: a return after Offline is never paused (`AutoDownloadNextTest.aReconnectionAfterOfflineIsNeverHeldByThePause`) |
@@ -93,7 +93,7 @@ Proved against the Milestone 4 + 6 merge base `2022ff7`:
 | Does `POST /UserItems/{id}/UserData` apply `PlayCount` and `LastPlayedDate` as sent, and leave left-out fields unchanged? | Only intended fields are sent, as absolute values | After an offline watch: played, the count up by one, the real watch time |
 | Does `POST /UserPlayedItems/{id}` without `datePlayed` add to the count when repeated? | Used only for season and series ticks | Tick a season twice: counts stay at one |
 | Is `LastPlayedDate` moved by playback reports and by marks? | The conflict rule reads it as "the server's last change" | Watch part on the web, then sync an older offline position: the web position stays |
-| **Does a playback START set `LastPlayedDate`?** (added by the whole-milestone review) | The I2 fix no longer depends on it for a removal; a heard online stop after an offline partial play relies on it, and the M1 margin's reach depends on it | Start an episode on the web and stop at once: does its last-played time move? |
+| **Does a playback START set `LastPlayedDate`?** (added by the whole-milestone review) | The I2 fix no longer depends on it, for a removal or for a heard online stop after an offline partial play (the stop now deletes the older offline play itself; re-review m1); the M1 margin's reach depends on it | Start an episode on the web and stop at once: does its last-played time move? |
 | How far apart are the phone's and the server's clocks? | A 2-minute margin, the server winning ties | No change synced in the same minute as a web change is lost the wrong way |
 | Is `GET /UserItems/{id}/UserData` present for every item kind? | Missing → unknown copy, change sent, no count | Sync works for films, episodes, seasons and series |
 | Does a restricted profile get 403 or 404 on another's item through the user-data routes? | Both drop that row (once `/UserViews` answers) and show the server's copy | A child's queued change on a title since restricted disappears without an error |

@@ -277,7 +277,7 @@ class AppGraph(internal val appContext: Context) {
     val playstate: Playstate get() = playstateRepository
     internal val localPlaystate: app.shoalwatch.data.library.LocalPlaystate get() = playstateRepository
     private val playstateRepository: PlaystateRepository by lazy {
-        PlaystateRepository(libraryRepository, outboxStore, { s -> syncScheduler.changed(s) }, appScope, Dispatchers.IO, System::currentTimeMillis)
+        PlaystateRepository(libraryRepository, outboxStore, database.offlinePlayDao(), { s -> syncScheduler.changed(s) }, appScope, Dispatchers.IO, System::currentTimeMillis)
     }
     /** Progress reports and the final stop (also saved through `playstate`, queued when the server missed it); see "Progress reports and teardown" in docs/ARCHITECTURE.md. */
     val playbackReports: ServerPlaybackReports by lazy { ServerPlaybackReports(playbackGateway, playstate, stopsInFlight) { s -> syncScheduler.changed(s) } }

@@ -126,7 +126,7 @@ class PlaystateConcurrencyTest : PlaystateTestBase() {
 
     @Test fun anActionOnADeadAppScopeEndsInsteadOfHanging() = runBlocking {
         saveResume(film("a"))
-        val dead = PlaystateRepository(repo, outbox, { }, CoroutineScope(Job().apply { cancel() }), Dispatchers.IO, { now })
+        val dead = PlaystateRepository(repo, outbox, db.offlinePlayDao(), { }, CoroutineScope(Job().apply { cancel() }), Dispatchers.IO, { now })
         try {
             withTimeout(5_000) { dead.removeFromContinueWatching(s1u1, id("a")) }
             fail("expected a cancellation")
@@ -140,7 +140,7 @@ class PlaystateConcurrencyTest : PlaystateTestBase() {
     @Test fun theAppScopeEndingAfterTheChangeKeepsTheChangeAndItsRowForTheNextStart() = runBlocking {
         saveResume(film("a"), film("b"))
         val own = CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.Default)
-        val mine = PlaystateRepository(repo, outbox, { }, own, Dispatchers.IO, { now }) // nothing sends it in this "process"
+        val mine = PlaystateRepository(repo, outbox, db.offlinePlayDao(), { }, own, Dispatchers.IO, { now }) // nothing sends it in this "process"
         mine.removeFromContinueWatching(s1u1, id("a"))
         own.coroutineContext[Job]!!.cancelAndJoin()
         assertEquals(ids("b"), resumeIds())
@@ -153,7 +153,7 @@ class PlaystateConcurrencyTest : PlaystateTestBase() {
         val gate = Mutex()
         val gatedLibrary = LibraryRepository(gateway, db, appScope, Dispatchers.IO, { now }, log, changes, gate)
         val gatedSender = app.shoalwatch.data.sync.SyncSender(outbox, sync, PlaystateLanding(gatedLibrary, outbox, db.offlinePlayDao()) { now }, { true }, {}, appScope, { now }, Dispatchers.IO)
-        val gated = PlaystateRepository(gatedLibrary, outbox, { s -> gatedSender.kick(s) }, appScope, Dispatchers.IO, { now })
+        val gated = PlaystateRepository(gatedLibrary, outbox, db.offlinePlayDao(), { s -> gatedSender.kick(s) }, appScope, Dispatchers.IO, { now })
         saveResume(film("a"))
         gateway.resumeFor = { emptyList() }
         val held = holdMutation()

@@ -45,7 +45,7 @@ abstract class ReleaseTestBase : LibraryRepositoryTestBase() {
         store = DownloadStore(db, { now })
         releases = ReleaseStore(db, { now }, LibraryWriteLock.None)
         outbox = OutboxStore(db) { now }
-        playstate = PlaystateRepository(repo, outbox, { }, appScope, Dispatchers.IO, { now })
+        playstate = PlaystateRepository(repo, outbox, db.offlinePlayDao(), { }, appScope, Dispatchers.IO, { now })
         fake = FakeVolumes(temp.newFolder())
         paths = DownloadPaths(fake.volumes)
         playing = LocalPlaying()

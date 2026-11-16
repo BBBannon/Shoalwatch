@@ -123,6 +123,40 @@ class OfflineRecoveryTest : PlaystateTestBase() {
         assertEquals(0, queued())
     }
 
+    /**
+     * Milestone 5 re-review m1: a heard online stop takes back the offline play's POSITION row, and nothing lands, so before the
+     * fix the play stayed uncovered and the next start queued its older position again over the stop's newer one.
+     */
+    @Test fun aHeardOnlineStopCoversAnOlderOfflinePlayAcrossARestart() = runBlocking {
+        save(film("a"))
+        gateway.failAll = AppError.Kind.OFFLINE
+        dao.stopped(s1u1.serverId, s1u1.userId, id("a"), 600_000, finished = false, nowMs = now) // played part way in airplane mode
+        playstate.recordLocalStop(s1u1, id("a"), 600_000, finished = false)
+        settle()
+        now += 60_000
+        // Streamed online and stopped: saved and queued first, then the server heard the report.
+        playstate.recordStop(s1u1, id("a"), 900_000, finished = false, reached = false, kick = false, stoppedAt = now)
+        playstate.recordStop(s1u1, id("a"), 900_000, finished = false, reached = true, kick = false, stoppedAt = now)
+        settle()
+        assertEquals("the stop carried the newest position", 0, queued())
+        assertNull("the heard stop covers the older offline play", dao.get(s1u1.serverId, s1u1.userId, id("a")))
+        assertEquals("the restart queues nothing", 0, plays.recoverUnqueued())
+        assertEquals(0, queued())
+    }
+
+    /** The cut-off is the stop's own time: an offline play written after it is newer, and kept. */
+    @Test fun aHeardStopKeepsAnOfflinePlayWrittenAfterIt() = runBlocking {
+        save(film("a"))
+        gateway.failAll = AppError.Kind.OFFLINE
+        val stoppedAt = now
+        now += 10_000
+        dao.position(s1u1.serverId, s1u1.userId, id("a"), 700_000, now) // a saved copy played on after the online stop's time
+        playstate.recordStop(s1u1, id("a"), 900_000, finished = false, reached = false, kick = false, stoppedAt = stoppedAt)
+        playstate.recordStop(s1u1, id("a"), 900_000, finished = false, reached = true, kick = false, stoppedAt = stoppedAt)
+        settle()
+        assertEquals(700_000L, dao.get(s1u1.serverId, s1u1.userId, id("a"))!!.positionMs)
+    }
+
     @Test fun aConfirmedFavouriteDoesNotCoverAnOfflinePlay() = runBlocking {
         save(film("a"))
         gateway.failAll = AppError.Kind.OFFLINE
