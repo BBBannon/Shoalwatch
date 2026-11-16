@@ -42,6 +42,9 @@ class PlaystateRepository internal constructor(
 ) : Playstate, LocalPlaystate {
     private val local = PlaystateLocal(library.store, clock)
 
+    /** When each item's last unreached stop was recorded (memory only): a heard stop takes back only rows up to then (Tasks 9-10 review M1). */
+    private val stopTimes = ConcurrentHashMap<Pair<Session, String>, Long>()
+
     /** The end of each user's queue of actions: the next call waits for it. Swapped atomically, in the caller, so the order is the order of the calls. */
     private val tails = ConcurrentHashMap<Session, CompletableDeferred<Unit>>()
 
@@ -60,9 +63,15 @@ class PlaystateRepository internal constructor(
             when {
                 // Always queued (review I1): "Finished" can fire at the Outro, below the server's own 90% "played" mark. Absolute, so never counted twice.
                 finished -> local.played(s, item, true) to change(item, ChangeKind.PLAYED, flag = true)
-                // A stop the server heard carries the newest position: an unsent one for the item would only be older (review M3).
-                reached -> local.stoppedAt(s, item.item.itemId, p).also { outbox.dropSame(s, item.item.itemId, ChangeKind.POSITION) } to null
-                else -> local.stoppedAt(s, item.item.itemId, p) to change(item, ChangeKind.POSITION, positionMs = p)
+                // A stop the server heard carries the newest position as of the stop (review M3): unsent positions up to the stop's
+                // own record go. One the user made after it (a removal while the report was in flight) stays, and so does its local
+                // value: the stop's first record already saved this position (Tasks 9-10 review M1).
+                reached -> {
+                    val id = item.item.itemId
+                    val newer = outbox.dropSameUntil(s, id, ChangeKind.POSITION, stopTimes.remove(s to id) ?: clock())
+                    (if (newer) local.heard(s, id) else local.stoppedAt(s, id, p)) to null
+                }
+                else -> local.stoppedAt(s, item.item.itemId, p) to change(item, ChangeKind.POSITION, positionMs = p).also { stopTimes[s to item.item.itemId] = it.occurredAt }
             }
         }
 

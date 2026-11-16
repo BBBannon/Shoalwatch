@@ -97,6 +97,33 @@ class PlaystateRecordStopTest : PlaystateTestBase() {
         assertNoPending()
     }
 
+    /**
+     * Tasks 9-10 review M1: the user takes the item off Continue Watching while the stop report is in flight. The heard stop then
+     * takes back only its own (older) queued position, and leaves the user's removal on the phone and in the outbox.
+     */
+    @Test fun aHeardStopKeepsARemovalMadeWhileItsReportWasInFlight() {
+        save(film("a", ud(positionMs = 0)))
+        gateway.failOps["setPosition"] = AppError.Kind.OFFLINE
+        gateway.failOps["clearResume"] = AppError.Kind.OFFLINE
+        stop("a", 420_000, reached = false) // record #1, before the report leaves
+        drain()
+        now += 1_000
+        runBlocking { playstate.removeFromContinueWatching(s1u1, id("a")) }
+        drain()
+        now += 1_000
+        stop("a", 420_000) // record #2: the report was heard
+        drain()
+        assertEquals("the removal stays on the phone", 0L, userData("a")!!.positionMs)
+        assertEquals("and stays queued", 1, queued())
+        gateway.failOps.clear()
+        val from = gateway.calls.size
+        sender.kick(s1u1)
+        drain()
+        assertEquals("the removal is sent, and the old position never is", listOf("clearResume:${id("a")}"),
+            gateway.calls.drop(from).filter { it.startsWith("clearResume") || it.startsWith("setPosition") })
+        assertEquals(0, queued())
+    }
+
     /** Review M3: a stop the server heard carries the newest position, so an earlier unsent position for the item goes (never sent after it). */
     @Test fun aStopTheServerHeardTakesBackAnEarlierUnsentPositionForTheItem() {
         save(film("a", ud(positionMs = 0)))

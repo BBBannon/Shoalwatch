@@ -155,9 +155,14 @@ internal class OutboxStore(private val db: AppDatabase, private val now: () -> L
         if (dao.hasSameSince(s.serverId, s.userId, change.itemId, change.kind.name, change.occurredAt)) null else enqueue(s, change, marks, refreshKeys)
     }
 
-    /** MUST be called inside the caller's transaction: [s]'s unsent rows of [kind] for [itemId] go, with their marks (a newer value reached the server). */
-    suspend fun dropSame(s: Session, itemId: String, kind: ChangeKind) = db.withTransaction {
-        for (old in dao.sameChange(s.serverId, s.userId, itemId, kind.name)) delete(old)
+    /**
+     * MUST be called inside the caller's transaction: [s]'s unsent rows of [kind] for [itemId] made at or before [until] go, with
+     * their marks (a newer value reached the server). True when a row of that kind made after [until] is still there (a change the
+     * user made meanwhile: Tasks 9-10 review M1).
+     */
+    suspend fun dropSameUntil(s: Session, itemId: String, kind: ChangeKind, until: Long): Boolean = db.withTransaction {
+        for (old in dao.sameChangeUntil(s.serverId, s.userId, itemId, kind.name, until)) delete(old)
+        dao.sameChange(s.serverId, s.userId, itemId, kind.name).isNotEmpty()
     }
 
     private suspend fun delete(seq: Long) {

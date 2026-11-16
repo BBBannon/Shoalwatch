@@ -73,6 +73,12 @@ internal class PlaystateLocal(private val store: LibraryStore, private val clock
         t.recompute += listOf(Recompute.Resume, Recompute.NextUp)
     }
 
+    /** A heard stop that leaves the saved position as it is (a newer change is waiting): its lists are still asked again. */
+    suspend fun heard(s: Session, itemId: String): Touched = Touched().also { t ->
+        t.remember(s, itemId)
+        t.recompute += listOf(Recompute.Resume, Recompute.NextUp)
+    }
+
     suspend fun favourite(s: Session, itemId: String, favourite: Boolean): Touched = Touched().also { t ->
         t.remember(s, itemId)
         store.setFavouritePending(s, itemId, favourite, clock())

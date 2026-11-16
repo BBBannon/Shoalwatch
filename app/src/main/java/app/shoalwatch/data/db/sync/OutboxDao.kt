@@ -31,6 +31,10 @@ abstract class OutboxDao {
     @Query("SELECT seq FROM sync_outbox WHERE serverId = :serverId AND userId = :userId AND itemId = :itemId AND kind = :kind")
     internal abstract suspend fun sameChange(serverId: String, userId: String, itemId: String, kind: String): List<Long>
 
+    /** The rows of [kind] for this item made at or before [until] (an older value than the one the server just heard). */
+    @Query("SELECT seq FROM sync_outbox WHERE serverId = :serverId AND userId = :userId AND itemId = :itemId AND kind = :kind AND occurredAt <= :until")
+    internal abstract suspend fun sameChangeUntil(serverId: String, userId: String, itemId: String, kind: String, until: Long): List<Long>
+
     @Query(
         "SELECT EXISTS(SELECT 1 FROM sync_outbox WHERE serverId = :serverId AND userId = :userId AND itemId = :itemId AND kind = :kind " +
             "AND occurredAt >= :at)",
