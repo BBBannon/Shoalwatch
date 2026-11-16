@@ -233,6 +233,9 @@ class SqlCompatibilityTest {
         assertTrue("source root ${java.absolutePath} must exist (Gradle runs unit tests in the module directory)", java.isDirectory)
         val scanned = java.walkTopDown().count { it.isFile && it.extension == "kt" }
         assertTrue("only $scanned source files found: the scan would be vacuous", scanned > 20)
+        val names = java.walkTopDown().filter { it.isFile }.map { it.invariantSeparatorsPath }.toList()
+        for (expected in listOf("data/db/Migration4To5.kt", "data/db/sync/OutboxEntity.kt", "data/db/sync/SyncMarkEntity.kt"))
+            assertTrue("the scan covers $expected", names.any { it.endsWith(expected) })
         val found = scanSources(listOf(java, File("src/main/kotlin")))
         assertTrue("SQL newer than SQLite 3.22 (Android 10) in:\n" + found.joinToString("\n"), found.isEmpty())
     }

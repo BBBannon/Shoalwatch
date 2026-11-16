@@ -17,6 +17,9 @@ import app.shoalwatch.data.db.downloads.OfflineLibraryDao
 import app.shoalwatch.data.db.downloads.OfflinePlayDao
 import app.shoalwatch.data.db.downloads.OfflinePlayEntity
 import app.shoalwatch.data.db.downloads.PinnedArtworkEntity
+import app.shoalwatch.data.db.downloads.AutoNextRequestEntity
+import app.shoalwatch.data.db.downloads.ProfileDownloadSettingsEntity
+import app.shoalwatch.data.db.downloads.ReleasedEpisodeEntity
 import app.shoalwatch.data.db.library.ItemDao
 import app.shoalwatch.data.db.library.ItemEntity
 import app.shoalwatch.data.db.library.ItemKindConverter
@@ -30,6 +33,10 @@ import app.shoalwatch.data.db.library.ViewEntity
 import app.shoalwatch.data.db.library.VisibleItemEntity
 import app.shoalwatch.data.db.playback.TrackChoiceDao
 import app.shoalwatch.data.db.playback.TrackChoiceEntity
+import app.shoalwatch.data.db.sync.OutboxEntity
+import app.shoalwatch.data.db.sync.SyncConverters
+import app.shoalwatch.data.db.sync.SyncMarkEntity
+import app.shoalwatch.data.db.sync.SyncStateEntity
 
 /**
  * Schema is exported to `app/schemas/` and checked in. There is deliberately no destructive
@@ -42,11 +49,13 @@ import app.shoalwatch.data.db.playback.TrackChoiceEntity
         TrackChoiceEntity::class,
         DownloadEntity::class, DownloadOwnerEntity::class, DownloadTrackEntity::class, DownloadSegmentEntity::class, PinnedArtworkEntity::class,
         DownloadSettingsEntity::class, OfflinePlayEntity::class, DownloadPermissionEntity::class,
+        OutboxEntity::class, SyncMarkEntity::class, SyncStateEntity::class, RejectedSignInEntity::class,
+        ReleasedEpisodeEntity::class, ProfileDownloadSettingsEntity::class, AutoNextRequestEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
-@TypeConverters(ItemKindConverter::class, Converters::class)
+@TypeConverters(ItemKindConverter::class, Converters::class, SyncConverters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun serverDao(): ServerDao
     abstract fun accountDao(): AccountDao
@@ -64,7 +73,7 @@ abstract class AppDatabase : RoomDatabase() {
 
         fun open(context: Context): AppDatabase =
             Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, FILE_NAME)
-                .addMigrations(Migration1To2, Migration2To3, Migration3To4)
+                .addMigrations(Migration1To2, Migration2To3, Migration3To4, Migration4To5)
                 .build()
     }
 }

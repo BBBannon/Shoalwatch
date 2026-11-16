@@ -37,7 +37,7 @@ import java.time.Instant
 import javax.crypto.KeyGenerator
 
 /**
- * Migrations 1 to 2, 2 to 3 and 3 to 4 against REAL older databases. The v1 database is built from the exported schema
+ * Migrations 1 to 2, 2 to 3, 3 to 4 and 4 to 5 against REAL older databases. The v1 database is built from the exported schema
  * (`app/schemas/.../1.json`: its `createSql` statements and Room's `setupQueries`), not by Room, so this is what a phone
  * that installed Milestone 1 actually holds. Room then opens it with [Migration1To2]; opening validates the migrated tables
  * against 2.json and throws on any difference.
@@ -114,14 +114,14 @@ class MigrationTest {
     }
 
     private fun openWithMigration(file: String = name): AppDatabase =
-        Room.databaseBuilder(context, AppDatabase::class.java, file).addMigrations(Migration1To2, Migration2To3, Migration3To4).allowMainThreadQueries().build()
+        Room.databaseBuilder(context, AppDatabase::class.java, file).addMigrations(Migration1To2, Migration2To3, Migration3To4, Migration4To5).allowMainThreadQueries().build()
             .also { opened += it }
 
     @Test fun aVersion1DatabaseOpensAndKeepsItsServersAndAccountsByteForByte() = runBlocking {
         createVersion1()
         val db = openWithMigration()
         db.openHelper.writableDatabase // forces the migrations and Room's validation against the current schema
-        assertEquals(4, db.openHelper.writableDatabase.version)
+        assertEquals(5, db.openHelper.writableDatabase.version)
         val server = db.serverDao().get(S1)!!
         assertEquals("Den", server.name)
         assertEquals("https://home.example", server.homeAddress)
@@ -170,9 +170,14 @@ class MigrationTest {
         context.deleteDatabase("fresh-test.db")
     }
 
-    /** Every table and index in `sqlite_master` with its SQL, whitespace normalised (Room's bookkeeping table included). */
+    /**
+     * Every table and index in `sqlite_master` with its SQL, whitespace normalised (Room's bookkeeping table and, from v5,
+     * `sqlite_sequence` for the outbox's AUTOINCREMENT included; SQLite's own automatic indices have no SQL and are left out).
+     */
     private fun schemaOf(db: AppDatabase): List<String> =
-        db.openHelper.writableDatabase.query("SELECT type, name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' AND name NOT LIKE 'android_%' ORDER BY type, name").use { c ->
+        db.openHelper.writableDatabase.query(
+            "SELECT type, name, sql FROM sqlite_master WHERE (name NOT LIKE 'sqlite_%' OR name = 'sqlite_sequence') AND name NOT LIKE 'android_%' ORDER BY type, name",
+        ).use { c ->
             buildList { while (c.moveToNext()) add("${c.getString(0)} ${c.getString(1)}: ${(c.getString(2) ?: "").replace(Regex("\\s+"), " ").trim()}") }
         }
 
@@ -200,7 +205,7 @@ class MigrationTest {
         helper.close()
         assertTrue("every v2 table has a row to keep", before.values.all { it.isNotEmpty() })
         val db = openWithMigration()
-        assertEquals(4, db.openHelper.writableDatabase.version)
+        assertEquals(5, db.openHelper.writableDatabase.version)
         assertEquals(before, rowsOf(db.openHelper.readableDatabase, V2_TABLES))
     }
 
@@ -255,7 +260,7 @@ class MigrationTest {
         helper.close()
         assertTrue("every v3 table has a row to keep", before.values.all { it.isNotEmpty() })
         val db = openWithMigration()
-        assertEquals(4, db.openHelper.writableDatabase.version)
+        assertEquals(5, db.openHelper.writableDatabase.version)
         assertEquals(before, rowsOf(db.openHelper.readableDatabase, V3_TABLES))
     }
 
@@ -290,12 +295,96 @@ class MigrationTest {
         context.deleteDatabase("fresh-test.db")
     }
 
-    @Test fun aDatabaseMigratedFromVersion1ThroughAllThreeHasTheFreshVersion4Schema() {
+    @Test fun aDatabaseMigratedFromVersion1ThroughAllFourHasTheFreshSchema() {
         createVersion1()
         val migrated = openWithMigration()
         val fresh = openWithMigration("fresh-test.db")
         assertEquals(schemaOf(fresh), schemaOf(migrated))
         assertTrue(schemaOf(migrated).any { it.startsWith("table offline_plays:") })
+        context.deleteDatabase("fresh-test.db")
+    }
+
+    // ---- 4 to 5: the outbox and housekeeping tables, download_settings rebuilt, offline plays carried into the outbox
+
+    /** A real version-4 database: the v3 rows, a row in every download table, two more items and three offline plays. */
+    private fun createVersion4() = createVersion(4) { db ->
+        createVersion2Rows(db)
+        db.execSQL(
+            "INSERT INTO track_choices (serverId, userId, seriesId, audioLanguage, subtitleLanguage, subtitlesOff, subtitleForced, subtitleHearingImpaired, updatedAt) VALUES (?, ?, ?, 'jpn', NULL, 1, 0, 1, 16)",
+            arrayOf(S1, U1, SERIES),
+        )
+        db.execSQL("INSERT INTO items (serverId, itemId, kind, name, nameKey, fetchedAt, pinned) VALUES (?, ?, 'EPISODE', 'Pilot', 'pilot', 11, 1)", arrayOf(S1, FINISHED))
+        db.execSQL("INSERT INTO items (serverId, itemId, kind, name, nameKey, fetchedAt, pinned) VALUES (?, ?, 'MOVIE', 'Film', 'film', 11, 1)", arrayOf(S1, REWATCHED))
+        DownloadRows.download(db, S1, FINISHED)
+        DownloadRows.owner(db, S1, U1, FINISHED)
+        DownloadRows.track(db, S1, FINISHED)
+        DownloadRows.segment(db, S1, FINISHED)
+        DownloadRows.artwork(db, S1, FINISHED)
+        DownloadRows.permission(db, S1, U1, FINISHED)
+        DownloadRows.settings(db, S1, share = true)
+        val play = "INSERT INTO offline_plays (serverId, userId, itemId, positionMs, played, playedAt, lastPlayedAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        db.execSQL(play, arrayOf(S1, U1, FINISHED, 0, 1, 100, 100, 100)) // finished once
+        db.execSQL(play, arrayOf(S1, U1, REWATCHED, 40_000, 1, 200, 300, 300)) // finished, then watched again part way
+        db.execSQL(play, arrayOf(S1, U1, UNFINISHED, 15_000, 0, null, 250, 250)) // never finished; no item row
+    }
+
+    @Test fun theVersion5SchemaIsExportedAndAddsOnlyTheSevenNewTables() {
+        val tables = schema(5)["entities"]!!.jsonArray.map { it.jsonObject["tableName"]!!.jsonPrimitive.content }.toSet()
+        assertEquals(V4_TABLES.toSet() + SyncRows.TABLES, tables)
+    }
+
+    @Test fun aVersion4DatabaseKeepsEveryRowAndDownloadSettingsGainsDeleteShared() {
+        createVersion4()
+        val helper = openRaw(4)
+        val before = rowsOf(helper.readableDatabase, V4_TABLES)
+        helper.close()
+        assertTrue("every v4 table has a row to keep", before.values.all { it.isNotEmpty() })
+        val db = openWithMigration()
+        assertEquals(5, db.openHelper.writableDatabase.version)
+        val after = rowsOf(db.openHelper.readableDatabase, V4_TABLES)
+        assertEquals(before - "download_settings", after - "download_settings")
+        assertEquals(listOf("text:$S1|int:1|text:ANYONE"), after["download_settings"])
+        assertEquals(before["download_settings"]!!.map { "$it|text:ANYONE" }, after["download_settings"])
+    }
+
+    @Test fun offlinePlaysBecomeOutboxRowsWithAPlainMarkEach() {
+        createVersion4()
+        val db = openWithMigration()
+        val raw = db.openHelper.readableDatabase
+        assertEquals(
+            listOf(
+                "int:1|text:$S1|text:$U1|text:$FINISHED|text:EPISODE|text:PLAY|null|null|int:100|text:resume,nextUp|int:1|int:0|null|int:0|int:0|int:0",
+                "int:2|text:$S1|text:$U1|text:$REWATCHED|text:MOVIE|text:PLAY|null|null|int:200|text:resume,nextUp|int:1|int:0|null|int:0|int:0|int:0",
+                "int:3|text:$S1|text:$U1|text:$UNFINISHED|text:OTHER|text:POSITION|null|int:15000|int:250|text:resume,nextUp|int:1|int:0|null|int:0|int:0|int:0",
+                "int:4|text:$S1|text:$U1|text:$REWATCHED|text:MOVIE|text:POSITION|null|int:40000|int:300|text:resume,nextUp|int:1|int:0|null|int:0|int:0|int:0",
+            ),
+            rowsOf(raw, listOf("sync_outbox"))["sync_outbox"],
+        )
+        assertEquals(
+            listOf(FINISHED, REWATCHED, UNFINISHED, REWATCHED).mapIndexed { i, item -> "int:${i + 1}|text:$S1|text:$U1|text:$item|text:" },
+            rowsOf(raw, listOf("sync_marks"))["sync_marks"],
+        )
+    }
+
+    @Test fun theNewTablesAcceptRowsAndTheOutboxSeqKeepsRisingAfterTheHighestRowIsDeleted() {
+        createVersion4()
+        val db = openWithMigration()
+        val raw = db.openHelper.writableDatabase
+        SyncRows.fullSet(raw, S1, U1, FINISHED, SERIES)
+        assertTrue(SyncRows.TABLES.all { DownloadRows.count(raw, it) > 0 })
+        val highest = raw.query("SELECT MAX(seq) FROM sync_outbox").use { it.moveToFirst(); it.getLong(0) }
+        raw.execSQL("DELETE FROM sync_outbox WHERE seq = ?", arrayOf(highest))
+        assertEquals(highest + 1, SyncRows.outbox(raw, S1, U1, FINISHED))
+    }
+
+    @Test fun aDatabaseMigratedFromVersion4AndAFreshOneHaveIdenticalSchemas() {
+        createVersion4()
+        val migrated = openWithMigration()
+        val fresh = openWithMigration("fresh-test.db")
+        assertEquals(schemaOf(fresh), schemaOf(migrated))
+        for (table in SyncRows.TABLES + "sqlite_sequence") assertTrue("$table is in it", schemaOf(migrated).any { it.startsWith("table $table:") })
+        assertTrue("download_settings has deleteShared", schemaOf(migrated).any { it.startsWith("table download_settings:") && "`deleteShared` TEXT NOT NULL DEFAULT 'ANYONE'" in it })
+        assertTrue("no v4 copy is left behind", schemaOf(migrated).none { "download_settings_v4" in it })
         context.deleteDatabase("fresh-test.db")
     }
 
@@ -322,6 +411,10 @@ class MigrationTest {
         val SERIES = testId("series")
         val V2_TABLES = listOf("servers", "accounts", "active_account", "items", "user_data", "views", "list_entries", "list_state", "visible_items")
         val V3_TABLES = V2_TABLES + "track_choices"
+        val V4_TABLES = V3_TABLES + DownloadRows.TABLES
+        val FINISHED = testId("finished")
+        val REWATCHED = testId("rewatched")
+        val UNFINISHED = testId("unfinished")
     }
 }
 

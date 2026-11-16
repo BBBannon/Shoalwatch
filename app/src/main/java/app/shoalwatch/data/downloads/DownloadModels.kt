@@ -24,6 +24,12 @@ enum class ArtworkSlot { PRIMARY, BACKDROP, THUMB }
 
 enum class TrackType { AUDIO, SUBTITLE }
 
+/** What happens when a downloaded item is finished in the player (SPEC 3.1), per profile. */
+enum class AfterFinish { ASK, ALWAYS, NEVER }
+
+/** "Delete shared downloads" (SPEC 3.3), per server. */
+enum class SharedDelete { ANYONE, EVERYONE }
+
 /** What a screen shows about one download, for the session user. */
 data class DownloadInfo(
     val itemId: String, val state: DownloadState, val failure: DownloadFailure?, val quality: DownloadQuality,

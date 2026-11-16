@@ -1,10 +1,12 @@
 package app.shoalwatch.data.db
 
 import app.shoalwatch.data.db.downloads.Converters
+import app.shoalwatch.data.downloads.AfterFinish
 import app.shoalwatch.data.downloads.ArtworkSlot
 import app.shoalwatch.data.downloads.DownloadFailure
 import app.shoalwatch.data.downloads.DownloadQuality
 import app.shoalwatch.data.downloads.DownloadState
+import app.shoalwatch.data.downloads.SharedDelete
 import app.shoalwatch.data.downloads.StorageKind
 import app.shoalwatch.data.downloads.TrackType
 import app.shoalwatch.data.playback.Quality
@@ -27,6 +29,8 @@ class DownloadConvertersTest {
         TrackType.entries.forEach { assertEquals(it, c.toTrackType(c.fromTrackType(it))) }
         SubtitleKind.entries.forEach { assertEquals(it, c.toSubtitleKind(c.fromSubtitleKind(it))) }
         SegmentKind.entries.forEach { assertEquals(it, c.toSegmentKind(c.fromSegmentKind(it))) }
+        AfterFinish.entries.forEach { assertEquals(it, c.toAfterFinish(c.fromAfterFinish(it))) }
+        SharedDelete.entries.forEach { assertEquals(it, c.toSharedDelete(c.fromSharedDelete(it))) }
         assertEquals("COMPLETE", c.fromState(DownloadState.COMPLETE))
     }
 
@@ -35,6 +39,8 @@ class DownloadConvertersTest {
         assertEquals(DownloadFailure.UNKNOWN, c.toFailure("QUOTA"))
         assertEquals(DownloadQuality.ORIGINAL, c.toQuality("ULTRA"))
         assertEquals(StorageKind.INTERNAL, c.toStorage("CLOUD"))
+        assertEquals(AfterFinish.ASK, c.toAfterFinish("SOMETIMES"))
+        assertEquals(SharedDelete.ANYONE, c.toSharedDelete("OWNER"))
     }
 
     @Test fun anUnknownExtraKindReadsAsNullSoTheMapperDropsTheRow() {
