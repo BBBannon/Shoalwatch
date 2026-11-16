@@ -43,9 +43,10 @@ internal class SyncSender(
     private val now: () -> Long = System::currentTimeMillis,
     private val io: CoroutineDispatcher = Dispatchers.IO,
 ) {
-    /** One joined drain: [result] never fails; [work] is the part [forget] cancels. */
+    /** One joined drain: [result] never fails; [work] is the part [forget] cancels; [again]: a kick joined it, so look once more before ending. */
     private class Running(val result: Deferred<DrainResult>) {
         @Volatile var work: Deferred<DrainResult>? = null
+        var again = false // under lock
     }
 
     private val lock = Any()
@@ -53,12 +54,15 @@ internal class SyncSender(
     private val profileLocks = HashMap<Session, Mutex>()
     private val permits = Semaphore(PARALLEL)
 
+    /** A test seam: runs when a drain has found nothing more due, before it ends. */
+    @Volatile internal var beforeIdle: suspend (Session) -> Unit = {}
+
     /** Starts a drain for [s] in [scope], or joins the one running. Never throws. */
     fun kick(s: Session): Deferred<DrainResult> = synchronized(lock) {
-        running[s]?.let { return it.result }
+        running[s]?.let { it.again = true; return it.result }
         lateinit var entry: Running
         val result = scope.async(io, start = kotlinx.coroutines.CoroutineStart.LAZY) {
-            val work = async { profileLock(s).withLock { permits.withPermit { drain(s) } } }
+            val work = async { profileLock(s).withLock { permits.withPermit { drain(s, entry) } } }
             entry.work = work
             try {
                 work.await()
@@ -96,15 +100,15 @@ internal class SyncSender(
 
     private fun profileLock(s: Session) = synchronized(lock) { profileLocks.getOrPut(s) { Mutex() } }
 
-    private suspend fun drain(s: Session): DrainResult = try {
-        drainRows(s)
+    private suspend fun drain(s: Session, entry: Running): DrainResult = try {
+        drainRows(s, entry)
     } catch (e: Exception) {
         if (e is CancellationException) throw e
         AppLog.w(TAG, "A drain failed", e)
         DrainResult.STOPPED
     }
 
-    private suspend fun drainRows(s: Session): DrainResult {
+    private suspend fun drainRows(s: Session, entry: Running): DrainResult {
         awaitWarmed()
         val done = HashSet<Long>()
         while (true) {
@@ -116,12 +120,31 @@ internal class SyncSender(
                 AppLog.w(TAG, "Reading the outbox failed", e)
                 return DrainResult.STOPPED
             }
-            if (row == null) return finish(s)
+            if (row == null) {
+                beforeIdle(s)
+                if (lookAgainOrLeave(s, entry)) continue
+                return finish(s)
+            }
             if (!done.add(row.seq)) {
                 AppLog.w(TAG, "A landed outbox row was still there") // the landing did not take it: never loop on it
                 return DrainResult.STOPPED
             }
             (send(s, row) as? Outcome.Stop)?.let { return it.result }
+        }
+    }
+
+    /**
+     * Nothing more is due. One step under [lock]: if a kick joined this drain since it last looked, look again (its row may be
+     * new); otherwise stop being joinable, so a kick from now on starts a new drain (which waits for this one) instead of joining
+     * one that will never read its row (Tasks 3-5 review I1).
+     */
+    private fun lookAgainOrLeave(s: Session, entry: Running): Boolean = synchronized(lock) {
+        if (entry.again) {
+            entry.again = false
+            true
+        } else {
+            if (running[s] === entry) running.remove(s)
+            false
         }
     }
 
