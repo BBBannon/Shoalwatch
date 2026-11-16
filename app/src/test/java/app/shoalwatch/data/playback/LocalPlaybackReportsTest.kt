@@ -19,11 +19,14 @@ class LocalPlaybackReportsTest : DownloadTestBase() {
     private val film get() = id("film")
     private val local = mutableListOf<String>()
     private var localFails: Throwable? = null
+    /** Runs inside a stop, after it has taken the press and before it lets the copy go. */
+    private var duringStop: (() -> Unit)? = null
     private val playstate = object : LocalPlaystate {
         override suspend fun recordLocalStop(s: Session, itemId: String, positionMs: Long, finished: Boolean) {
             // The offline play must already be there, so the marker this leaves is one the sweeps spare.
             val play = db.offlinePlayDao().get(s.serverId, s.userId, itemId)
             local += "stop@$positionMs${if (finished) " finished" else ""} play=${play?.positionMs}"
+            duringStop?.invoke()
             localFails?.let { throw it }
         }
 
@@ -111,6 +114,34 @@ class LocalPlaybackReportsTest : DownloadTestBase() {
         reports.started(s1u1, report(ms = 0))
         reports.stopped(s1u1, report(ms = 500), finished = false)
         assertEquals("the press is forgotten at its stop", "stop@500 play=500", local.last())
+    }
+
+    /** Tasks 13-14 review M1: a press that lands while the stop is saving is not remembered, so it cannot force a later play. */
+    @Test fun aPressDuringTheStopIsNotRememberedForTheNextPlay() = runBlocking {
+        val key = DownloadKey(s1u1.serverId, film)
+        reports.started(s1u1, report(ms = 0))
+        var pressSeen: Boolean? = null
+        duringStop = { pressSeen = playing.watchedWhileOpen(s1u1.userId, key) }
+        reports.stopped(s1u1, report(ms = 5_000_000), finished = true)
+        duringStop = null
+        assertEquals("the stop has taken the press: a late one goes the normal way", false, pressSeen)
+        reports.started(s1u1, report(ms = 0)) // a replay of the kept copy in this process
+        reports.stopped(s1u1, report(ms = 500), finished = false)
+        assertEquals("the replay is not forced to a finished watch", "stop@500 play=500", local.last())
+        assertEquals(listOf(s1u1 to film), finishedFor)
+    }
+
+    @Test fun anotherProfilesPressDuringAStopStillCounts() = runBlocking {
+        val key = DownloadKey(s1u1.serverId, film)
+        reports.started(s1u1, report(ms = 0))
+        reports.started(s1u2, report(ms = 0))
+        var pressSeen: Boolean? = null
+        duringStop = { pressSeen = playing.watchedWhileOpen(s1u2.userId, key) }
+        reports.stopped(s1u1, report(ms = 1_000), finished = false)
+        duringStop = null
+        assertEquals("s1u2's player still holds the copy", true, pressSeen)
+        reports.stopped(s1u2, report(ms = 2_000), finished = false)
+        assertEquals("stop@2000 finished play=2000", local.last())
     }
 
     @Test fun theRowsGoWithTheAccount() = runBlocking {

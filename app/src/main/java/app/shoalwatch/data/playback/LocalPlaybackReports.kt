@@ -45,7 +45,7 @@ class LocalPlaybackReports internal constructor(
                 playstate.recordLocalStop(s, r.itemId, r.positionMs, done)
             }
         } finally {
-            playing.closed(DownloadKey(s.serverId, r.itemId))
+            playing.closed(DownloadKey(s.serverId, r.itemId), s.userId)
         }
         if (done && outcome == ReportOutcome.Sent) onFinished(s, r.itemId)
         return outcome
