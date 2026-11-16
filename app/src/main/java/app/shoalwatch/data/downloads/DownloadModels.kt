@@ -30,6 +30,15 @@ enum class AfterFinish { ASK, ALWAYS, NEVER }
 /** "Delete shared downloads" (SPEC 3.3), per server. */
 enum class SharedDelete { ANYONE, EVERYONE }
 
+/** What watch-and-delete did: the copy went, it stays for another owner, it waits until everyone has watched, or it is not this profile's to release. */
+enum class ReleaseOutcome { DELETED, KEPT_FOR_OTHERS, KEPT_UNTIL_EVERYONE_WATCHED, NOT_YOURS }
+
+/** What the prompt may offer. [othersWhoShare]: signed-in profiles that also see this shared download (a count; never names). */
+data class ReleaseChoice(val canRelease: Boolean, val shared: Boolean, val rule: SharedDelete, val othersWhoShare: Int, val film: Boolean)
+
+/** One profile's own download settings: what happens when a download finishes playing, and how many next episodes to fetch. */
+data class ProfileSettings(val afterFinish: AfterFinish = AfterFinish.ASK, val autoNextCount: Int = 0)
+
 /** What a screen shows about one download, for the session user. */
 data class DownloadInfo(
     val itemId: String, val state: DownloadState, val failure: DownloadFailure?, val quality: DownloadQuality,
@@ -42,7 +51,11 @@ data class DownloadInfo(
 
 data class OfflineEntry(val item: ItemWithUserData, val download: DownloadInfo)
 
-data class OfflineSeason(val season: ItemWithUserData?, val seasonNumber: Int?, val episodes: List<OfflineEntry>)
+/** [released]: this profile's watched-and-deleted episodes of the season, in episode order ("Watched and deleted"). */
+data class OfflineSeason(
+    val season: ItemWithUserData?, val seasonNumber: Int?, val episodes: List<OfflineEntry>,
+    val released: List<ItemWithUserData> = emptyList(),
+)
 
 data class OfflineSeries(val series: ItemWithUserData?, val seasons: List<OfflineSeason>)
 

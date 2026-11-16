@@ -58,6 +58,7 @@ internal class DownloadStore(private val db: AppDatabase, private val now: () ->
 
     private val dao = db.downloadDao()
     private val items = db.itemDao()
+    private val released = db.housekeepingDao()
 
     private suspend fun <T> pinning(block: suspend () -> T): T = lock.locked { db.withTransaction { block() } }
 
@@ -100,6 +101,7 @@ internal class DownloadStore(private val db: AppDatabase, private val now: () ->
             // planner's fresh confirmation restarts its permission's age.
             dao.insertOwner(DownloadOwnerEntity(s.serverId, s.userId, new.itemId, at))
             upsertPermission(DownloadKey(s.serverId, new.itemId), s.userId, at)
+            released.deleteReleasedFor(s.serverId, s.userId, new.itemId) // this profile has it again (pins unchanged: the row is there)
             return Added.OwnerAdded
         }
         dao.insert(
@@ -113,15 +115,26 @@ internal class DownloadStore(private val db: AppDatabase, private val now: () ->
         )
         dao.insertOwner(DownloadOwnerEntity(s.serverId, s.userId, new.itemId, at))
         if (new.confirmed) dao.insertPermission(DownloadPermissionEntity(s.serverId, s.userId, new.itemId, at))
+        released.deleteReleased(s.serverId, new.itemId) // a fresh copy: nobody's "watched and deleted" for it any more
         repin(s.serverId, listOfNotNull(new.itemId, new.seasonId, new.seriesId))
         return Added.Queued
     }
 
     private suspend fun repin(serverId: String, ids: List<String>) = dao.recomputePins(serverId, ids.distinct())
 
+    /**
+     * Deletes the row and recomputes its pins. The last download of a series takes every profile's tombstones of that series
+     * with it (the show leaves Downloads and normal eviction applies). Watch-and-delete itself (`ReleaseStore`) does not come
+     * here: it keeps the tombstones it writes.
+     */
     private suspend fun deleteRow(row: DownloadEntity) {
         dao.delete(row.serverId, row.itemId)
-        repin(row.serverId, listOfNotNull(row.itemId, row.seasonId, row.seriesId))
+        val ids = mutableListOf(row.itemId).apply { addAll(listOfNotNull(row.seasonId, row.seriesId)) }
+        if (row.seriesId != null && !released.seriesHasDownload(row.serverId, row.seriesId)) {
+            released.releasedOfSeries(row.serverId, row.seriesId).forEach { ids += listOfNotNull(it.itemId, it.seasonId) }
+            released.deleteReleasedOfSeries(row.serverId, row.seriesId)
+        }
+        repin(row.serverId, ids)
     }
 
     /** Removes [s]'s ownership. With no owner left the row goes too (pins recomputed) and Deleted is returned so the caller removes the files. */
@@ -151,6 +164,7 @@ internal class DownloadStore(private val db: AppDatabase, private val now: () ->
                 heirs.forEach { dao.insertOwner(DownloadOwnerEntity(serverId, it, row.itemId, now())) }
             }
         }
+        dao.recomputePinned(serverId) // the account's tombstones cascaded with it: what only they pinned is let go
         gone
     }
 
@@ -304,7 +318,12 @@ internal class DownloadStore(private val db: AppDatabase, private val now: () ->
     /** "Share downloads between profiles" for the server; off when never set. */
     suspend fun sharing(serverId: String): Boolean = dao.sharing(serverId) == true
 
-    suspend fun setSharing(serverId: String, on: Boolean) = dao.upsertSettings(DownloadSettingsEntity(serverId, on))
+    /** Writes only the sharing column, so "Delete shared downloads" in the same row is kept (Tasks 1-2 review M1). */
+    suspend fun setSharing(serverId: String, on: Boolean) = db.withTransaction {
+        dao.insertSettingsIfMissing(serverId)
+        dao.updateSharing(serverId, on)
+        Unit
+    }
 
     fun observeSharing(serverId: String): Flow<Boolean> = dao.observeSharing(serverId).map { it == true }.distinctUntilChanged()
 

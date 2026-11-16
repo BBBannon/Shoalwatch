@@ -6,7 +6,6 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
-import androidx.room.Upsert
 import app.shoalwatch.data.downloads.ArtworkSlot
 import kotlinx.coroutines.flow.Flow
 
@@ -153,13 +152,16 @@ abstract class DownloadDao {
 
     // ---- pins: `items.pinned` has one writer, this statement
 
-    /** Recomputes `pinned` for [ids]: set while any download on the server is that item, or in that season or series. */
-    @Query(
-        "UPDATE items SET pinned = CASE WHEN EXISTS (SELECT 1 FROM downloads d WHERE d.serverId = items.serverId " +
-            "AND (d.itemId = items.itemId OR d.seasonId = items.itemId OR d.seriesId = items.itemId)) THEN 1 ELSE 0 END " +
-            "WHERE serverId = :serverId AND itemId IN (:ids)",
-    )
+    /**
+     * Recomputes `pinned` for [ids]: set while any download on the server is that item, or in that season or series, or any
+     * profile's watch-and-delete tombstone (`released_episodes`) is.
+     */
+    @Query("UPDATE items SET pinned = $PIN_RULE WHERE serverId = :serverId AND itemId IN (:ids)")
     internal abstract suspend fun recomputePins(serverId: String, ids: List<String>)
+
+    /** The same rule for every pinned row of the server (after an account's tombstones cascaded away with it). */
+    @Query("UPDATE items SET pinned = $PIN_RULE WHERE serverId = :serverId AND pinned = 1")
+    internal abstract suspend fun recomputePinned(serverId: String)
 
     // ---- extras: tracks, skip segments, pinned artwork
 
@@ -237,8 +239,20 @@ abstract class DownloadDao {
     @Query("SELECT shareBetweenProfiles FROM download_settings WHERE serverId = :serverId")
     internal abstract fun observeSharing(serverId: String): Flow<Boolean?>
 
-    @Upsert
-    internal abstract suspend fun upsertSettings(row: DownloadSettingsEntity)
+    @Query("INSERT OR IGNORE INTO download_settings (serverId) VALUES (:serverId)")
+    internal abstract suspend fun insertSettingsIfMissing(serverId: String)
+
+    /** Only this column: "Delete shared downloads" in the same row is left as it is. */
+    @Query("UPDATE download_settings SET shareBetweenProfiles = :on WHERE serverId = :serverId")
+    internal abstract suspend fun updateSharing(serverId: String, on: Boolean): Int
+
+    internal companion object {
+        const val PIN_RULE =
+            "CASE WHEN EXISTS (SELECT 1 FROM downloads d WHERE d.serverId = items.serverId " +
+                "AND (d.itemId = items.itemId OR d.seasonId = items.itemId OR d.seriesId = items.itemId)) " +
+                "OR EXISTS (SELECT 1 FROM released_episodes r WHERE r.serverId = items.serverId " +
+                "AND (r.itemId = items.itemId OR r.seasonId = items.itemId OR r.seriesId = items.itemId)) THEN 1 ELSE 0 END"
+    }
 }
 
 internal data class KeyRow(val serverId: String, val itemId: String)

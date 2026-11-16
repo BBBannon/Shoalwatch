@@ -7,6 +7,7 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import app.shoalwatch.data.db.downloads.Converters
 import app.shoalwatch.data.db.downloads.DownloadDao
+import app.shoalwatch.data.db.downloads.HousekeepingDao
 import app.shoalwatch.data.db.downloads.DownloadEntity
 import app.shoalwatch.data.db.downloads.DownloadOwnerEntity
 import app.shoalwatch.data.db.downloads.DownloadSegmentEntity
@@ -69,6 +70,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun offlineLibraryDao(): OfflineLibraryDao
     abstract fun offlinePlayDao(): OfflinePlayDao
     abstract fun outboxDao(): OutboxDao
+    abstract fun housekeepingDao(): HousekeepingDao
 
     companion object {
         const val FILE_NAME = "shoalwatch.db"

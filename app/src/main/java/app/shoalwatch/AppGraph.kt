@@ -36,6 +36,7 @@ import app.shoalwatch.data.downloads.Volumes
 import app.shoalwatch.data.downloads.SavedCopies
 import app.shoalwatch.data.downloads.SharingRecheck
 import app.shoalwatch.data.downloads.LocalPlaying
+import app.shoalwatch.data.downloads.Housekeeping
 import app.shoalwatch.data.servers.Connection
 import app.shoalwatch.ui.browse.connectionRegained
 import app.shoalwatch.data.downloads.savedRows
@@ -156,10 +157,10 @@ class AppGraph(private val appContext: Context) {
     internal val downloadVolumes: Volumes by lazy { AndroidVolumes(appContext) }
     internal val downloadPaths: DownloadPaths by lazy { DownloadPaths(downloadVolumes) }
     /** The download rows, owners and pins; every pin is written under the library's write lock. */
-    internal val downloadStore: DownloadStore by lazy {
-        DownloadStore(database, System::currentTimeMillis, object : LibraryWriteLock {
-            override suspend fun <T> locked(block: suspend () -> T): T = libraryRepository.writeGated(block)
-        })
+    internal val downloadStore: DownloadStore by lazy { DownloadStore(database, System::currentTimeMillis, libraryWriteLock) }
+    /** Every write of `items.pinned` (downloads, watch-and-delete) runs under the library's write gate. */
+    internal val libraryWriteLock: LibraryWriteLock = object : LibraryWriteLock {
+        override suspend fun <T> locked(block: suspend () -> T): T = libraryRepository.writeGated(block)
     }
     /** Device download settings (mobile data, storage, default quality) in the private `download_prefs` file. */
     val downloadPrefs: DownloadPrefs by lazy { DownloadPrefs(appContext.getSharedPreferences("download_prefs", Context.MODE_PRIVATE)) }
@@ -258,8 +259,11 @@ class AppGraph(private val appContext: Context) {
     internal val localPlaying: LocalPlaying by lazy { LocalPlaying() }
     /** The controller's reports: LOCAL plays stay on the phone, everything else goes to the server. */
     internal val routedReports: RoutedPlaybackReports by lazy {
-        RoutedPlaybackReports(playbackReports, LocalPlaybackReports(offlinePlays, playstateRepository, System::currentTimeMillis, localPlaying) { _, _ -> })
+        RoutedPlaybackReports(playbackReports, LocalPlaybackReports(offlinePlays, playstateRepository, System::currentTimeMillis, localPlaying, housekeepingParts.repository::onLocalFinished))
     }
+    internal val housekeepingParts: HousekeepingParts by lazy { HousekeepingParts(this) }
+    /** Watch-and-delete and the per-profile download settings (see "Watch-and-delete" in docs/ARCHITECTURE.md). */
+    val housekeeping: Housekeeping get() = housekeepingParts.repository
     /** What every browsing screen reads: saved rows first, refreshed behind them (see "Library repository" in docs/ARCHITECTURE.md). */
     /** The one record of local changes, shared by everything that writes server data or user changes: ordering by sequence, expiry by the monotonic clock. */
     val localChanges: LocalChangeLog by lazy { LocalChangeLog(SystemMonotonicClock) }

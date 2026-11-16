@@ -88,6 +88,14 @@ abstract class OfflineLibraryDao {
     @Query(FOR_SERIES_SQL)
     abstract fun observeForSeries(serverId: String, userId: String, seriesId: String): Flow<List<OfflineRow>>
 
+    /**
+     * This user's OWN watch-and-delete tombstones of the series, in episode order: each needs the user's own `visible_items`
+     * record for the episode, the series and (if any) the season, as the episodes do; one this user sees as a ready download
+     * again is left out (it is listed as an episode).
+     */
+    @Query(RELEASED_SQL)
+    abstract fun observeReleased(serverId: String, userId: String, seriesId: String): Flow<List<ItemRow>>
+
     /** The download the player may open: COMPLETE, visible to the user, and theirs or shared. */
     @Query(PLAYABLE_SQL)
     internal abstract suspend fun getPlayable(serverId: String, userId: String, itemId: String): DownloadEntity?
@@ -171,6 +179,19 @@ abstract class OfflineLibraryDao {
         const val PLAYABLE_SQL =
             "SELECT d.* FROM downloads d JOIN items i ON i.serverId = d.serverId AND i.itemId = d.itemId $VISIBLE_JOIN" +
                 "WHERE d.serverId = :serverId AND d.itemId = :itemId AND d.state = 'COMPLETE' AND $MINE_OR_SHARED"
+
+        /** The tombstone's own episode, series and season records for this user (`r` = released_episodes). */
+        const val RELEASED_VISIBLE = "JOIN visible_items v ON v.serverId = r.serverId AND v.userId = :userId AND v.itemId = r.itemId "
+        const val RELEASED_SERIES_VISIBLE = "EXISTS (SELECT 1 FROM visible_items sv WHERE sv.serverId = r.serverId AND sv.userId = :userId AND sv.itemId = r.seriesId)"
+        const val RELEASED_SEASON_VISIBLE =
+            "(r.seasonId IS NULL OR EXISTS (SELECT 1 FROM visible_items qv WHERE qv.serverId = r.serverId AND qv.userId = :userId AND qv.itemId = r.seasonId))"
+
+        const val RELEASED_SQL =
+            "SELECT $ROW_COLUMNS FROM released_episodes r JOIN items i ON i.serverId = r.serverId AND i.itemId = r.itemId " + RELEASED_VISIBLE +
+                "LEFT JOIN user_data u ON u.serverId = r.serverId AND u.userId = :userId AND u.itemId = r.itemId " +
+                "WHERE r.serverId = :serverId AND r.userId = :userId AND r.seriesId = :seriesId AND $RELEASED_SERIES_VISIBLE AND $RELEASED_SEASON_VISIBLE " +
+                "AND NOT EXISTS (SELECT 1 FROM downloads d WHERE d.serverId = r.serverId AND d.itemId = r.itemId AND d.state = 'COMPLETE' AND $MINE_OR_SHARED) " +
+                EPISODE_ORDER
 
         /** One row per series (`i` is the series here, `e` the episode). */
         const val SERIES_SQL =

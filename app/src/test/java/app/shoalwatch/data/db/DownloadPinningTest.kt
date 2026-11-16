@@ -78,4 +78,32 @@ class DownloadPinningTest : DownloadTestBase() {
         assertTrue(pinned("e1"))
         assertEquals("the authoritative write landed", "Episode e1", db.itemDao().getItemEntity(S1, e1.id)!!.name)
     }
+
+    // ---- watch-and-delete tombstones (Milestone 5)
+
+    private val releases get() = app.shoalwatch.data.db.downloads.ReleaseStore(db, { clock }, app.shoalwatch.data.db.downloads.LibraryWriteLock.None)
+
+    private fun ready(s: app.shoalwatch.data.servers.Session, vararg items: app.shoalwatch.data.library.Item) = runBlocking {
+        store.add(s, items.map { newDownload(it) })
+        for (it in items) { setState(it, app.shoalwatch.data.downloads.DownloadState.COMPLETE); store.markFetcher(key(it), s.userId) }
+    }
+
+    @Test fun aTombstoneAloneKeepsTheEpisodeItsSeasonAndItsSeriesPinned() = runBlocking {
+        seen(s1u1, series, season1, e1)
+        ready(s1u1, e1)
+        releases.release(s1u1, e1.id)
+        assertEquals(0, count("downloads"))
+        assertEquals(listOf(true, true, true), all("e1", "season1", "show"))
+    }
+
+    @Test fun removingAnAccountLeavesNoPinOnlyItsTombstonesHeld() = runBlocking {
+        seen(s1u1, series, season1, e1, e2); seen(s1u2, series, season1, e1, e2)
+        ready(s1u1, e1)
+        ready(s1u2, e2)
+        releases.release(s1u1, e1.id)
+        assertTrue(pinned("e1"))
+        servers.removeAccount(S1, U1) // its tombstones cascade with it
+        store.afterAccountGone(S1)
+        assertEquals(listOf(false, true, true, true), all("e1", "e2", "season1", "show"))
+    }
 }

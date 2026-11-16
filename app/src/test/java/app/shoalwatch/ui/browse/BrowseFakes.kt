@@ -137,3 +137,50 @@ class FakeSync : app.shoalwatch.data.sync.Sync {
         return waiting(s)
     }
 }
+
+/**
+ * A `Housekeeping` the tests drive by hand: [settings] per session, [choices] per (session, item), [outcome] for every release
+ * (or [failWith] thrown), every action recorded as text in [calls] (`release:<who>:<id>:<together>` and so on), optionally held
+ * at [gate].
+ */
+class FakeHousekeeping : app.shoalwatch.data.downloads.Housekeeping {
+    val settings = MutableStateFlow<Map<Session, app.shoalwatch.data.downloads.ProfileSettings>>(emptyMap())
+    val shared = MutableStateFlow<Map<String, app.shoalwatch.data.downloads.SharedDelete>>(emptyMap())
+    var choices: (Session, String) -> app.shoalwatch.data.downloads.ReleaseChoice =
+        { _, _ -> app.shoalwatch.data.downloads.ReleaseChoice(true, false, app.shoalwatch.data.downloads.SharedDelete.ANYONE, 0, false) }
+    var outcome: app.shoalwatch.data.downloads.ReleaseOutcome = app.shoalwatch.data.downloads.ReleaseOutcome.DELETED
+    var failWith: Throwable? = null
+    var gate: CompletableDeferred<Unit>? = null
+    val calls = java.util.concurrent.CopyOnWriteArrayList<String>()
+
+    private fun who(s: Session) = when (s) { BEN -> "ben"; AMY -> "amy"; else -> "other" }
+
+    fun set(s: Session, value: app.shoalwatch.data.downloads.ProfileSettings) = settings.update { it + (s to value) }
+
+    override fun profileSettings(s: Session): Flow<app.shoalwatch.data.downloads.ProfileSettings> =
+        settings.map { it[s] ?: app.shoalwatch.data.downloads.ProfileSettings() }.distinctUntilChanged()
+
+    override suspend fun setAfterFinish(s: Session, value: app.shoalwatch.data.downloads.AfterFinish) {
+        calls += "afterFinish:${who(s)}:$value"
+        settings.update { it + (s to (it[s] ?: app.shoalwatch.data.downloads.ProfileSettings()).copy(afterFinish = value)) }
+    }
+
+    override suspend fun setAutoNext(s: Session, count: Int) { calls += "autoNext:${who(s)}:$count" }
+
+    override fun sharedDelete(serverId: String): Flow<app.shoalwatch.data.downloads.SharedDelete> =
+        shared.map { it[serverId] ?: app.shoalwatch.data.downloads.SharedDelete.ANYONE }.distinctUntilChanged()
+
+    override suspend fun setSharedDelete(s: Session, value: app.shoalwatch.data.downloads.SharedDelete) {
+        calls += "sharedDelete:${who(s)}:$value"
+        shared.update { it + (s.serverId to value) }
+    }
+
+    override suspend fun releaseChoice(s: Session, itemId: String) = choices(s, itemId).also { calls += "choice:${who(s)}:$itemId" }
+
+    override suspend fun release(s: Session, itemId: String, together: Boolean): app.shoalwatch.data.downloads.ReleaseOutcome {
+        calls += "release:${who(s)}:$itemId:$together"
+        gate?.await()
+        failWith?.let { throw it }
+        return outcome
+    }
+}

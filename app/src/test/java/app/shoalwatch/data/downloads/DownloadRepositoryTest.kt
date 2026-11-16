@@ -139,6 +139,24 @@ class DownloadRepositoryTest : DownloadHousekeepingTestBase() {
         assertEquals(DownloadState.QUEUED, download(f1)!!.state)
     }
 
+    @Test fun theOfflineSeriesListsThisProfilesWatchedAndDeletedEpisodesEvenOnceTheSeasonHasNoDownloadLeft() = runBlocking {
+        val e1 = ep("e1", 1, 1); val e2 = ep("e2", 1, 2)
+        seen(a, series, season1, e1, e2); seen(b, series, season1, e1, e2)
+        queued(a, e1, e2)
+        complete(e1, e2)
+        val releases = app.shoalwatch.data.db.downloads.ReleaseStore(db, { clock }, app.shoalwatch.data.db.downloads.LibraryWriteLock.None)
+        releases.release(a, e1.id)
+        val one = repo.series(a, series.id).first().seasons.single()
+        assertEquals(listOf(e2.id), one.episodes.map { it.item.item.id })
+        assertEquals(listOf(e1.id), one.released.map { it.item.id })
+        assertTrue("another profile sees none of A's tombstones", repo.series(b, series.id).first().seasons.all { it.released.isEmpty() })
+        releases.release(a, e2.id)
+        val gone = repo.series(a, series.id).first()
+        assertEquals(series.id, gone.series?.item?.id)
+        assertEquals(season1.id, gone.seasons.single().season?.item?.id)
+        assertEquals(listOf(e1.id, e2.id), gone.seasons.single().released.map { it.item.id })
+    }
+
     @Test fun aMalformedIdGivesAnEmptyValueAndNeverThrows() = runBlocking {
         assertNull(repo.status(a, "../System").first())
         assertEquals(DownloadRepository.EMPTY_SERIES, repo.series(a, "nope").first())

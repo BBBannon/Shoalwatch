@@ -59,18 +59,31 @@ class DownloadRepository internal constructor(
                 offline.observeSeries(s.serverId, s.userId),
                 offline.observeSeasons(s.serverId, s.userId, seriesId),
                 offline.observeSeriesEpisodes(s.serverId, s.userId, seriesId),
-            ) { all, seasonRows, episodeRows ->
+                offline.observeReleased(s.serverId, s.userId, seriesId),
+            ) { all, seasonRows, episodeRows, releasedRows ->
                 val mounted = mounted()
                 val episodes = episodeRows.map { it.entry(mounted) }
-                val seasons = seasonRows.map { it.toModel() }
+                val released = releasedRows.map { it.toModel() }
+                // A season whose every episode was watched and deleted has no download left: its row is read as this user's own.
+                val known = seasonRows.map { it.toModel() }.toMutableList()
+                released.mapNotNull { it.item.seasonId }.distinct().filter { id -> known.none { it.item.id == id } }.forEach { id ->
+                    items.getItem(s.serverId, s.userId, id)?.toModel()?.let { known += it }
+                }
+                val seasons = known.sortedWith(SEASON_ORDER)
                 val bySeason = seasons.map { season ->
-                    OfflineSeason(season, season.item.indexNumber, episodes.filter { it.item.item.seasonId == season.item.id })
-                }.filter { it.episodes.isNotEmpty() }
-                val known = seasons.map { it.item.id }.toSet()
-                val loose = episodes.filter { it.item.item.seasonId == null || it.item.item.seasonId !in known }
+                    OfflineSeason(
+                        season, season.item.indexNumber, episodes.filter { it.item.item.seasonId == season.item.id },
+                        released.filter { it.item.seasonId == season.item.id },
+                    )
+                }.filter { it.episodes.isNotEmpty() || it.released.isNotEmpty() }
+                val ids = seasons.map { it.item.id }.toSet()
+                val loose = episodes.filter { it.item.item.seasonId == null || it.item.item.seasonId !in ids }
+                val looseReleased = released.filter { it.item.seasonId == null || it.item.seasonId !in ids }
+                val header = all.firstOrNull { it.item.itemId == seriesId }?.toModel()?.series
+                    ?: if (released.isEmpty()) null else items.getItem(s.serverId, s.userId, seriesId)?.toModel()
                 OfflineSeries(
-                    series = all.firstOrNull { it.item.itemId == seriesId }?.toModel()?.series,
-                    seasons = bySeason + if (loose.isEmpty()) emptyList() else listOf(OfflineSeason(null, null, loose)),
+                    series = header,
+                    seasons = bySeason + if (loose.isEmpty() && looseReleased.isEmpty()) emptyList() else listOf(OfflineSeason(null, null, loose, looseReleased)),
                 )
             }
         }
@@ -186,6 +199,11 @@ class DownloadRepository internal constructor(
         const val TAG = "Downloads"
         val EMPTY_LIBRARY = OfflineLibrary(emptyList(), emptyList(), emptyList())
         val EMPTY_SERIES = OfflineSeries(null, emptyList())
+
+        /** OfflineLibraryDao.SEASONS_SQL's order: numbered seasons, then no number, Specials last; then name and id. */
+        private val SEASON_ORDER = compareBy<app.shoalwatch.data.library.ItemWithUserData>(
+            { when (it.item.indexNumber) { null -> 1; 0 -> 2; else -> 0 } }, { it.item.indexNumber ?: 0 }, { it.item.sortName ?: it.item.name }, { it.item.id },
+        )
 
         /** The item's folder on every mounted root (it may be on either; a card that is out is swept when it comes back). */
         fun deleteFiles(paths: DownloadPaths, key: DownloadKey) {
