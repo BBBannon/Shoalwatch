@@ -176,7 +176,10 @@ class AppGraph(private val appContext: Context) {
     }
     /** The removal rules and the start-up tidy-up (see "Removal rules" in docs/ARCHITECTURE.md). */
     internal val downloadHousekeeping: DownloadHousekeeping by lazy {
-        DownloadHousekeeping(downloadStore, downloadPaths, downloadQueue, downloadScheduler, library, downloadGateway, appScope)
+        DownloadHousekeeping(
+            downloadStore, downloadPaths, downloadQueue, downloadScheduler, library, downloadGateway, appScope,
+            reachable = { id -> addressSelector.connection(id).value is Connection.Online },
+        )
     }
     /** WorkManager is reached only from here, on first use (initialised on demand with `ShoalwatchWorkerFactory`). */
     val downloadScheduler: DownloadScheduler by lazy { DownloadScheduler({ WorkManager.getInstance(appContext) }, downloadPrefs) }
@@ -200,7 +203,7 @@ class AppGraph(private val appContext: Context) {
 
     /** When the strict sharing rule's 7-day re-ask runs, whichever screen is open (see "Sharing rule" in docs/ARCHITECTURE.md). */
     internal val sharingRecheck: SharingRecheck by lazy {
-        SharingRecheck({ s -> downloadHousekeeping.reconfirm(s) }, ::serverReachable, appScope, SystemMonotonicClock)
+        SharingRecheck({ s, first -> downloadHousekeeping.reconfirm(s, first) }, ::serverReachable, appScope, SystemMonotonicClock)
     }
     private fun serverReachable(s: Session): Boolean = addressSelector.connection(s.serverId).value is Connection.Online
     /** What `ShoalwatchWorkerFactory` hands the download worker. */
@@ -232,7 +235,7 @@ class AppGraph(private val appContext: Context) {
     internal val savedCopies: SavedCopies by lazy {
         SavedCopies(
             database.offlineLibraryDao(), database.downloadDao().savedRows(), downloadPaths,
-            reachable = ::serverReachable, recheck = { s -> sharingRecheck.request(s) },
+            reachable = ::serverReachable, recheck = { s, itemId -> sharingRecheck.request(s, itemId) },
         )
     }
     /** What the player and its subtitle loader ask: saved subtitles and skip markers for a saved copy, else the server. */

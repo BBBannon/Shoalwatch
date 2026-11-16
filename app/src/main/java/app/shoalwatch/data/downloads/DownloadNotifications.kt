@@ -12,8 +12,9 @@ import app.shoalwatch.R
 import app.shoalwatch.ui.MainActivity
 
 /**
- * The download notices. **Fixed words only:** never a title, a profile name or an id, so a shared tablet's lock screen and
- * notification shade never say what a profile is downloading; the public version says only "Shoalwatch is downloading".
+ * The download notices. **Fixed words only:** never a title, a profile name, an id, a size, a count or one item's progress,
+ * so a shared tablet's lock screen and notification shade never say what or how much any profile is downloading (the queue is
+ * the whole device's: carried Tasks 9-10 Minor 6); the public version says only "Shoalwatch is downloading".
  * A tap is an explicit, immutable `PendingIntent` to [MainActivity] with `open_tab=downloads` and nothing else. Downloads
  * run whether or not notifications are allowed (the foreground notice still shows in the Task Manager).
  */
@@ -31,10 +32,9 @@ internal class DownloadNotifications(private val context: Context) {
     /** The foreground notice before the first item starts. */
     fun starting(): Notification = base(context.getString(R.string.download_public)).setOngoing(true).setProgress(0, 0, true).build()
 
-    fun running(position: Int, of: Int, progress: Float?): Notification =
-        base(context.getString(R.string.download_running, position, of)).setOngoing(true)
-            .setProgress(PROGRESS_MAX, ((progress ?: 0f).coerceIn(0f, 1f) * PROGRESS_MAX).toInt(), progress == null)
-            .build()
+    /** "Downloading", with an indeterminate bar: the item downloading may be another profile's. */
+    fun running(): Notification =
+        base(context.getString(R.string.download_running)).setOngoing(true).setProgress(0, 0, true).build()
 
     /** WaitingForWifi, WaitingForConnection or PausedByTimeLimit. */
     fun waiting(status: QueueStatus): Notification = base(
@@ -52,10 +52,10 @@ internal class DownloadNotifications(private val context: Context) {
 
     fun clearWaiting() = manager.cancel(WAITING_ID)
 
-    /** Posts "Downloads finished" when notifications are enabled. */
-    fun finished(ready: Int) {
+    /** Posts "Downloads finished" (no count) when notifications are enabled. */
+    fun finished() {
         clearWaiting()
-        post(FINISHED_ID, base(context.getString(R.string.download_finished)).setContentText(context.getString(R.string.download_finished_count, ready)).setAutoCancel(true).build())
+        post(FINISHED_ID, base(context.getString(R.string.download_finished)).setAutoCancel(true).build())
     }
 
     @android.annotation.SuppressLint("MissingPermission") // checked: areNotificationsEnabled covers POST_NOTIFICATIONS on API 33+
@@ -95,6 +95,5 @@ internal class DownloadNotifications(private val context: Context) {
         const val CHANNEL = "downloads"
         const val EXTRA_OPEN_TAB = "open_tab"
         const val TAB_DOWNLOADS = "downloads"
-        private const val PROGRESS_MAX = 100
     }
 }

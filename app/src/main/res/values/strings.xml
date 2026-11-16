@@ -437,15 +437,15 @@
     <string name="stream_hdr_shown">HDR video, shown in HDR.</string>
     <string name="stream_hdr_converted">HDR video. This screen can\'t show HDR, so your server is converting the colours.</string>
     <string name="stream_dolby_vision_as_hdr10">Dolby Vision video, shown as HDR10.</string>
-    <!-- Download notification (Milestone 4 Task 11): fixed words only, never a title or a profile name. -->
+    <!-- Download notification (Milestone 4 Task 11): fixed words only, never a title, a profile name, a size or a count (the
+         queue holds every profile's downloads). -->
     <string name="download_channel_name">Downloads</string>
     <string name="download_public">Shoalwatch is downloading</string>
-    <string name="download_running">Downloading %1$d of %2$d</string>
+    <string name="download_running">Downloading</string>
     <string name="download_waiting_wifi">Waiting for Wi-Fi</string>
     <string name="download_waiting_connection">Waiting for a connection</string>
     <string name="download_paused_time_limit">Downloads paused. Open Shoalwatch to carry on.</string>
     <string name="download_finished">Downloads finished</string>
-    <string name="download_finished_count">%1$d ready to watch offline</string>
     <!-- Downloads tab (Milestone 4 Task 14) -->
     <string name="dl_settings_action">Download settings</string>
     <string name="dl_section_downloading">Downloading</string>
@@ -493,18 +493,19 @@
     <string name="dl_unavailable">Insert the SD card this was saved to, to watch it.</string>
     <string name="dl_shared">Downloaded by another profile</string>
     <string name="dl_delete">Delete download</string>
-    <string name="dl_delete_confirm">Delete this download? This frees %1$s on this phone.</string>
+    <!-- Never "this frees": the copy may stay on the phone for another profile (final review L-6). -->
+    <string name="dl_delete_confirm">Delete this download? It takes up %1$s on this phone.</string>
     <string name="dl_delete_size_unknown">Delete this download?</string>
     <string name="dl_delete_action">Delete</string>
     <string name="dl_delete_season">Delete downloaded season</string>
     <string name="dl_delete_series">Delete downloaded series</string>
     <plurals name="dl_delete_episodes_confirm">
-        <item quantity="one">Delete your %1$s downloaded episode? This frees %2$s on this phone.</item>
-        <item quantity="other">Delete your %1$s downloaded episodes? This frees %2$s on this phone.</item>
+        <item quantity="one">Delete your %1$s downloaded episode? It takes up %2$s on this phone. Episodes still downloading carry on.</item>
+        <item quantity="other">Delete your %1$s downloaded episodes? They take up %2$s on this phone. Episodes still downloading carry on.</item>
     </plurals>
     <plurals name="dl_delete_episodes_size_unknown">
-        <item quantity="one">Delete your %1$s downloaded episode?</item>
-        <item quantity="other">Delete your %1$s downloaded episodes?</item>
+        <item quantity="one">Delete your %1$s downloaded episode? Episodes still downloading carry on.</item>
+        <item quantity="other">Delete your %1$s downloaded episodes? Episodes still downloading carry on.</item>
     </plurals>
     <string name="dl_kept_for_others">Removed from your downloads. It stays on this phone for another profile.</string>
     <string name="dl_not_yours">Only the profile that downloaded this can delete it.</string>

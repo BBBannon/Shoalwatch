@@ -32,9 +32,17 @@ class SharingRecheckTest {
     private var reachable = true
     private val runs = mutableListOf<Session>()
     private var gate: CompletableDeferred<Unit>? = null
-    private val recheck = SharingRecheck({ s -> runs += s; gate?.await() }, { reachable }, scope, clock)
+    private val firsts = mutableListOf<String?>()
+    private val recheck = SharingRecheck({ s, first -> runs += s; firsts += first; gate?.await() }, { reachable }, scope, clock)
 
     @After fun stop() = scope.cancel()
+
+    /** Final review L-11: the item about to play is asked about first; the other triggers name none. */
+    @Test fun aPlayNamesItsItemSoItIsAskedFirst() {
+        recheck.request(b, "0123456789abcdef0123456789abcdef")
+        recheck.request(a)
+        assertEquals(listOf<String?>("0123456789abcdef0123456789abcdef", null), firsts)
+    }
 
     @Test fun aSessionChangeReAsksForTheNewProfile() {
         val active = MutableStateFlow<Session?>(null)
@@ -55,7 +63,7 @@ class SharingRecheckTest {
     @Test fun comingToTheFrontReAsksForTheActiveProfile() = runBlocking {
         recheck.inFront(MutableStateFlow(b))?.join()
         assertEquals(listOf(b), runs)
-        assertNull("signed out: nothing", SharingRecheck({ runs += it }, { true }, scope, clock).inFront(MutableStateFlow(null)))
+        assertNull("signed out: nothing", SharingRecheck({ s, _ -> runs += s }, { true }, scope, clock).inFront(MutableStateFlow(null)))
     }
 
     @Test fun offlineNothingIsAskedAndTheNextReachableTriggerStillRuns() {

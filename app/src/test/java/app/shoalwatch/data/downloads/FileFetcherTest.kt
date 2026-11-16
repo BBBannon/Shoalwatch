@@ -126,7 +126,7 @@ class FileFetcherTest : FileFetcherTestBase() {
         val f = fetcher(chunk = 256 * 1024, record = true)
         val seen = mutableListOf<Pair<Long, Long?>>() // (done, the size on disk at the last force before this save)
         val progress = Progress { done, _, _, _ -> seen += done to channel?.forcedSizes?.lastOrNull() }
-        assertEquals(FetchResult.Done, runBlocking { f.fetch(route(), item, part, target, 0, null, big.body.size.toLong(), null, 0, progress) })
+        assertEquals(FetchResult.Done, runBlocking { f.fetch(route(), item, part, target, 0, null, big.body.size.toLong(), null, 0, { true }, progress) })
         assertTrue("saved every 8 MiB as well as at the end: ${seen.map { it.first }}", seen.size >= 3)
         for ((done, forced) in seen) assertTrue("$done was forced first ($forced)", forced != null && forced >= done)
         assertEquals(big.body.size.toLong(), seen.last().first)
@@ -135,7 +135,7 @@ class FileFetcherTest : FileFetcherTestBase() {
     @Test fun cancellingMidBodyCancelsTheCallAndKeepsTheSavedCount() = runBlocking {
         web.dispatcher = okhttp3.mockwebserver.QueueDispatcher()
         web.enqueue(MockResponse().setBody(Buffer().write(ByteArray(4 * 1024 * 1024))).throttleBody(64 * 1024, 100, TimeUnit.MILLISECONDS))
-        val job = launch(Dispatchers.IO) { fetcher().fetch(route(), item, part, target, 0, null, 4L * 1024 * 1024, null, 0, log) }
+        val job = launch(Dispatchers.IO) { fetcher().fetch(route(), item, part, target, 0, null, 4L * 1024 * 1024, null, 0, { true }, log) }
         delay(400)
         withTimeout(2_000) { job.cancelAndJoin() }
         assertTrue(log.saves.isEmpty())

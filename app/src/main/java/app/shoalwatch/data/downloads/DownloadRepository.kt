@@ -124,7 +124,11 @@ class DownloadRepository internal constructor(
 
     override suspend fun remove(s: Session, itemId: String): RemoveOutcome = action {
         val outcome = store.removeOwner(s, itemId)
-        if (outcome is RemoveOutcome.Deleted) { removed(outcome.key); deleteFiles(paths, outcome.key) }
+        if (outcome is RemoveOutcome.Deleted) {
+            removed(outcome.key)
+            deleteFiles(paths, outcome.key)
+            dropUnpinnedArtwork(store, paths) // its pictures go now, not at the next start (final review L-4)
+        }
         outcome
     }
 
@@ -186,6 +190,14 @@ class DownloadRepository internal constructor(
         /** The item's folder on every mounted root (it may be on either; a card that is out is swept when it comes back). */
         fun deleteFiles(paths: DownloadPaths, key: DownloadKey) {
             for (folder in paths.itemFolders(key)) paths.deleteInside(folder)
+        }
+
+        /** Pictures whose item no download pins any more: row and file (best effort per file). */
+        suspend fun dropUnpinnedArtwork(store: DownloadStore, paths: DownloadPaths) {
+            for (art in store.unpinnedArtwork()) {
+                store.unpinArtwork(art)
+                runCatching { paths.deleteInside(paths.artworkFile(art.serverId, art.itemId, art.slot, art.tag)) }
+            }
         }
     }
 }

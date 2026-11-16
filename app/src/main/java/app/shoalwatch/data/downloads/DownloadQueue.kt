@@ -25,12 +25,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-internal sealed interface QueueRun {
-    data object Drained : QueueRun
-    data class Retry(val kind: AppError.Kind) : QueueRun
-    data object Stopped : QueueRun
-}
-
 /**
  * Room is the queue; this drains it, one item at a time, writing each step to Room before the next (see "Download queue" in
  * docs/ARCHITECTURE.md). Conversions resume only inside the play session held in [live] (this process, younger than
@@ -92,29 +86,20 @@ internal class DownloadQueue(
     }
 
     /** Called after a playback failure of a saved copy: re-reads it and marks it FAILED(DAMAGED) if the fingerprint differs. */
-    suspend fun recheck(key: DownloadKey) {
-        val row = store.get(key)?.takeIf { it.state == DownloadState.COMPLETE } ?: return
-        val sha = row.sha256 ?: return
-        val folder = paths.itemFolder(key, row.storage, row.volumeId) ?: return // the card is out: nothing to say yet
-        val media = SavedMedia(key.serverId, key.itemId, folder, QueueSpace.entryOf(paths, row, folder) ?: return, row.container == HLS, row.quality, row.mediaSourceId ?: return)
-        if (!verifier.recheck(media, sha)) {
-            store.updateIf(key, setOf(DownloadState.COMPLETE)) { it.copy(state = DownloadState.FAILED, failure = DownloadFailure.DAMAGED) }
-            AppLog.w(TAG, "download damaged")
-        }
-    }
+    suspend fun recheck(key: DownloadKey) = QueueFiles.recheck(store, paths, verifier, key)
 
     private suspend fun run(j: QueueJob): QueueStep {
         var folder: File? = null
-        return try {
+        val step = kotlin.run attempt@{ try {
             val row = current(j.key)
-            val s = fetcherOf(j.key) ?: return failed(j.key, DownloadFailure.SIGN_IN_NEEDED)
-            val dir = paths.itemFolder(j.key, row.storage, row.volumeId)?.also { it.mkdirs() } ?: return failed(j.key, DownloadFailure.STORAGE_MISSING)
+            val s = fetcherOf(j.key) ?: return@attempt failed(j.key, DownloadFailure.SIGN_IN_NEEDED)
+            val dir = paths.itemFolder(j.key, row.storage, row.volumeId)?.also { it.mkdirs() } ?: return@attempt failed(j.key, DownloadFailure.STORAGE_MISSING)
             folder = dir
-            if (!QueueSpace.fits(volumes, row, QueueSpace.remaining(row))) return failed(j.key, DownloadFailure.NO_SPACE)
+            if (!QueueSpace.fits(volumes, row, QueueSpace.remaining(row))) return@attempt failed(j.key, DownloadFailure.NO_SPACE)
             j.status(null)
             val fetched = if (row.quality == DownloadQuality.ORIGINAL) original(j, s, dir) else conversion(j, s, dir)
-            bestEffort { extras.segments(s, j.key) }
-            bestEffort { extras.artwork(s, listOfNotNull(row.itemId, row.seasonId, row.seriesId)) }
+            QueueFailures.bestEffort(TAG) { extras.segments(s, j.key) }
+            QueueFailures.bestEffort(TAG) { extras.artwork(s, listOfNotNull(row.itemId, row.seasonId, row.seriesId)) }
             verify(j, s, dir, fetched)
         } catch (e: QueueEnds) {
             e.step
@@ -127,16 +112,23 @@ internal class DownloadQueue(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            // Anything unforeseen (a card remounted read-only, say) is one attempt, so the item ends FAILED rather than
-            // staying RUNNING at the head of the queue for ever (Tasks 9-10 review I-3). Logged by class only.
-            AppLog.w(TAG, "download step failed: ${e.javaClass.simpleName}")
-            retry(j.key, (e as? AppError)?.kind ?: AppError.Kind.UNKNOWN)
-        }
+            unforeseen(j.key, e)
+        } }
+        // A removal no write saw (a retry or failure ended the step) leaves no folder a fetcher made again (L-5), in the same guard (Nit-1).
+        return try {
+            folder?.let { dir -> if (store.get(j.key) == null) { live.remove(j.key); paths.deleteInside(dir) } }
+            step
+        } catch (e: CancellationException) { throw e } catch (e: Exception) { unforeseen(j.key, e) }
+    }
+
+    /** Anything unforeseen (a card remounted read-only, say) is one attempt, not a row RUNNING for ever (Tasks 9-10 review I-3). Logged by class only. */
+    private suspend fun unforeseen(key: DownloadKey, e: Exception): QueueStep {
+        AppLog.w(TAG, "download step failed: ${e.javaClass.simpleName}")
+        return retry(key, (e as? AppError)?.kind ?: AppError.Kind.UNKNOWN)
     }
 
     /** The earliest owner (by when they added it) that can still send. */
-    private suspend fun fetcherOf(key: DownloadKey): Session? =
-        store.owners(key).map { Session(key.serverId, it) }.firstOrNull(hasToken)
+    private suspend fun fetcherOf(key: DownloadKey): Session? = store.owners(key).map { Session(key.serverId, it) }.firstOrNull(hasToken)
 
     private suspend fun original(j: QueueJob, s: Session, folder: File): QueueFetched {
         val key = j.key
@@ -150,32 +142,28 @@ internal class DownloadQueue(
         extras.tracks(s, key, folder, playable.sourceId, playable.audio, playable.subtitles, DownloadQuality.ORIGINAL)
         val part = paths.partFile(folder, playable.container)
         val target = paths.mediaFile(folder, playable.container)
-        // A file saved under another container (the server remuxed it since) never stays beside this one (review Minor 9).
-        for (ext in DownloadPaths.MEDIA_EXTENSIONS - playable.container) {
-            paths.mediaFile(folder, ext).takeIf { it.exists() }?.let(paths::deleteInside)
-            paths.partFile(folder, ext).takeIf { it.exists() }?.let(paths::deleteInside)
+        QueueFiles.dropOtherContainers(paths, folder, playable.container)
+        val fetched = QueueFetched(target, hls = false, shape = null, audioListed = playable.audio.isNotEmpty(), runtimeMs = playable.runtimeMs)
+        // ONE sign-in's bytes (final review L-7): another owner's `.part` or renamed file goes; this one starts from zero.
+        if (!store.isFetcher(key, s.userId)) {
+            listOf(part, target).filter { it.exists() }.forEach(paths::deleteInside)
+            write(key) { it.copy(doneBytes = 0, totalBytes = null, validator = null, restarts = 0) }
+            store.markFetcher(key, s.userId)
         }
-        val fetched = QueueFetched(target, hls = false, shape = null, audioListed = playable.audio.isNotEmpty())
-        // Renamed before the process died: only the check is left if THIS sign-in's /Download served it, else fetch again (Tasks 11-12 review Minor 2).
-        if (target.exists() && !part.exists()) { if (store.isConfirmed(key, s.userId)) return fetched; paths.deleteInside(target); write(key) { it.copy(doneBytes = 0, totalBytes = null, validator = null) } }
+        // Renamed before the process died under THIS sign-in: only the check is left (Tasks 11-12 review Minor 2).
+        if (target.exists() && !part.exists()) return fetched
         var route = server(key) { downloadRoute(s, key.itemId) }
         var rerouted = false
         while (true) {
             val row = current(key)
-            val result = files.fetch(route, key.itemId, part, target, row.doneBytes, row.validator, playable.sizeBytes, row.totalBytes, row.restarts, fileProgress(j, row.doneBytes))
+            val fits = { bytes: Long -> QueueSpace.fits(volumes, row, bytes) } // the one space rule, also for a size only the response states (M-2)
+            val result = files.fetch(route, key.itemId, part, target, row.doneBytes, row.validator, playable.sizeBytes, row.totalBytes, row.restarts, fits, fileProgress(j, row.doneBytes))
             when (result) {
                 FetchResult.Done -> {
                     store.confirm(key, s.userId) // /Download served it to this sign-in: the server's own permission check passed
                     return fetched
                 }
-                is FetchResult.Failed -> {
-                    // Refused for this owner: another owner may still fetch it under their own permission (review I-2 a).
-                    if (result.failure == DownloadFailure.NOT_ALLOWED && store.dropRefusedOwner(key, s.userId)) {
-                        store.updateIf(key, ACTIVE) { it.copy(state = DownloadState.QUEUED) }
-                        throw QueueEnds(QueueStep.Next)
-                    }
-                    throw QueueEnds(failed(key, result.failure))
-                }
+                is FetchResult.Failed -> if (result.failure == DownloadFailure.NOT_ALLOWED) refusedFor(key, s) else throw QueueEnds(failed(key, result.failure))
                 FetchResult.Unauthorised -> throw QueueEnds(unauthorised(key, s))
                 FetchResult.RestartConversion -> throw QueueEnds(retry(key, AppError.Kind.SERVER_ERROR))
                 is FetchResult.Retry -> {
@@ -212,6 +200,7 @@ internal class DownloadQueue(
             var audioListed = true
             if (conv == null) {
                 live.remove(key)
+                askedFirst(key, s)
                 val opened = open(key, s, folder)
                 conv = opened.first
                 audioListed = opened.second
@@ -220,7 +209,8 @@ internal class DownloadQueue(
             when (val result = hls.fetch(conv, folder, from, segmentProgress(j))) {
                 FetchResult.Done -> {
                     live.remove(key)
-                    return QueueFetched(paths.localPlaylist(paths.hlsFolder(folder)), hls = true, shape = conv.segments.map { it.durationMs }, audioListed = audioListed)
+                    val playlist = paths.localPlaylist(paths.hlsFolder(folder))
+                    return QueueFetched(playlist, hls = true, shape = conv.segments.map { it.durationMs }, audioListed = audioListed, runtimeMs = QueueFailures.sourceRuntime(conv.resolved))
                 }
                 is FetchResult.Failed -> { live.remove(key); throw QueueEnds(failed(key, result.failure)) }
                 FetchResult.Unauthorised -> { live.remove(key); throw QueueEnds(unauthorised(key, s)) }
@@ -234,6 +224,26 @@ internal class DownloadQueue(
                 }
             }
         }
+    }
+
+    /**
+     * `/videos/` checks no download permission, so a sign-in that is not yet this copy's fetcher is asked first (final review
+     * N-1): yes is its own confirmation, dated now; no ends its ownership ([refusedFor]); unknown never allows a conversion.
+     */
+    private suspend fun askedFirst(key: DownloadKey, s: Session) {
+        if (store.isFetcher(key, s.userId)) return
+        when (server(key) { gateway.facts(s, listOf(key.itemId)) }.firstOrNull { it.itemId == key.itemId }?.canDownload) {
+            true -> store.confirm(key, s.userId)
+            false -> refusedFor(key, s)
+            null -> throw QueueEnds(failed(key, DownloadFailure.NOT_ALLOWED))
+        }
+    }
+
+    /** Refused for this owner: another owner may still fetch it under their own permission (review I-2 a); the last one ends FAILED. */
+    private suspend fun refusedFor(key: DownloadKey, s: Session): Nothing {
+        if (!store.dropRefusedOwner(key, s.userId)) throw QueueEnds(failed(key, DownloadFailure.NOT_ALLOWED))
+        store.updateIf(key, ACTIVE) { it.copy(state = DownloadState.QUEUED) }
+        throw QueueEnds(QueueStep.Next)
     }
 
     /**
@@ -252,7 +262,8 @@ internal class DownloadQueue(
         if (plan.method != PlayMethod.TRANSCODE || !plan.source.hls) throw QueueEnds(failed(key, DownloadFailure.SERVER_ERROR))
         val own: List<AudioTrack> = plan.audioTracks.filter { it.index == (plan.audioIndex ?: audio) }.ifEmpty { plan.audioTracks.take(1) }
         extras.tracks(s, key, folder, plan.mediaSourceId, own, plan.subtitleTracks, row.quality)
-        val (opened, result) = hls.open(resolved, folder, row.runtimeMs, ConversionSpace(row.storage, row.volumeId, QueueSpace.estimate(row)))
+        // The playlist's length against the converted source's own runtime, else the item's (W-1); the size estimate stays the item's.
+        val (opened, result) = hls.open(resolved, folder, QueueFailures.sourceRuntime(resolved) ?: row.runtimeMs, ConversionSpace(row.storage, row.volumeId, QueueSpace.estimate(row)))
         if (opened == null) {
             when (result) {
                 is FetchResult.Failed -> throw QueueEnds(failed(key, result.failure))
@@ -265,6 +276,8 @@ internal class DownloadQueue(
             it.copy(segmentsDone = 0, segmentsTotal = opened.segments.size, mediaSourceId = plan.mediaSourceId, container = HLS,
                 doneBytes = 0, totalBytes = null, validator = null, audioIndex = own.firstOrNull()?.index ?: it.audioIndex)
         }
+        // A fresh session (its old segments deleted by `open`) under this sign-in, resumed only by it (`HeldConversion.isFor`).
+        store.markFetcher(key, s.userId)
         live[key] = HeldConversion(opened, row.requestedAt, row.quality, s)
         return opened to own.isNotEmpty()
     }
@@ -287,7 +300,8 @@ internal class DownloadQueue(
         write(j.key) { it.copy(state = DownloadState.VERIFYING) }
         val row = current(j.key)
         val media = SavedMedia(j.key.serverId, j.key.itemId, folder, fetched.entry, fetched.hls, row.quality, row.mediaSourceId.orEmpty())
-        val verdict = if (!QueueSpace.names(paths, row, folder, fetched.entry)) Verdict.Bad(RECORD) else verifier.verify(media, if (fetched.hls) null else row.totalBytes, row.runtimeMs, fetched.shape, fetched.audioListed)
+        val runtime = fetched.runtimeMs ?: row.runtimeMs // the source downloaded, not the item's headline runtime (W-1)
+        val verdict = if (!QueueSpace.names(paths, row, folder, fetched.entry)) Verdict.Bad(RECORD) else verifier.verify(media, if (fetched.hls) null else row.totalBytes, runtime, fetched.shape, fetched.audioListed)
         val at = store.stamp()
         when (verdict) {
             is Verdict.Good -> {
@@ -334,20 +348,13 @@ internal class DownloadQueue(
     } catch (e: QueueEnds) {
         throw e
     } catch (e: Exception) {
-        throw QueueEnds(
-            when (val kind = AppError.from(e).kind) {
-                AppError.Kind.UNAUTHORISED, AppError.Kind.NOT_SIGNED_IN -> failed(key, DownloadFailure.SIGN_IN_NEEDED)
-                AppError.Kind.FORBIDDEN, AppError.Kind.PLAYBACK_NOT_ALLOWED -> failed(key, DownloadFailure.NOT_ALLOWED)
-                AppError.Kind.SERVER_NOT_FOUND -> failed(key, DownloadFailure.GONE_FROM_SERVER)
-                AppError.Kind.NO_COMPATIBLE_STREAM -> failed(key, DownloadFailure.NOT_PLAYABLE)
-                else -> retry(key, kind)
-            },
-        )
+        val kind = AppError.from(e).kind
+        throw QueueEnds(QueueFailures.of(kind)?.let { failed(key, it) } ?: retry(key, kind))
     }
 
     private suspend fun failed(key: DownloadKey, given: DownloadFailure): QueueStep {
         live.remove(key)
-        val failure = if (given == DownloadFailure.NO_SPACE && cardGone(key)) DownloadFailure.STORAGE_MISSING else given
+        val failure = if (given == DownloadFailure.NO_SPACE && QueueFiles.cardGone(store, paths, key)) DownloadFailure.STORAGE_MISSING else given
         if (store.updateIf(key, ACTIVE) { it.copy(state = DownloadState.FAILED, failure = failure) } == DownloadStore.Written.DONE) {
             AppLog.w(TAG, "download failed: ${failure.name}")
         }
@@ -356,7 +363,7 @@ internal class DownloadQueue(
 
     /** One more attempt used: back in the queue and this drain stops (the worker backs off), or SERVER_ERROR at [maxAttempts]. */
     private suspend fun retry(key: DownloadKey, kind: AppError.Kind): QueueStep {
-        if (cardGone(key)) return failed(key, DownloadFailure.STORAGE_MISSING) // a pulled card is not a network fault (review Minor 5)
+        if (QueueFiles.cardGone(store, paths, key)) return failed(key, DownloadFailure.STORAGE_MISSING) // a pulled card is not a network fault (review Minor 5)
         var attempts = 0
         if (store.updateIf(key, ACTIVE) { it.copy(attempts = (it.attempts + 1).also { a -> attempts = a }) } != DownloadStore.Written.DONE) return QueueStep.Next
         if (attempts >= maxAttempts) return failed(key, DownloadFailure.SERVER_ERROR)
@@ -369,10 +376,6 @@ internal class DownloadQueue(
         return QueueStep.Halt(QueueRun.Stopped)
     }
 
-    /** The row's card is no longer mounted (a pulled card reads as no space or an I/O error). */
-    private suspend fun cardGone(key: DownloadKey): Boolean =
-        store.get(key)?.let { it.storage == StorageKind.REMOVABLE && paths.itemFolder(key, it.storage, it.volumeId) == null } == true
-
     private suspend fun current(key: DownloadKey): DownloadEntity = store.get(key) ?: throw QueueRowGone()
 
     /** Writes only while the item is still this queue's (RUNNING or VERIFYING); a pause stops it, a removal cleans it up. */
@@ -382,10 +385,6 @@ internal class DownloadQueue(
             DownloadStore.Written.MOVED -> throw QueueMoved()
             DownloadStore.Written.GONE -> throw QueueRowGone()
         }
-    }
-
-    private suspend fun bestEffort(block: suspend () -> Unit) {
-        try { block() } catch (e: CancellationException) { throw e } catch (e: Exception) { AppLog.w(TAG, "download extras skipped: ${e.javaClass.simpleName}") }
     }
 
     private val DownloadEntity.key get() = DownloadKey(serverId, itemId)

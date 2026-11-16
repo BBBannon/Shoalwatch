@@ -21,7 +21,7 @@ import app.shoalwatch.ui.present.rememberStrings
 enum class RemoveKind { ONE, SEASON, SERIES }
 
 /**
- * A Delete waiting for a yes: [itemIds] (each still removed through the store's owner check) and the bytes it frees, or null
+ * A Delete waiting for a yes: [itemIds] (each still removed through the store's owner check) and the bytes it takes up, or null
  * when that is not known (a download not yet complete: only part of it is on the phone, so no size is claimed).
  */
 data class RemoveRequest(val kind: RemoveKind, val itemIds: List<String>, val bytes: Long?) {
@@ -50,7 +50,10 @@ internal suspend fun removeEach(downloads: Downloads, s: Session, r: RemoveReque
     }
 }
 
-/** "Delete this download? This frees 1.8 GB on this phone." (or "Delete your 5 downloaded episodes? …") with Delete and Cancel. */
+/**
+ * "Delete this download? It takes up 1.8 GB on this phone." (or "Delete your 5 downloaded episodes? …") with Delete and Cancel.
+ * It never promises to free the room: the copy may stay for another profile, and the confirm adds no signal of that.
+ */
 @Composable
 internal fun RemoveDialog(request: RemoveRequest, onConfirm: () -> Unit, onCancel: () -> Unit) {
     val strings = rememberStrings()

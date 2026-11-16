@@ -26,12 +26,13 @@ class SavedCopiesTest : DownloadHousekeepingTestBase() {
     /** Whether the server can be reached now, and the sessions a re-ask was asked for (Tasks 13-16 review I-1). */
     private var reachable = false
     private val rechecks = mutableListOf<Session>()
-    private var onRecheck: (Session) -> Unit = {}
+    private val recheckedItems = mutableListOf<String>()
+    private var onRecheck: (Session, String) -> Unit = { _, _ -> }
 
     @Before fun setUpCopies() {
         copies = SavedCopies(
             db.offlineLibraryDao(), db.downloadDao().savedRows(), paths, Dispatchers.Unconfined,
-            now = { clock }, reachable = { reachable }, recheck = { s -> rechecks += s; onRecheck(s) },
+            now = { clock }, reachable = { reachable }, recheck = { s, id -> rechecks += s; recheckedItems += id; onRecheck(s, id) },
         )
     }
 
@@ -42,6 +43,7 @@ class SavedCopiesTest : DownloadHousekeepingTestBase() {
         runBlocking {
             store.add(s1u1, listOf(newDownload(item).let { n -> app.shoalwatch.data.db.downloads.DownloadStore.NewDownload(n.itemId, n.kind, n.seriesId, n.seasonId, n.quality, storage, volumeId, n.runtimeMs, null) }))
             store.update(key(item)) { it.copy(state = DownloadState.COMPLETE, container = "mkv", mediaSourceId = PlaybackFakes.SOURCE, totalBytes = recorded, doneBytes = recorded) }
+            store.markFetcher(key(item), s1u1.userId) // A's own sign-in fetched it
         }
         val folder = paths.itemFolder(key(item), storage, volumeId)!!.also { it.mkdirs() }
         return paths.mediaFile(folder, "mkv").apply { writeBytes(ByteArray(bytes)) }
@@ -105,6 +107,7 @@ class SavedCopiesTest : DownloadHousekeepingTestBase() {
         runBlocking {
             store.add(s1u1, listOf(newDownload(film, DownloadQuality.MEDIUM)))
             store.update(key(film)) { it.copy(state = DownloadState.COMPLETE, container = "hls", mediaSourceId = PlaybackFakes.SOURCE, segmentsTotal = 3, segmentsDone = 3) }
+            store.markFetcher(key(film), s1u1.userId) // A's own sign-in fetched it
         }
         val hls = paths.hlsFolder(folder(film)).also { it.mkdirs() }
         paths.localPlaylist(hls).writeText("#EXTM3U")
@@ -141,10 +144,35 @@ class SavedCopiesTest : DownloadHousekeepingTestBase() {
         clock += 2 * DAY
         assertNull("eight days old and the server is there: stream instead", plan(s1u2))
         assertEquals("and it is re-asked", listOf(s1u2), rechecks)
+        assertEquals("that item first (final review L-11)", listOf(film.id), recheckedItems)
         assertNotNull("the owner needs no confirmation, however old", plan(s1u1))
         confirm(s1u2, film) // the server said yes again
         assertNotNull(plan(s1u2))
         assertNotNull("subtitles of a copy already playing still load", media(s1u2))
+    }
+
+    /** Final review L-2: the tablet's date set back makes every confirmation look young; one dated ahead of the clock is stale. */
+    @Test fun aConfirmationDatedAheadOfTheClockIsNotPlayedWhileTheServerCanBeReached() {
+        sharedAndConfirmed()
+        reachable = true
+        clock -= 60_000
+        assertNotNull("a minute's difference between clocks is allowed", plan(s1u2))
+        clock -= 30 * DAY // the date was set back a month
+        assertNull(plan(s1u2))
+        assertEquals("and it is re-asked", 1, rechecks.size)
+        reachable = false
+        assertNotNull("offline the decided rule stands", plan(s1u2))
+    }
+
+    /** Final review L-3: while a stale shared copy is refused, its saved subtitles and skip markers are not served from it either. */
+    @Test fun theExtrasOfARefusedStaleCopyAreNotServedFromItWhileTheServerCanBeReached() {
+        sharedAndConfirmed()
+        reachable = true
+        clock += 8 * DAY
+        assertNull(media(s1u2))
+        assertNotNull("the owner's own copy", media(s1u1))
+        reachable = false
+        assertNotNull("offline the shared copy's extras are there", media(s1u2))
     }
 
     @Test fun offlineAConfirmationThatCannotBeReAskedStillPlaysHoweverOld() {
@@ -160,7 +188,7 @@ class SavedCopiesTest : DownloadHousekeepingTestBase() {
         reachable = true
         clock += 8 * DAY
         facts.allow(film.id, canDownload = false) // the admin turned the child's download permission off
-        onRecheck = { s -> runBlocking { housekeeping.reconfirm(s) } } // what SharingRecheck runs
+        onRecheck = { s, id -> runBlocking { housekeeping.reconfirm(s, id) } } // what SharingRecheck runs
         assertNull("never LOCAL", plan(s1u2))
         assertFalse("the permission is gone", runBlocking { store.isConfirmed(key(film), s1u2.userId) })
         assertNull("and stays gone", plan(s1u2))

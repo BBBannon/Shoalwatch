@@ -30,7 +30,7 @@ class FileFetcherHostileTest : FileFetcherTestBase() {
             .also { r -> if (code == 206) r.setHeader("ETag", "\"a\"") }
 
     private fun fetchFrom(resumeFrom: Long, validator: String? = null, expected: Long? = body.size.toLong()) =
-        runBlocking { fetcher().fetch(route(), item, part, target, resumeFrom, validator, expected, null, 0, log) }
+        runBlocking { fetcher().fetch(route(), item, part, target, resumeFrom, validator, expected, null, 0, { true }, log) }
 
     @Test fun anHtmlPageIsRefusedBeforeAnythingIsWritten() {
         answer(ok(type = "text/html; charset=utf-8"))
@@ -82,7 +82,7 @@ class FileFetcherHostileTest : FileFetcherTestBase() {
         assertEquals(FetchResult.Done, fetchFrom(0))
         answer(MockResponse().setChunkedBody(Buffer().write(body), 1_000).setHeader("Content-Type", "video/mp4"))
         assertEquals(FetchResult.Failed(DownloadFailure.SERVER_ERROR), runBlocking {
-            target.delete(); fetcher().fetch(route(), item, part, target, 0, null, null, null, 0, log)
+            target.delete(); fetcher().fetch(route(), item, part, target, 0, null, null, null, 0, { true }, log)
         })
     }
 
@@ -146,7 +146,47 @@ class FileFetcherHostileTest : FileFetcherTestBase() {
                 it.failWrite = IOException("write failed", ErrnoException("write", OsConstants.ENOSPC))
             }
         })
-        assertEquals(FetchResult.Failed(DownloadFailure.NO_SPACE), runBlocking { f.fetch(route(), item, part, target, 0, null, body.size.toLong(), null, 0, log) })
+        assertEquals(FetchResult.Failed(DownloadFailure.NO_SPACE), runBlocking { f.fetch(route(), item, part, target, 0, null, body.size.toLong(), null, 0, { true }, log) })
+    }
+
+    /**
+     * Final review M-2: with `Size` unknown, nothing but the response's `Content-Length` says how big the file is, so the
+     * queue's space rule is asked before the first byte, and a refusal reserves and writes nothing.
+     */
+    @Test fun aFileOfUnknownSizeThatWouldNotFitAboveTheReserveIsNoSpaceBeforeAnythingIsWritten() {
+        answer(ok())
+        val asked = mutableListOf<Long>()
+        assertEquals(FetchResult.Failed(DownloadFailure.NO_SPACE), runBlocking {
+            fetcher().fetch(route(), item, part, target, 0, null, null, null, 0, { asked += it; it <= 5_000 }, log)
+        })
+        assertEquals("asked for the whole Content-Length", listOf(10_000L), asked)
+        assertTrue("nothing written", !part.exists() || part.length() == 0L)
+        assertTrue("nothing reserved", fake.reserved.isEmpty())
+    }
+
+    @Test fun aResumeWhoseTotalWasNeverKnownIsCheckedForTheRestAndCutOnNoSpace() {
+        part.writeBytes(body.copyOf(4_000))
+        answer(ok(code = 206, bytes = body.copyOfRange(4_000, 10_000)).setHeader("Content-Range", "bytes 4000-9999/10000"))
+        val asked = mutableListOf<Long>()
+        assertEquals(FetchResult.Failed(DownloadFailure.NO_SPACE), runBlocking {
+            fetcher().fetch(route(), item, part, target, 4_000, "\"a\"", null, null, 0, { asked += it; it <= 5_000 }, log)
+        })
+        assertEquals("asked for what is left", listOf(6_000L), asked)
+        assertEquals("the part goes too, so the space is not kept", 0L, part.length())
+        assertEquals("and Room is told so", 0L, log.last.done)
+    }
+
+    @Test fun aFullDiskPartWayCutsThePartSoItsSpaceIsNotKept() {
+        part.writeBytes(body.copyOf(4_000))
+        answer(ok(code = 206, bytes = body.copyOfRange(4_000, 10_000)).setHeader("Content-Range", "bytes 4000-9999/10000"))
+        val f = FileFetcher(kotlinx.coroutines.Dispatchers.IO, fake.volumes, 1_000, channels = { file ->
+            RecordingChannel(FetchSupport.appendChannel(file), file).also {
+                it.failWrite = IOException("write failed", ErrnoException("write", OsConstants.ENOSPC))
+            }
+        })
+        assertEquals(FetchResult.Failed(DownloadFailure.NO_SPACE), runBlocking { f.fetch(route(), item, part, target, 4_000, "\"a\"", body.size.toLong(), null, 0, { true }, log) })
+        assertEquals(0L, part.length())
+        assertEquals(0L, log.last.done)
     }
 
     @Test fun aReservationThatFailsIsNoSpace() {
@@ -155,21 +195,21 @@ class FileFetcherHostileTest : FileFetcherTestBase() {
             override fun reserve(file: java.io.File, bytes: Long) = throw IOException("no space")
         }
         assertEquals(FetchResult.Failed(DownloadFailure.NO_SPACE), runBlocking {
-            FileFetcher(kotlinx.coroutines.Dispatchers.IO, full).fetch(route(), item, part, target, 0, null, body.size.toLong(), null, 0, log)
+            FileFetcher(kotlinx.coroutines.Dispatchers.IO, full).fetch(route(), item, part, target, 0, null, body.size.toLong(), null, 0, { true }, log)
         })
     }
 
     @Test fun aSignedOutRouteIsSignInNeededAndAStaleOneIsRetriedOffline() {
         val r = route()
         runBlocking { store.removeAccount(app.shoalwatch.S1, app.shoalwatch.U1) }
-        assertEquals(FetchResult.Failed(DownloadFailure.SIGN_IN_NEEDED), runBlocking { fetcher().fetch(r, item, part, target, 0, null, null, null, 0, log) })
+        assertEquals(FetchResult.Failed(DownloadFailure.SIGN_IN_NEEDED), runBlocking { fetcher().fetch(r, item, part, target, 0, null, null, null, 0, { true }, log) })
         assertEquals(0, web.requestCount)
     }
 
     @Test fun aStaleRouteIsRetriedOffline() {
         val r = route()
         selector.state.value = app.shoalwatch.data.servers.Connection.Checking(previous = online())
-        assertEquals(FetchResult.Retry(AppError.Kind.OFFLINE), runBlocking { fetcher().fetch(r, item, part, target, 0, null, null, null, 0, log) })
+        assertEquals(FetchResult.Retry(AppError.Kind.OFFLINE), runBlocking { fetcher().fetch(r, item, part, target, 0, null, null, null, 0, { true }, log) })
         assertEquals(0, web.requestCount)
     }
 }

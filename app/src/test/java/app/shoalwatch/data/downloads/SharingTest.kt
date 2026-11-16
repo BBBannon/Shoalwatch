@@ -160,6 +160,19 @@ class SharingTest : DownloadHousekeepingTestBase() {
         assertEquals("confirmed again three days ago: not asked", 1, facts.calls.size)
     }
 
+    /** Final review L-2: a confirmation dated ahead of the clock (the date was set back) is asked about again. */
+    @Test fun aConfirmationDatedAheadOfTheClockIsAskedAgain() = runBlocking {
+        aDownloads()
+        repo.setSharing(a, true)
+        seen(b, film, series, season1, e1)
+        confirm(b, film)
+        clock -= 30 * DAY
+        facts.allow(film.id, canDownload = false)
+        housekeeping.reconfirm(b)
+        assertEquals(1, facts.calls.size)
+        assertFalse(store.isConfirmed(key(film), b.userId))
+    }
+
     @Test fun aPlanWhoseFactsSayNoRemovesTheChildsPermissionAtOnce() = runBlocking {
         aDownloads()
         repo.setSharing(a, true)
@@ -191,6 +204,79 @@ class SharingTest : DownloadHousekeepingTestBase() {
         assertNull(repo.status(b, films[0].id).first())
         assertNull(repo.status(b, films[1].id).first())
         assertTrue(repo.status(b, films[2].id).first() != null)
+    }
+
+    /** Final review L-1: one item the server keeps failing on (a 500) does not stop the others being re-asked. */
+    @Test fun oneItemThatKeepsFailingDoesNotStopTheRestBeingReAsked() = runBlocking {
+        val films = (1..3).map { item("p$it") }
+        seen(a, *films.toTypedArray()); queued(a, *films.toTypedArray()); complete(*films.toTypedArray())
+        repo.setSharing(a, true)
+        seen(b, *films.toTypedArray())
+        confirm(b, films[0]) // the oldest confirmation, so it is asked first
+        clock += 1_000
+        confirm(b, films[1], films[2])
+        clock += 8 * DAY
+        refreshFailsFor[films[0].id] = app.shoalwatch.core.AppError.of(app.shoalwatch.core.AppError.Kind.SERVER_ERROR)
+        facts.allow(films[0].id, canDownload = true)
+        facts.allow(films[1].id, canDownload = false)
+        facts.allow(films[2].id, canDownload = true)
+        housekeeping.reconfirm(b)
+        assertEquals("every item is still refreshed", films.map { it.id }.toSet(), refreshedIds.toSet())
+        assertEquals("and the permission check runs", 1, facts.calls.size)
+        assertFalse("the explicit no for another item is applied", store.isConfirmed(key(films[1]), b.userId))
+        assertTrue(store.isConfirmed(key(films[2]), b.userId))
+    }
+
+    @Test fun aSignInThatNoLongerWorksStopsReconfirm() = runBlocking {
+        aDownloads()
+        repo.setSharing(a, true)
+        seen(b, film, series, season1, e1)
+        confirm(b, film)
+        clock += 8 * DAY
+        refreshFails = app.shoalwatch.core.AppError.of(app.shoalwatch.core.AppError.Kind.UNAUTHORISED)
+        housekeeping.reconfirm(b)
+        assertTrue("no facts call", facts.calls.isEmpty())
+        assertTrue(store.isConfirmed(key(film), b.userId))
+    }
+
+    /** Final review L-11: with more than 50 stale items, the one about to play is among those asked, whatever its age. */
+    @Test fun theItemAboutToPlayIsAskedFirstEvenBeyondTheFifty() = runBlocking {
+        val films = (1..60).map { item("q$it") }
+        seen(a, *films.toTypedArray()); queued(a, *films.toTypedArray()); complete(*films.toTypedArray())
+        repo.setSharing(a, true)
+        seen(b, *films.toTypedArray())
+        films.dropLast(1).forEach { confirm(b, it) }
+        clock += 1_000
+        val playing = films.last()
+        confirm(b, playing) // the youngest confirmation: last in age order
+        clock += 8 * DAY
+        housekeeping.reconfirm(b, playing.id)
+        assertEquals(50, refreshedIds.size)
+        assertEquals(playing.id, refreshedIds.first())
+        assertTrue(playing.id in facts.calls.single())
+    }
+
+    /** Final review re-review L-d: a server that hangs, or whose identity changed, ends the pass at its first refresh. */
+    @Test fun aHangingOrUntrustedServerEndsTheReAskAtTheFirstFailure() = runBlocking {
+        val films = (1..3).map { item("h$it") }
+        seen(a, *films.toTypedArray()); queued(a, *films.toTypedArray()); complete(*films.toTypedArray())
+        repo.setSharing(a, true)
+        seen(b, *films.toTypedArray())
+        confirm(b, *films.toTypedArray())
+        clock += 8 * DAY
+        val kinds = listOf(
+            app.shoalwatch.core.AppError.Kind.NETWORK, app.shoalwatch.core.AppError.Kind.TIMEOUT,
+            app.shoalwatch.core.AppError.Kind.TLS_UNTRUSTED, app.shoalwatch.core.AppError.Kind.TLS_PIN_CHANGED,
+            app.shoalwatch.core.AppError.Kind.SERVER_MISMATCH, app.shoalwatch.core.AppError.Kind.SECURE_CONNECTION_LOST,
+        )
+        for (kind in kinds) {
+            refreshedIds.clear()
+            refreshFails = app.shoalwatch.core.AppError.of(kind)
+            housekeeping.reconfirm(b)
+            assertEquals("$kind: one refresh, then the pass ends", 1, refreshedIds.size)
+            assertTrue("$kind: no facts call", facts.calls.isEmpty())
+        }
+        assertTrue(films.all { store.isConfirmed(key(it), b.userId) })
     }
 
     @Test fun aTransportFailureStopsReconfirmAndChangesNothing() = runBlocking {

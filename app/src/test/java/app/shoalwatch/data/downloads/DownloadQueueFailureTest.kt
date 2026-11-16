@@ -21,6 +21,19 @@ class DownloadQueueFailureTest : DownloadQueueTestBase() {
 
     private fun failure(item: app.shoalwatch.data.library.Item) = download(item)!!.let { it.state to it.failure }
 
+    /** Final review M-2: the fetcher is given the queue's own space rule (free space above the reserve), for a size only the response states. */
+    @Test fun theFileFetcherIsGivenTheQueuesSpaceRule() {
+        queued(a, f1)
+        playable()
+        fake.free[null] = QueueSpace.INTERNAL_RESERVE + (2L shl 30) // the fixture's Size (1.2 GB) fits
+        var rule: ((Long) -> Boolean)? = null
+        files.steps += { c -> rule = c.fits; FetchResult.Failed(DownloadFailure.NO_SPACE) }
+        drain()
+        assertTrue(rule!!(2L shl 30))
+        assertFalse("not one byte into the reserve", rule!!((2L shl 30) + 1))
+        assertEquals(DownloadState.FAILED to DownloadFailure.NO_SPACE, failure(f1))
+    }
+
     /**
      * Tasks 9-10 review I-2 (a). C (U2) queued the original with its CanDownload unknown; P (U1) then shared it with a confirmed
      * yes. C's sign-in is gone, so P fetches: C must not keep a copy fetched under P's permission.
@@ -102,12 +115,44 @@ class DownloadQueueFailureTest : DownloadQueueTestBase() {
 
     @Test fun aFileRenamedByTheFetchersOwnSignInIsOnlyChecked() {
         queued(a, f1)
-        runBlocking { store.confirm(key(f1), a.userId) }
+        runBlocking { store.markFetcher(key(f1), a.userId) } // A's own sign-in fetched it, then the process died
         paths.mediaFile(folder(f1).also { it.mkdirs() }, "mkv").writeBytes(ByteArray(FakeFiles.SIZE.toInt()))
         runBlocking { store.update(key(f1)) { it.copy(doneBytes = FakeFiles.SIZE, totalBytes = FakeFiles.SIZE) } }
         playable()
         drain()
         assertTrue("nothing fetched again", files.calls.isEmpty())
+        assertEquals(DownloadState.COMPLETE, download(f1)!!.state)
+    }
+
+    /** Final review L-7: a confirmed permission is not enough; the bytes must have come through this sign-in. */
+    @Test fun aFileRenamedUnderAnotherOwnersSignInIsFetchedAgainEvenWhenTheFetcherIsConfirmed() {
+        queued(a, f1)
+        runBlocking { store.confirm(key(f1), a.userId) } // the planner's facts said yes for A
+        clock += 10
+        seen(s1u2, f1)
+        runBlocking { store.add(s1u2, listOf(shareDownload(f1))); store.markFetcher(key(f1), s1u2.userId) } // but B's sign-in fetched it
+        paths.mediaFile(folder(f1).also { it.mkdirs() }, "mkv").writeBytes(ByteArray(FakeFiles.SIZE.toInt()))
+        runBlocking { store.update(key(f1)) { it.copy(doneBytes = FakeFiles.SIZE, totalBytes = FakeFiles.SIZE, validator = "\"v1\"") } }
+        playable()
+        assertEquals(QueueRun.Drained, drain())
+        assertEquals("A's own /Download, from the start", listOf(0L), files.calls.map { it.resumeFrom })
+        assertTrue("A is now the one whose sign-in fetched it", runBlocking { store.isFetcher(key(f1), a.userId) && !store.isFetcher(key(f1), s1u2.userId) })
+    }
+
+    /** Final review L-7: a part begun under one owner's sign-in is never finished with another's (Range and the first's validator). */
+    @Test fun aPartBegunUnderAnotherOwnersSignInStartsAgainFromZero() {
+        queued(a, f1)
+        clock += 10
+        seen(s1u2, f1)
+        runBlocking { store.add(s1u2, listOf(shareDownload(f1))) }
+        playable(2)
+        files.steps += FakeFiles.partly(1_000)
+        assertEquals(QueueRun.Retry(AppError.Kind.NETWORK), drain())
+        assertEquals(1_000L, download(f1)!!.doneBytes)
+        tokens -= a // A signed out: B fetches now
+        assertEquals(QueueRun.Drained, drain())
+        assertEquals("B starts again from zero, with no validator of A's", listOf(0L, 0L), files.calls.map { it.resumeFrom })
+        assertNull(files.calls.last().validator)
         assertEquals(DownloadState.COMPLETE, download(f1)!!.state)
     }
 

@@ -96,8 +96,10 @@ internal class DownloadStore(private val db: AppDatabase, private val now: () ->
             // A copy that appeared after a plan for a new download is not shared by the back door: the user plans again, and
             // a share needs this profile's own confirmed permission (Tasks 9-10 review I-2 b).
             if (!new.shareOnly || !new.confirmed) return Added.Skipped
+            // Not fetched under this sign-in: the joining owner stays under the strict sharing rule (final review M-1), and the
+            // planner's fresh confirmation restarts its permission's age.
             dao.insertOwner(DownloadOwnerEntity(s.serverId, s.userId, new.itemId, at))
-            dao.insertPermission(DownloadPermissionEntity(s.serverId, s.userId, new.itemId, at))
+            upsertPermission(DownloadKey(s.serverId, new.itemId), s.userId, at)
             return Added.OwnerAdded
         }
         dao.insert(
@@ -133,13 +135,15 @@ internal class DownloadStore(private val db: AppDatabase, private val now: () ->
     /**
      * The ownership rule after one of [serverId]'s accounts was removed (its ownership has already cascaded away). Each
      * download left with no owner passes, when sharing is on, to every remaining account on the server that the server has
-     * shown the item; otherwise (no such account, or sharing off) it is deleted. Returns the deleted ones, whose files must go.
+     * shown the item and confirmed may download it between [confirmedSince] and [confirmedUntil] (the caller passes a week ago
+     * and a few minutes ahead while the server can be reached, else any time: final review M-1 and L-2); otherwise (no such account, or sharing off) it is deleted. An heir
+     * did not fetch the copy, so it stays under the strict sharing rule. Returns the deleted ones, whose files must go.
      */
-    suspend fun afterAccountGone(serverId: String): List<DownloadKey> = pinning {
+    suspend fun afterAccountGone(serverId: String, confirmedSince: Long = Long.MIN_VALUE, confirmedUntil: Long = Long.MAX_VALUE): List<DownloadKey> = pinning {
         val share = dao.sharing(serverId) == true
         val gone = mutableListOf<DownloadKey>()
         for (row in dao.ownerless(serverId)) {
-            val heirs = if (share) dao.accountsShown(serverId, row.itemId) else emptyList()
+            val heirs = if (share) dao.accountsShown(serverId, row.itemId, confirmedSince, confirmedUntil) else emptyList()
             if (heirs.isEmpty()) {
                 deleteRow(row)
                 gone += DownloadKey(serverId, row.itemId)
@@ -191,16 +195,36 @@ internal class DownloadStore(private val db: AppDatabase, private val now: () ->
      * The server confirmed [userId] may download the item (its CanDownload was true, or `/Download` served it to that sign-in).
      * An upsert: a confirmation again moves `confirmedAt` to now, which is the age `reconfirm` reads.
      */
-    suspend fun confirm(key: DownloadKey, userId: String) = db.withTransaction {
-        val now = now()
-        if (dao.insertPermission(DownloadPermissionEntity(key.serverId, userId, key.itemId, now)) == -1L) dao.touchPermission(key.serverId, userId, key.itemId, now)
-        Unit
+    suspend fun confirm(key: DownloadKey, userId: String) = db.withTransaction { upsertPermission(key, userId, now()) }
+
+    private suspend fun upsertPermission(key: DownloadKey, userId: String, at: Long) {
+        if (dao.insertPermission(DownloadPermissionEntity(key.serverId, userId, key.itemId, at)) == -1L) dao.touchPermission(key.serverId, userId, key.itemId, at)
     }
 
     /** The server said [userId] may not (or did not say): no shared copy, no inheritance. */
     suspend fun unconfirm(key: DownloadKey, userId: String) { dao.deletePermission(key.serverId, userId, key.itemId) }
 
+    /**
+     * The server explicitly said [s] may not download [itemId]: its permission goes and, if it owns the copy without its own
+     * sign-in having fetched it (inherited, or joined as "already on this phone"), its ownership too (final review M-1). Returns
+     * the key when that removed the last owner (the row and pins are gone; the caller deletes the files), else null.
+     */
+    suspend fun refused(s: Session, itemId: String): DownloadKey? = pinning {
+        dao.deletePermission(s.serverId, s.userId, itemId)
+        if (!dao.isOwner(s.serverId, s.userId, itemId) || dao.isFetcher(s.serverId, s.userId, itemId)) return@pinning null
+        dao.deleteOwner(s.serverId, s.userId, itemId)
+        if (dao.owners(s.serverId, itemId).isNotEmpty()) return@pinning null
+        dao.get(s.serverId, itemId)?.let { deleteRow(it) }
+        DownloadKey(s.serverId, itemId)
+    }
+
     suspend fun isConfirmed(key: DownloadKey, userId: String): Boolean = dao.hasPermission(key.serverId, userId, key.itemId)
+
+    /** [userId]'s own sign-in fetched the copy now on the phone (final review M-1). */
+    suspend fun isFetcher(key: DownloadKey, userId: String): Boolean = dao.isFetcher(key.serverId, userId, key.itemId)
+
+    /** [userId]'s sign-in fetched the bytes on the phone: it is the fetcher, and no other owner is any more. */
+    suspend fun markFetcher(key: DownloadKey, userId: String) { dao.markFetcher(key.serverId, userId, key.itemId) }
 
     /**
      * Before a copy fetched by [fetcher] is marked COMPLETE: every other owner whose own permission was never confirmed stops
@@ -237,9 +261,12 @@ internal class DownloadStore(private val db: AppDatabase, private val now: () ->
     /** The items [s] owns on its server. */
     suspend fun owned(s: Session): List<String> = dao.ownedItems(s.serverId, s.userId)
 
-    /** Up to [limit] shared downloads [s] does not own whose visibility for [s] was last confirmed before [cutoff]: (item, series). */
-    suspend fun unconfirmedShared(s: Session, cutoff: Long, limit: Int): List<Pair<String, String?>> =
-        dao.unconfirmedShared(s.serverId, s.userId, cutoff, limit).map { it.itemId to it.seriesId }
+    /**
+     * Up to [limit] downloads [s] holds under the strict sharing rule whose visibility or permission was last confirmed before
+     * [cutoff], or whose permission is dated after [ceiling] (the clock was set back), [first] before the rest: (item, series).
+     */
+    suspend fun unconfirmedShared(s: Session, cutoff: Long, ceiling: Long, limit: Int, first: String? = null): List<Pair<String, String?>> =
+        dao.unconfirmedShared(s.serverId, s.userId, cutoff, ceiling, limit, first).map { it.itemId to it.seriesId }
 
     /** Pinned pictures no download pins any more (an unknown slot is left out). */
     suspend fun unpinnedArtwork(): List<ArtworkKey> = Converters().let { c ->

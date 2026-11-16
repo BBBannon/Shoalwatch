@@ -14,7 +14,7 @@ internal object DownloadRows {
         )
 
     fun owner(db: SupportSQLiteDatabase, serverId: String, userId: String, itemId: String) =
-        db.execSQL("INSERT INTO download_owners (serverId, userId, itemId, addedAt) VALUES (?, ?, ?, 6)", arrayOf(serverId, userId, itemId))
+        db.execSQL("INSERT INTO download_owners (serverId, userId, itemId, addedAt, fetched) VALUES (?, ?, ?, 6, 1)", arrayOf(serverId, userId, itemId))
 
     fun track(db: SupportSQLiteDatabase, serverId: String, itemId: String) =
         db.execSQL(

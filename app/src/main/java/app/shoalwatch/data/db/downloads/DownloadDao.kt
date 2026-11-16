@@ -43,20 +43,23 @@ abstract class DownloadDao {
     internal abstract suspend fun ownedItems(serverId: String, userId: String): List<String>
 
     /**
-     * Shared COMPLETE downloads [userId] does not own but was shown, whose visibility record is older than [cutoff], or whose
+     * COMPLETE downloads [userId] was shown and holds under the strict sharing rule (shared to it with sharing on, or owned by it
+     * without its own sign-in having fetched them: final review M-1), whose visibility record is older than [cutoff], or whose
      * download permission is missing or was confirmed before [cutoff] (its own age, read from `confirmedAt`, whatever browsing
-     * keeps the visibility record fresh: Tasks 11-12 review I-1). Oldest confirmation first: what `reconfirm` asks about.
+     * keeps the visibility record fresh: Tasks 11-12 review I-1), or dated after [ceiling] (the clock was set back: final review
+     * L-2). [first] (the item about to play: final review L-11), then the oldest confirmation first: what `reconfirm` asks about.
      */
     @Query(
         "SELECT d.itemId AS itemId, d.seriesId AS seriesId FROM downloads d " +
             "JOIN visible_items v ON v.serverId = d.serverId AND v.userId = :userId AND v.itemId = d.itemId " +
             "LEFT JOIN download_permissions p ON p.serverId = d.serverId AND p.userId = :userId AND p.itemId = d.itemId " +
-            "WHERE d.serverId = :serverId AND d.state = 'COMPLETE' AND (v.seenAt < :cutoff OR p.confirmedAt IS NULL OR p.confirmedAt < :cutoff) " +
-            "AND EXISTS (SELECT 1 FROM download_settings x WHERE x.serverId = d.serverId AND x.shareBetweenProfiles = 1) " +
-            "AND NOT EXISTS (SELECT 1 FROM download_owners o WHERE o.serverId = d.serverId AND o.itemId = d.itemId AND o.userId = :userId) " +
-            "ORDER BY COALESCE(p.confirmedAt, 0), v.seenAt LIMIT :limit",
+            "WHERE d.serverId = :serverId AND d.state = 'COMPLETE' AND (v.seenAt < :cutoff OR p.confirmedAt IS NULL OR p.confirmedAt < :cutoff OR p.confirmedAt > :ceiling) " +
+            "AND NOT EXISTS (SELECT 1 FROM download_owners o WHERE o.serverId = d.serverId AND o.itemId = d.itemId AND o.userId = :userId AND o.fetched = 1) " +
+            "AND (EXISTS (SELECT 1 FROM download_owners o WHERE o.serverId = d.serverId AND o.itemId = d.itemId AND o.userId = :userId) " +
+            "OR EXISTS (SELECT 1 FROM download_settings x WHERE x.serverId = d.serverId AND x.shareBetweenProfiles = 1)) " +
+            "ORDER BY CASE WHEN d.itemId = :first THEN 0 ELSE 1 END, COALESCE(p.confirmedAt, 0), v.seenAt LIMIT :limit",
     )
-    internal abstract suspend fun unconfirmedShared(serverId: String, userId: String, cutoff: Long, limit: Int): List<SharedRow>
+    internal abstract suspend fun unconfirmedShared(serverId: String, userId: String, cutoff: Long, ceiling: Long, limit: Int, first: String?): List<SharedRow>
 
     /** Pinned pictures whose item no download pins any more (its row is not pinned, or gone). */
     @Query(
@@ -129,16 +132,24 @@ abstract class DownloadDao {
     @Query("SELECT EXISTS (SELECT 1 FROM download_owners WHERE serverId = :serverId AND userId = :userId AND itemId = :itemId)")
     internal abstract suspend fun isOwner(serverId: String, userId: String, itemId: String): Boolean
 
+    /** [userId]'s own sign-in fetched the copy (final review M-1). */
+    @Query("SELECT EXISTS (SELECT 1 FROM download_owners WHERE serverId = :serverId AND userId = :userId AND itemId = :itemId AND fetched = 1)")
+    internal abstract suspend fun isFetcher(serverId: String, userId: String, itemId: String): Boolean
+
+    /** [userId] is the one owner whose sign-in fetched the copy; every other owner's mark goes. */
+    @Query("UPDATE download_owners SET fetched = CASE WHEN userId = :userId THEN 1 ELSE 0 END WHERE serverId = :serverId AND itemId = :itemId")
+    internal abstract suspend fun markFetcher(serverId: String, userId: String, itemId: String): Int
+
     /**
-     * The accounts on the server that the server has shown [itemId] AND confirmed may download it (the ownership rule hands a
-     * shared download only to them: the strict sharing rule).
+     * The accounts on the server that the server has shown [itemId] AND confirmed may download it between [confirmedSince] and
+     * [confirmedUntil] (the ownership rule hands a shared download only to them: the strict sharing rule; final review M-1, L-2).
      */
     @Query(
         "SELECT a.userId FROM accounts a JOIN visible_items v ON v.serverId = a.serverId AND v.userId = a.userId AND v.itemId = :itemId " +
             "JOIN download_permissions p ON p.serverId = a.serverId AND p.userId = a.userId AND p.itemId = :itemId " +
-            "WHERE a.serverId = :serverId ORDER BY a.userId",
+            "WHERE a.serverId = :serverId AND p.confirmedAt >= :confirmedSince AND p.confirmedAt <= :confirmedUntil ORDER BY a.userId",
     )
-    internal abstract suspend fun accountsShown(serverId: String, itemId: String): List<String>
+    internal abstract suspend fun accountsShown(serverId: String, itemId: String, confirmedSince: Long, confirmedUntil: Long): List<String>
 
     // ---- pins: `items.pinned` has one writer, this statement
 

@@ -107,7 +107,7 @@ class FileFetcherResumeTest : FileFetcherTestBase() {
         }
         val slow = FileFetcher(kotlinx.coroutines.Dispatchers.IO, fake.volumes, 8 * 1024, stall = StallRule(windowMs = 500, minBytes = 4_096))
         val started = System.nanoTime()
-        val result = slow.fetch(route(), item, part, target, 0, null, 64L * 1024, null, 0, log)
+        val result = slow.fetch(route(), item, part, target, 0, null, 64L * 1024, null, 0, { true }, log)
         assertEquals(FetchResult.Retry(AppError.Kind.TIMEOUT), result)
         assertTrue("cut within a few windows", (System.nanoTime() - started) / 1_000_000 < 5_000)
     }

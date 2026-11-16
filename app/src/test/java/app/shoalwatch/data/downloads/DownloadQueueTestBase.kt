@@ -29,7 +29,7 @@ import org.junit.rules.TemporaryFolder
 internal typealias FileStep = suspend (FileCall) -> FetchResult
 
 internal class FileCall(val itemId: String, val part: File, val target: File, val resumeFrom: Long, val validator: String?,
-                        val expected: Long?, val storedTotal: Long?, val restarts: Int, val progress: Progress)
+                        val expected: Long?, val storedTotal: Long?, val restarts: Int, val fits: (Long) -> Boolean, val progress: Progress)
 
 /** [OriginalFetch] answering from [steps] in order (then [whole]); each call is recorded. */
 internal class FakeFiles : OriginalFetch {
@@ -37,8 +37,8 @@ internal class FakeFiles : OriginalFetch {
     val steps = ArrayDeque<FileStep>()
 
     override suspend fun fetch(route: MediaRoute, itemId: String, part: File, target: File, resumeFrom: Long, validator: String?,
-                               expectedBytes: Long?, storedTotal: Long?, restarts: Int, progress: Progress): FetchResult {
-        val call = FileCall(itemId, part, target, resumeFrom, validator, expectedBytes, storedTotal, restarts, progress)
+                               expectedBytes: Long?, storedTotal: Long?, restarts: Int, fits: (Long) -> Boolean, progress: Progress): FetchResult {
+        val call = FileCall(itemId, part, target, resumeFrom, validator, expectedBytes, storedTotal, restarts, fits, progress)
         calls += call
         return (steps.removeFirstOrNull() ?: whole())(call)
     }
@@ -71,6 +71,8 @@ internal class FakeFiles : OriginalFetch {
 internal class FakeHls(private val clock: TestMonotonic) : ConversionFetch {
     var segments = 5
     val opens = mutableListOf<Resolved>()
+    /** The runtime each open was asked to check the playlist against. */
+    val runtimes = mutableListOf<Long?>()
     val fetches = mutableListOf<Pair<LiveConversion, Int>>()
     val openSteps = ArrayDeque<FetchResult>()
     /** Each fetch: segments to write (from the start index), then the result. */
@@ -80,6 +82,7 @@ internal class FakeHls(private val clock: TestMonotonic) : ConversionFetch {
 
     override suspend fun open(resolved: Resolved, folder: File, runtimeMs: Long?, space: ConversionSpace): Pair<LiveConversion?, FetchResult> {
         opens += resolved
+        runtimes += runtimeMs
         openSteps.removeFirstOrNull()?.let { return null to it }
         File(folder, "hls").apply { deleteRecursively(); mkdirs() }
         val segs = List(segments) { HlsPlaylists.Segment(app.shoalwatch.data.playback.StreamSource("/videos/x/seg$it.ts", emptyList(), false), 2_000) }
@@ -114,9 +117,12 @@ internal class FakeExtras : DownloadExtras {
 internal class FakeVerifier : PlayableCheck {
     val verdicts = ArrayDeque<Verdict>()
     val verified = mutableListOf<SavedMedia>()
+    /** The runtime each check compared the file's duration with. */
+    val runtimes = mutableListOf<Long?>()
     var recheckAnswer = true
     override suspend fun verify(media: SavedMedia, expectedBytes: Long?, runtimeMs: Long?, hlsShape: List<Long>?, audioListed: Boolean): Verdict {
         verified += media
+        runtimes += runtimeMs
         return verdicts.removeFirstOrNull() ?: Verdict.Good(GOOD)
     }
     override suspend fun recheck(media: SavedMedia, sha256: String) = recheckAnswer
@@ -157,8 +163,12 @@ abstract class DownloadQueueTestBase : DownloadTestBase() {
     internal fun drain(q: DownloadQueue = queue(), stop: () -> Boolean = { false }, statuses: MutableList<QueueStatus>? = null): QueueRun =
         runBlocking { q.drain(stop) { statuses?.add(it) } }
 
-    /** Queues [items] for [s] at [quality] (the server showed them first). */
+    /**
+     * Queues [items] for [s] at [quality] (the server showed them first). A conversion is planned only on a confirmed CanDownload,
+     * so the server's facts say true for it, as the queue asks again before it converts (final review N-1).
+     */
     internal fun queued(s: Session, vararg items: Item, quality: DownloadQuality = DownloadQuality.ORIGINAL) {
+        if (quality != DownloadQuality.ORIGINAL) items.forEach { facts.allow(it.id) }
         seen(s, *items)
         runBlocking { store.add(s, items.map { newDownload(it, quality) }) }
     }

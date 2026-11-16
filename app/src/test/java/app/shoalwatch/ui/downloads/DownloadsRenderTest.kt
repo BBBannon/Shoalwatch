@@ -128,9 +128,13 @@ abstract class DownloadsRenderBase : RenderBase() {
         assertShown(text(R.string.dl_unavailable))
     }
 
-    @Test fun theDeleteConfirmSaysWhatItFrees() {
+    /**
+     * Final review L-6: the copy may be kept on the phone for another profile, so the confirm says how much room it takes up
+     * and never promises to free it (it adds no signal about other profiles before the delete either).
+     */
+    @Test fun theDeleteConfirmSaysTheRoomItTakesUpAndPromisesNothingFreed() {
         screen(OfflineLibrary(emptyList(), listOf(e(2, "My Film")), emptyList()), confirm = RemoveRequest(RemoveKind.ONE, listOf(entry(2).item.id), 1_800_000_000))
-        assertShown(text(R.string.dl_delete_confirm, "1.8 GB"))
+        assertShown("Delete this download? It takes up 1.8 GB on this phone.")
         rule.onAllNodesWithText(text(R.string.dl_delete_action))[0].performClick()
         assertTrue(calls.contains("confirm"))
     }
@@ -150,6 +154,13 @@ abstract class DownloadsRenderBase : RenderBase() {
     @Test fun aSeriesDeleteConfirmCountsTheProfilesOwnEpisodesAndAQueuedOneClaimsNoSize() {
         screen(OfflineLibrary(emptyList(), emptyList(), emptyList()), confirm = RemoveRequest(RemoveKind.SERIES, listOf("a", "b"), 3_600_000_000))
         assertShown(stringsPlural(R.plurals.dl_delete_episodes_confirm, 2, "3.6 GB"))
+        assertTrue("never a promise to free it", "frees" !in stringsPlural(R.plurals.dl_delete_episodes_confirm, 2, "3.6 GB"))
+    }
+
+    /** Final review nit: a series or season delete takes the ready episodes only, and says plainly that queued ones carry on. */
+    @Test fun aSeriesDeleteSaysEpisodesStillDownloadingCarryOn() {
+        screen(OfflineLibrary(emptyList(), emptyList(), emptyList()), confirm = RemoveRequest(RemoveKind.SERIES, listOf("a", "b"), 3_600_000_000))
+        assertShown("Delete your 2 downloaded episodes? They take up 3.6 GB on this phone. Episodes still downloading carry on.")
     }
 
     @Test fun cancellingAQueuedDownloadDoesNotClaimItsFullSize() {

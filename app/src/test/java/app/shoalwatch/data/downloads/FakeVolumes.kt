@@ -12,6 +12,8 @@ class FakeVolumes(base: File) {
     private val mounted = mutableSetOf<String>()
     var free = mutableMapOf<String?, Long>()
     val reserved = mutableListOf<Pair<File, Long>>()
+    /** Thrown by [Volumes.allRoots] (every delete goes through it) while set. */
+    var allRootsFail: Throwable? = null
 
     fun card(uuid: String, dir: File): FakeVolumes { cards[uuid] = dir; mounted += uuid; return this }
     fun unmount(uuid: String) { mounted -= uuid }
@@ -32,6 +34,6 @@ class FakeVolumes(base: File) {
 
         override fun reserve(file: File, bytes: Long) { reserved += file to bytes }
 
-        override fun allRoots(): List<File> = listOfNotNull(root(StorageKind.INTERNAL, null)) + mounted.mapNotNull { root(StorageKind.REMOVABLE, it) }
+        override fun allRoots(): List<File> = allRootsFail?.let { throw it } ?: listOfNotNull(root(StorageKind.INTERNAL, null)) + mounted.mapNotNull { root(StorageKind.REMOVABLE, it) }
     }
 }

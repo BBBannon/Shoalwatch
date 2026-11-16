@@ -32,7 +32,8 @@ internal class DownloadWorker(context: Context, params: WorkerParameters, privat
         val now: () -> Long,
     )
 
-    private var shown: QueueStatus.Running? = null
+    /** The "Downloading" notice is up (it says the same for every item, so it is set once per run). */
+    private var shown = false
 
     override suspend fun doWork(): Result {
         parts.notifications.ensureChannel()
@@ -52,7 +53,7 @@ internal class DownloadWorker(context: Context, params: WorkerParameters, privat
         return when (run) {
             QueueRun.Drained -> {
                 parts.report(QueueStatus.Idle)
-                parts.readySince(started).takeIf { it > 0 }?.let(parts.notifications::finished)
+                if (parts.readySince(started) > 0) parts.notifications.finished()
                 Result.success()
             }
             is QueueRun.Retry -> {
@@ -71,12 +72,9 @@ internal class DownloadWorker(context: Context, params: WorkerParameters, privat
 
     private suspend fun onStatus(status: QueueStatus) {
         parts.report(status)
-        if (status !is QueueStatus.Running) return
-        val before = shown
-        val percent = { s: QueueStatus.Running? -> s?.progress?.let { (it * 100).toInt() } }
-        if (before != null && before.position == status.position && before.of == status.of && percent(before) == percent(status)) return
-        shown = status
-        foreground(ForegroundInfo(DownloadNotifications.ID, parts.notifications.running(status.position, status.of, status.progress), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC))
+        if (status !is QueueStatus.Running || shown) return
+        shown = true
+        foreground(ForegroundInfo(DownloadNotifications.ID, parts.notifications.running(), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC))
     }
 
     /** Why it stopped, said plainly: the 6-hour limit, or Wi-Fi (or any connection) gone. */

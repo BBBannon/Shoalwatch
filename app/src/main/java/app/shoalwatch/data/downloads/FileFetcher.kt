@@ -33,7 +33,7 @@ internal class FileFetcher(
     /** One request's facts, carried through the handling. */
     private class Job(
         val part: File, val target: File, val from: Long, val validator: String?, val expected: Long?, val storedTotal: Long?,
-        val restarts: Int, val progress: Progress,
+        val restarts: Int, val fits: (Long) -> Boolean, val progress: Progress,
     ) { val ranged get() = from > 0 }
 
     /**
@@ -42,11 +42,14 @@ internal class FileFetcher(
      * `If-Range: <validator>` when one is known ([validator] must be one an earlier response for this file sent, never the media
      * source's ETag). On success the part file is renamed to [target]. [expectedBytes]: MediaSourceInfo.Size when known;
      * [storedTotal]: the total Room holds from an earlier response for this file (with [expectedBytes] unknown, a resume must
-     * find the same total). [restarts]: validator-change restarts so far.
+     * find the same total). [restarts]: validator-change restarts so far. [fits]: the queue's space rule (free space for that
+     * many more bytes above the reserve), asked before the first byte of a 200, and of a 206 whose total was never known, so a
+     * server that states no `Size` cannot fill the storage past the reserve (final review M-2). On `NO_SPACE` the part is cut
+     * to zero, so a failed download does not keep the space.
      */
     override suspend fun fetch(
         route: MediaRoute, itemId: String, part: File, target: File, resumeFrom: Long, validator: String?,
-        expectedBytes: Long?, storedTotal: Long?, restarts: Int, progress: Progress,
+        expectedBytes: Long?, storedTotal: Long?, restarts: Int, fits: (Long) -> Boolean, progress: Progress,
     ): FetchResult {
         val onDisk = if (part.exists()) part.length() else 0L
         val from = if (resumeFrom in 1..onDisk) resumeFrom else 0L
@@ -55,7 +58,7 @@ internal class FileFetcher(
         } catch (e: IOException) {
             return FetchSupport.forIo(e) // a card remounted read-only, say: a result, never an escape (review I-3)
         }
-        val job = Job(part, target, from, validator.takeIf { from > 0 }, expectedBytes, storedTotal.takeIf { from > 0 }, restarts, progress)
+        val job = Job(part, target, from, validator.takeIf { from > 0 }, expectedBytes, storedTotal.takeIf { from > 0 }, restarts, fits, progress)
         val request = Request.Builder()
             .url(route.url(StreamSource("/Items/$itemId/Download", emptyList(), hls = false)))
             .header("Accept-Encoding", "identity")
@@ -83,6 +86,7 @@ internal class FileFetcher(
         if (length != null && job.expected != null && length != job.expected) return FetchResult.Failed(DownloadFailure.CHANGED_ON_SERVER)
         val total = length ?: job.expected ?: return FetchResult.Failed(DownloadFailure.SERVER_ERROR) // no way to know it is complete
         if (total !in 1..FetchSupport.MAX_TOTAL) return FetchResult.Failed(DownloadFailure.SERVER_ERROR)
+        if (!job.fits(total - job.from)) return noSpace(job) // what the cut part held is freed first
         val validator = FetchSupport.validatorOf(response)
         var restarts = job.restarts
         if (job.ranged) {
@@ -95,7 +99,7 @@ internal class FileFetcher(
             try {
                 volumes.reserve(job.part, total) // INTERNAL only; by volume, the file's length is unchanged
             } catch (e: IOException) {
-                return FetchResult.Failed(DownloadFailure.NO_SPACE)
+                return noSpace(job)
             }
         }
         return write(job, response, 0, total, validator, restarts)
@@ -120,6 +124,8 @@ internal class FileFetcher(
         if (job.expected == null && job.storedTotal != null && total != job.storedTotal) return changed(job)
         val length = response.body.contentLength()
         if (length >= 0 && length != total - job.from) return restart(job)
+        // With neither Size nor a stored total, the queue could not check this total before asking (final review M-2).
+        if (job.expected == null && job.storedTotal == null && !job.fits(total - job.from)) return noSpace(job)
         return write(job, response, job.from, total, FetchSupport.validatorOf(response) ?: job.validator, 0)
     }
 
@@ -152,6 +158,15 @@ internal class FileFetcher(
         return FetchResult.Retry(AppError.Kind.SERVER_ERROR)
     }
 
+    /** No room: the part is cut to zero (Room told so, not counted as an attempt) so a failed download keeps no space. */
+    private suspend fun noSpace(job: Job): FetchResult {
+        try {
+            if (job.part.exists()) FetchSupport.truncate(job.part, 0)
+            job.progress.saved(0, null, null, job.restarts)
+        } catch (_: IOException) { /* a card gone read-only: the result is still NO_SPACE */ }
+        return FetchResult.Failed(DownloadFailure.NO_SPACE)
+    }
+
     /** Surely not media, or a compressed body: refused before anything is written. */
     private fun refusal(response: Response): FetchResult? =
         if (FetchSupport.surelyNotMedia(response.header("Content-Type")) || FetchSupport.encodedBody(response)) FetchResult.Failed(DownloadFailure.SERVER_ERROR)
@@ -168,6 +183,7 @@ internal class FileFetcher(
         var written = start
         var savedBytes = start
         var savedAt = clock.nowMs()
+        var full = false
         channels(job.part).use { channel ->
             suspend fun save() {
                 channel.force(false)
@@ -193,11 +209,15 @@ internal class FileFetcher(
                 channel.force(true)
             } catch (e: IOException) {
                 currentCoroutineContext().ensureActive()
-                if (FetchSupport.isNoSpace(e)) return FetchResult.Failed(DownloadFailure.NO_SPACE)
+                if (FetchSupport.isNoSpace(e)) {
+                    full = true // cut once the channel is closed
+                    return@use
+                }
                 try { save() } catch (_: IOException) { /* keep what Room last had */ }
                 return FetchSupport.forIo(e)
             }
         }
+        if (full) return noSpace(job)
         job.progress.saved(total, total, validator, restarts)
         FetchSupport.rename(job.part, job.target)
         return FetchResult.Done

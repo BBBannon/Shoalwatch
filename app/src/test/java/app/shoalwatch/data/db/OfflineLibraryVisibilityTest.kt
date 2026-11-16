@@ -48,7 +48,10 @@ class OfflineLibraryVisibilityTest : DownloadTestBase() {
         val s = Session(serverId, a.userId)
         seen(s, film, series, season1, e1)
         store.add(s, listOf(newDownload(film), newDownload(e1)))
-        for (it in listOf(film, e1)) store.update(DownloadKey(serverId, it.id)) { row -> row.copy(state = state) }
+        for (it in listOf(film, e1)) {
+            store.update(DownloadKey(serverId, it.id)) { row -> row.copy(state = state) }
+            store.markFetcher(DownloadKey(serverId, it.id), a.userId) // A's own sign-in fetched it, as the queue records
+        }
     }
 
     /** Everything [s] can see of [item] through every query, as a set of query names. */
@@ -148,6 +151,32 @@ class OfflineLibraryVisibilityTest : DownloadTestBase() {
         assertEquals("without the user condition B would be shown A's watched state", 1, leaked)
     }
 
+    /**
+     * Final review L-a: an owner whose own sign-in did not fetch the copy ("already on this phone", or inherited) and whose
+     * permission is gone (the server did not say) sees, counts and plays nothing of it, even with sharing off; its own confirmed
+     * permission brings it all back. The fetching owner needs none.
+     */
+    @Test fun hAnOwnerThatDidNotFetchItSeesNothingWithoutItsOwnConfirmedPermission() = runBlocking {
+        aDownloads()
+        seen(b, film, series, season1, e1)
+        store.add(b, listOf(shareDownload(film), shareDownload(e1)))
+        for (it in listOf(film, e1)) store.unconfirm(key(it), b.userId) // its ownership row stays
+        assertEquals(setOf(a.userId, b.userId), store.owners(key(film)).toSet())
+        assertEquals(emptySet<String>(), seenBy(b, film) + seenBy(b, e1))
+        confirm(b, film, e1)
+        val all = setOf("films", "series", "episodes", "seasons", "one", "forSeries", "playable")
+        assertEquals(all, seenBy(b, film) + seenBy(b, e1))
+        assertEquals(1, dao.observeSeries(S1, b.userId).first().single().ownedCount)
+        assertEquals(all, seenBy(a, film) + seenBy(a, e1))
+    }
+
+    /** L-a does not reach an unfinished download: its planner sees it before its own sign-in has fetched a byte. */
+    @Test fun hAPlannersOwnUnfinishedDownloadShowsBeforeItsSignInFetchesIt() = runBlocking {
+        seen(b, film)
+        store.add(b, listOf(newDownload(film))) // QUEUED, CanDownload unknown: no permission, not yet the fetcher
+        assertEquals(setOf("inProgress", "one"), seenBy(b, film))
+    }
+
     @Test fun theOfflineEpisodeOrderIsTheLibrarysOwn() {
         assertTrue(ItemDao.EPISODES_SQL.endsWith(OfflineLibraryDao.EPISODE_ORDER))
     }
@@ -161,7 +190,7 @@ class OfflineLibraryVisibilityTest : DownloadTestBase() {
         val specials = item("season0", app.shoalwatch.data.library.ItemKind.SEASON, "Specials", seriesId = "show", parentId = "show", indexNumber = 0)
         seen(a, series, season1, season2, specials, *all.toTypedArray()) // the series screens need each season's own record too
         store.add(a, all.map { newDownload(it) })
-        for (it in all) store.update(key(it)) { row -> row.copy(state = DownloadState.COMPLETE) }
+        for (it in all) { store.update(key(it)) { row -> row.copy(state = DownloadState.COMPLETE) }; store.markFetcher(key(it), a.userId) }
         assertEquals(listOf(e1, e2, unnumbered, s2e1, special).map { it.id }, dao.observeSeriesEpisodes(S1, a.userId, series.id).first().map { it.item.itemId })
         assertEquals(5, dao.observeSeries(S1, a.userId).first().single().episodeCount)
     }
