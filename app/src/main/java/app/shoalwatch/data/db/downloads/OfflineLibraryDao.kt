@@ -96,6 +96,14 @@ abstract class OfflineLibraryDao {
     @Query(RELEASED_SQL)
     abstract fun observeReleased(serverId: String, userId: String, seriesId: String): Flow<List<ItemRow>>
 
+    /**
+     * Series this user watched and deleted episodes of ([RELEASED_SQL]'s own tombstones, each with its episode, series and season
+     * records), as summaries of 0 episodes: the Downloads tab keeps such a show listed, as its series screen does. The caller
+     * leaves out a series [observeSeries] already lists.
+     */
+    @Query(RELEASED_SERIES_SQL)
+    abstract fun observeReleasedSeries(serverId: String, userId: String): Flow<List<SeriesSummaryRow>>
+
     /** The download the player may open: COMPLETE, visible to the user, and theirs or shared. */
     @Query(PLAYABLE_SQL)
     internal abstract suspend fun getPlayable(serverId: String, userId: String, itemId: String): DownloadEntity?
@@ -192,6 +200,14 @@ abstract class OfflineLibraryDao {
                 "WHERE r.serverId = :serverId AND r.userId = :userId AND r.seriesId = :seriesId AND $RELEASED_SERIES_VISIBLE AND $RELEASED_SEASON_VISIBLE " +
                 "AND NOT EXISTS (SELECT 1 FROM downloads d WHERE d.serverId = r.serverId AND d.itemId = r.itemId AND d.state = 'COMPLETE' AND $MINE_OR_SHARED) " +
                 EPISODE_ORDER
+
+        const val RELEASED_SERIES_SQL =
+            "SELECT $ROW_COLUMNS, 0 AS episodeCount, 0 AS bytes, 0 AS ownedCount FROM items i " +
+                "JOIN visible_items vs ON vs.serverId = i.serverId AND vs.userId = :userId AND vs.itemId = i.itemId " +
+                "LEFT JOIN user_data u ON u.serverId = i.serverId AND u.userId = :userId AND u.itemId = i.itemId " +
+                "WHERE i.serverId = :serverId AND i.itemId IN (SELECT r.seriesId FROM released_episodes r " + RELEASED_VISIBLE +
+                "WHERE r.serverId = :serverId AND r.userId = :userId AND $RELEASED_SERIES_VISIBLE AND $RELEASED_SEASON_VISIBLE) " +
+                "ORDER BY i.nameKey, i.itemId"
 
         /** One row per series (`i` is the series here, `e` the episode). */
         const val SERIES_SQL =

@@ -73,6 +73,7 @@ internal object Routes {
     /** One downloaded series, offline (Milestone 4). A malformed id reads as "This is no longer available". */
     const val DOWNLOADED_SERIES = "downloads/series/{$ARG_SERIES}"
     const val DOWNLOAD_SETTINGS = "download_settings"
+    const val STORAGE = "downloads/storage"
 
     fun home(fresh: Boolean = false) = "home?$ARG_FRESH=$fresh"
     fun library(viewId: String) = "library/${Uri.encode(viewId)}"
@@ -165,6 +166,7 @@ private fun AppNavHost(graph: AppGraph, start: String, openTab: String?, onTabOp
             item = { id -> DetailRoute(graph, nav, id) },
             player = { id, from -> PlayerRoute(graph, nav, id, from) },
             downloadedSeries = { id -> OfflineSeriesRoute(graph, nav, id) },
+            storage = { StorageRoute(graph, nav) },
         )
         composable(Routes.SERVERS) { ServersRoute(graph, nav) }
         composable(Routes.DOWNLOAD_SETTINGS) { DownloadSettingsRoute(graph, nav) }
@@ -241,7 +243,9 @@ internal fun NavGraphBuilder.browsingDestinations(
     item: @Composable (itemId: String) -> Unit,
     player: @Composable (itemId: String, from: StartFrom) -> Unit,
     downloadedSeries: @Composable (seriesId: String) -> Unit,
+    storage: @Composable () -> Unit = {},
 ) {
+    composable(Routes.STORAGE) { storage() }
     composable(Routes.DOWNLOADED_SERIES, listOf(navArgument(Routes.ARG_SERIES) { type = NavType.StringType })) {
         downloadedSeries(it.arguments?.getString(Routes.ARG_SERIES).orEmpty())
     }

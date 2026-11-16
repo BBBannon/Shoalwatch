@@ -4,6 +4,7 @@ import app.shoalwatch.data.db.downloads.DownloadKey
 import app.shoalwatch.data.db.downloads.DownloadStore
 import app.shoalwatch.data.db.downloads.LibraryWriteLock
 import app.shoalwatch.data.db.downloads.ReleaseStore
+import app.shoalwatch.data.db.downloads.RemoveOutcome
 import app.shoalwatch.data.library.Item
 import app.shoalwatch.data.library.ItemKind
 import app.shoalwatch.data.library.LibraryRepositoryTestBase
@@ -54,6 +55,10 @@ abstract class ReleaseTestBase : LibraryRepositoryTestBase() {
             beforeRelease = { s, id ->
                 val there = count("downloads", "serverId = '${s.serverId}' AND itemId = '$id'") == 1
                 synchronized(rememberedCalls) { rememberedCalls += Triple(s, id, there) }
+            },
+            volumes = fake.volumes,
+            remove = { s, id ->
+                store.removeOwner(s, id).also { if (it is RemoveOutcome.Deleted) DownloadRepository.deleteFiles(paths, it.key) }
             },
         )
     }

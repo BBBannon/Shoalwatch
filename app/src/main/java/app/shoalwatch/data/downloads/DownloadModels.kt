@@ -39,6 +39,28 @@ data class ReleaseChoice(val canRelease: Boolean, val shared: Boolean, val rule:
 /** One profile's own download settings: what happens when a download finishes playing, and how many next episodes to fetch. */
 data class ProfileSettings(val afterFinish: AfterFinish = AfterFinish.ASK, val autoNextCount: Int = 0)
 
+/** One volume: [freeBytes] now (0 for a card that is out), every download saved on it ([usedByDownloads], all profiles: one number). */
+data class VolumeUse(val kind: StorageKind, val volumeId: String?, val freeBytes: Long, val usedByDownloads: Long, val available: Boolean) {
+    override fun toString() = "VolumeUse($kind, available=$available)"
+}
+
+/**
+ * One series' downloads this profile may see. [deletableBytes]: what deleting this profile's own downloads frees (those no
+ * other profile owns); [ownedEpisodes]: how many it owns (only then may it delete).
+ */
+data class SeriesUse(val series: ItemWithUserData, val episodes: Int, val watched: Int, val bytes: Long, val deletableBytes: Long, val ownedEpisodes: Int = 0)
+
+data class FilmUse(val film: ItemWithUserData, val bytes: Long, val watched: Boolean, val ownedByMe: Boolean)
+
+/** One profile's view of the phone's storage. Other profiles' downloads appear only as [otherProfilesBytes]. */
+data class StorageView(
+    val volumes: List<VolumeUse>, val series: List<SeriesUse>, val films: List<FilmUse>,
+    val otherProfilesBytes: Long, val autoNextBlocked: Boolean,
+) { override fun toString() = "StorageView(series=${series.size}, films=${films.size})" }
+
+/** What "Delete watched" would do for this profile: [sharedForEveryone] are shared and go for every profile (ANYONE rule). */
+data class WatchedSummary(val count: Int, val bytes: Long, val sharedForEveryone: Int)
+
 /** What a screen shows about one download, for the session user. */
 data class DownloadInfo(
     val itemId: String, val state: DownloadState, val failure: DownloadFailure?, val quality: DownloadQuality,

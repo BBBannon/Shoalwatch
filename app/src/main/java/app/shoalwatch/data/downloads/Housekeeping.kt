@@ -29,4 +29,16 @@ interface Housekeeping {
      * A download [s] may not see is NOT_YOURS with nothing changed, not even its watched state.
      */
     suspend fun release(s: Session, itemId: String, together: Boolean): ReleaseOutcome
+
+    /** What uses space, as [s] may see it: its series and films by size, the volumes, and everyone else's downloads as one number. */
+    fun storage(s: Session): Flow<StorageView>
+
+    /** What [deleteWatched] would do now: the same rule, nothing changed. */
+    suspend fun watchedSummary(s: Session): WatchedSummary
+
+    /** The watch-and-delete rule for every download [s] may see and has watched; how many left its downloads ([WatchedSummary.count]). */
+    suspend fun deleteWatched(s: Session): Int
+
+    /** Removes [s]'s OWN downloads of the series (the files go with the last owner); how many of them were deleted from the phone. */
+    suspend fun deleteSeries(s: Session, seriesId: String): Int
 }

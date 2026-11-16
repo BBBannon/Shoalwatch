@@ -133,6 +133,33 @@ abstract class OfflineSeriesRenderBase : RenderBase() {
         assertEquals(listOf("confirm"), calls)
     }
 
+    @Test fun watchedAndDeletedEpisodesAreListedUnderTheirSeasonWithTheTickAndNoPlay() {
+        val released = episode(103, 1, 3, name = "Gone One", data = userData(played = true))
+        val withReleased = OfflineSeries(
+            entry(50, ItemKind.SERIES, "The Show"),
+            listOf(season(1, 1, ep(101, 1, 1, "Pilot")).copy(released = listOf(released))),
+        )
+        show(withReleased)
+        val list = rule.onAllNodes(hasScrollAction())[0]
+        list.performScrollToNode(androidx.compose.ui.test.hasText(text(R.string.offline_released_line), substring = true))
+        assertTrue("the sub-heading is a heading", headingTexts().contains(text(R.string.offline_released)))
+        val row = rule.onAllNodes(androidx.compose.ui.test.hasText("S1 E3 · Gone One", substring = true)).fetchSemanticsNodes().single()
+        val said = row.config.getOrNull(SemanticsProperties.Text)?.joinToString(" ") { it.text }.orEmpty()
+        assertTrue("one element with its whole meaning: $said", said.contains(text(R.string.offline_released_line)) && said.contains(text(R.string.state_watched)))
+        assertTrue("about 48dp or more", row.size.height / row.layoutInfo.density.density >= 47.5f)
+        assertTrue("no Play for a released episode", rule.onAllNodes(hasContentDescription("Play Season 1, episode 3, Gone One")).fetchSemanticsNodes().isEmpty())
+        rule.onAllNodes(androidx.compose.ui.test.hasText("S1 E3 · Gone One", substring = true))[0].performClick()
+        assertEquals(listOf("open:${released.item.id}"), calls)
+        assertNoTextUnder13sp(rule)
+    }
+
+    @Test fun aSeasonWhoseEveryEpisodeWasReleasedStillShowsItsHeadingAndTheSection() {
+        val released = episode(104, 2, 1, name = "Long Gone", data = userData(played = true))
+        show(OfflineSeries(entry(50, ItemKind.SERIES, "The Show"), listOf(season(2, 2).copy(released = listOf(released)))))
+        rule.onAllNodes(hasScrollAction())[0].performScrollToNode(androidx.compose.ui.test.hasText(text(R.string.offline_released_line), substring = true))
+        assertTrue(headingTexts().containsAll(listOf("Season 2", text(R.string.offline_released))))
+    }
+
     @Test fun aMalformedOrUnknownSeriesIsNoLongerAvailable() {
         show(OfflineSeries(null, emptyList()))
         assertShown(text(R.string.gone_title))

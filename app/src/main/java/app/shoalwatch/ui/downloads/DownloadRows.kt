@@ -46,6 +46,7 @@ import app.shoalwatch.data.downloads.DownloadState
 import app.shoalwatch.data.downloads.OfflineEntry
 import app.shoalwatch.data.downloads.SeriesSummary
 import app.shoalwatch.data.images.primaryArtwork
+import app.shoalwatch.data.library.ItemWithUserData
 import app.shoalwatch.data.servers.Session
 import app.shoalwatch.ui.components.Artwork
 import app.shoalwatch.ui.components.ArtworkAspect
@@ -167,9 +168,39 @@ internal fun SeriesCard(s: SeriesSummary, session: Session, actions: DownloadsAc
         ) {
             Artwork(s.series.item.primaryArtwork(session), null, aspect = ArtworkAspect.POSTER, title = title, modifier = Modifier.fillMaxWidth())
             Text(title, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
-            Text(DownloadText.seriesSummary(strings, s.episodeCount, s.bytes), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // Every episode watched and deleted: the show stays listed, as its series screen still shows them.
+            val summary = if (s.episodeCount == 0) stringResource(R.string.offline_released) else DownloadText.seriesSummary(strings, s.episodeCount, s.bytes)
+            Text(summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (s.ownedCount > 0) DeleteMenu(title, { actions.onAskRemoveSeries(s.series.item.id) }, Modifier.align(Alignment.TopEnd), R.string.dl_delete_series)
+    }
+}
+
+/**
+ * A watched-and-deleted episode on the offline series screen: "S1 E3 · Title", the watched tick when this profile watched it,
+ * and "Deleted from this phone. Download it again when you're online.", as one element that opens the detail screen. No Play.
+ */
+@Composable
+internal fun ReleasedEpisodeRow(e: ItemWithUserData, session: Session, onOpen: (String) -> Unit) {
+    val strings = rememberStrings()
+    val item = e.item
+    val name = item.displayName(strings)
+    val title = listOfNotNull(episodeCode(strings, item), name).joinToString(" · ")
+    val watched = e.userData?.played == true
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp).heightIn(min = 48.dp)
+            .semantics(mergeDescendants = true) { role = Role.Button }.clickable { onOpen(item.id) },
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(Modifier.width(112.dp)) {
+            Artwork(wideArtwork(item, session), null, aspect = ArtworkAspect.WIDE, title = name, modifier = Modifier.fillMaxWidth())
+            if (watched) WatchedBadge(Modifier.align(Alignment.TopStart).padding(4.dp))
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
+            if (watched) Text(strings.get(R.string.state_watched), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.offline_released_line), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 

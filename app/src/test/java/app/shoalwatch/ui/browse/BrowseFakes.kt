@@ -186,4 +186,35 @@ class FakeHousekeeping : app.shoalwatch.data.downloads.Housekeeping {
         failWith?.let { throw it }
         return outcome
     }
+
+    /** Storage: [storages] per session (empty until set); [summary], [deletedWatched] and [deletedSeries] answer the actions. */
+    val storages = mutableMapOf<Session, MutableStateFlow<app.shoalwatch.data.downloads.StorageView>>()
+    var summary = app.shoalwatch.data.downloads.WatchedSummary(0, 0, 0)
+    var deletedWatched = 0
+    var deletedSeries = 0
+    var storageFailure: Throwable? = null
+
+    fun storageFlow(s: Session) = storages.getOrPut(s) { MutableStateFlow(app.shoalwatch.data.downloads.StorageView(emptyList(), emptyList(), emptyList(), 0, false)) }
+
+    override fun storage(s: Session): Flow<app.shoalwatch.data.downloads.StorageView> = storageFailure?.let { e -> kotlinx.coroutines.flow.flow { throw e } } ?: storageFlow(s)
+
+    override suspend fun watchedSummary(s: Session): app.shoalwatch.data.downloads.WatchedSummary {
+        calls += "summary:${who(s)}"
+        failWith?.let { throw it }
+        return summary
+    }
+
+    override suspend fun deleteWatched(s: Session): Int {
+        calls += "deleteWatched:${who(s)}"
+        gate?.await()
+        failWith?.let { throw it }
+        return deletedWatched
+    }
+
+    override suspend fun deleteSeries(s: Session, seriesId: String): Int {
+        calls += "deleteSeries:${who(s)}:$seriesId"
+        gate?.await()
+        failWith?.let { throw it }
+        return deletedSeries
+    }
 }

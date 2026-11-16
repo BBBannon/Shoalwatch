@@ -218,7 +218,27 @@ internal fun DownloadsRoute(graph: AppGraph, nav: NavHostController) {
             onOpenServers = { nav.navigate(Routes.SERVERS) },
         )
     }
-    AppShell(Tab.DOWNLOADS, nav::switchTab, snackbar) { DownloadsScreen(state, actions, vm.messages, snackbar, onOpenSettings = { nav.navigate(Routes.DOWNLOAD_SETTINGS) }) }
+    AppShell(Tab.DOWNLOADS, nav::switchTab, snackbar) { DownloadsScreen(
+            state, actions, vm.messages, snackbar, onOpenSettings = { nav.navigate(Routes.DOWNLOAD_SETTINGS) }, onOpenStorage = { nav.navigate(Routes.STORAGE) },
+        )
+    }
+}
+
+@Composable
+internal fun StorageRoute(graph: AppGraph, nav: NavHostController) {
+    val vm = graphViewModel { app.shoalwatch.ui.downloads.StorageViewModel(graph.serverCatalog, graph.housekeeping, graph.downloads) }
+    val state by vm.state.collectAsStateWithLifecycle()
+    val snackbar = remember { SnackbarHostState() }
+    val actions = remember(vm, nav) {
+        app.shoalwatch.ui.downloads.StorageActions(
+            onBack = { nav.popBackStack() }, onDeleteWatched = vm::askDeleteWatched, onDeleteSeries = vm::askDeleteSeries, onDeleteFilm = vm::askDeleteFilm,
+            onConfirm = vm::confirm, onCancel = vm::cancel, onTryAgain = vm::tryAgain, onOpenServers = { nav.navigate(Routes.SERVERS) },
+        )
+    }
+    androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize()) {
+        app.shoalwatch.ui.downloads.StorageScreen(state, actions, vm.messages, snackbar)
+        androidx.compose.material3.SnackbarHost(snackbar, androidx.compose.ui.Modifier.align(androidx.compose.ui.Alignment.BottomCenter).navigationBarsPadding())
+    }
 }
 
 @Composable

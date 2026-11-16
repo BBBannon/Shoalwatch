@@ -399,7 +399,7 @@ A finished download is marked COMPLETE only after `DownloadVerifier.verify` says
 
 Tests: `DownloadVerifierTest` (`FakeProbe`, a fake `CodecSupport`, temporary folders), `ItemBytesTest` and `SavedMediaProbeTest` (Robolectric; real Media3 extractors on Milestone 3's clip and its 5 segments, in `app/src/test/resources/media/`).
 
-## Downloads tab (`ui/downloads`, `Routes.DOWNLOADS`, `Routes.DOWNLOADED_SERIES`)
+## Downloads tab (`ui/downloads`, `Routes.DOWNLOADS`, `Routes.DOWNLOADED_SERIES`, `Routes.STORAGE`)
 
 - **One rule: the session.** `DownloadsViewModel` and `OfflineSeriesViewModel` read only through the `Downloads` seam (so the visibility and strict sharing rules apply) for the ACTIVE session; a new session's first state is empty and loading, and anything read for another session is dropped by comparing sessions (as `HomeViewModel`). Actions run as the session on screen; a delete confirm left from another session does nothing; a message belongs to its session (`SessionMessage`). A read that fails is `localFailure` with Try again. The screen makes no network call of its own.
 - **Re-check of shared copies:** each time the active session's server is `Online` while the tab is open (on opening too), the tab asks `SharingRecheck` for the re-ask (rate limited), and again each time the tab comes back on screen (`DownloadsViewModel.opened`: the view model outlives a tab switch; walkthrough W-3). The app runs the same re-ask whichever screen is open (see "Downloads (`data/downloads`)"); the tab only makes it prompt.
@@ -409,6 +409,17 @@ Tests: `DownloadVerifierTest` (`FakeProbe`, a fake `CodecSupport`, temporary fol
 - **`DownloadText`** (`ui/present`, pure): every state and failure line, the conversions' " · High (1080p)", sizes in decimal units with digits 0-9 ("1.8 GB", "640 MB").
 
 Tests: `DownloadsViewModelTest`, `DownloadsRenderTest` and `OfflineSeriesRenderTest` (360x640 and 840x1200, font scale 1.0 and 2.0), `DownloadTextTest` (+ an Arabic-locale run), `BrowseNavigationTest`.
+
+- **"Watched and deleted"** (Milestone 5): under each season of `OfflineSeriesScreen`, a sub-heading, then this profile's released episodes (`OfflineSeason.released`) as one element each: "S1 E3 · Title", the watched tick when this profile watched it, and "Deleted from this phone. Download it again when you're online."; no Play; it opens the detail screen. The Downloads tab keeps such a show listed (`OfflineLibraryDao.observeReleasedSeries`, under the same tombstone visibility rules, merged into `library` by name; its card says "Watched and deleted" and has no delete), so the tab and the series screen agree.
+
+### Storage (`StorageScreen`, `StorageViewModel`, `Housekeeping.storage`, `Routes.STORAGE`)
+
+`downloads/storage`, from the Downloads tab's "Storage" action (48dp; shown only while someone is signed in).
+- **What is counted (SAFEGUARDING):** `HousekeepingDao.SERIES_USE_SQL` / `FILMS_USE_SQL` use Milestone 4's clauses (`VISIBLE_JOIN`, `MINE_OR_SHARED`, `SERIES_VISIBLE`, `SEASON_VISIBLE`), in any state; a size is `totalBytes` once COMPLETE (else `doneBytes`), `doneBytes` otherwise; largest first. `deletableBytes` is what deleting this profile's own downloads frees (it owns them and no other profile does); `ownedEpisodes` decides whether there is a delete. Everything else on the server is `otherProfilesBytes`, one number (server total minus what this profile is shown): never a title or a count. Volumes are `Volumes.choices()` with the bytes of every download on each (all servers: one number per volume), then a card that is out but holds downloads ("SD card: not in the phone. … are saved on it."). `autoNextBlocked`: a waiting auto-download-next request of this profile last found too little space.
+- **Deleting:** a series removes only this profile's own downloads (`ownSeriesDownloads`, then `Downloads.remove`: the files go with the last owner; the count is of copies deleted from the phone, 0 means kept for another profile). A film is `Downloads.remove` (Milestone 4's confirm, which never promises to free the room). "Delete watched" applies the release rule (`ReleaseStore.release`) to every download this profile may play and has watched; `watchedSummary` is the same rule read only (`ReleaseStore.preview`, the same `verdict`), so the confirm's count ("Delete 3 watched downloads?"), bytes and shared line ("… are shared and are deleted for every profile.", only when some would go for another profile) match what is then done. "Delete watched" never triggers auto-download next.
+- **Session rule:** the view model reads only for the ACTIVE session; a switch empties the screen at once (loading); a confirm carries its session and is dropped at the switch, never coming back for the old one; snackbar messages carry their session and are shown only for it.
+
+Tests: `StorageUsageTest` (in-memory Room, real release and removal; mutation-checked), `StorageViewModelTest`, `StorageRenderTest` (360x640 and 840x1200, font scale 1.0 and 2.0), `StorageTextTest` (+ an Arabic-locale run), `DownloadRepositoryTest`, `DownloadsRenderTest`, `OfflineSeriesRenderTest`, `BrowseNavigationTest`.
 
 ## Download buttons, the sheet and settings (`DownloadActions`, `DownloadSheet`, `NotificationAsk`, `DownloadSettingsScreen`)
 

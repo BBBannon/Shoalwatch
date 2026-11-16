@@ -29,5 +29,7 @@ internal class HousekeepingParts(graph: AppGraph) {
         hasToken = { s -> graph.serverStore.cachedToken(s.serverId, s.userId) != null },
         scope = graph.appScope,
         beforeRelease = autoDownloadNext::remember,
+        volumes = graph.downloadVolumes,
+        remove = { s, id -> graph.downloads.remove(s, id) },
     )
 }

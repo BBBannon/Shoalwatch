@@ -36,24 +36,63 @@ internal class ReleaseStore(private val db: AppDatabase, private val now: () -> 
     private val housekeeping = db.housekeepingDao()
 
     /** One transaction under the lock. [s] must already be marked watched on this phone. */
-    suspend fun release(s: Session, itemId: String): Result = lock.locked { db.withTransaction { decide(s, itemId) } }
+    suspend fun release(s: Session, itemId: String): Result = lock.locked { db.withTransaction { apply(s, verdict(s, itemId)) } }
 
-    private suspend fun decide(s: Session, itemId: String): Result {
-        val row = offline.getPlayable(s.serverId, s.userId, itemId) ?: return Result.NotYours
-        if (dao.sharing(s.serverId) != true) {
-            if (dao.deleteOwner(s.serverId, s.userId, itemId) == 0) return Result.NotYours
-            if (dao.owners(s.serverId, itemId).isNotEmpty()) {
-                tombstones(row, listOf(s.userId)) // its own library shows it watched and deleted; the other owners keep theirs
-                return Result.KeptForOthers
+    /**
+     * What [release] would do now, changing nothing (Storage's "Delete watched" summary): the same [verdict]. [bytes] is the
+     * copy's size when it would go; [sharedForEveryone]: it would go for at least one other profile that owns it or sees it shared.
+     */
+    data class Preview(val outcome: Outcome, val bytes: Long, val sharedForEveryone: Boolean)
+
+    enum class Outcome { DELETED, KEPT_FOR_OTHERS, KEPT_UNTIL_EVERYONE_WATCHED, NOT_YOURS }
+
+    suspend fun preview(s: Session, itemId: String): Preview = db.withTransaction {
+        when (val v = verdict(s, itemId)) {
+            Verdict.NotYours -> Preview(Outcome.NOT_YOURS, 0, false)
+            Verdict.Wait -> Preview(Outcome.KEPT_UNTIL_EVERYONE_WATCHED, 0, false)
+            is Verdict.Unown -> Preview(Outcome.KEPT_FOR_OTHERS, 0, false)
+            is Verdict.Gone -> {
+                val others = v.tombstoneFor.any { it != s.userId } || housekeeping.sharers(s.serverId, s.userId, itemId).isNotEmpty()
+                Preview(Outcome.DELETED, v.row.totalBytes ?: v.row.doneBytes, v.shared && others)
             }
-            return gone(row, listOf(s.userId))
         }
+    }
+
+    /** The one rule, read only. */
+    private sealed interface Verdict {
+        data object NotYours : Verdict
+        data object Wait : Verdict
+        /** Sharing off and other owners left: only this profile's claim goes. */
+        class Unown(val row: DownloadEntity) : Verdict
+        class Gone(val row: DownloadEntity, val tombstoneFor: List<String>, val shared: Boolean) : Verdict
+    }
+
+    private suspend fun verdict(s: Session, itemId: String): Verdict {
+        val row = offline.getPlayable(s.serverId, s.userId, itemId) ?: return Verdict.NotYours
         val owners = dao.owners(s.serverId, itemId)
+        if (dao.sharing(s.serverId) != true) {
+            if (s.userId !in owners) return Verdict.NotYours
+            return if (owners.any { it != s.userId }) Verdict.Unown(row) else Verdict.Gone(row, listOf(s.userId), shared = false)
+        }
         if ((housekeeping.deleteShared(s.serverId) ?: SharedDelete.ANYONE) == SharedDelete.EVERYONE) {
             val everyone = (owners + dao.accountsShown(s.serverId, itemId, Long.MIN_VALUE, Long.MAX_VALUE) + s.userId).toSet()
-            if (everyone.any { housekeeping.played(s.serverId, it, itemId) != true }) return Result.KeptUntilEveryoneWatched
+            if (everyone.any { housekeeping.played(s.serverId, it, itemId) != true }) return Verdict.Wait
         }
-        return gone(row, (owners + s.userId).distinct())
+        return Verdict.Gone(row, (owners + s.userId).distinct(), shared = true)
+    }
+
+    private suspend fun apply(s: Session, v: Verdict): Result = when (v) {
+        Verdict.NotYours -> Result.NotYours
+        Verdict.Wait -> Result.KeptUntilEveryoneWatched
+        is Verdict.Unown -> {
+            dao.deleteOwner(s.serverId, s.userId, v.row.itemId)
+            tombstones(v.row, listOf(s.userId)) // its own library shows it watched and deleted; the other owners keep theirs
+            Result.KeptForOthers
+        }
+        is Verdict.Gone -> {
+            if (!v.shared) dao.deleteOwner(s.serverId, s.userId, v.row.itemId)
+            gone(v.row, v.tombstoneFor)
+        }
     }
 
     /** The row goes (owners, tracks and segments cascade); tombstones first, so the pins recomputed after it keep the show. */

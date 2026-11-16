@@ -4,6 +4,10 @@ import app.shoalwatch.core.AppError
 import app.shoalwatch.core.AppLog
 import app.shoalwatch.data.db.downloads.HousekeepingDao
 import app.shoalwatch.data.db.downloads.ReleaseStore
+import app.shoalwatch.data.db.downloads.RemoveOutcome
+import app.shoalwatch.data.db.downloads.VolumeBytesRow
+import app.shoalwatch.data.db.library.toModel
+import app.shoalwatch.data.library.ItemWithUserData
 import app.shoalwatch.data.library.Playstate
 import app.shoalwatch.data.servers.JellyfinId
 import app.shoalwatch.data.servers.Session
@@ -14,6 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
@@ -36,6 +41,9 @@ class HousekeepingRepository internal constructor(
     private val scope: CoroutineScope,
     private val io: CoroutineDispatcher = Dispatchers.IO,
     private val beforeRelease: suspend (Session, String) -> Unit = { _, _ -> },
+    /** Storage: the mounted volumes, and `Downloads.remove` (Milestone 4's own-download removal, files with the last owner). */
+    private val volumes: Volumes,
+    private val remove: suspend (Session, String) -> RemoveOutcome,
 ) : Housekeeping {
     override fun profileSettings(s: Session): Flow<ProfileSettings> = guarded(ProfileSettings()) {
         dao.observeProfile(s.serverId, s.userId).map { row -> row?.let { ProfileSettings(it.afterFinish, it.autoNextCount) } ?: ProfileSettings() }
@@ -86,6 +94,57 @@ class HousekeepingRepository internal constructor(
         val outcome = apply(releases.release(s, itemId))
         onWatched(s, itemId)
         outcome
+    }
+
+    override fun storage(s: Session): Flow<StorageView> = guarded(EMPTY_STORAGE) {
+        combine(
+            dao.observeSeriesUse(s.serverId, s.userId), dao.observeFilmUse(s.serverId, s.userId), dao.observeServerBytes(s.serverId),
+            dao.observeVolumeBytes(), dao.observeAutoNextBlocked(s.serverId, s.userId),
+        ) { seriesRows, filmRows, serverBytes, volumeRows, blocked ->
+            val series = seriesRows.map {
+                SeriesUse(ItemWithUserData(it.item.toModel(), it.userData?.toModel()), it.episodes, it.watched, it.bytes, it.deletableBytes, it.ownedEpisodes)
+            }.sortedByDescending { it.bytes }
+            val films = filmRows.map {
+                FilmUse(ItemWithUserData(it.item.toModel(), it.userData?.toModel()), it.bytes, it.userData?.played == true, it.ownedByMe)
+            }.sortedByDescending { it.bytes }
+            // Everything else on this server is one number: no title, no count (SAFEGUARDING).
+            val mine = series.sumOf { it.bytes } + films.sumOf { it.bytes }
+            StorageView(volumeUse(volumeRows), series, films, (serverBytes - mine).coerceAtLeast(0), blocked)
+        }
+    }
+
+    /** Each mounted volume with what downloads use on it; then a card that is out but still holds downloads. */
+    private fun volumeUse(rows: List<VolumeBytesRow>): List<VolumeUse> {
+        val choices = try { volumes.choices() } catch (e: Exception) { emptyList() }
+        fun used(kind: StorageKind, id: String?) = rows.filter { it.storage == kind && (kind == StorageKind.INTERNAL || it.volumeId == id) }.sumOf { it.bytes }
+        val here = choices.map { VolumeUse(it.kind, it.volumeId, it.freeBytes, used(it.kind, it.volumeId), it.available) }
+        val mounted = choices.filter { it.kind == StorageKind.REMOVABLE }.mapNotNull { it.volumeId }.toSet()
+        val out = rows.filter { it.storage == StorageKind.REMOVABLE && it.volumeId !in mounted && it.bytes > 0 }
+            .groupBy { it.volumeId }.map { (id, r) -> VolumeUse(StorageKind.REMOVABLE, id, 0, r.sumOf { it.bytes }, available = false) }
+        return here + out
+    }
+
+    override suspend fun watchedSummary(s: Session): WatchedSummary = action {
+        val previews = dao.watchedPlayable(s.serverId, s.userId).map { releases.preview(s, it) }
+        val gone = previews.filter { it.outcome == ReleaseStore.Outcome.DELETED }
+        WatchedSummary(
+            count = gone.size + previews.count { it.outcome == ReleaseStore.Outcome.KEPT_FOR_OTHERS },
+            bytes = gone.sumOf { it.bytes }, sharedForEveryone = gone.count { it.sharedForEveryone },
+        )
+    }
+
+    override suspend fun deleteWatched(s: Session): Int = action {
+        var released = 0
+        for (id in dao.watchedPlayable(s.serverId, s.userId)) {
+            val outcome = apply(releases.release(s, id)) // each one re-checks that [s] may see it
+            if (outcome == ReleaseOutcome.DELETED || outcome == ReleaseOutcome.KEPT_FOR_OTHERS) released++
+        }
+        released
+    }
+
+    override suspend fun deleteSeries(s: Session, seriesId: String): Int {
+        if (!isId(seriesId)) return 0
+        return action { dao.ownSeriesDownloads(s.serverId, s.userId, seriesId).count { remove(s, it) is RemoveOutcome.Deleted } }
     }
 
     /** `LocalPlaybackReports`' onFinished (the stop already marked it watched): ALWAYS releases, with no second mark; then auto-download next. */
@@ -147,5 +206,6 @@ class HousekeepingRepository internal constructor(
     private companion object {
         const val TAG = "Housekeeping"
         val AUTO_NEXT = setOf(0, 1, 2, 3, 5)
+        val EMPTY_STORAGE = StorageView(emptyList(), emptyList(), emptyList(), 0, false)
     }
 }

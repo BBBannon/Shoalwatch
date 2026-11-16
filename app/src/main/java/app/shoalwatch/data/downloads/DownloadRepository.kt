@@ -46,9 +46,15 @@ class DownloadRepository internal constructor(
     private val removed: (DownloadKey) -> Unit = {},
 ) : Downloads {
     override fun library(s: Session): Flow<OfflineLibrary> = guarded(EMPTY_LIBRARY) {
-        combine(offline.observeInProgress(s.serverId, s.userId), offline.observeFilms(s.serverId, s.userId), offline.observeSeries(s.serverId, s.userId)) { running, films, series ->
+        combine(
+            offline.observeInProgress(s.serverId, s.userId), offline.observeFilms(s.serverId, s.userId), offline.observeSeries(s.serverId, s.userId),
+            offline.observeReleasedSeries(s.serverId, s.userId),
+        ) { running, films, series, released ->
             val mounted = mounted()
-            OfflineLibrary(running.map { it.entry(mounted) }, films.map { it.entry(mounted) }, series.map { it.toModel() })
+            // A show whose every episode was watched and deleted stays listed, as its series screen still shows it.
+            val listed = series.map { it.item.itemId }.toSet()
+            val all = (series + released.filter { it.item.itemId !in listed }).sortedWith(compareBy({ it.item.nameKey }, { it.item.itemId }))
+            OfflineLibrary(running.map { it.entry(mounted) }, films.map { it.entry(mounted) }, all.map { it.toModel() })
         }
     }
 

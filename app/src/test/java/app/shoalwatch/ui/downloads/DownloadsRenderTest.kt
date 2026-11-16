@@ -72,7 +72,7 @@ abstract class DownloadsRenderBase : RenderBase() {
     )
 
     private fun screen(lib: OfflineLibrary, queue: QueueStatus = QueueStatus.Idle, confirm: RemoveRequest? = null, loading: Boolean = false, failed: Boolean = false) =
-        show { DownloadsScreen(DownloadsUiState(BEN, lib, queue, online = false, loading = loading, localFailure = failed, confirmRemove = confirm), actions, emptyFlow(), SnackbarHostState(), onOpenSettings = { calls += "settings" }) }
+        show { DownloadsScreen(DownloadsUiState(BEN, lib, queue, online = false, loading = loading, localFailure = failed, confirmRemove = confirm), actions, emptyFlow(), SnackbarHostState(), onOpenSettings = { calls += "settings" }, onOpenStorage = { calls += "storage" }) }
 
     private val running = e(1, "Running Film", DownloadState.RUNNING, 0.45f)
 
@@ -97,6 +97,21 @@ abstract class DownloadsRenderBase : RenderBase() {
         scrollToText("12 episodes")
         assertShown(text(R.string.dl_section_tv))
         assertShown("12 episodes · 9.8 GB")
+    }
+
+    @Test fun theStorageActionIs48dpAndOpensStorage() {
+        screen(OfflineLibrary(emptyList(), listOf(e(2, "A Film")), emptyList()))
+        val node = rule.onAllNodes(androidx.compose.ui.test.hasText(text(R.string.storage_action))).fetchSemanticsNodes().single()
+        assertTrue("under 48dp", node.size.height / node.layoutInfo.density.density >= 47.5f)
+        rule.onAllNodes(androidx.compose.ui.test.hasText(text(R.string.storage_action)))[0].performClick()
+        assertTrue(calls.contains("storage"))
+    }
+
+    @Test fun aShowWhoseEveryEpisodeWasWatchedAndDeletedStaysListedAndSaysSo() {
+        screen(OfflineLibrary(emptyList(), emptyList(), listOf(SeriesSummary(entry(50, ItemKind.SERIES, "A Show"), 0, 0))))
+        scrollToText("A Show")
+        assertShown(text(R.string.offline_released))
+        assertTrue("nothing of it to delete", rule.onAllNodes(hasContentDescription(text(R.string.cd_more_actions, "A Show"))).fetchSemanticsNodes().isEmpty())
     }
 
     @Test fun aRunningRowIsOneElementWithItsWholeMeaningAndProgressInWords() {

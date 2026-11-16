@@ -614,6 +614,48 @@
     <string name="dl_after_finish_always">Always delete when finished</string>
     <string name="dl_after_finish_never">Never</string>
     <string name="dl_after_finish_help">Deleting frees the space. The show still appears in Downloads and the episode stays watched. For this profile only.</string>
+    <!-- Storage (Milestone 5 Task 14) -->
+    <string name="storage_title">Storage</string>
+    <string name="storage_action">Storage</string>
+    <string name="storage_phone_free">This phone: %1$s free</string>
+    <string name="storage_card_free">SD card: %1$s free</string>
+    <string name="storage_downloads_use">Downloads use %1$s</string>
+    <string name="storage_card_out">SD card: not in the phone. %1$s of downloads are saved on it.</string>
+    <string name="storage_series">Series</string>
+    <string name="storage_films">Films</string>
+    <plurals name="storage_series_row">
+        <item quantity="one">%1$s episode · %2$s</item>
+        <item quantity="other">%1$s episodes · %2$s</item>
+    </plurals>
+    <plurals name="storage_watched">
+        <item quantity="one">%1$s watched</item>
+        <item quantity="other">%1$s watched</item>
+    </plurals>
+    <string name="storage_not_owned">Downloaded by another profile</string>
+    <string name="storage_others">Other profiles\' downloads: %1$s</string>
+    <string name="storage_delete_series">Delete downloads of %1$s</string>
+    <string name="storage_delete_film">Delete download of %1$s</string>
+    <string name="storage_confirm_series_title">Delete the downloaded episodes of %1$s?</string>
+    <string name="storage_confirm_series_body">This frees %1$s on this phone. Episodes downloaded by another profile stay.</string>
+    <string name="storage_delete_watched">Delete watched</string>
+    <plurals name="delete_watched_title">
+        <item quantity="one">Delete %1$s watched download?</item>
+        <item quantity="other">Delete %1$s watched downloads?</item>
+    </plurals>
+    <string name="delete_watched_body">This frees %1$s on this phone. The shows still appear in Downloads and stay watched.</string>
+    <plurals name="delete_watched_shared">
+        <item quantity="one">%1$s of them is shared and is deleted for every profile.</item>
+        <item quantity="other">%1$s of them are shared and are deleted for every profile.</item>
+    </plurals>
+    <plurals name="deleted_count">
+        <item quantity="one">Deleted %1$s download.</item>
+        <item quantity="other">Deleted %1$s downloads.</item>
+    </plurals>
+    <string name="storage_delete_failed">That couldn\'t be deleted. Try again.</string>
+    <string name="storage_auto_next_blocked">Next episodes weren\'t downloaded automatically: there isn\'t enough free space.</string>
+    <string name="storage_empty">Nothing is downloaded on this phone.</string>
+    <string name="offline_released">Watched and deleted</string>
+    <string name="offline_released_line">Deleted from this phone. Download it again when you\'re online.</string>
     <string name="dl_auto_next">Download next episodes automatically</string>
     <string name="dl_auto_next_off">Off</string>
     <string name="dl_auto_next_1">Next episode</string>

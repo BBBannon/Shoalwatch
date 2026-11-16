@@ -1,13 +1,41 @@
 package app.shoalwatch.data.db.downloads
 
 import androidx.room.Dao
+import androidx.room.Embedded
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Upsert
+import app.shoalwatch.data.db.downloads.OfflineLibraryDao.Companion.MINE
+import app.shoalwatch.data.db.downloads.OfflineLibraryDao.Companion.MINE_OR_SHARED
+import app.shoalwatch.data.db.downloads.OfflineLibraryDao.Companion.SEASON_VISIBLE
+import app.shoalwatch.data.db.downloads.OfflineLibraryDao.Companion.SERIES_VISIBLE
+import app.shoalwatch.data.db.downloads.OfflineLibraryDao.Companion.VISIBLE_JOIN
+import app.shoalwatch.data.db.library.ItemEntity
+import app.shoalwatch.data.db.library.ROW_COLUMNS
+import app.shoalwatch.data.db.library.UserDataEntity
 import app.shoalwatch.data.downloads.AfterFinish
 import app.shoalwatch.data.downloads.SharedDelete
+import app.shoalwatch.data.downloads.StorageKind
 import kotlinx.coroutines.flow.Flow
+
+/** One series' downloads this profile may see (Storage): the series row and its user data, then counts and sizes. */
+class SeriesUseRow(
+    @Embedded val item: ItemEntity,
+    @Embedded(prefix = "ud_") val userData: UserDataEntity?,
+    val episodes: Int,
+    val watched: Int,
+    val bytes: Long,
+    /** This profile owns them and no other profile does: deleting its own downloads frees these. */
+    val deletableBytes: Long,
+    val ownedEpisodes: Int,
+)
+
+/** One film download this profile may see (Storage). */
+class FilmUseRow(@Embedded val item: ItemEntity, @Embedded(prefix = "ud_") val userData: UserDataEntity?, val bytes: Long, val ownedByMe: Boolean)
+
+/** Every download's bytes on one volume (all servers and profiles: one number per volume). */
+class VolumeBytesRow(val storage: StorageKind, val volumeId: String?, val bytes: Long)
 
 /**
  * Watch-and-delete's reads and writes: per-profile settings (`profile_download_settings`), the per-server "Delete shared
@@ -120,7 +148,59 @@ abstract class HousekeepingDao {
         serverId: String, userId: String, seriesId: String, anchorItemId: String, requestedAt: Long, tries: Int, blockedAt: Long?,
     ): Int
 
+    // ---- Storage (SAFEGUARDING: titles, counts and sizes only for downloads this profile may see; the rest is one number)
+
+    @Query(SERIES_USE_SQL)
+    internal abstract fun observeSeriesUse(serverId: String, userId: String): Flow<List<SeriesUseRow>>
+
+    @Query(FILMS_USE_SQL)
+    internal abstract fun observeFilmUse(serverId: String, userId: String): Flow<List<FilmUseRow>>
+
+    /** Every download of the server, any profile: the caller takes away what this profile may see. */
+    @Query("SELECT COALESCE(SUM($BYTES), 0) FROM downloads d WHERE d.serverId = :serverId")
+    internal abstract fun observeServerBytes(serverId: String): Flow<Long>
+
+    @Query("SELECT d.storage AS storage, d.volumeId AS volumeId, COALESCE(SUM($BYTES), 0) AS bytes FROM downloads d GROUP BY d.storage, d.volumeId")
+    internal abstract fun observeVolumeBytes(): Flow<List<VolumeBytesRow>>
+
+    /** What "Delete watched" may release for this profile: a download it may play (`PLAYABLE_SQL`) that it has watched. */
+    @Query(
+        "SELECT d.itemId FROM downloads d JOIN items i ON i.serverId = d.serverId AND i.itemId = d.itemId $VISIBLE_JOIN" +
+            "JOIN user_data u ON u.serverId = d.serverId AND u.userId = :userId AND u.itemId = d.itemId AND u.played = 1 " +
+            "WHERE d.serverId = :serverId AND d.state = 'COMPLETE' AND $MINE_OR_SHARED ORDER BY d.itemId",
+    )
+    internal abstract suspend fun watchedPlayable(serverId: String, userId: String): List<String>
+
+    /** This profile's OWN downloads of a series it may see (what "Delete downloads of …" removes). */
+    @Query(
+        "SELECT d.itemId FROM downloads d $VISIBLE_JOIN WHERE d.serverId = :serverId AND d.seriesId = :seriesId AND d.kind = 'EPISODE' " +
+            "AND $MINE_OR_SHARED AND $MINE AND $SERIES_VISIBLE AND $SEASON_VISIBLE ORDER BY d.itemId",
+    )
+    internal abstract suspend fun ownSeriesDownloads(serverId: String, userId: String, seriesId: String): List<String>
+
     companion object {
+        /** A download's size: the whole file once COMPLETE (else what is done), what is done so far otherwise. */
+        const val BYTES = "(CASE WHEN d.state = 'COMPLETE' THEN COALESCE(d.totalBytes, d.doneBytes) ELSE d.doneBytes END)"
+
+        /** No other profile owns it. */
+        const val ONLY_MINE = "NOT EXISTS (SELECT 1 FROM download_owners oo WHERE oo.serverId = d.serverId AND oo.itemId = d.itemId AND oo.userId <> :userId)"
+
+        /** `i` is the series, `e` the episode; the episode's own data is `ue`. Any state: Storage counts the queue too. */
+        const val SERIES_USE_SQL =
+            "SELECT $ROW_COLUMNS, COUNT(*) AS episodes, SUM(CASE WHEN ue.played = 1 THEN 1 ELSE 0 END) AS watched, SUM($BYTES) AS bytes, " +
+                "SUM(CASE WHEN $MINE AND $ONLY_MINE THEN $BYTES ELSE 0 END) AS deletableBytes, SUM(CASE WHEN $MINE THEN 1 ELSE 0 END) AS ownedEpisodes " +
+                "FROM downloads d JOIN items e ON e.serverId = d.serverId AND e.itemId = d.itemId " + VISIBLE_JOIN +
+                "JOIN items i ON i.serverId = d.serverId AND i.itemId = d.seriesId " +
+                "LEFT JOIN user_data u ON u.serverId = d.serverId AND u.userId = :userId AND u.itemId = d.seriesId " +
+                "LEFT JOIN user_data ue ON ue.serverId = d.serverId AND ue.userId = :userId AND ue.itemId = d.itemId " +
+                "WHERE d.serverId = :serverId AND d.kind = 'EPISODE' AND $MINE_OR_SHARED AND $SERIES_VISIBLE AND $SEASON_VISIBLE " +
+                "GROUP BY i.serverId, i.itemId ORDER BY i.nameKey, i.itemId"
+
+        const val FILMS_USE_SQL =
+            "SELECT $ROW_COLUMNS, $BYTES AS bytes, $MINE AS ownedByMe FROM downloads d JOIN items i ON i.serverId = d.serverId AND i.itemId = d.itemId " +
+                VISIBLE_JOIN + "LEFT JOIN user_data u ON u.serverId = d.serverId AND u.userId = :userId AND u.itemId = d.itemId " +
+                "WHERE d.serverId = :serverId AND d.kind = 'MOVIE' AND $MINE_OR_SHARED ORDER BY i.nameKey, i.itemId"
+
         /**
          * SAFEGUARDING. Accounts on the SAME server, other than [userId], with their OWN `visible_items` record for the item, while
          * sharing is on and the copy is COMPLETE, that own it (fetched by their sign-in) or whose own permission is confirmed: the

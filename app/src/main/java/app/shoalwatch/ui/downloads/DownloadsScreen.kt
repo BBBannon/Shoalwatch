@@ -46,11 +46,14 @@ import kotlinx.coroutines.flow.Flow
 
 /**
  * The Downloads tab: the queue (owners only), then Films (A to Z) and TV (one card per series), all of the active session's
- * offline library. Scrolls as one list, so it works at font scale 2.0, the empty state included. [onOpenSettings] null: the
- * settings action is not shown (nothing that does nothing).
+ * offline library. Scrolls as one list, so it works at font scale 2.0, the empty state included. [onOpenSettings] or
+ * [onOpenStorage] null: that action is not shown (nothing that does nothing); Storage is shown only while someone is signed in.
  */
 @Composable
-fun DownloadsScreen(state: DownloadsUiState, actions: DownloadsActions, messages: Flow<SessionMessage>, snackbar: SnackbarHostState, onOpenSettings: (() -> Unit)? = null) {
+fun DownloadsScreen(
+    state: DownloadsUiState, actions: DownloadsActions, messages: Flow<SessionMessage>, snackbar: SnackbarHostState,
+    onOpenSettings: (() -> Unit)? = null, onOpenStorage: (() -> Unit)? = null,
+) {
     val context = LocalContext.current
     val current = rememberUpdatedState(state.session)
     DismissOnSessionChange(snackbar, state.session)
@@ -62,6 +65,9 @@ fun DownloadsScreen(state: DownloadsUiState, actions: DownloadsActions, messages
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             Text(stringResource(R.string.downloads_title), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f).semantics { heading() })
+            if (onOpenStorage != null && session != null) {
+                TextButton(onClick = onOpenStorage, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.storage_action)) }
+            }
             if (onOpenSettings != null) {
                 IconButton(onClick = onOpenSettings, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
                     Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.dl_settings_action))

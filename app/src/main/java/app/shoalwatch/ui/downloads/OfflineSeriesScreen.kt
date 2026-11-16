@@ -63,7 +63,8 @@ data class OfflineSeriesActions(
  * One downloaded series, offline: its header (artwork, overview), then each season as a heading ("Season 1", "Specials" last)
  * with its downloaded episodes in order. A row opens the detail screen (Room, so it works offline); Play opens the player,
  * which picks the saved copy. An owner can delete an episode (its row's "more" button) or its own episodes of a season (the
- * season's), after the same confirmation as the Downloads tab (Tasks 13-16 review I-2).
+ * season's), after the same confirmation as the Downloads tab (Tasks 13-16 review I-2). Under each season, "Watched and deleted"
+ * lists this profile's released episodes (no Play: the copy is gone).
  */
 @Composable
 fun OfflineSeriesScreen(state: OfflineSeriesUiState, actions: OfflineSeriesActions, messages: Flow<SessionMessage> = emptyFlow(), snackbar: SnackbarHostState? = null) {
@@ -113,6 +114,15 @@ fun OfflineSeriesScreen(state: OfflineSeriesUiState, actions: OfflineSeriesActio
                         }
                     }
                     items(season.episodes, key = { it.download.itemId }) { OfflineEpisodeRow(it, session, actions.onOpenItem, actions.onPlay, actions.onAskRemove) }
+                    if (season.released.isNotEmpty()) {
+                        item(key = "released:" + (season.season?.item?.id ?: "")) {
+                            Text(
+                                stringResource(R.string.offline_released), style = MaterialTheme.typography.titleSmall,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp).semantics { heading() },
+                            )
+                        }
+                        items(season.released, key = { "r" + it.item.id }) { ReleasedEpisodeRow(it, session, actions.onOpenItem) }
+                    }
                 }
                 item { Spacer(Modifier.heightIn(min = 24.dp)) }
             }

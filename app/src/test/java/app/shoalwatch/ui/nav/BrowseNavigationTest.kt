@@ -43,6 +43,7 @@ class BrowseNavigationTest {
                     item = { id -> arrived += "item:$id" },
                     player = { id, from -> arrived += "play:$id|$from" },
                     downloadedSeries = { id -> arrived += "downloaded:$id" },
+                    storage = { arrived += "storage" },
                 )
             }
         }
@@ -84,6 +85,15 @@ class BrowseNavigationTest {
         rule.runOnUiThread { nav.navigate(Routes.downloadedSeries("../not an id")) }
         rule.waitForIdle()
         assertEquals("the screen gets it and the seam answers it as empty (no longer available)", "downloaded:../not an id", arrived.last())
+    }
+
+    @Test fun storageResolvesAndBackReturnsToWhereItWasOpened() {
+        assertEquals("downloads/storage", Routes.STORAGE)
+        assertEquals("storage", go(Routes.STORAGE))
+        rule.runOnUiThread { nav.popBackStack() }
+        rule.waitForIdle()
+        assertEquals("the screen under it keeps its place", "start", nav.currentDestination?.route)
+        assertEquals("a downloaded series is still its own route", "downloaded:$series", go(Routes.downloadedSeries(series)))
     }
 
     @Test fun anItemArrivesWithItsId() {
