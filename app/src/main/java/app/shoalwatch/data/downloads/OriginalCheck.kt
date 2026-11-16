@@ -9,10 +9,14 @@ import app.shoalwatch.data.servers.JellyfinId
 
 /** Can the original file play on this phone as it is (pure, over a `checkOriginal` answer)? */
 internal sealed interface OriginalCheck {
-    /** [container] is the extension it will be saved with (one of [DownloadPaths.MEDIA_EXTENSIONS]). */
+    /**
+     * [container] is the extension it will be saved with (one of [DownloadPaths.MEDIA_EXTENSIONS]); [runtimeMs] is that
+     * source's own `RunTimeTicks` (bounded by the mapper, a positive value only), which the download check uses rather than
+     * the item's headline runtime (controller walkthrough W-1).
+     */
     data class Playable(
         val sourceId: String, val container: String, val sizeBytes: Long?, val eTag: String?,
-        val audio: List<AudioTrack>, val subtitles: List<SubtitleTrack>, val defaultAudio: Int?,
+        val audio: List<AudioTrack>, val subtitles: List<SubtitleTrack>, val defaultAudio: Int?, val runtimeMs: Long? = null,
     ) : OriginalCheck {
         override fun toString() = "Playable(<redacted>)"
     }
@@ -39,6 +43,7 @@ internal object OriginalChecks {
         return OriginalCheck.Playable(
             sourceId = source.id, container = container, sizeBytes = source.sizeBytes, eTag = source.eTag,
             audio = source.audio, subtitles = source.subtitles, defaultAudio = source.defaultAudioIndex,
+            runtimeMs = source.runtimeMs?.takeIf { it > 0 },
         )
     }
 }

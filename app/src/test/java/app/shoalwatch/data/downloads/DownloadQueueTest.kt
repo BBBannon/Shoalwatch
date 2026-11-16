@@ -21,6 +21,45 @@ class DownloadQueueTest : DownloadQueueTestBase() {
     private val f2 get() = item("f2")
     private val f3 get() = item("f3")
 
+    /** The film's catalogue runtime (80 min) is not the downloaded source's (a 10 s clip, as on the stand-in server). */
+    private fun queuedWithItemRuntime(quality: DownloadQuality = DownloadQuality.ORIGINAL) {
+        queued(a, f1, quality = quality)
+        runBlocking { store.update(key(f1)) { it.copy(runtimeMs = 80 * 60_000L) } }
+    }
+
+    private fun withSourceRuntime(name: String, runtimeMs: Long?) =
+        app.shoalwatch.data.playback.fixtureInfo(name).let { i -> i.copy(sources = i.sources.map { it.copy(runtimeMs = runtimeMs) }) }
+
+    /** Controller walkthrough W-1: the check compares the file with the runtime of the media source downloaded. */
+    @Test fun anOriginalIsCheckedAgainstItsOwnSourcesRuntimeNotTheItems() {
+        queuedWithItemRuntime()
+        playback.answer(withSourceRuntime("direct-play.json", 10_000))
+        assertEquals(QueueRun.Drained, drain())
+        assertEquals(listOf<Long?>(10_000), verifier.runtimes)
+        assertEquals(DownloadState.COMPLETE, download(f1)!!.state)
+    }
+
+    @Test fun withNoSourceRuntimeTheItemsRuntimeIsUsedAsBefore() {
+        queuedWithItemRuntime()
+        playback.answer(withSourceRuntime("direct-play.json", null))
+        drain()
+        assertEquals(listOf<Long?>(80 * 60_000L), verifier.runtimes)
+        verifier.runtimes.clear()
+        queued(a, f2)
+        runBlocking { store.update(key(f2)) { it.copy(runtimeMs = 80 * 60_000L) } }
+        playback.answer(withSourceRuntime("direct-play.json", 0)) // a 0 is no runtime
+        drain()
+        assertEquals(listOf<Long?>(80 * 60_000L), verifier.runtimes)
+    }
+
+    @Test fun aConversionChecksItsPlaylistAndFileAgainstTheConvertedSourcesRuntime() {
+        queuedWithItemRuntime(DownloadQuality.MEDIUM)
+        playback.answer(app.shoalwatch.data.playback.fixtureInfo("direct-play.json"), withSourceRuntime("transcode.json", 10_000))
+        assertEquals(QueueRun.Drained, drain())
+        assertEquals(listOf<Long?>(10_000), hls.runtimes)
+        assertEquals(listOf<Long?>(10_000), verifier.runtimes)
+    }
+
     @Test fun threeQueuedItemsCompleteInOrder() {
         queued(a, f1, f2, f3)
         playable(3)

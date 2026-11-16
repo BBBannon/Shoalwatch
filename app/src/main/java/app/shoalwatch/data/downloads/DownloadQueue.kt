@@ -155,7 +155,7 @@ internal class DownloadQueue(
             paths.mediaFile(folder, ext).takeIf { it.exists() }?.let(paths::deleteInside)
             paths.partFile(folder, ext).takeIf { it.exists() }?.let(paths::deleteInside)
         }
-        val fetched = QueueFetched(target, hls = false, shape = null, audioListed = playable.audio.isNotEmpty())
+        val fetched = QueueFetched(target, hls = false, shape = null, audioListed = playable.audio.isNotEmpty(), runtimeMs = playable.runtimeMs)
         // Every byte on the phone comes through ONE sign-in (final review L-7): bytes begun or saved under another owner's
         // (a `.part`, or a `media.<ext>` renamed before the process died) are deleted and fetched again under this one, from
         // zero with no validator of theirs. Only then is this sign-in the fetcher.
@@ -231,7 +231,10 @@ internal class DownloadQueue(
             when (val result = hls.fetch(conv, folder, from, segmentProgress(j))) {
                 FetchResult.Done -> {
                     live.remove(key)
-                    return QueueFetched(paths.localPlaylist(paths.hlsFolder(folder)), hls = true, shape = conv.segments.map { it.durationMs }, audioListed = audioListed)
+                    return QueueFetched(
+                        paths.localPlaylist(paths.hlsFolder(folder)), hls = true, shape = conv.segments.map { it.durationMs }, audioListed = audioListed,
+                        runtimeMs = sourceRuntime(conv.resolved),
+                    )
                 }
                 is FetchResult.Failed -> { live.remove(key); throw QueueEnds(failed(key, result.failure)) }
                 FetchResult.Unauthorised -> { live.remove(key); throw QueueEnds(unauthorised(key, s)) }
@@ -263,7 +266,9 @@ internal class DownloadQueue(
         if (plan.method != PlayMethod.TRANSCODE || !plan.source.hls) throw QueueEnds(failed(key, DownloadFailure.SERVER_ERROR))
         val own: List<AudioTrack> = plan.audioTracks.filter { it.index == (plan.audioIndex ?: audio) }.ifEmpty { plan.audioTracks.take(1) }
         extras.tracks(s, key, folder, plan.mediaSourceId, own, plan.subtitleTracks, row.quality)
-        val (opened, result) = hls.open(resolved, folder, row.runtimeMs, ConversionSpace(row.storage, row.volumeId, QueueSpace.estimate(row)))
+        // The playlist's length is checked against the converted source's own runtime, else the item's (W-1); the size
+        // estimate stays the item's.
+        val (opened, result) = hls.open(resolved, folder, sourceRuntime(resolved) ?: row.runtimeMs, ConversionSpace(row.storage, row.volumeId, QueueSpace.estimate(row)))
         if (opened == null) {
             when (result) {
                 is FetchResult.Failed -> throw QueueEnds(failed(key, result.failure))
@@ -300,7 +305,8 @@ internal class DownloadQueue(
         write(j.key) { it.copy(state = DownloadState.VERIFYING) }
         val row = current(j.key)
         val media = SavedMedia(j.key.serverId, j.key.itemId, folder, fetched.entry, fetched.hls, row.quality, row.mediaSourceId.orEmpty())
-        val verdict = if (!QueueSpace.names(paths, row, folder, fetched.entry)) Verdict.Bad(RECORD) else verifier.verify(media, if (fetched.hls) null else row.totalBytes, row.runtimeMs, fetched.shape, fetched.audioListed)
+        val runtime = fetched.runtimeMs ?: row.runtimeMs // the source downloaded, not the item's headline runtime (W-1)
+        val verdict = if (!QueueSpace.names(paths, row, folder, fetched.entry)) Verdict.Bad(RECORD) else verifier.verify(media, if (fetched.hls) null else row.totalBytes, runtime, fetched.shape, fetched.audioListed)
         val at = store.stamp()
         when (verdict) {
             is Verdict.Good -> {
@@ -402,6 +408,9 @@ internal class DownloadQueue(
     }
 
     private val DownloadEntity.key get() = DownloadKey(serverId, itemId)
+
+    /** The converted source's own runtime (bounded by the mapper), when positive. */
+    private fun sourceRuntime(resolved: app.shoalwatch.data.playback.Resolved): Long? = resolved.plan.runtimeMs?.takeIf { it > 0 }
 
     private companion object {
         const val TAG = "DownloadQueue"

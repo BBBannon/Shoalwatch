@@ -71,6 +71,8 @@ internal class FakeFiles : OriginalFetch {
 internal class FakeHls(private val clock: TestMonotonic) : ConversionFetch {
     var segments = 5
     val opens = mutableListOf<Resolved>()
+    /** The runtime each open was asked to check the playlist against. */
+    val runtimes = mutableListOf<Long?>()
     val fetches = mutableListOf<Pair<LiveConversion, Int>>()
     val openSteps = ArrayDeque<FetchResult>()
     /** Each fetch: segments to write (from the start index), then the result. */
@@ -80,6 +82,7 @@ internal class FakeHls(private val clock: TestMonotonic) : ConversionFetch {
 
     override suspend fun open(resolved: Resolved, folder: File, runtimeMs: Long?, space: ConversionSpace): Pair<LiveConversion?, FetchResult> {
         opens += resolved
+        runtimes += runtimeMs
         openSteps.removeFirstOrNull()?.let { return null to it }
         File(folder, "hls").apply { deleteRecursively(); mkdirs() }
         val segs = List(segments) { HlsPlaylists.Segment(app.shoalwatch.data.playback.StreamSource("/videos/x/seg$it.ts", emptyList(), false), 2_000) }
@@ -114,9 +117,12 @@ internal class FakeExtras : DownloadExtras {
 internal class FakeVerifier : PlayableCheck {
     val verdicts = ArrayDeque<Verdict>()
     val verified = mutableListOf<SavedMedia>()
+    /** The runtime each check compared the file's duration with. */
+    val runtimes = mutableListOf<Long?>()
     var recheckAnswer = true
     override suspend fun verify(media: SavedMedia, expectedBytes: Long?, runtimeMs: Long?, hlsShape: List<Long>?, audioListed: Boolean): Verdict {
         verified += media
+        runtimes += runtimeMs
         return verdicts.removeFirstOrNull() ?: Verdict.Good(GOOD)
     }
     override suspend fun recheck(media: SavedMedia, sha256: String) = recheckAnswer

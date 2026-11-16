@@ -25,7 +25,8 @@ internal class QueueJob(val key: DownloadKey, val position: Int, val of: Int, va
 }
 
 /** What was fetched: what the verifier needs to know about it. */
-internal class QueueFetched(val entry: File, val hls: Boolean, val shape: List<Long>?, val audioListed: Boolean)
+/** [runtimeMs]: the downloaded source's own runtime, when the server stated one (W-1); else the check uses the row's. */
+internal class QueueFetched(val entry: File, val hls: Boolean, val shape: List<Long>?, val audioListed: Boolean, val runtimeMs: Long? = null)
 
 /**
  * A remembered conversion, with the request of the row it was opened for (Tasks 11-12 review I-4) and the account that opened
