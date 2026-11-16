@@ -54,8 +54,9 @@ class SeriesSummaryRow(
 
 /**
  * The offline library, for one user (SAFEGUARDING). Every query takes `(serverId, userId)` and returns a download only when
- * that user has a `visible_items` record for the item (on the series screens, for the series and the episode's season too) AND either owns it or the
- * server's "Share downloads between profiles" is on and the download is COMPLETE ([MINE_OR_SHARED]). Watched state is always
+ * that user has a `visible_items` record for the item (on the series screens, for the series and the episode's season too) AND either owns it (a ready copy: fetched
+ * by its own sign-in, or its own permission confirmed) or the server's "Share downloads between profiles" is on and the download
+ * is COMPLETE with its own permission confirmed ([MINE_OR_SHARED]). Watched state is always
  * the session user's own `user_data` (LEFT JOINed with the user in the ON clause). Items never cross servers.
  *
  * The library lists (films, series, a series' episodes and seasons) show COMPLETE downloads only; [observeInProgress] is the
@@ -106,9 +107,14 @@ abstract class OfflineLibraryDao {
         /**
          * The user owns the download, or the server shares downloads between profiles, it is ready, AND the server confirmed this
          * user may download the item ([CONFIRMED]: the strict sharing rule; unknown or false is not shared) (`d` = downloads).
+         * A ready copy counts as the user's own only if its own sign-in fetched it or its own permission is confirmed: an owner
+         * that inherited it or joined it as "already on this phone" and lost its permission keeps the ownership row (a later
+         * yes restores it) but sees, counts and plays nothing of it, online or offline (final review L-a).
          */
         const val MINE_OR_SHARED =
-            "(EXISTS (SELECT 1 FROM download_owners o WHERE o.serverId = d.serverId AND o.itemId = d.itemId AND o.userId = :userId) " +
+            "(EXISTS (SELECT 1 FROM download_owners o WHERE o.serverId = d.serverId AND o.itemId = d.itemId AND o.userId = :userId " +
+                "AND (d.state <> 'COMPLETE' OR o.fetched = 1 OR EXISTS (SELECT 1 FROM download_permissions op WHERE op.serverId = d.serverId " +
+                "AND op.itemId = d.itemId AND op.userId = :userId))) " +
                 "OR (d.state = 'COMPLETE' AND EXISTS (SELECT 1 FROM download_settings x WHERE x.serverId = d.serverId AND x.shareBetweenProfiles = 1) " +
                 "AND EXISTS (SELECT 1 FROM download_permissions p WHERE p.serverId = d.serverId AND p.itemId = d.itemId AND p.userId = :userId)))"
 

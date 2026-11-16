@@ -213,5 +213,30 @@ class StrictSharingOwnersTest : DownloadHousekeepingTestBase() {
         assertNull(db.offlineLibraryDao().getPlayable(S1, b.userId, film.id))
     }
 
+    /**
+     * Final review L-a (the controller's decision): an owner that did not fetch the copy and whose answer was "unknown" keeps its
+     * ownership row, but with no confirmed permission it cannot play or inherit the copy, online or offline; a later yes restores it.
+     */
+    @Test fun anOwnerThatDidNotFetchItAndHasNoConfirmedPermissionCannotPlayItEvenOfflineUntilAYes() = runBlocking {
+        aDownloadsIt()
+        seen(b, film)
+        store.add(b, listOf(shareDownload(film)))
+        clock += 8 * DAY
+        serverReachable = true
+        housekeeping.reconfirm(b) // the server does not say (no CanDownload): B's permission goes, its ownership stays
+        assertEquals(setOf(a.userId, b.userId), owners().toSet())
+        assertFalse(store.isConfirmed(key(film), b.userId))
+        serverReachable = false
+        assertNull("offline, no permission: not played", plan(b))
+        assertNull("nor its extras", copies.media(b, film.id))
+        hooked.removeAccount(S1, a.userId)
+        settle()
+        assertNull("and A leaving hands it nothing playable", plan(b))
+        facts.allow(film.id, canDownload = true)
+        serverReachable = true
+        housekeeping.reconfirm(b)
+        assertNotNull("a later yes restores it", plan(b))
+    }
+
     private companion object { const val DAY = 24L * 60 * 60 * 1_000 }
 }

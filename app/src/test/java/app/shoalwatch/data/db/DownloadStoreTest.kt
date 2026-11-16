@@ -236,6 +236,7 @@ class DownloadStoreTest : DownloadTestBase() {
         store.update(key(a)) { it.copy(segmentsTotal = 10, segmentsDone = 9) }
         assertEquals("a conversion counts segments", 0.9f, entry().progress)
         store.update(key(a)) { it.copy(state = DownloadState.COMPLETE) }
+        store.markFetcher(key(a), U1) // its own sign-in fetched it, as the queue records
         assertEquals(1f, entry().progress)
         assertTrue(entry().ownedByMe)
     }

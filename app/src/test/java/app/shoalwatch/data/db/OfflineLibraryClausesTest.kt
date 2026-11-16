@@ -40,7 +40,10 @@ class OfflineLibraryClausesTest : DownloadTestBase() {
 
     private fun downloads(s: Session, vararg items: Item, state: DownloadState = DownloadState.COMPLETE) = runBlocking {
         store.add(s, items.map { newDownload(it) })
-        for (it in items) store.update(DownloadKey(s.serverId, it.id)) { row -> row.copy(state = state) }
+        for (it in items) {
+            store.update(DownloadKey(s.serverId, it.id)) { row -> row.copy(state = state) }
+            store.markFetcher(DownloadKey(s.serverId, it.id), s.userId) // its own sign-in fetched it, as the queue records
+        }
     }
 
     private suspend fun seenBy(s: Session, item: Item): Set<String> = buildSet {

@@ -107,6 +107,7 @@ class SavedCopiesTest : DownloadHousekeepingTestBase() {
         runBlocking {
             store.add(s1u1, listOf(newDownload(film, DownloadQuality.MEDIUM)))
             store.update(key(film)) { it.copy(state = DownloadState.COMPLETE, container = "hls", mediaSourceId = PlaybackFakes.SOURCE, segmentsTotal = 3, segmentsDone = 3) }
+            store.markFetcher(key(film), s1u1.userId) // A's own sign-in fetched it
         }
         val hls = paths.hlsFolder(folder(film)).also { it.mkdirs() }
         paths.localPlaylist(hls).writeText("#EXTM3U")
