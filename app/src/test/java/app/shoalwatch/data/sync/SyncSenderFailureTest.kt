@@ -29,6 +29,27 @@ class SyncSenderFailureTest : SyncSenderTestBase() {
         }
     }
 
+    /**
+     * Tasks 6-8 review M1: the connection comes back while a request is failing on the old one, and the reconnection's kick joins
+     * that drain. The drain goes round once more for it instead of stopping, so the row is sent now, not after the job's back-off.
+     */
+    @Test fun aKickThatJoinsADrainFailingOnTheOldConnectionSendsOnceMore() {
+        enqueue(s1u1, favourite("a"))
+        gateway.failNext("favourite", AppError.Kind.OFFLINE)
+        var joined = false
+        gateway.onCall = { if (!joined) { joined = true; sender.kick(s1u1) } } // the reconnection, during the failing request
+        assertEquals(DrainResult.EMPTY, drain())
+        assertEquals(listOf("favourite", "favourite"), gateway.ops())
+        assertEquals(0, rawRows().size)
+    }
+
+    @Test fun withNoKickJoiningANoConnectionStopIsNotRetried() {
+        enqueue(s1u1, favourite("a"))
+        gateway.failNext("favourite", AppError.Kind.OFFLINE, times = 5)
+        assertEquals(DrainResult.WAITING_FOR_CONNECTION, drain())
+        assertEquals("once only: no loop while offline", 1, gateway.calls.size)
+    }
+
     @Test fun aConnectionTheUserMustFixLeavesTheRowAndStops() {
         val kinds = listOf(AppError.Kind.TLS_UNTRUSTED, AppError.Kind.TLS_PIN_CHANGED, AppError.Kind.CLIENT_CERT_REQUIRED, AppError.Kind.CLEARTEXT_BLOCKED)
         for (kind in kinds) {

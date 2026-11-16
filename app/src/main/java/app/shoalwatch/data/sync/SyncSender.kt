@@ -132,9 +132,17 @@ internal class SyncSender(
                 AppLog.w(TAG, "A landed outbox row was still there") // the landing did not take it: never loop on it
                 return DrainResult.STOPPED
             }
-            (send(s, row) as? Outcome.Stop)?.let { return it.result }
+            val stop = (send(s, row) as? Outcome.Stop)?.result ?: continue
+            // A kick joined while this request was failing for want of a connection (a reconnection's kick): one more pass for it,
+            // so the row goes now rather than at the job's back-off (Tasks 6-8 review M1). Each joined kick buys one pass at most.
+            if (stop == DrainResult.WAITING_FOR_CONNECTION && takeAgain(entry)) done.remove(row.seq) else return stop
         }
     }
+
+    private fun takeAgain(entry: Running): Boolean = synchronized(lock) { entry.again.also { entry.again = false } }
+
+    /** A test seam: whether a drain for [s] can still be joined. */
+    internal fun isDraining(s: Session): Boolean = synchronized(lock) { s in running }
 
     /**
      * Nothing more is due. One step under [lock]: if a kick joined this drain since it last looked, look again (its row may be
