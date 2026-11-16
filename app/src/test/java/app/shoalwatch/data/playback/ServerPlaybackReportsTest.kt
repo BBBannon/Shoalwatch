@@ -103,11 +103,29 @@ class ServerPlaybackReportsTest {
         }
     }
 
-    @Test fun anyOtherFailureIsSavedOnThePhoneOnlyAsBefore() = runTest {
-        offline(AppError.Kind.FORBIDDEN)
-        reports().stopped(BEN, report(61_000), finished = false)
-        assertEquals(listOf("stop:ben:$ITEM:61000:false:unsent", "stop:ben:$ITEM:61000:false"), playstate.calls)
-        assertTrue(kicked.isEmpty())
+    @Test fun aRefusalAboutTheItemIsSavedOnThePhoneOnlyAsBefore() = runTest {
+        for (kind in listOf(AppError.Kind.FORBIDDEN, AppError.Kind.SERVER_NOT_FOUND)) {
+            playstate.calls.clear(); kicked.clear()
+            offline(kind)
+            reports().stopped(BEN, report(61_000), finished = false)
+            assertEquals(kind.name, listOf("stop:ben:$ITEM:61000:false:unsent", "stop:ben:$ITEM:61000:false"), playstate.calls)
+            assertTrue(kicked.isEmpty())
+        }
+    }
+
+    /** Tasks 9-10 review M2: "heard" is an allow-list. A 401, a TLS or identity failure, or anything unknown did not reach the server. */
+    @Test fun aStopTheServerCertainlyDidNotTakeKeepsItsRowForTheOutbox() = runTest {
+        val kinds = listOf(
+            AppError.Kind.UNAUTHORISED, AppError.Kind.TLS_UNTRUSTED, AppError.Kind.TLS_PIN_CHANGED, AppError.Kind.CLEARTEXT_BLOCKED,
+            AppError.Kind.CLIENT_CERT_REQUIRED, AppError.Kind.SERVER_MISMATCH, AppError.Kind.UNKNOWN,
+        )
+        for (kind in kinds) {
+            playstate.calls.clear(); kicked.clear()
+            offline(kind)
+            reports().stopped(BEN, report(61_000), finished = false)
+            assertEquals(kind.name, listOf("stop:ben:$ITEM:61000:false:unsent"), playstate.calls)
+            assertEquals(listOf("kick:ben"), kicked)
+        }
     }
 
     @Test fun thereIsNoResendWhenTheConnectionReturnsTheOutboxDoesIt() = runTest {

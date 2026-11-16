@@ -13,10 +13,11 @@ import kotlinx.coroutines.CancellationException
  * saved library ([Playstate.recordStop]). Best effort: a failure is logged by its kind only and becomes [ReportOutcome.NotSent].
  *
  * **Every stop is saved and queued first** (`recordStop(..., reached = false, kick = false)`, at the stop's own time), then
- * reported (see [stopped]). A stop the server did not hear because it could not be reached (`OFFLINE`, `NETWORK`, `TIMEOUT`,
- * `SERVER_ERROR`) keeps its POSITION row; a finished stop keeps its PLAYED tick, reached or not (review I1); `NOT_SIGNED_IN` keeps
- * its row like the account's other rows (a removed account's rows go with it). The outbox sends them, in order, when it can (this
- * class never resends a stop: a session report is never replayed). Any other failure is saved on the phone only, as before.
+ * reported (see [stopped]). "Heard" is an allow-list (Tasks 9-10 review M2): the report was sent, or the server answered about
+ * this item (`FORBIDDEN`, `SERVER_NOT_FOUND`); only then is an unfinished stop's POSITION row taken back. Anything else (no
+ * connection, a 401, a TLS or identity failure, not signed in, unknown) keeps it, like the account's other rows (a rejected
+ * sign-in keeps its changes; a removed account's go with it); a finished stop keeps its PLAYED tick either way (review I1). The
+ * outbox sends them, in order, when it can (this class never resends a stop: a session report is never replayed).
  */
 class ServerPlaybackReports internal constructor(
     private val gateway: PlaybackGateway,
@@ -47,7 +48,7 @@ class ServerPlaybackReports internal constructor(
             record(s, r, finished, reached = false)
             outcome = send("stop") { gateway.reportStopped(s, r) }
             val kind = (outcome as? ReportOutcome.NotSent)?.kind
-            val heard = kind == null || (kind !in UNREACHED && kind != AppError.Kind.NOT_SIGNED_IN)
+            val heard = kind == null || kind in HEARD
             takenBack = heard && !finished
             if (takenBack) record(s, r, finished = false, reached = true)
         } finally {
@@ -81,7 +82,7 @@ class ServerPlaybackReports internal constructor(
     private companion object {
         const val TAG = "PlaybackReports"
 
-        /** The server could not be reached: the stop is queued for the outbox to send. */
-        val UNREACHED = setOf(AppError.Kind.OFFLINE, AppError.Kind.NETWORK, AppError.Kind.TIMEOUT, AppError.Kind.SERVER_ERROR)
+        /** The server answered about this item: the report was heard, so its position is not sent again. */
+        val HEARD = setOf(AppError.Kind.FORBIDDEN, AppError.Kind.SERVER_NOT_FOUND)
     }
 }
