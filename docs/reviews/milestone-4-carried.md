@@ -75,5 +75,7 @@ From the five task reviews of Milestone 4 (`.superpowers/sdd/m4/tasks-1-4-review
 |---|---|---|
 | Tasks 9-10 Minor 6 (needed Ben's acceptance) | The notice's "Downloading N of M", progress bar and "N ready" covered every profile's downloads: it now says only "Downloading" and "Downloads finished" | `b197ae6` |
 | Tasks 1-4 Minor 10 | `QueueSpace.fits` now saturates (folded into M-2) | `998c49c` |
-| Final review M-1, M-2, L-1 to L-7, L-10, L-11, two Nits; walkthrough W-1 | See `docs/security/milestone-4-check.md` section 4 | `1c14a46` … `092e230` |
+| Final review M-1, M-2, L-1, L-3 to L-7, L-10, L-11, two Nits; walkthrough W-1 | See `docs/security/milestone-4-check.md` section 4 | `1c14a46` … `092e230` |
+| Final review L-2 | **Partly fixed:** a confirmation dated ahead of the clock is stale (`e23b554`); a clock **held back** within the week while online keeps a confirmation young (re-review L-b), recorded as a residual risk in `docs/security/milestone-4-check.md` section 5 (not fixed by decision) | `e23b554` |
+| Re-review N-1, L-a, L-d, Nit-1; walkthrough W-2 | See `docs/security/milestone-4-check.md` section 4 | `c4357ea` … `881f7a5` |
 | Final review L-8, L-9 | Recorded as residual risks in `docs/security/milestone-4-check.md` section 5 (not fixed by decision) | — |
