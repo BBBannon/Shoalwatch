@@ -80,16 +80,22 @@ class ServerApi(
         JsonBodies.decode(JsonBodies.readBounded(response, maxBytes, AppError.Kind.SERVER_ERROR), deserializer, AppError.Kind.SERVER_ERROR)
     }
 
-    /** POST with an optional JSON body; the response body is ignored. Not retried unless the caller opts in with [retry]. */
+    /**
+     * POST with an optional JSON body; the response body is ignored. Not retried unless the caller opts in with [retry]. With
+     * [sendOnce] (admin actions) OkHttp may not resend it either (see [sentOnce]). [sendIf] is asked once more just before the
+     * request is written (after the wait for a verified address): false sends nothing and fails `FORBIDDEN`.
+     */
     suspend fun post(
         session: Session,
         path: String,
         query: List<Pair<String, String>> = emptyList(),
         jsonBody: String? = null,
         retry: Boolean = false,
+        sendOnce: Boolean = false,
+        sendIf: () -> Boolean = ALWAYS,
     ) {
         val body = jsonBody?.toRequestBody(JSON) ?: ByteArray(0).toRequestBody(null)
-        execute(session, "POST", path, query, body, retry) { }
+        execute(session, "POST", path, query, if (sendOnce) body.sentOnce() else body, retry, sendIf) { }
     }
 
     /**
@@ -171,14 +177,35 @@ class ServerApi(
         MediaRoute(session, base, guard, online)
     }
 
-    /** DELETE; the response body is ignored. Not retried unless the caller opts in with [retry]. */
+    /** DELETE; the response body is ignored. Not retried unless the caller opts in with [retry]; [sendOnce], [sendIf] as for [post]. */
     suspend fun delete(
         session: Session,
         path: String,
         query: List<Pair<String, String>> = emptyList(),
         retry: Boolean = false,
+        sendOnce: Boolean = false,
+        sendIf: () -> Boolean = ALWAYS,
     ) {
-        execute(session, "DELETE", path, query, null, retry) { }
+        execute(session, "DELETE", path, query, if (sendOnce) ByteArray(0).toRequestBody(null).sentOnce() else null, retry, sendIf) { }
+    }
+
+    /**
+     * For `sendOnce` (admin actions only): OkHttp's own `retryOnConnectionFailure` silently resends a request on a fresh connection
+     * when a kept-alive one fails after the request was written, unless its body is one-shot. Marked so, a failure on a reused
+     * socket surfaces as an error instead. OkHttp still recovers when nothing of the request was written (a failure while
+     * connecting, or an HTTP/2 connection shut down before the stream was created). The same mark stops its follow-ups: a 503
+     * with `Retry-After: 0` (or a 408) is answered to the caller, not resent, because OkHttp never follows up with a one-shot body
+     * (`AdminGatewayRulesTest.anActionAnswered503WithRetryAfterZeroIsNotResent`, which fails if the mark is removed). Every other
+     * caller (playback reports) keeps OkHttp's recovery, as before Milestone 6.
+     */
+    private fun RequestBody.sentOnce(): RequestBody {
+        val inner = this
+        return object : RequestBody() {
+            override fun contentType() = inner.contentType()
+            override fun contentLength() = inner.contentLength()
+            override fun writeTo(sink: okio.BufferedSink) = inner.writeTo(sink)
+            override fun isOneShot() = true
+        }
     }
 
     /**
@@ -218,6 +245,7 @@ class ServerApi(
         query: List<Pair<String, String>>,
         body: RequestBody?,
         retry: Boolean,
+        sendIf: () -> Boolean = ALWAYS,
         handle: (Response) -> T,
     ): T {
         ApiRequest.checkPath(path)
@@ -231,13 +259,13 @@ class ServerApi(
             }
 
             val open = try {
-                connect(session, method, path, query, body) { used = it }
+                connect(session, method, path, query, body, sendIf) { used = it }
             } catch (e: IOException) {
                 reportFailure(e)
                 if (!retry || isRefusal(e)) throw AppError.from(e)
                 used = null
                 try {
-                    connect(session, method, path, query, body) { used = it }
+                    connect(session, method, path, query, body, sendIf) { used = it }
                 } catch (second: IOException) {
                     reportFailure(second)
                     throw AppError.from(second)
@@ -269,8 +297,8 @@ class ServerApi(
 
     /**
      * Awaits a verified address, then reads the server (so its addresses and security settings are current), builds the
-     * client and sends. [verified] is told which connection the attempt uses before anything can fail. Throws an
-     * IOException before a response arrived.
+     * client and sends, if [sendIf] still says so at that moment (else `FORBIDDEN`, nothing sent). [verified] is told which
+     * connection the attempt uses before anything can fail. Throws an IOException before a response arrived.
      */
     private suspend fun connect(
         session: Session,
@@ -278,6 +306,7 @@ class ServerApi(
         path: String,
         query: List<Pair<String, String>>,
         body: RequestBody?,
+        sendIf: () -> Boolean,
         verified: (Connection.Online) -> Unit,
     ): Open {
         val online = selector.awaitOnline(session.serverId) ?: throw AppError.of(AppError.Kind.OFFLINE)
@@ -288,7 +317,9 @@ class ServerApi(
         val net = ServerNet.authenticated(server.addresses, server, session.userId, device, store::cachedToken)
         val request = Request.Builder().url(ApiRequest.url(online.address, path, query)).method(method, body).build()
         val generation = store.tokenGeneration(session.serverId, session.userId)
-        val call = clients.clientFor(net).newCall(request)
+        val client = clients.clientFor(net)
+        if (!sendIf()) throw AppError.of(AppError.Kind.FORBIDDEN)
+        val call = client.newCall(request)
         return Open(call, call.await(), generation)
     }
 
@@ -337,5 +368,6 @@ class ServerApi(
         const val MAX_CAUSE_DEPTH = 10
         const val EXPIRED_MESSAGE = "Your sign-in has expired. Sign in again."
         val JSON = "application/json".toMediaType()
+        val ALWAYS: () -> Boolean = { true }
     }
 }

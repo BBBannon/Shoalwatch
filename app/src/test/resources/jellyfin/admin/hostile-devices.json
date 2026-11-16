@@ -1,0 +1,241 @@
+{
+ "Items": [
+  null,
+  "bare",
+  9,
+  {
+   "Id": "goodone",
+   "Name": "d goodone",
+   "AccessToken": "HOSTILETOKEN-7",
+   "LastUserName": "u",
+   "AppName": "App",
+   "AppVersion": "1.0",
+   "DateLastActivity": "2026-11-15T10:00:00Z"
+  },
+  {
+   "Id": "has space",
+   "Name": "d has space",
+   "AccessToken": "HOSTILETOKEN-9",
+   "LastUserName": "u",
+   "AppName": "App",
+   "AppVersion": "1.0",
+   "DateLastActivity": "2026-11-15T10:00:00Z"
+  },
+  {
+   "Id": "ctrl\u0007char",
+   "Name": "d ctrl\u0007char",
+   "AccessToken": "HOSTILETOKEN-9",
+   "LastUserName": "u",
+   "AppName": "App",
+   "AppVersion": "1.0",
+   "DateLastActivity": "2026-11-15T10:00:00Z"
+  },
+  {
+   "Id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "Name": "d xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "AccessToken": "HOSTILETOKEN-300",
+   "LastUserName": "u",
+   "AppName": "App",
+   "AppVersion": "1.0",
+   "DateLastActivity": "2026-11-15T10:00:00Z"
+  },
+  {
+   "Id": "",
+   "Name": "d ",
+   "AccessToken": "HOSTILETOKEN-0",
+   "LastUserName": "u",
+   "AppName": "App",
+   "AppVersion": "1.0",
+   "DateLastActivity": "2026-11-15T10:00:00Z"
+  },
+  {
+   "Id": "caf\u00e9",
+   "Name": "d caf\u00e9",
+   "AccessToken": "HOSTILETOKEN-4",
+   "LastUserName": "u",
+   "AppName": "App",
+   "AppVersion": "1.0",
+   "DateLastActivity": "2026-11-15T10:00:00Z"
+  },
+  {
+   "Id": "numbername",
+   "Name": 42,
+   "AccessToken": "HOSTILETOKEN-10",
+   "LastUserName": "u",
+   "AppName": "App",
+   "AppVersion": "1.0",
+   "DateLastActivity": "2026-11-15T10:00:00Z"
+  },
+  {
+   "Id": "shared",
+   "Name": "d shared",
+   "AccessToken": "HOSTILETOKEN-6",
+   "LastUserName": "anna",
+   "AppName": "Old",
+   "AppVersion": "1.0",
+   "DateLastActivity": "2026-11-15T09:00:00Z"
+  },
+  {
+   "Id": "shared",
+   "Name": "d shared",
+   "AccessToken": "HOSTILETOKEN-6",
+   "LastUserName": "\u202ebob",
+   "AppName": "New",
+   "AppVersion": "1.0",
+   "DateLastActivity": "2026-11-15T11:00:00Z"
+  },
+  {
+   "Id": "shared",
+   "Name": "d shared",
+   "AccessToken": "HOSTILETOKEN-6",
+   "LastUserName": "anna",
+   "AppName": "App",
+   "AppVersion": "1.0",
+   "DateLastActivity": "2026-11-15T10:00:00Z"
+  },
+  {
+   "Id": "many",
+   "Name": "d many",
+   "AccessToken": "HOSTILETOKEN-4",
+   "LastUserName": "u0",
+   "AppName": "App",
+   "AppVersion": "1.0",
+   "DateLastActivity": "2026-11-15T10:00:00Z"
+  },
+  {
+   "Id": "many",
+   "Name": "d many",
+   "AccessToken": "HOSTILETOKEN-4",
+   "LastUserName": "u1",
+   "AppName": "App",
+   "AppVersion": "1.0",
+   "DateLastActivity": "2026-11-15T10:00:00Z"
+  },
+  {
+   "Id": "many",
+   "Name": "d many",
+   "AccessToken": "HOSTILETOKEN-4",
+   "LastUserName": "u2",
+   "AppName": "App",
+   "AppVersion": "1.0",
+   "DateLastActivity": "2026-11-15T10:00:00Z"
+  },
+  {
+   "Id": "many",
+   "Name": "d many",
+   "AccessToken": "HOSTILETOKEN-4",
+   "LastUserName": "u3",
+   "AppName": "App",
+   "AppVersion": "1.0",
+   "DateLastActivity": "2026-11-15T10:00:00Z"
+  },
+  {
+   "Id": "many",
+   "Name": "d many",
+   "AccessToken": "HOSTILETOKEN-4",
+   "LastUserName": "u4",
+   "AppName": "App",
+   "AppVersion": "1.0",
+   "DateLastActivity": "2026-11-15T10:00:00Z"
+  },
+  {
+   "Id": "many",
+   "Name": "d many",
+   "AccessToken": "HOSTILETOKEN-4",
+   "LastUserName": "u5",
+   "AppName": "App",
+   "AppVersion": "1.0",
+   "DateLastActivity": "2026-11-15T10:00:00Z"
+  },
+  {
+   "Id": "many",
+   "Name": "d many",
+   "AccessToken": "HOSTILETOKEN-4",
+   "LastUserName": "u6",
+   "AppName": "App",
+   "AppVersion": "1.0",
+   "DateLastActivity": "2026-11-15T10:00:00Z"
+  },
+  {
+   "Id": "many",
+   "Name": "d many",
+   "AccessToken": "HOSTILETOKEN-4",
+   "LastUserName": "u7",
+   "AppName": "App",
+   "AppVersion": "1.0",
+   "DateLastActivity": "2026-11-15T10:00:00Z"
+  },
+  {
+   "Id": "many",
+   "Name": "d many",
+   "AccessToken": "HOSTILETOKEN-4",
+   "LastUserName": "u8",
+   "AppName": "App",
+   "AppVersion": "1.0",
+   "DateLastActivity": "2026-11-15T10:00:00Z"
+  },
+  {
+   "Id": "many",
+   "Name": "d many",
+   "AccessToken": "HOSTILETOKEN-4",
+   "LastUserName": "u9",
+   "AppName": "App",
+   "AppVersion": "1.0",
+   "DateLastActivity": "2026-11-15T10:00:00Z"
+  },
+  {
+   "Id": "many",
+   "Name": "d many",
+   "AccessToken": "HOSTILETOKEN-4",
+   "LastUserName": "u10",
+   "AppName": "App",
+   "AppVersion": "1.0",
+   "DateLastActivity": "2026-11-15T10:00:00Z"
+  },
+  {
+   "Id": "many",
+   "Name": "d many",
+   "AccessToken": "HOSTILETOKEN-4",
+   "LastUserName": "u11",
+   "AppName": "App",
+   "AppVersion": "1.0",
+   "DateLastActivity": "2026-11-15T10:00:00Z"
+  },
+  {
+   "Id": "many",
+   "Name": "d many",
+   "AccessToken": "HOSTILETOKEN-4",
+   "LastUserName": "u12",
+   "AppName": "App",
+   "AppVersion": "1.0",
+   "DateLastActivity": "2026-11-15T10:00:00Z"
+  },
+  {
+   "Id": "many",
+   "Name": "d many",
+   "AccessToken": "HOSTILETOKEN-4",
+   "LastUserName": "u13",
+   "AppName": "App",
+   "AppVersion": "1.0",
+   "DateLastActivity": "2026-11-15T10:00:00Z"
+  },
+  {
+   "Id": "many",
+   "Name": "d many",
+   "AccessToken": "HOSTILETOKEN-4",
+   "LastUserName": "u14",
+   "AppName": "App",
+   "AppVersion": "1.0",
+   "DateLastActivity": "2026-11-15T10:00:00Z"
+  },
+  {
+   "Id": "nodate",
+   "Name": "d nodate",
+   "AccessToken": "HOSTILETOKEN-6",
+   "LastUserName": "u",
+   "AppName": "App",
+   "AppVersion": "1.0",
+   "DateLastActivity": null
+  }
+ ]
+}

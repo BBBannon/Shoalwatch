@@ -1,0 +1,84 @@
+{
+  "Name": "kid",
+  "ServerId": "0123456789abcdef0123456789abcdef",
+  "Id": "1d5e1f3b-2a4c-4e6f-8a9b-0c1d2e3f4a5b",
+  "HasPassword": true,
+  "LastActivityDate": "2026-11-15T18:55:00.0000000Z",
+  "Configuration": {
+    "AudioLanguagePreference": "eng"
+  },
+  "Policy": {
+    "IsAdministrator": false,
+    "IsHidden": false,
+    "EnableCollectionManagement": false,
+    "EnableSubtitleManagement": false,
+    "EnableLyricManagement": false,
+    "IsDisabled": false,
+    "MaxParentalRating": 10,
+    "MaxParentalSubRating": null,
+    "BlockedTags": [
+      "horror",
+      "gore"
+    ],
+    "AllowedTags": [],
+    "EnableUserPreferenceAccess": false,
+    "AccessSchedules": [
+      {
+        "Id": 1,
+        "UserId": "1d5e1f3b2a4c4e6f8a9b0c1d2e3f4a5b",
+        "DayOfWeek": "Saturday",
+        "StartHour": 8.0,
+        "EndHour": 20.0
+      }
+    ],
+    "BlockUnratedItems": [
+      "Movie"
+    ],
+    "EnableRemoteControlOfOtherUsers": false,
+    "EnableSharedDeviceControl": false,
+    "EnableRemoteAccess": false,
+    "EnableLiveTvManagement": false,
+    "EnableLiveTvAccess": false,
+    "EnableMediaPlayback": true,
+    "EnableAudioPlaybackTranscoding": false,
+    "EnableVideoPlaybackTranscoding": false,
+    "EnablePlaybackRemuxing": false,
+    "ForceRemoteSourceTranscoding": false,
+    "EnableContentDeletion": false,
+    "EnableContentDeletionFromFolders": [],
+    "EnableContentDownloading": false,
+    "EnableSyncTranscoding": false,
+    "EnableMediaConversion": false,
+    "EnabledDevices": [
+      "tv-living-room-1"
+    ],
+    "EnableAllDevices": false,
+    "EnabledChannels": [],
+    "EnableAllChannels": false,
+    "EnabledFolders": [
+      "1a9f2c3e4d5a6b7c8d9e0f1a2b3c4d5e"
+    ],
+    "EnableAllFolders": false,
+    "InvalidLoginAttemptCount": 0,
+    "LoginAttemptsBeforeLockout": -1,
+    "MaxActiveSessions": 0,
+    "EnablePublicSharing": false,
+    "BlockedMediaFolders": [],
+    "BlockedChannels": [],
+    "RemoteClientBitrateLimit": 8000000,
+    "AuthenticationProviderId": "Jellyfin.Server.Implementations.Users.DefaultAuthenticationProvider",
+    "PasswordResetProviderId": "Jellyfin.Server.Implementations.Users.DefaultPasswordResetProvider",
+    "SyncPlayAccess": "CreateAndJoinGroups",
+    "MockFutureField": 7,
+    "FutureNested": {
+      "A": [
+        1,
+        2,
+        {
+          "B": null
+        }
+      ],
+      "C": 1.5
+    }
+  }
+}
