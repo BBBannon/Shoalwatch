@@ -882,7 +882,9 @@ class Handler(BaseHTTPRequestHandler):
                     return self.reply(200, page([ITEMS[c] for c in CHILDREN[series["Id"]]], q))
                 if segs[2] == "episodes":
                     season = norm(q.get("seasonid", [""])[0])
-                    ids = episodes_of(season if season in ITEMS else series["Id"])
+                    # Only a season of this series the user may see (final review M5), and only episodes the user may see.
+                    own = season in ITEMS and visible(season) and ITEMS[season].get("SeriesId") == series["Id"]
+                    ids = [e for e in episodes_of(season if own else series["Id"]) if visible(e)]
                     return self.reply(200, page(sorted((ITEMS[e] for e in ids), key=lambda e: (e["ParentIndex"], e["Index"])), q))
         return False
 

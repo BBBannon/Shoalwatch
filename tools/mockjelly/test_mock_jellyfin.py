@@ -618,6 +618,13 @@ class ProfileRules(Profiles):
             self.assertNotIn(NIGHT_SHIFT_EPISODE, {i["Id"] for i in self.as_(self.kid, "GET", "/UserItems/Resume")[1]["Items"]})
             self.assertNotIn(m.guid("episode-2-1-3"), {i["Id"] for i in self.as_(self.kid, "GET", "/Shows/NextUp")[1]["Items"]})
             self.assertNotIn(NIGHT_SHIFT, {i["Id"] for i in self.as_(self.kid, "GET", f"/Items/Latest?parentId={m.TV_ID}")[1]})
+            # final review M5: a visible series' Episodes route asked for a Night Shift season gives none of its episodes
+            shown, night = m.guid("series-0"), m.guid("season-2-1")
+            status, body = self.as_(self.kid, "GET", f"/Shows/{shown}/Episodes?seasonId={night}")
+            self.assertEqual(200, status)
+            self.assertFalse({i["Id"] for i in body["Items"]} & set(m.episodes_of(night)))
+            self.assertNotIn(NIGHT_SHIFT_EPISODE, {i["Id"] for i in body["Items"]})
+            self.assertEqual(200, self.as_(self.anna, "GET", f"/Shows/{shown}/Episodes?seasonId={night}")[0])
             # everyone else still sees it
             self.assertEqual(200, self.as_(self.anna, "GET", f"/Items/{NIGHT_SHIFT}")[0])
             self.assertEqual(200, self.as_(self.token, "GET", f"/Shows/{NIGHT_SHIFT}/Episodes")[0])
