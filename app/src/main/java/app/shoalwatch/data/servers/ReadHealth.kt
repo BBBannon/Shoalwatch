@@ -30,7 +30,8 @@ internal class ReadHealth(private val tag: String) {
         while (true) {
             var failedAt: Int? = null
             emitAll(
-                source().catch { e ->
+                // Built inside the guarded flow: Room throws while BUILDING a flow on a closed database, before a catch could see it.
+                flow { emitAll(source()) }.catch { e ->
                     if (e !is Exception || e is CancellationException) throw e
                     failedAt = retries.value
                     AppLog.w(tag, "Reading $what failed", e)

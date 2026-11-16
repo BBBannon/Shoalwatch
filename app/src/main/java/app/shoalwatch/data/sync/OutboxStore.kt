@@ -12,8 +12,6 @@ import app.shoalwatch.data.servers.ReadHealth
 import app.shoalwatch.data.servers.Session
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.emitAll
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 
 /**
@@ -126,18 +124,10 @@ internal class OutboxStore(private val db: AppDatabase, private val now: () -> L
     /** Items an unsent change took out of [listKey] for [s] (for LibraryStore.writePage). */
     suspend fun leftList(s: Session, listKey: String): Set<String> = dao.leftList(s.serverId, s.userId, listKey).toSet()
 
-    /**
-     * Never throws: a failed read emits [SyncStatus.NONE] (as [ReadHealth]). Room's flows are built inside the guarded flow, because
-     * building one on a closed database throws at once, before any `catch` downstream could see it.
-     */
+    /** Never throws: a failed read emits [SyncStatus.NONE] (as [ReadHealth], which builds the Room flows inside its guard). */
     fun status(s: Session, signedIn: Flow<Boolean>): Flow<SyncStatus> = health.guard("the outbox", SyncStatus.NONE) {
-        flow {
-            val counts = dao.observeCounts(s.serverId, s.userId, STUCK_AFTER)
-            emitAll(
-                combine(counts, dao.observeLastSynced(s.serverId, s.userId), signedIn) { c, last, isIn ->
-                    SyncStatus(waiting = c.waiting, stuck = c.stuck, needsSignIn = c.waiting > 0 && !isIn, lastSyncedAt = last)
-                },
-            )
+        combine(dao.observeCounts(s.serverId, s.userId, STUCK_AFTER), dao.observeLastSynced(s.serverId, s.userId), signedIn) { c, last, isIn ->
+            SyncStatus(waiting = c.waiting, stuck = c.stuck, needsSignIn = c.waiting > 0 && !isIn, lastSyncedAt = last)
         }
     }
 
@@ -146,9 +136,7 @@ internal class OutboxStore(private val db: AppDatabase, private val now: () -> L
     suspend fun accountsWithWork(): List<Session> = dao.accountsWithWork().map { Session(it.serverId, it.userId) }
 
     /** Never throws: a failed read emits no servers. */
-    fun serversWithWork(): Flow<Set<String>> = health.guard("the outbox servers", emptySet()) {
-        flow { emitAll(dao.serversWithWork().map { it.toSet() }) }
-    }
+    fun serversWithWork(): Flow<Set<String>> = health.guard("the outbox servers", emptySet()) { dao.serversWithWork().map { it.toSet() } }
 
     /** sync_state.lastSyncedAt = now (nothing for an account that has gone). */
     suspend fun touchSynced(s: Session) = db.withTransaction {

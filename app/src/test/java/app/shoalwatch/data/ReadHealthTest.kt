@@ -34,6 +34,16 @@ class ReadHealthTest {
         assertTrue(reads.failed.value)
     }
 
+    /** Review M4: Room throws while BUILDING a flow on a closed database, before any `catch` on the flow could see it. */
+    @Test fun aReadThatThrowsWhileItsFlowIsBeingBuiltIsGuardedToo() = runTest {
+        val seen = mutableListOf<String?>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            reads.guard<String?>("the servers", null) { throw IllegalStateException("attempt to re-open an already-closed object") }.collect { seen += it }
+        }
+        assertEquals(listOf<String?>(null), seen)
+        assertTrue(reads.failed.value)
+    }
+
     @Test fun retrySubscribesAFailedReadAgainAndClearsTheReport() = runTest {
         var broken = true
         var subscriptions = 0
