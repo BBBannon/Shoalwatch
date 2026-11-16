@@ -42,6 +42,7 @@ class SavedCopiesTest : DownloadHousekeepingTestBase() {
         runBlocking {
             store.add(s1u1, listOf(newDownload(item).let { n -> app.shoalwatch.data.db.downloads.DownloadStore.NewDownload(n.itemId, n.kind, n.seriesId, n.seasonId, n.quality, storage, volumeId, n.runtimeMs, null) }))
             store.update(key(item)) { it.copy(state = DownloadState.COMPLETE, container = "mkv", mediaSourceId = PlaybackFakes.SOURCE, totalBytes = recorded, doneBytes = recorded) }
+            store.markFetcher(key(item), s1u1.userId) // A's own sign-in fetched it
         }
         val folder = paths.itemFolder(key(item), storage, volumeId)!!.also { it.mkdirs() }
         return paths.mediaFile(folder, "mkv").apply { writeBytes(ByteArray(bytes)) }

@@ -35,6 +35,8 @@ internal class DownloadHousekeeping(
     private val gateway: DownloadGateway,
     private val scope: CoroutineScope,
     private val io: CoroutineDispatcher = Dispatchers.IO,
+    /** Whether the server (by id) can be reached now: while it can, only a fresh confirmation inherits (final review M-1). */
+    private val reachable: (String) -> Boolean = { false },
     private val now: () -> Long = System::currentTimeMillis,
 ) {
     private val started = AtomicBoolean(false)
@@ -62,17 +64,21 @@ internal class DownloadHousekeeping(
 
     fun onAccountGone(serverId: String, userId: String): Job = scope.launch(io) {
         safely("account gone") {
-            for (key in store.afterAccountGone(serverId)) DownloadRepository.deleteFiles(paths, key)
+            // While the server can be reached, only a confirmation younger than a week inherits (final review M-1).
+            val since = if (reachable(serverId)) now() - WEEK_MS else Long.MIN_VALUE
+            for (key in store.afterAccountGone(serverId, since)) { queue.forget(key); DownloadRepository.deleteFiles(paths, key) }
             unpinnedArtwork()
         }
     }
 
     /**
-     * Run by `SharingRecheck` (session change, server back, app to the front, a stale copy about to play; rate limited): re-asks the server about up to 50 shared items (and their series) this profile
-     * has not had confirmed for 7 days, or whose download permission it never confirmed. A 403 or 404 revokes that profile's
-     * record (the library's rule), so the item is hidden from it at once; the owner still sees it. Then ONE `facts` call
-     * records this profile's own CanDownload: true is a confirmed permission (the strict sharing rule), anything else removes
-     * it. A refused item (the library revokes it and throws `SERVER_NOT_FOUND`) does not stop the rest or the permission check
+     * Run by `SharingRecheck` (session change, server back, app to the front, a stale copy about to play; rate limited): re-asks
+     * the server about up to 50 items (and their series) this profile holds under the strict sharing rule (shared to it, or owned
+     * without its own sign-in having fetched them) and has not had confirmed for 7 days, or whose permission it never confirmed.
+     * A 403 or 404 revokes that profile's record (the library's rule), so the item is hidden from it at once; the owner still
+     * sees it. Then ONE `facts` call records this profile's own CanDownload: true is a confirmed permission (the strict sharing
+     * rule), anything else removes it, and an explicit false also ends an ownership this sign-in never fetched (its files go if
+     * it was the last owner: final review M-1). A refused item (the library revokes it and throws `SERVER_NOT_FOUND`) does not stop the rest or the permission check
      * (Tasks 11-12 review I-2); any other failure (offline, say) stops it, changing nothing more: it is asked again next time.
      */
     suspend fun reconfirm(s: Session) = withContext(io) {
@@ -91,7 +97,11 @@ internal class DownloadHousekeeping(
                 val answers = gateway.facts(s, asked).associateBy { it.itemId }
                 for (id in asked) {
                     val key = DownloadKey(s.serverId, id)
-                    if (answers[id]?.canDownload == true) store.confirm(key, s.userId) else store.unconfirm(key, s.userId)
+                    when (answers[id]?.canDownload) {
+                        true -> store.confirm(key, s.userId)
+                        false -> store.refused(s, id)?.let { gone -> queue.forget(gone); DownloadRepository.deleteFiles(paths, gone) }
+                        null -> store.unconfirm(key, s.userId)
+                    }
                 }
             }
         } catch (e: CancellationException) {

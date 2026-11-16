@@ -45,6 +45,9 @@ abstract class DownloadHousekeepingTestBase : DownloadQueueTestBase() {
     internal val refreshedIds = mutableListOf<String>()
     internal var refreshFails: app.shoalwatch.core.AppError? = null
 
+    /** Whether the server can be reached now, as `AddressSelector` would say (the ownership rule reads it). */
+    internal var serverReachable = false
+
     private val fakeLibrary = object : Library by app.shoalwatch.ui.browse.FakeLibrary() {
         override suspend fun refresh(s: Session, target: RefreshTarget) {
             val id = (target as RefreshTarget.Item).itemId
@@ -66,7 +69,7 @@ abstract class DownloadHousekeepingTestBase : DownloadQueueTestBase() {
         fake.card(CARD, card)
         fake.free[CARD] = 1L shl 40
         scheduler = DownloadScheduler(workManager, DownloadPrefs(context.getSharedPreferences("housekeeping-test", 0).also { it.edit().clear().commit() }))
-        housekeeping = DownloadHousekeeping(store, paths, queue(), scheduler, fakeLibrary, facts, scope, Dispatchers.Unconfined) { clock }
+        housekeeping = DownloadHousekeeping(store, paths, queue(), scheduler, fakeLibrary, facts, scope, Dispatchers.Unconfined, reachable = { serverReachable }) { clock }
         hooked = ServerStore(
             db, SecretBox { key },
             onServerRemoved = { jobs += housekeeping.onServerRemoved(it) },
@@ -88,8 +91,13 @@ abstract class DownloadHousekeepingTestBase : DownloadQueueTestBase() {
 
     protected fun kicked() = workManager.getWorkInfosForUniqueWork(DownloadScheduler.NAME).get().any { !it.state.isFinished }
 
+    /** COMPLETE, fetched under its first owner's sign-in (as the queue leaves it). */
     internal fun complete(vararg items: Item, serverId: String = s1u1.serverId) = runBlocking {
-        for (it in items) store.update(DownloadKey(serverId, it.id)) { row -> row.copy(state = DownloadState.COMPLETE) }
+        for (it in items) {
+            val key = DownloadKey(serverId, it.id)
+            store.update(key) { row -> row.copy(state = DownloadState.COMPLETE) }
+            store.owners(key).firstOrNull()?.let { owner -> store.markFetcher(key, owner) }
+        }
     }
 
     protected companion object {

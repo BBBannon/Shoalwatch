@@ -166,6 +166,7 @@ internal class DownloadQueue(
             when (result) {
                 FetchResult.Done -> {
                     store.confirm(key, s.userId) // /Download served it to this sign-in: the server's own permission check passed
+                    store.markFetcher(key, s.userId)
                     return fetched
                 }
                 is FetchResult.Failed -> {
@@ -220,6 +221,7 @@ internal class DownloadQueue(
             when (val result = hls.fetch(conv, folder, from, segmentProgress(j))) {
                 FetchResult.Done -> {
                     live.remove(key)
+                    store.markFetcher(key, s.userId) // every segment came through this sign-in's own session
                     return QueueFetched(paths.localPlaylist(paths.hlsFolder(folder)), hls = true, shape = conv.segments.map { it.durationMs }, audioListed = audioListed)
                 }
                 is FetchResult.Failed -> { live.remove(key); throw QueueEnds(failed(key, result.failure)) }

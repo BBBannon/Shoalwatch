@@ -170,7 +170,10 @@ class AppGraph(private val appContext: Context) {
     }
     /** The removal rules and the start-up tidy-up (see "Removal rules" in docs/ARCHITECTURE.md). */
     internal val downloadHousekeeping: DownloadHousekeeping by lazy {
-        DownloadHousekeeping(downloadStore, downloadPaths, downloadQueue, downloadScheduler, library, downloadGateway, appScope)
+        DownloadHousekeeping(
+            downloadStore, downloadPaths, downloadQueue, downloadScheduler, library, downloadGateway, appScope,
+            reachable = { id -> addressSelector.connection(id).value is Connection.Online },
+        )
     }
     /** WorkManager is reached only from here, on first use (initialised on demand with `ShoalwatchWorkerFactory`). */
     val downloadScheduler: DownloadScheduler by lazy { DownloadScheduler({ WorkManager.getInstance(appContext) }, downloadPrefs) }

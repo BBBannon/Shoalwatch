@@ -285,6 +285,8 @@ class MigrationTest {
         assertEquals(schemaOf(fresh), schemaOf(migrated))
         for (table in DownloadRows.TABLES) assertTrue("$table is in it", schemaOf(migrated).any { it.startsWith("table $table:") })
         assertEquals(4, schemaOf(migrated).count { it.startsWith("index index_download") })
+        assertTrue("an owner records whether its own sign-in fetched the copy (final review M-1)",
+            schemaOf(migrated).any { it.startsWith("table download_owners:") && "`fetched` INTEGER NOT NULL" in it })
         context.deleteDatabase("fresh-test.db")
     }
 

@@ -92,12 +92,13 @@ abstract class OfflineLibraryDao {
     internal abstract suspend fun getPlayable(serverId: String, userId: String, itemId: String): DownloadEntity?
 
     /**
-     * When the server last confirmed [userId]'s own download permission for a copy it does NOT own; null when it owns the copy
-     * (or has no confirmation, which [getPlayable] already refuses). What playback reads to re-ask a stale one.
+     * When the server last confirmed [userId]'s own download permission for a copy its own sign-in did NOT fetch (shared to it,
+     * or owned through inheritance or "already on this phone": final review M-1); 0 when never confirmed (stale); null only
+     * when its own sign-in fetched the copy. What playback reads to re-ask a stale one.
      */
     @Query(
-        "SELECT p.confirmedAt FROM download_permissions p WHERE p.serverId = :serverId AND p.userId = :userId AND p.itemId = :itemId " +
-            "AND NOT EXISTS (SELECT 1 FROM download_owners o WHERE o.serverId = p.serverId AND o.itemId = p.itemId AND o.userId = :userId)",
+        "SELECT COALESCE((SELECT p.confirmedAt FROM download_permissions p WHERE p.serverId = :serverId AND p.userId = :userId AND p.itemId = :itemId), 0) " +
+            "WHERE NOT EXISTS (SELECT 1 FROM download_owners o WHERE o.serverId = :serverId AND o.itemId = :itemId AND o.userId = :userId AND o.fetched = 1)",
     )
     internal abstract suspend fun sharedConfirmedAt(serverId: String, userId: String, itemId: String): Long?
 

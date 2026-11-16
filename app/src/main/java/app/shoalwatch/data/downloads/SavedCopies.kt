@@ -37,8 +37,9 @@ internal fun DownloadDao.savedRows(): SavedRows = object : SavedRows {
  *  - its storage is mounted now (`DownloadPaths.itemFolder` is not null) and every path comes from `DownloadPaths`;
  *  - a cheap check before every play: an original's media file is the recorded length; a conversion's playlist and every one of
  *    its recorded segments are there.
- *  - for playback ([plan]): a copy it does not own whose confirmation is over 7 days old is offered only once re-asked, or
- *    while the server cannot be reached ([staleWhileReachable]).
+ *  - for playback ([plan]): a copy its own sign-in did not fetch (shared to it, inherited, or joined as "already on this
+ *    phone": final review M-1) whose confirmation is over 7 days old is offered only once re-asked, or while the server cannot
+ *    be reached ([staleWhileReachable]).
  * Anything else is null, so the item streams as before. Never throws (a failure is logged by class and is null).
  */
 internal class SavedCopies(
@@ -62,14 +63,15 @@ internal class SavedCopies(
     }
 
     /**
-     * The strict sharing rule's re-ask at the point of play (Tasks 13-16 review I-1): a copy this session does NOT own whose
+     * The strict sharing rule's re-ask at the point of play (Tasks 13-16 review I-1): a copy this session's own sign-in did NOT
+     * fetch (final review M-1) whose
      * confirmation is over 7 days old is not played while the server can be reached; a re-ask is asked for ([recheck], rate
      * limited by `SharingRecheck`) and the item streams meanwhile. Offline, a confirmation that cannot be re-asked still counts.
      * A failure to read it refuses the copy (it streams), never the other way round.
      */
     private suspend fun staleWhileReachable(s: Session, itemId: String): Boolean {
         val confirmedAt = try {
-            offline.sharedConfirmedAt(s.serverId, s.userId, itemId) ?: return false // its own copy
+            offline.sharedConfirmedAt(s.serverId, s.userId, itemId) ?: return false // fetched by its own sign-in
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
