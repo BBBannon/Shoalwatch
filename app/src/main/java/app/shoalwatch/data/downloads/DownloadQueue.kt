@@ -156,8 +156,17 @@ internal class DownloadQueue(
             paths.partFile(folder, ext).takeIf { it.exists() }?.let(paths::deleteInside)
         }
         val fetched = QueueFetched(target, hls = false, shape = null, audioListed = playable.audio.isNotEmpty())
-        // Renamed before the process died: only the check is left if THIS sign-in's /Download served it, else fetch again (Tasks 11-12 review Minor 2).
-        if (target.exists() && !part.exists()) { if (store.isConfirmed(key, s.userId)) return fetched; paths.deleteInside(target); write(key) { it.copy(doneBytes = 0, totalBytes = null, validator = null) } }
+        // Every byte on the phone comes through ONE sign-in (final review L-7): bytes begun or saved under another owner's
+        // (a `.part`, or a `media.<ext>` renamed before the process died) are deleted and fetched again under this one, from
+        // zero with no validator of theirs. Only then is this sign-in the fetcher.
+        if (!store.isFetcher(key, s.userId)) {
+            part.takeIf { it.exists() }?.let(paths::deleteInside)
+            target.takeIf { it.exists() }?.let(paths::deleteInside)
+            write(key) { it.copy(doneBytes = 0, totalBytes = null, validator = null, restarts = 0) }
+            store.markFetcher(key, s.userId)
+        }
+        // Renamed before the process died under THIS sign-in: only the check is left (Tasks 11-12 review Minor 2).
+        if (target.exists() && !part.exists()) return fetched
         var route = server(key) { downloadRoute(s, key.itemId) }
         var rerouted = false
         while (true) {
@@ -168,7 +177,6 @@ internal class DownloadQueue(
             when (result) {
                 FetchResult.Done -> {
                     store.confirm(key, s.userId) // /Download served it to this sign-in: the server's own permission check passed
-                    store.markFetcher(key, s.userId)
                     return fetched
                 }
                 is FetchResult.Failed -> {
@@ -223,7 +231,6 @@ internal class DownloadQueue(
             when (val result = hls.fetch(conv, folder, from, segmentProgress(j))) {
                 FetchResult.Done -> {
                     live.remove(key)
-                    store.markFetcher(key, s.userId) // every segment came through this sign-in's own session
                     return QueueFetched(paths.localPlaylist(paths.hlsFolder(folder)), hls = true, shape = conv.segments.map { it.durationMs }, audioListed = audioListed)
                 }
                 is FetchResult.Failed -> { live.remove(key); throw QueueEnds(failed(key, result.failure)) }
@@ -269,6 +276,8 @@ internal class DownloadQueue(
             it.copy(segmentsDone = 0, segmentsTotal = opened.segments.size, mediaSourceId = plan.mediaSourceId, container = HLS,
                 doneBytes = 0, totalBytes = null, validator = null, audioIndex = own.firstOrNull()?.index ?: it.audioIndex)
         }
+        // A fresh session (its old segments deleted by `open`) under this sign-in, resumed only by it (`HeldConversion.isFor`).
+        store.markFetcher(key, s.userId)
         live[key] = HeldConversion(opened, row.requestedAt, row.quality, s)
         return opened to own.isNotEmpty()
     }
