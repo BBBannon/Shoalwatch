@@ -83,10 +83,11 @@ internal class DownloadHousekeeping(
      * it was the last owner: final review M-1). A refused item (the library revokes it and throws `SERVER_NOT_FOUND`, Tasks 11-12
      * review I-2) or one whose refresh fails otherwise (a 500, say: final review L-1) does not stop the rest or the permission
      * check. Only offline or a sign-in that no longer works ([STOPS]) stops it, changing nothing more: it is asked again next time.
+     * [first]: the item about to play (a stale copy refused at play), asked about before the oldest (final review L-11).
      */
-    suspend fun reconfirm(s: Session) = withContext(io) {
+    suspend fun reconfirm(s: Session, first: String? = null) = withContext(io) {
         val now = now()
-        val stale = store.unconfirmedShared(s, now - ConfirmationAge.STALE_AFTER_MS, now + ConfirmationAge.SKEW_MS, LIMIT)
+        val stale = store.unconfirmedShared(s, now - ConfirmationAge.STALE_AFTER_MS, now + ConfirmationAge.SKEW_MS, LIMIT, first)
         val ids = (stale.map { it.first } + stale.mapNotNull { it.second }).distinct().take(LIMIT)
         try {
             for (id in ids) {

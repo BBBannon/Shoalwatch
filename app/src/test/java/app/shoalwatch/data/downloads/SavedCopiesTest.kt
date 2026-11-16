@@ -26,12 +26,13 @@ class SavedCopiesTest : DownloadHousekeepingTestBase() {
     /** Whether the server can be reached now, and the sessions a re-ask was asked for (Tasks 13-16 review I-1). */
     private var reachable = false
     private val rechecks = mutableListOf<Session>()
-    private var onRecheck: (Session) -> Unit = {}
+    private val recheckedItems = mutableListOf<String>()
+    private var onRecheck: (Session, String) -> Unit = { _, _ -> }
 
     @Before fun setUpCopies() {
         copies = SavedCopies(
             db.offlineLibraryDao(), db.downloadDao().savedRows(), paths, Dispatchers.Unconfined,
-            now = { clock }, reachable = { reachable }, recheck = { s -> rechecks += s; onRecheck(s) },
+            now = { clock }, reachable = { reachable }, recheck = { s, id -> rechecks += s; recheckedItems += id; onRecheck(s, id) },
         )
     }
 
@@ -142,6 +143,7 @@ class SavedCopiesTest : DownloadHousekeepingTestBase() {
         clock += 2 * DAY
         assertNull("eight days old and the server is there: stream instead", plan(s1u2))
         assertEquals("and it is re-asked", listOf(s1u2), rechecks)
+        assertEquals("that item first (final review L-11)", listOf(film.id), recheckedItems)
         assertNotNull("the owner needs no confirmation, however old", plan(s1u1))
         confirm(s1u2, film) // the server said yes again
         assertNotNull(plan(s1u2))
@@ -174,7 +176,7 @@ class SavedCopiesTest : DownloadHousekeepingTestBase() {
         reachable = true
         clock += 8 * DAY
         facts.allow(film.id, canDownload = false) // the admin turned the child's download permission off
-        onRecheck = { s -> runBlocking { housekeeping.reconfirm(s) } } // what SharingRecheck runs
+        onRecheck = { s, id -> runBlocking { housekeeping.reconfirm(s, id) } } // what SharingRecheck runs
         assertNull("never LOCAL", plan(s1u2))
         assertFalse("the permission is gone", runBlocking { store.isConfirmed(key(film), s1u2.userId) })
         assertNull("and stays gone", plan(s1u2))

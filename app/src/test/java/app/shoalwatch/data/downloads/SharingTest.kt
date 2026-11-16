@@ -239,6 +239,23 @@ class SharingTest : DownloadHousekeepingTestBase() {
         assertTrue(store.isConfirmed(key(film), b.userId))
     }
 
+    /** Final review L-11: with more than 50 stale items, the one about to play is among those asked, whatever its age. */
+    @Test fun theItemAboutToPlayIsAskedFirstEvenBeyondTheFifty() = runBlocking {
+        val films = (1..60).map { item("q$it") }
+        seen(a, *films.toTypedArray()); queued(a, *films.toTypedArray()); complete(*films.toTypedArray())
+        repo.setSharing(a, true)
+        seen(b, *films.toTypedArray())
+        films.dropLast(1).forEach { confirm(b, it) }
+        clock += 1_000
+        val playing = films.last()
+        confirm(b, playing) // the youngest confirmation: last in age order
+        clock += 8 * DAY
+        housekeeping.reconfirm(b, playing.id)
+        assertEquals(50, refreshedIds.size)
+        assertEquals(playing.id, refreshedIds.first())
+        assertTrue(playing.id in facts.calls.single())
+    }
+
     @Test fun aTransportFailureStopsReconfirmAndChangesNothing() = runBlocking {
         aDownloads()
         repo.setSharing(a, true)

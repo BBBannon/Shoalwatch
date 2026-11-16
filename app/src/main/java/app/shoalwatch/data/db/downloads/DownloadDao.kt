@@ -47,7 +47,7 @@ abstract class DownloadDao {
      * without its own sign-in having fetched them: final review M-1), whose visibility record is older than [cutoff], or whose
      * download permission is missing or was confirmed before [cutoff] (its own age, read from `confirmedAt`, whatever browsing
      * keeps the visibility record fresh: Tasks 11-12 review I-1), or dated after [ceiling] (the clock was set back: final review
-     * L-2). Oldest confirmation first: what `reconfirm` asks about.
+     * L-2). [first] (the item about to play: final review L-11), then the oldest confirmation first: what `reconfirm` asks about.
      */
     @Query(
         "SELECT d.itemId AS itemId, d.seriesId AS seriesId FROM downloads d " +
@@ -57,9 +57,9 @@ abstract class DownloadDao {
             "AND NOT EXISTS (SELECT 1 FROM download_owners o WHERE o.serverId = d.serverId AND o.itemId = d.itemId AND o.userId = :userId AND o.fetched = 1) " +
             "AND (EXISTS (SELECT 1 FROM download_owners o WHERE o.serverId = d.serverId AND o.itemId = d.itemId AND o.userId = :userId) " +
             "OR EXISTS (SELECT 1 FROM download_settings x WHERE x.serverId = d.serverId AND x.shareBetweenProfiles = 1)) " +
-            "ORDER BY COALESCE(p.confirmedAt, 0), v.seenAt LIMIT :limit",
+            "ORDER BY CASE WHEN d.itemId = :first THEN 0 ELSE 1 END, COALESCE(p.confirmedAt, 0), v.seenAt LIMIT :limit",
     )
-    internal abstract suspend fun unconfirmedShared(serverId: String, userId: String, cutoff: Long, ceiling: Long, limit: Int): List<SharedRow>
+    internal abstract suspend fun unconfirmedShared(serverId: String, userId: String, cutoff: Long, ceiling: Long, limit: Int, first: String?): List<SharedRow>
 
     /** Pinned pictures whose item no download pins any more (its row is not pinned, or gone). */
     @Query(

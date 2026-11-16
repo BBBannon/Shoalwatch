@@ -263,10 +263,10 @@ internal class DownloadStore(private val db: AppDatabase, private val now: () ->
 
     /**
      * Up to [limit] downloads [s] holds under the strict sharing rule whose visibility or permission was last confirmed before
-     * [cutoff], or whose permission is dated after [ceiling] (the clock was set back): (item, series).
+     * [cutoff], or whose permission is dated after [ceiling] (the clock was set back), [first] before the rest: (item, series).
      */
-    suspend fun unconfirmedShared(s: Session, cutoff: Long, ceiling: Long, limit: Int): List<Pair<String, String?>> =
-        dao.unconfirmedShared(s.serverId, s.userId, cutoff, ceiling, limit).map { it.itemId to it.seriesId }
+    suspend fun unconfirmedShared(s: Session, cutoff: Long, ceiling: Long, limit: Int, first: String? = null): List<Pair<String, String?>> =
+        dao.unconfirmedShared(s.serverId, s.userId, cutoff, ceiling, limit, first).map { it.itemId to it.seriesId }
 
     /** Pinned pictures no download pins any more (an unknown slot is left out). */
     suspend fun unpinnedArtwork(): List<ArtworkKey> = Converters().let { c ->

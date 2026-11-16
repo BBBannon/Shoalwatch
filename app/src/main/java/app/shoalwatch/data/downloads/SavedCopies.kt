@@ -49,7 +49,8 @@ internal class SavedCopies(
     private val io: CoroutineDispatcher = Dispatchers.IO,
     private val now: () -> Long = System::currentTimeMillis,
     private val reachable: (Session) -> Boolean = { false },
-    private val recheck: (Session) -> Unit = {},
+    /** Asks for the re-ask of [Session], the given item first (final review L-11). */
+    private val recheck: (Session, String) -> Unit = { _, _ -> },
 ) {
     suspend fun media(s: Session, itemId: String): SavedMedia? = found(s, itemId)?.second
 
@@ -79,7 +80,7 @@ internal class SavedCopies(
             return true
         }
         if (ConfirmationAge.fresh(confirmedAt, now()) || !reachable(s)) return false
-        recheck(s)
+        recheck(s, itemId)
         return true
     }
 
