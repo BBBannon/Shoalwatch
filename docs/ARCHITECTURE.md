@@ -79,7 +79,7 @@ app.shoalwatch
 │   │                DownloadScheduler, DownloadNotifications, DownloadHousekeeping (removal rules, reconfirm), SharingRecheck (when the re-ask runs),
 │   │                Downloads (the seam screens use) + DownloadRepository; api/ DownloadDtos, DownloadGateway (+ DownloadFacts, DownloadGatewayImpl);
 │   │                see "Downloads (`data/downloads`)"
-│   ├── sync/        OfflinePlays (the `offline_plays` record Milestone 5's outbox sends; see "Offline playback"), SyncModels (`ChangeKind`, `Change`, `SyncStatus`, `DrainResult`, `ServerUserData`, `UserDataUpdate`), OutboxStore, ConflictRule, api/SyncGateway (+ SyncGatewayImpl, UpdateUserItemDataBody, SyncJson) (see "Sync outbox")
+│   ├── sync/        OfflinePlays (the `offline_plays` record Milestone 5's outbox sends; see "Offline playback"), SyncModels (`ChangeKind`, `Change`, `SyncStatus`, `DrainResult`, `ServerUserData`, `UserDataUpdate`), OutboxStore, ConflictRule, SyncSender (+ SyncLanding), api/SyncGateway (+ SyncGatewayImpl, UpdateUserItemDataBody, SyncJson) (see "Sync outbox")
 └── ui/          theme, nav, components, one package per screen group (see "UI" below); ui/downloads: the Downloads tab, the offline series screen,
                  the sheet, the buttons and settings, and Removal (what a Delete asks and removes), all through the `Downloads` seam
 ```
@@ -636,7 +636,7 @@ The on-phone copy of what the server told us, and the only thing browsing screen
 
 Tests: `PlaystateResumeTest`, `PlaystatePlayedTest`, `PlaystateSeriesTest`, `PlaystateConcurrencyTest`, `PlaystateRestoreTest` (order, shared badges, revoked mid-action), `PlaystateRefreshRaceTest`, `PlaystateStalenessTest` (the rule, ordering, acknowledgement), `PlaystateStampTest`, `PlaystateCoalesceTest`, `PlaystateSweepTest`, `LocalChangeLogTest`, `SourceShapeTest` (no main file over 400 lines or 45% blank) (fake gateway, real in-memory Room through the real `LibraryRepository`, injected clock).
 
-## Sync outbox (`data/sync`: `OutboxStore`, `ConflictRule`, `SyncGateway`)
+## Sync outbox (`data/sync`: `OutboxStore`, `ConflictRule`, `SyncGateway`, `SyncSender`)
 
 SPEC §3.2: a profile's watched-state changes are kept on the phone until the server confirms them, item by item, and are sent in order, once, and only as that profile. Milestone 5 builds this in layers; the scheduler, the worker and the move of the tidy-up actions onto the outbox come in later tasks.
 
@@ -670,7 +670,21 @@ SPEC §3.2: a profile's watched-state changes are kept on the phone until the se
 
 **`SyncGateway`** (`data/sync/api`, `SyncGatewayImpl` on `ServerApi` and `LibraryGateway`): every call is as the row's own `Session`, `userId` is always that session's user, paths are built only from normalised ids (anything else is `SERVER_NOT_FOUND` with nothing sent), and every call opts in to `ServerApi`'s one network retry (a read, or an absolute or idempotent write). Bodies are `UpdateUserItemDataBody` encoded by `SyncJson.ENCODER` (`explicitNulls = false`: only the fields meant are sent); dates are whole seconds in UTC (`2026-11-15T14:05:00Z`). The user-data read is bounded at 64 KiB, decoded with every field nullable (a wrongly typed field is `SERVER_ERROR`), and range-checked by `UserItemDataDto.toServerUserData` (`Mappers.kt`): `PlayCount` 0..100,000 else unknown, position 0..`Long.MAX_VALUE / 10,000` ticks else 0, `LastPlayedDate` 2000-01-01..2200-01-01 else unknown. A 404 from the user-data route asks `GET /Items/{id}`: found means a server without the route (an unknown copy, null); its own failure passes through. `itemGone` is true only when `GET /Items/{id}` is `SERVER_NOT_FOUND` and `GET /UserViews` then succeeds: a redirect or a proxy answering 404 for everything is not "gone".
 
-Tests: `OutboxStoreTest`, `OutboxOrderTest` (in-memory Room); `ConflictRuleTest`; `SyncGatewayTest`, `SyncGatewayHostileTest` (real `ServerApi` and OkHttp, MockWebServer; a quoted `"true"` for `Played` is read as true by the shared decoder, any other string is `SERVER_ERROR`).
+**`SyncSender`** drains one profile at a time per profile (`kick` joins a running drain; a per-profile lock means two never overlap, even just after `forget`), at most four at once in all. One drain: wait for the saved sign-ins to load; no token for the session means `WAITING_FOR_SIGN_IN` and nothing sent; then for each `head`: read the server's copy if the rule needs it, decide, and either land it at once (`AlreadyThere`: `SyncLanding.confirmed`; `ServerIsNewer`: `SyncLanding.overruled`) or `markSending`, make the one request and confirm. The token is checked again before every request. A drain that empties the outbox sets `lastSyncedAt`; rows left (deferred or stuck) give `BACKING_OFF`. `drainAll` drains every profile with rows and returns the worst result, from least to most in need of another attempt: `EMPTY`, `WAITING_FOR_SIGN_IN`, `BACKING_OFF`, `WAITING_FOR_CONNECTION`, `STOPPED`. `forget(serverId, userId?)` (for the store hooks) cancels that account's (or server's) drain, ending any wait or held request, so nothing more is sent for it.
+
+| Failure (`AppError.Kind`) | The row | The drain |
+|---|---|---|
+| `OFFLINE`, `NETWORK`, `TIMEOUT` | stays as it is | stops (order is kept): `WAITING_FOR_CONNECTION` |
+| `SERVER_ERROR` | deferred | goes on with the next head (none unless only stuck rows wait): `BACKING_OFF` |
+| `UNAUTHORISED`, `NOT_SIGNED_IN` | stays (`ServerApi` has already invalidated the token) | stops: `WAITING_FOR_SIGN_IN` |
+| `FORBIDDEN` | overruled (the server's answer about this item for this profile) | goes on |
+| `SERVER_NOT_FOUND` | `itemGone` true: overruled; false (a redirect, a proxy): deferred, never dropped | goes on |
+| TLS kinds, `CLIENT_CERT_REQUIRED`, `CLEARTEXT_BLOCKED` | stays | stops (the user must fix the connection): `WAITING_FOR_CONNECTION` |
+| anything else, or a local database failure | stays | logged by kind or class; stops: `STOPPED` |
+
+No row is ever deleted for failing: only a confirmation, an overruling answer from the server, coalescing, or the account's removal ends one. A landing that leaves its row in place stops the drain (`STOPPED`) rather than sending it again. Log lines are fixed words plus a kind or an exception class; `Change`, `SyncStatus`, `ServerUserData`, `UserDataUpdate`, `Landed`, `OutboxRow` and the entities print no id, position or date.
+
+Tests: `OutboxStoreTest`, `OutboxOrderTest` (in-memory Room); `ConflictRuleTest`; `SyncGatewayTest`, `SyncGatewayHostileTest` (real `ServerApi` and OkHttp, MockWebServer; a quoted `"true"` for `Played` is read as true by the shared decoder, any other string is `SERVER_ERROR`).; `SyncSenderTest`, `SyncSenderFailureTest` (`FakeSyncGateway`, real `OutboxStore`); `SyncIsolationTest` (two accounts on one server, real `ServerApi`: every request carries its row's own token and `userId`, and none of a removed account's).
 
 ## Download files (`DownloadPaths`, `Volumes`, `DownloadPrefs`)
 
