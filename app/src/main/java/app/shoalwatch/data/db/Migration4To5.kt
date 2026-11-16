@@ -12,12 +12,13 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  *    from a fresh database. Nothing references `download_settings`, so the rename touches no other table on any SQLite.)
  * 3. Milestone 4's offline plays become outbox rows, so nothing watched under v4 is lost: a PLAY at `playedAt` for each
  *    finished play, then a POSITION at `updatedAt` for each unfinished one or one watched again part way since, each with
- *    one plain mark. `offline_plays` itself is left as it was.
+ *    one plain mark. A play finished again since (90% or more of a known runtime) is not a position: the finish counts as
+ *    played, so it does not go back into Continue Watching. `offline_plays` itself is left as it was.
  *
  * Every `CREATE` is Room's own generated SQL for version 5, copied verbatim from `app/schemas/.../5.json` (Room validates the
  * migrated database against it when it opens); `MigrationTest` checks a migrated database and a fresh one have identical
- * schemas, from version 4 and from version 1. Plain `CREATE`, `ALTER TABLE ... RENAME TO`, `INSERT ... SELECT` and
- * `COALESCE`: nothing newer than SQLite 3.22.
+ * schemas, from version 4 and from version 1. Plain `CREATE`, `ALTER TABLE ... RENAME TO`, `INSERT ... SELECT`, `NOT EXISTS`
+ * and `COALESCE`: nothing newer than SQLite 3.22.
  */
 object Migration4To5 : Migration(4, 5) {
     private val STATEMENTS = listOf(
@@ -42,7 +43,10 @@ object Migration4To5 : Migration(4, 5) {
         "INSERT INTO sync_outbox (serverId, userId, itemId, itemKind, kind, flag, positionMs, occurredAt, refreshKeys, fromOfflinePlay, sentOnce, sentPlayCount, attempts, serverErrors, notBefore) " +
             "SELECT p.serverId, p.userId, p.itemId, COALESCE((SELECT i.kind FROM items i WHERE i.serverId = p.serverId AND i.itemId = p.itemId), 'OTHER'), " +
             "'POSITION', NULL, p.positionMs, p.updatedAt, 'resume,nextUp', 1, 0, NULL, 0, 0, 0 FROM offline_plays p " +
-            "WHERE p.played = 0 OR (p.positionMs > 0 AND p.updatedAt > p.playedAt) ORDER BY p.updatedAt",
+            "WHERE p.played = 0 OR (p.positionMs > 0 AND p.updatedAt > p.playedAt " +
+            // A second finish (90% or more of a known runtime) counts as played, not as a position near the end (review M5).
+            "AND NOT EXISTS (SELECT 1 FROM items i WHERE i.serverId = p.serverId AND i.itemId = p.itemId AND i.runtimeMs > 0 AND p.positionMs * 10 >= i.runtimeMs * 9)) " +
+            "ORDER BY p.updatedAt",
         "INSERT INTO sync_marks (seq, serverId, userId, itemId, leftList) SELECT seq, serverId, userId, itemId, '' FROM sync_outbox",
     )
 

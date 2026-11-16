@@ -366,6 +366,31 @@ class MigrationTest {
         )
     }
 
+    /**
+     * Tasks 1-2 review M5: an item finished offline and then finished again (`playedAt` is set once, so the second finish leaves a
+     * position near the end with `updatedAt > playedAt`) is one PLAY, not also a POSITION that would put it back in Continue
+     * Watching. A part-way re-watch still carries its position, and so does a row whose runtime is not known.
+     */
+    @Test fun aSecondOfflineFinishIsCarriedAsPlayedNotAsAPositionNearTheEnd() {
+        createVersion(4) { db ->
+            createVersion2Rows(db)
+            val item = "INSERT INTO items (serverId, itemId, kind, name, nameKey, runtimeMs, fetchedAt, pinned) VALUES (?, ?, 'MOVIE', 'Film', 'film', ?, 11, 1)"
+            db.execSQL(item, arrayOf(S1, TWICE, 1_000_000))
+            db.execSQL(item, arrayOf(S1, PART_WAY, 1_000_000))
+            val play = "INSERT INTO offline_plays (serverId, userId, itemId, positionMs, played, playedAt, lastPlayedAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+            db.execSQL(play, arrayOf(S1, U1, TWICE, 950_000, 1, 100, 400, 400)) // finished, then finished again (90% or more)
+            db.execSQL(play, arrayOf(S1, U1, PART_WAY, 400_000, 1, 100, 400, 400)) // finished, then watched again part way
+            db.execSQL(play, arrayOf(S1, U1, NO_RUNTIME, 950_000, 1, 100, 400, 400)) // no item row: the runtime is not known
+        }
+        val raw = openWithMigration().openHelper.readableDatabase
+        val kinds = raw.query("SELECT itemId, kind FROM sync_outbox ORDER BY seq").use { c ->
+            buildList { while (c.moveToNext()) add(c.getString(0) to c.getString(1)) }
+        }
+        assertEquals(listOf("PLAY"), kinds.filter { it.first == TWICE }.map { it.second })
+        assertEquals(listOf("PLAY", "POSITION"), kinds.filter { it.first == PART_WAY }.map { it.second })
+        assertEquals(listOf("PLAY", "POSITION"), kinds.filter { it.first == NO_RUNTIME }.map { it.second })
+    }
+
     @Test fun theNewTablesAcceptRowsAndTheOutboxSeqKeepsRisingAfterTheHighestRowIsDeleted() {
         createVersion4()
         val db = openWithMigration()
@@ -415,6 +440,9 @@ class MigrationTest {
         val FINISHED = testId("finished")
         val REWATCHED = testId("rewatched")
         val UNFINISHED = testId("unfinished")
+        val TWICE = testId("twice")
+        val PART_WAY = testId("partway")
+        val NO_RUNTIME = testId("noruntime")
     }
 }
 
