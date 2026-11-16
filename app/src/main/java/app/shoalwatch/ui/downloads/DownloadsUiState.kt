@@ -66,4 +66,6 @@ data class DownloadsActions(
     val onTryAgain: () -> Unit,
     /** "Delete downloaded series": the profile's own episodes of that series (owners only). */
     val onAskRemoveSeries: (String) -> Unit = {},
+    /** "Manage servers and accounts", offered when nobody is signed in. */
+    val onOpenServers: () -> Unit = {},
 )

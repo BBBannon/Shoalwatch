@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import app.shoalwatch.R
+import app.shoalwatch.ui.components.SignedOutNotice
 import app.shoalwatch.data.downloads.OfflineSeason
 import app.shoalwatch.ui.components.Artwork
 import app.shoalwatch.ui.components.ArtworkAspect
@@ -54,6 +55,8 @@ data class OfflineSeriesActions(
     val onAskRemoveSeason: (String?) -> Unit = {},
     val onConfirmRemove: () -> Unit = {},
     val onCancelRemove: () -> Unit = {},
+    /** "Manage servers and accounts", offered when nobody is signed in. */
+    val onOpenServers: () -> Unit = {},
 )
 
 /**
@@ -84,6 +87,7 @@ fun OfflineSeriesScreen(state: OfflineSeriesUiState, actions: OfflineSeriesActio
             Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f).semantics { heading() })
         }
         when {
+            session == null && !state.loading -> LazyColumn(Modifier.fillMaxSize()) { item { SignedOutNotice(actions.onOpenServers) } } // as Home (W-4)
             session == null || state.loading -> Unit
             state.gone || series == null -> LazyColumn(Modifier.fillMaxSize()) {
                 item { EmptyState(stringResource(R.string.gone_title), stringResource(R.string.gone_body)) }

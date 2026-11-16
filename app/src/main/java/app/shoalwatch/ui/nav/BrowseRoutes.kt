@@ -215,6 +215,7 @@ internal fun DownloadsRoute(graph: AppGraph, nav: NavHostController) {
             onPause = vm::pause, onResume = vm::resume, onRetry = vm::retry,
             onAskRemove = vm::askRemove, onConfirmRemove = vm::confirmRemove, onCancelRemove = vm::cancelRemove,
             onPauseAll = vm::pauseAll, onResumeAll = vm::resumeAll, onTryAgain = vm::tryAgain, onAskRemoveSeries = vm::askRemoveSeries,
+            onOpenServers = { nav.navigate(Routes.SERVERS) },
         )
     }
     AppShell(Tab.DOWNLOADS, nav::switchTab, snackbar) { DownloadsScreen(state, actions, vm.messages, snackbar, onOpenSettings = { nav.navigate(Routes.DOWNLOAD_SETTINGS) }) }
@@ -242,6 +243,7 @@ internal fun OfflineSeriesRoute(graph: AppGraph, nav: NavHostController, seriesI
         OfflineSeriesActions(
             onBack = { nav.popBackStack() }, onOpenItem = { nav.navigate(Routes.item(it)) }, onPlay = { nav.navigate(Routes.player(it, StartFrom.RESUME)) },
             onAskRemove = vm::askRemove, onAskRemoveSeason = vm::askRemoveSeason, onConfirmRemove = vm::confirmRemove, onCancelRemove = vm::cancelRemove,
+            onOpenServers = { nav.navigate(Routes.SERVERS) },
         )
     }
     androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize()) {

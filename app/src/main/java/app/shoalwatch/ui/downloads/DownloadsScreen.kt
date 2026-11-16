@@ -39,6 +39,7 @@ import app.shoalwatch.ui.components.DismissOnSessionChange
 import app.shoalwatch.ui.components.DownloadIcon
 import app.shoalwatch.ui.components.EmptyState
 import app.shoalwatch.ui.components.SectionHeader
+import app.shoalwatch.ui.components.SignedOutNotice
 import app.shoalwatch.ui.present.DownloadText
 import app.shoalwatch.ui.present.rememberStrings
 import kotlinx.coroutines.flow.Flow
@@ -71,6 +72,7 @@ fun DownloadsScreen(state: DownloadsUiState, actions: DownloadsActions, messages
             // First in the list, so at twice the text size it scrolls away with the rest instead of holding half the screen.
             if (session != null) item(key = "sync") { SyncStatusLine(state.sync, System.currentTimeMillis(), Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) }
             when {
+                session == null && !state.loading -> item { SignedOutNotice(actions.onOpenServers) } // as Home (walkthrough W-4)
                 session == null || state.loading -> Unit
                 state.localFailure -> item {
                     EmptyState(stringResource(R.string.dl_failed_locally), null, actionLabel = stringResource(R.string.action_retry), onAction = actions.onTryAgain)

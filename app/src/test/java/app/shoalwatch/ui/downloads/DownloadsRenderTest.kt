@@ -49,8 +49,21 @@ abstract class DownloadsRenderBase : RenderBase() {
         onPause = { calls += "pause:$it" }, onResume = { calls += "resume:$it" }, onRetry = { calls += "retry:$it" },
         onAskRemove = { calls += "ask:$it" }, onConfirmRemove = { calls += "confirm" }, onCancelRemove = { calls += "cancel" },
         onPauseAll = { calls += "pauseAll" }, onResumeAll = { calls += "resumeAll" }, onTryAgain = { calls += "tryAgain" },
-        onAskRemoveSeries = { calls += "askSeries:$it" },
+        onAskRemoveSeries = { calls += "askSeries:$it" }, onOpenServers = { calls += "servers" },
     )
+
+    /** Walkthrough W-4: with nobody signed in (a rejected sign-in), the tab says so as Home does, not a blank page. */
+    @Test fun nobodySignedInSaysSoAndOffersServers() {
+        show { DownloadsScreen(DownloadsUiState(session = null, loading = false), actions, emptyFlow(), SnackbarHostState()) }
+        assertShown(text(R.string.home_signed_out_title))
+        rule.onAllNodesWithText(text(R.string.home_manage))[0].performClick()
+        assertEquals(listOf("servers"), calls)
+    }
+
+    @Test fun stillLoadingIsNotSignedOut() {
+        show { DownloadsScreen(DownloadsUiState(), actions, emptyFlow(), SnackbarHostState()) }
+        assertNotShown(text(R.string.home_signed_out_title))
+    }
 
     private fun e(n: Int, name: String, state: DownloadState = DownloadState.COMPLETE, progress: Float? = 1f, failure: DownloadFailure? = null,
                   owned: Boolean = true, available: Boolean = true, kind: ItemKind = ItemKind.MOVIE) = OfflineEntry(

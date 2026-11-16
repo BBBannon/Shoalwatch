@@ -6,6 +6,7 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performScrollToNode
 import app.shoalwatch.R
 import app.shoalwatch.data.downloads.DownloadInfo
@@ -34,7 +35,21 @@ abstract class OfflineSeriesRenderBase : RenderBase() {
     private val actions = OfflineSeriesActions(
         onBack = { calls += "back" }, onOpenItem = { calls += "open:$it" }, onPlay = { calls += "play:$it" },
         onAskRemove = { calls += "ask:$it" }, onAskRemoveSeason = { calls += "askSeason:$it" }, onConfirmRemove = { calls += "confirm" }, onCancelRemove = { calls += "cancel" },
+        onOpenServers = { calls += "servers" },
     )
+
+    /** Walkthrough W-4: with nobody signed in (a rejected sign-in), the screen says so as Home does, not a blank page. */
+    @Test fun nobodySignedInSaysSoAndOffersServers() {
+        show { OfflineSeriesScreen(OfflineSeriesUiState(session = null, series = null, loading = false), actions) }
+        assertShown(text(app.shoalwatch.R.string.home_signed_out_title))
+        rule.onAllNodesWithText(text(app.shoalwatch.R.string.home_manage))[0].performClick()
+        assertEquals(listOf("servers"), calls)
+    }
+
+    @Test fun stillLoadingIsNotSignedOut() {
+        show { OfflineSeriesScreen(OfflineSeriesUiState(), actions) }
+        assertNotShown(text(app.shoalwatch.R.string.home_signed_out_title))
+    }
 
     private fun ep(n: Int, season: Int, number: Int, name: String, watched: Boolean = false, positionMs: Long = 0, owned: Boolean = true) = OfflineEntry(
         episode(n, season, number, name = name, data = userData(played = watched, positionMs = positionMs)).let { it.copy(item = it.item.copy(runtimeMs = 2_700_000)) },
