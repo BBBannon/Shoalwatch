@@ -37,7 +37,7 @@ internal fun DownloadDao.savedRows(): SavedRows = object : SavedRows {
  *  - its storage is mounted now (`DownloadPaths.itemFolder` is not null) and every path comes from `DownloadPaths`;
  *  - a cheap check before every play: an original's media file is the recorded length; a conversion's playlist and every one of
  *    its recorded segments are there.
- *  - for playback ([plan]): a copy its own sign-in did not fetch (shared to it, inherited, or joined as "already on this
+ *  - for playback ([plan], and [media] for its extras): a copy its own sign-in did not fetch (shared to it, inherited, or joined as "already on this
  *    phone": final review M-1) whose confirmation is over 7 days old is offered only once re-asked, or while the server cannot
  *    be reached ([staleWhileReachable]).
  * Anything else is null, so the item streams as before. Never throws (a failure is logged by class and is null).
@@ -52,7 +52,14 @@ internal class SavedCopies(
     /** Asks for the re-ask of [Session], the given item first (final review L-11). */
     private val recheck: (Session, String) -> Unit = { _, _ -> },
 ) {
-    suspend fun media(s: Session, itemId: String): SavedMedia? = found(s, itemId)?.second
+    /**
+     * The copy for the player's saved subtitles and skip markers: under the same rule as [plan], so a stale copy refused for
+     * playback while the server can be reached serves none of its extras either (final review L-3).
+     */
+    suspend fun media(s: Session, itemId: String): SavedMedia? {
+        val (row, media) = found(s, itemId) ?: return null
+        return media.takeUnless { staleWhileReachable(s, row.itemId) }
+    }
 
     suspend fun plan(s: Session, itemId: String): SavedPlan? {
         val (row, media) = found(s, itemId) ?: return null

@@ -163,6 +163,17 @@ class SavedCopiesTest : DownloadHousekeepingTestBase() {
         assertNotNull("offline the decided rule stands", plan(s1u2))
     }
 
+    /** Final review L-3: while a stale shared copy is refused, its saved subtitles and skip markers are not served from it either. */
+    @Test fun theExtrasOfARefusedStaleCopyAreNotServedFromItWhileTheServerCanBeReached() {
+        sharedAndConfirmed()
+        reachable = true
+        clock += 8 * DAY
+        assertNull(media(s1u2))
+        assertNotNull("the owner's own copy", media(s1u1))
+        reachable = false
+        assertNotNull("offline the shared copy's extras are there", media(s1u2))
+    }
+
     @Test fun offlineAConfirmationThatCannotBeReAskedStillPlaysHoweverOld() {
         sharedAndConfirmed()
         reachable = false
