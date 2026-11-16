@@ -32,11 +32,15 @@ internal object ConfirmationAge {
  *
  * - Only while [reachable] (offline, a confirmation that cannot be re-asked stays valid however old).
  * - **Rate limited:** at most one run per profile every [MIN_GAP_MS] (monotonic), and one run at a time, so screens, a flapping
- *   connection or repeated plays cannot hammer the server. A run with nothing stale costs one Room query and no request.
+ *   connection or repeated plays cannot hammer the server. A run with nothing stale costs one Room query and no request,
+ *   and does not count towards the gap (walkthrough W-3).
  */
 internal class SharingRecheck(
-    /** The re-ask for a session; the item about to play, when a play asked for it, is asked about first (final review L-11). */
-    private val reconfirm: suspend (Session, String?) -> Unit,
+    /**
+     * The re-ask for a session; the item about to play, when a play asked for it, is asked about first (final review L-11).
+     * False when nothing was stale, so no request was made.
+     */
+    private val reconfirm: suspend (Session, String?) -> Boolean,
     private val reachable: (Session) -> Boolean,
     private val scope: CoroutineScope,
     private val clock: MonotonicClock,
@@ -58,7 +62,9 @@ internal class SharingRecheck(
         }
         return scope.launch {
             try {
-                running.withLock { reconfirm(s, first) }
+                val asked = running.withLock { reconfirm(s, first) }
+                // Nothing was stale: no request was made, so this run does not hold back the next trigger (walkthrough W-3).
+                if (!asked) synchronized(lastRun) { if (lastRun[s] == now) lastRun.remove(s) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) { // reconfirm logs and swallows its own failures; this is a last guard

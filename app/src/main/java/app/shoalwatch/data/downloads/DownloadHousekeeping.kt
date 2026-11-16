@@ -85,11 +85,13 @@ internal class DownloadHousekeeping(
      * check. Only offline, a sign-in that no longer works, or a transport or identity failure ([STOPS]: final review re-review
      * L-d) stops it, changing nothing more: it is asked again next time.
      * [first]: the item about to play (a stale copy refused at play), asked about before the oldest (final review L-11).
+     * Returns false when nothing was stale (no request was made), so `SharingRecheck` does not count the run (walkthrough W-3).
      */
-    suspend fun reconfirm(s: Session, first: String? = null) = withContext(io) {
+    suspend fun reconfirm(s: Session, first: String? = null): Boolean = withContext(io) {
         val now = now()
         val stale = store.unconfirmedShared(s, now - ConfirmationAge.STALE_AFTER_MS, now + ConfirmationAge.SKEW_MS, LIMIT, first)
-        val ids = (stale.map { it.first } + stale.mapNotNull { it.second }).distinct().take(LIMIT)
+        if (stale.isEmpty()) return@withContext false
+        val ids =(stale.map { it.first } + stale.mapNotNull { it.second }).distinct().take(LIMIT)
         try {
             for (id in ids) {
                 try {
@@ -118,6 +120,7 @@ internal class DownloadHousekeeping(
         } catch (e: Exception) {
             AppLog.w(TAG, "downloads reconfirm stopped", e)
         }
+        true
     }
 
     /** Pictures whose item no download pins any more: row and file. */

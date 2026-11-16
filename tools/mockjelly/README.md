@@ -81,6 +81,7 @@ All need a token (401 otherwise). Why each flag exists, and what Jellyfin's own 
 | `POST /Items/{id}/PlaybackInfo` with `EnableTranscoding: false` | As above, with no `TranscodingUrl` |
 | `GET /videos/{id}/hls/{playSessionId}/main.m3u8`, `.../seg{n}.ts` | The play session's own media playlist (`#EXT-X-PLAYLIST-TYPE:VOD`, five 2 s segments). Each segment URI is relative and ends `?api_key=MOCKLEAK`, which the app must strip (a request that keeps it is a 400). The same 400 rule now covers every media path (`/Download`, `/Videos/{id}/stream` and the HLS files) |
 | `GET /mock/downloads` | **Not a Jellyfin route; test only.** Each media request (`/Download`, `/stream`, HLS files), newest last: `Path` (no query), `Range`, `IfRange`, `PlaySessionId` (from the path, else the query), `Token` and `ApiKey` (`yes`/`no`). No token or query value is stored |
+| `POST /mock/no-download`, `/mock/allow-download` | **Not Jellyfin routes; test only.** Switch `--no-download` on or off while the server runs (a restart forgets every token, which signs the app's profiles out), to see a shared download taken away when the server later says no. Needs a token |
 
 | Flag | Behaviour (each changes one thing; any combination is allowed) |
 |---|---|

@@ -86,6 +86,16 @@ class DownloadsViewModel(
         }
     }
 
+    /**
+     * The tab came on screen. This view model outlives a tab switch, so the re-check is asked for again each time, while the
+     * server can be reached (rate limited like every trigger: walkthrough W-3).
+     */
+    fun opened() {
+        val now = state.value
+        val s = now.session ?: return
+        if (now.online) viewModelScope.launch { safely { reconfirm(s) } }
+    }
+
     fun pause(itemId: String) = act { s -> downloads.pause(s, itemId) }
     fun resume(itemId: String) = act { s -> downloads.resume(s, itemId) }
     fun retry(itemId: String) = act { s -> downloads.retry(s, itemId) }

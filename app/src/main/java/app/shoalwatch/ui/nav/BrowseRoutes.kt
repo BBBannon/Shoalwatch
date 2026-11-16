@@ -205,6 +205,7 @@ internal fun SearchRoute(graph: AppGraph, nav: NavHostController) {
 internal fun DownloadsRoute(graph: AppGraph, nav: NavHostController) {
     val vm = graphViewModel { DownloadsViewModel(graph.serverCatalog, graph.addressSelector, graph.downloads) { s -> graph.sharingRecheck.request(s)?.join() } }
     val state by vm.state.collectAsStateWithLifecycle()
+    LaunchedEffect(vm) { vm.opened() }
     val snackbar = remember { SnackbarHostState() }
     val actions = remember(vm, nav) {
         DownloadsActions(

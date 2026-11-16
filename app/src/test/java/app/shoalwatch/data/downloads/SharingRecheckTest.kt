@@ -33,7 +33,8 @@ class SharingRecheckTest {
     private val runs = mutableListOf<Session>()
     private var gate: CompletableDeferred<Unit>? = null
     private val firsts = mutableListOf<String?>()
-    private val recheck = SharingRecheck({ s, first -> runs += s; firsts += first; gate?.await() }, { reachable }, scope, clock)
+    private var asked = true
+    private val recheck = SharingRecheck({ s, first -> runs += s; firsts += first; gate?.await(); asked }, { reachable }, scope, clock)
 
     @After fun stop() = scope.cancel()
 
@@ -63,7 +64,7 @@ class SharingRecheckTest {
     @Test fun comingToTheFrontReAsksForTheActiveProfile() = runBlocking {
         recheck.inFront(MutableStateFlow(b))?.join()
         assertEquals(listOf(b), runs)
-        assertNull("signed out: nothing", SharingRecheck({ s, _ -> runs += s }, { true }, scope, clock).inFront(MutableStateFlow(null)))
+        assertNull("signed out: nothing", SharingRecheck({ s, _ -> runs += s; true }, { true }, scope, clock).inFront(MutableStateFlow(null)))
     }
 
     @Test fun offlineNothingIsAskedAndTheNextReachableTriggerStillRuns() {
@@ -88,6 +89,19 @@ class SharingRecheckTest {
         clock.ms += 1
         recheck.request(b)
         assertEquals(listOf(b, a, b), runs)
+    }
+
+    /**
+     * Walkthrough W-3: a run that found nothing to ask made no request, so it does not hold back the next trigger (a profile's
+     * first run comes at sign-in, before it has browsed to anything another profile downloaded).
+     */
+    @Test fun aRunWithNothingToAskDoesNotUseUpTheFiveMinutes() {
+        asked = false
+        recheck.request(b)
+        asked = true
+        recheck.request(b)
+        assertEquals("the second trigger runs at once", listOf(b, b), runs)
+        assertNull("that run asked the server, so the gap applies again", recheck.request(b))
     }
 
     @Test fun oneRunAtATime() = runBlocking {

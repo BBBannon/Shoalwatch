@@ -584,6 +584,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, list(REPORTS))
         if method == "GET" and low == ["mock", "downloads"]:
             return self.reply(200, list(DOWNLOADS))
+        if method == "POST" and low in (["mock", "no-download"], ["mock", "allow-download"]):
+            CONFIG["no_download"] = low[1] == "no-download"  # --no-download at run time: a restart would forget every token
+            return self.reply(204)
         if method == "GET" and low[0] == "items" and len(segs) == 3 and low[2] == "download":
             target = item(segs[1])
             if not target:
