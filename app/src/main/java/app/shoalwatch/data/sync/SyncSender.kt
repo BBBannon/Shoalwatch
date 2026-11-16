@@ -8,6 +8,7 @@ import app.shoalwatch.data.sync.api.SyncGateway
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -46,6 +47,7 @@ internal class SyncSender(
     /** One joined drain: [result] never fails; [work] is the part [forget] cancels; [again]: a kick joined it, so look once more before ending. */
     private class Running(val result: Deferred<DrainResult>) {
         @Volatile var work: Deferred<DrainResult>? = null
+        @Volatile var forgotten = false
         var again = false // under lock
     }
 
@@ -61,9 +63,10 @@ internal class SyncSender(
     fun kick(s: Session): Deferred<DrainResult> = synchronized(lock) {
         running[s]?.let { it.again = true; return it.result }
         lateinit var entry: Running
-        val result = scope.async(io, start = kotlinx.coroutines.CoroutineStart.LAZY) {
+        val result = scope.async(io, start = CoroutineStart.LAZY) {
             val work = async { profileLock(s).withLock { permits.withPermit { drain(s, entry) } } }
             entry.work = work
+            if (entry.forgotten) work.cancel() // forget ran before [work] existed (Tasks 3-5 review M1)
             try {
                 work.await()
             } catch (e: CancellationException) {
@@ -95,7 +98,7 @@ internal class SyncSender(
         val gone = synchronized(lock) {
             running.keys.filter { it.serverId == serverId && (userId == null || it.userId == userId) }.mapNotNull { running.remove(it) }
         }
-        gone.forEach { it.work?.cancel() }
+        gone.forEach { it.forgotten = true; it.work?.cancel() }
     }
 
     private fun profileLock(s: Session) = synchronized(lock) { profileLocks.getOrPut(s) { Mutex() } }
