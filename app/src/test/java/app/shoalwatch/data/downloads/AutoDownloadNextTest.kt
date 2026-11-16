@@ -142,6 +142,48 @@ class AutoDownloadNextTest : DownloadTestBase() {
         eventually { request() == null }
     }
 
+    /**
+     * Tasks 13-14 review M4: a request that times out makes ServerApi re-probe, and the probe's new Online comes back as
+     * cameOnline, so without a pause it would plan again at once, for as long as the link stays that slow. After a NETWORK or
+     * TIMEOUT failure, that server's cameOnline is ignored for 1 min, then 2 min, and so on (virtual clock); a run that gets an
+     * answer ends the pause.
+     */
+    @Test fun aTimeoutPausesTheReprobeTriggerWithABackOff() = runTest {
+        autoNext(a, 2)
+        val online = { n: Int -> Connection.Online(address("http://192.168.1.$n:8096"), isHome = true) }
+        connections.stateFor(a.serverId).value = online(10)
+        watched.value = setOf(a.serverId)
+        val auto = auto()
+        auto.start()
+        runCurrent()
+        var n = 10
+        fun reprobe() { // what refreshIfCurrent does after a failed request: Checking, then a new Online; waits until it is handled
+            val handled = auto.onlineHandled.get()
+            connections.stateFor(a.serverId).value = Connection.Checking(online(n))
+            runCurrent()
+            connections.stateFor(a.serverId).value = online(++n)
+            eventually { auto.onlineHandled.get() == handled + 1 }
+        }
+        fun prepares() = downloads.calls.count { it == "prepare" }
+        failure = AppError.of(AppError.Kind.TIMEOUT)
+        auto.onWatched(a, e1.id).join() // #1: times out, pause 1 min
+        assertEquals(1, prepares())
+        reprobe() // ignored
+        assertEquals("inside the pause", 1, prepares())
+        clock += 60_001
+        reprobe() // #2: times out again, pause 2 min
+        assertEquals(2, prepares())
+        clock += 60_001
+        reprobe() // ignored: inside the 2 min
+        assertEquals("the pause doubled", 2, prepares())
+        clock += 60_000
+        failure = null
+        reprobe() // #3: answers, starts
+        eventually { started().isNotEmpty() }
+        assertEquals("only the runs outside the pause planned", 3, prepares())
+        assertNull(request())
+    }
+
     @Test fun meteredWithMobileDataOffWaitsAndMobileDataOnRuns() = runTest {
         autoNext(a, 2)
         meteredNow = true

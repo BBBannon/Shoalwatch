@@ -36,6 +36,16 @@ internal class AutoDownloadNext(
 ) {
     private val running = Mutex()
 
+    /**
+     * Per server, after a NETWORK or TIMEOUT failure: (ignore its cameOnline until, current pause). Such a failure makes ServerApi
+     * re-probe, and the probe's new Online is a cameOnline, so without this a slow link would re-plan without end (Tasks 13-14
+     * review M4). The pause starts at [PAUSE_MIN_MS] and doubles to [PAUSE_MAX_MS]; a run that gets an answer ends it. Memory only.
+     */
+    private val paused = HashMap<String, Pair<Long, Long>>()
+
+    /** A test seam: counts each cameOnline event once it is fully handled. */
+    internal val onlineHandled = java.util.concurrent.atomic.AtomicInteger()
+
     /** (server, user, item) anchors already remembered in this process: a second report of the same watch is ignored. */
     private val seen = object : LinkedHashMap<Triple<String, String, String>, Unit>() {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Triple<String, String, String>, Unit>?) = size > SEEN_LIMIT
@@ -75,8 +85,10 @@ internal class AutoDownloadNext(
         }
         scope.launch(io) {
             online.cameOnline.collect { serverId ->
+                if (isPaused(serverId)) { onlineHandled.incrementAndGet(); return@collect }
                 val sessions = quietly { dao.allAutoNextRequests().filter { it.serverId == serverId }.map { Session(it.serverId, it.userId) }.distinct() } ?: emptyList()
                 for (s in sessions) runPending(s)
+                onlineHandled.incrementAndGet()
             }
         }
     }
@@ -88,6 +100,7 @@ internal class AutoDownloadNext(
         if (!settings.mobileData && isMetered()) return // the next Wi-Fi connection runs it (it comes online again)
         try {
             val plan = downloads.prepare(s, DownloadTarget.NextUnwatched(r.seriesId, r.anchorItemId, count), settings.defaultQuality ?: r.quality)
+            synchronized(paused) { paused.remove(s.serverId) } // the server answered
             if (plan.items.isEmpty()) return done(r)
             // All already on the phone (joined at 0 bytes): the space reserve is no reason to wait (Tasks 13-14 review M3).
             if (!plan.enoughSpace && !plan.items.all { it.shareOnly }) {
@@ -98,6 +111,7 @@ internal class AutoDownloadNext(
             downloads.start(s, plan)
             done(r)
         } catch (e: AppError) {
+            if (e.kind == AppError.Kind.NETWORK || e.kind == AppError.Kind.TIMEOUT) pause(s.serverId)
             if (e.kind in KEEP) return
             AppLog.w(TAG, "next episodes not planned: ${e.kind}")
             failed(r)
@@ -115,6 +129,13 @@ internal class AutoDownloadNext(
         if (tries >= MAX_TRIES) done(r) else dao.updateAutoNext(r.serverId, r.userId, r.seriesId, r.anchorItemId, r.requestedAt, tries, r.blockedAt)
     }
 
+    private fun pause(serverId: String) = synchronized(paused) {
+        val wait = paused[serverId]?.second?.let { minOf(it * 2, PAUSE_MAX_MS) } ?: PAUSE_MIN_MS
+        paused[serverId] = (now() + wait) to wait
+    }
+
+    private fun isPaused(serverId: String): Boolean = synchronized(paused) { paused[serverId]?.let { now() < it.first } ?: false }
+
     private fun isMetered(): Boolean = try { metered() } catch (e: RuntimeException) { true }
 
     private suspend fun <T> quietly(block: suspend () -> T): T? = try {
@@ -131,6 +152,8 @@ internal class AutoDownloadNext(
         val ALLOWED = setOf(0, 1, 2, 3, 5)
         private const val TAG = "AutoNext"
         private const val SEEN_LIMIT = 256
+        const val PAUSE_MIN_MS = 60_000L
+        const val PAUSE_MAX_MS = 30 * 60_000L
 
         /** Kept for later: the server could not be reached, or the profile is signed out for now. */
         private val KEEP = setOf(AppError.Kind.OFFLINE, AppError.Kind.NETWORK, AppError.Kind.TIMEOUT, AppError.Kind.NOT_SIGNED_IN)
