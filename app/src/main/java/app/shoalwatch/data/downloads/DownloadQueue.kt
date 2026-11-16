@@ -112,14 +112,19 @@ internal class DownloadQueue(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            // Anything unforeseen (a card remounted read-only, say) is one attempt, so the item ends FAILED rather than
-            // staying RUNNING at the head of the queue for ever (Tasks 9-10 review I-3). Logged by class only.
-            AppLog.w(TAG, "download step failed: ${e.javaClass.simpleName}")
-            retry(j.key, (e as? AppError)?.kind ?: AppError.Kind.UNKNOWN)
+            unforeseen(j.key, e)
         } }
-        // A removal no write saw (a retry or failure ended the step) leaves no folder a fetcher made again (final review L-5).
-        folder?.let { dir -> if (store.get(j.key) == null) { live.remove(j.key); paths.deleteInside(dir) } }
-        return step
+        // A removal no write saw (a retry or failure ended the step) leaves no folder a fetcher made again (L-5), in the same guard (Nit-1).
+        return try {
+            folder?.let { dir -> if (store.get(j.key) == null) { live.remove(j.key); paths.deleteInside(dir) } }
+            step
+        } catch (e: CancellationException) { throw e } catch (e: Exception) { unforeseen(j.key, e) }
+    }
+
+    /** Anything unforeseen (a card remounted read-only, say) is one attempt, not a row RUNNING for ever (Tasks 9-10 review I-3). Logged by class only. */
+    private suspend fun unforeseen(key: DownloadKey, e: Exception): QueueStep {
+        AppLog.w(TAG, "download step failed: ${e.javaClass.simpleName}")
+        return retry(key, (e as? AppError)?.kind ?: AppError.Kind.UNKNOWN)
     }
 
     /** The earliest owner (by when they added it) that can still send. */
@@ -349,7 +354,7 @@ internal class DownloadQueue(
 
     private suspend fun failed(key: DownloadKey, given: DownloadFailure): QueueStep {
         live.remove(key)
-        val failure = if (given == DownloadFailure.NO_SPACE && cardGone(key)) DownloadFailure.STORAGE_MISSING else given
+        val failure = if (given == DownloadFailure.NO_SPACE && QueueFiles.cardGone(store, paths, key)) DownloadFailure.STORAGE_MISSING else given
         if (store.updateIf(key, ACTIVE) { it.copy(state = DownloadState.FAILED, failure = failure) } == DownloadStore.Written.DONE) {
             AppLog.w(TAG, "download failed: ${failure.name}")
         }
@@ -358,7 +363,7 @@ internal class DownloadQueue(
 
     /** One more attempt used: back in the queue and this drain stops (the worker backs off), or SERVER_ERROR at [maxAttempts]. */
     private suspend fun retry(key: DownloadKey, kind: AppError.Kind): QueueStep {
-        if (cardGone(key)) return failed(key, DownloadFailure.STORAGE_MISSING) // a pulled card is not a network fault (review Minor 5)
+        if (QueueFiles.cardGone(store, paths, key)) return failed(key, DownloadFailure.STORAGE_MISSING) // a pulled card is not a network fault (review Minor 5)
         var attempts = 0
         if (store.updateIf(key, ACTIVE) { it.copy(attempts = (it.attempts + 1).also { a -> attempts = a }) } != DownloadStore.Written.DONE) return QueueStep.Next
         if (attempts >= maxAttempts) return failed(key, DownloadFailure.SERVER_ERROR)
@@ -370,10 +375,6 @@ internal class DownloadQueue(
         store.updateIf(key, ACTIVE) { it.copy(state = DownloadState.QUEUED) }
         return QueueStep.Halt(QueueRun.Stopped)
     }
-
-    /** The row's card is no longer mounted (a pulled card reads as no space or an I/O error). */
-    private suspend fun cardGone(key: DownloadKey): Boolean =
-        store.get(key)?.let { it.storage == StorageKind.REMOVABLE && paths.itemFolder(key, it.storage, it.volumeId) == null } == true
 
     private suspend fun current(key: DownloadKey): DownloadEntity = store.get(key) ?: throw QueueRowGone()
 

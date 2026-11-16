@@ -51,6 +51,10 @@ internal object QueueFiles {
         }
     }
 
+    /** The row's card is no longer mounted (a pulled card reads as no space or an I/O error). */
+    suspend fun cardGone(store: DownloadStore, paths: DownloadPaths, key: DownloadKey): Boolean =
+        store.get(key)?.let { it.storage == StorageKind.REMOVABLE && paths.itemFolder(key, it.storage, it.volumeId) == null } == true
+
     /** A file saved under another container (the server remuxed it since) never stays beside this one (review Minor 9). */
     fun dropOtherContainers(paths: DownloadPaths, folder: File, container: String) {
         for (ext in DownloadPaths.MEDIA_EXTENSIONS - container) {

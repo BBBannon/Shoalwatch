@@ -79,6 +79,20 @@ class DownloadQueueTest : DownloadQueueTestBase() {
         }
     }
 
+    /** Final review re-review Nit-1: the folder check after a run is inside the run's guard, so its failure is one attempt. */
+    @Test fun aFailureOfTheFolderCheckAfterARunIsOneAttemptNotAnEscape() {
+        queued(a, f1)
+        playable()
+        files.steps += { c ->
+            runBlocking { store.removeOwner(a, f1.id) }
+            c.part.parentFile!!.mkdirs(); c.part.writeBytes(ByteArray(10))
+            fake.allRootsFail = java.io.IOException("read-only")
+            FetchResult.Retry(AppError.Kind.NETWORK)
+        }
+        assertEquals("the drain carries on to the end", QueueRun.Drained, drain())
+        assertNull(download(f1))
+    }
+
     @Test fun threeQueuedItemsCompleteInOrder() {
         queued(a, f1, f2, f3)
         playable(3)
