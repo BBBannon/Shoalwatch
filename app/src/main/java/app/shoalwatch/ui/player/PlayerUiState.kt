@@ -25,10 +25,25 @@ data class PlayerUiState(
     val streamInfoShown: Boolean = false,
     /** The sleep timer paused playback: said once, until dismissed. */
     val sleepFired: Boolean = false,
+    /** "You've finished this episode." with watch-and-delete's buttons (or ALWAYS's line); null when not offered. */
+    val watched: WatchedPromptUi? = null,
+    /** What a watch-and-delete press did: said once in the snackbar, until dismissed. */
+    val watchedMessage: WatchedMessage? = null,
     val leave: Boolean = false,
 ) {
     override fun toString() = "PlayerUiState(phase=${playback.phase}, leave=$leave)"
 }
+
+/**
+ * The watch-and-delete prompt for one item, as its own [session] (it acts only as that session). [together]: how many other
+ * signed-in profiles share the download (a count; never names). [always]: the profile's setting deletes it at the stop, so
+ * only the information line shows.
+ */
+data class WatchedPromptUi(val session: Session, val itemId: String, val film: Boolean, val together: Int, val always: Boolean) {
+    override fun toString() = "WatchedPromptUi(<redacted>)"
+}
+
+enum class WatchedMessage { DELETED, KEPT_FOR_OTHERS, KEPT_UNTIL_EVERYONE, FAILED }
 
 enum class PlayerSheet { TRACKS, QUALITY, SPEED, SLEEP, SUBTITLE_STYLE, STREAM_INFO }
 
@@ -62,4 +77,8 @@ class PlayerActions(
     val onSignIn: () -> Unit,
     val onDismissSubtitleNotice: () -> Unit,
     val onDismissSleepFired: () -> Unit,
+    val onWatchedDelete: () -> Unit = {},
+    val onWatchedTogether: () -> Unit = {},
+    val onKeepDownload: () -> Unit = {},
+    val onDismissWatchedMessage: () -> Unit = {},
 )

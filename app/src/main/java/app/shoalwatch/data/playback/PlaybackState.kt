@@ -37,6 +37,11 @@ data class PlaybackState(
     val savedQuality: DownloadQuality? = null,
     /** The controller has ended (closed, refused, signed out, another profile took over): the screen leaves. Never true before. */
     val closed: Boolean = false,
+    /**
+     * Playback itself crossed the credits (the Outro start) or 90% of this item: the controller's own "finished" rule, never set
+     * by a seek past the mark. What the watch-and-delete prompt waits for (read in [stateOf]; the controller is unchanged).
+     */
+    val finished: Boolean = false,
 ) {
     enum class Phase { IDLE, RESOLVING, BUFFERING, PLAYING, PAUSED, ENDED, FAILED }
 
@@ -74,6 +79,7 @@ internal fun stateOf(
         subtitleNotice = c?.notice,
         segmentNow = c?.segmentAt(), upNext = c?.upNext?.state, previous = c?.around?.previous?.id, next = c?.around?.next?.id,
         sleep = sleep, error = error, fellBackToTranscode = c?.fellBack == true, savedQuality = c?.resolved?.saved?.quality,
+        finished = c?.finished == true,
     )
 }
 

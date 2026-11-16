@@ -62,6 +62,21 @@ internal class PlayerViewModelTest : PlaybackControllerTestBase() {
     private val reprobed = mutableListOf<String>()
     private var onReprobe: () -> Unit = {}
     private val store = ViewModelStore()
+    private val housekeeping = app.shoalwatch.ui.browse.FakeHousekeeping()
+    @get:org.junit.Rule val tmp = org.junit.rules.TemporaryFolder()
+    /** While set, episode 1 plays from a copy saved on this phone (a LOCAL plan). */
+    private var localCopy = false
+
+    override val savedLookup: suspend (Session, String) -> app.shoalwatch.data.playback.SavedPlan? = { _, id ->
+        if (!localCopy || id != ep1) null else {
+            val folder = tmp.newFolder()
+            val media = app.shoalwatch.data.downloads.SavedMedia(
+                session.serverId, ep1, folder, java.io.File(folder, "media.mp4").apply { writeBytes(ByteArray(8)) }, hls = false,
+                quality = app.shoalwatch.data.downloads.DownloadQuality.ORIGINAL, mediaSourceId = app.shoalwatch.data.playback.PlaybackFakes.SOURCE,
+            )
+            app.shoalwatch.data.playback.SavedPlan(media, app.shoalwatch.data.playback.SavedPlans.plan(ep1, media, emptyList(), runtime, hasSegments = false))
+        }
+    }
 
     @Before fun main() = Dispatchers.setMain(dispatcher)
     @After fun reset() = Dispatchers.resetMain()
@@ -72,7 +87,7 @@ internal class PlayerViewModelTest : PlaybackControllerTestBase() {
             override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T =
                 // The controller runs on the test's background scope: its endless tick loops would keep a ViewModel scope from ever going idle.
                 PlayerViewModel(ep1, from, saved, catalog, { s, _ -> made += s; controllerFor(s, backgroundScope) }, settings, quality,
-                    { serverId -> reprobed += serverId; onReprobe() }) as T
+                    { serverId -> reprobed += serverId; onReprobe() }, housekeeping) as T
         }
         return ViewModelProvider.create(store, factory)[PlayerViewModel::class.java].also { if (settle) runCurrent() }
     }
@@ -339,5 +354,51 @@ internal class PlayerViewModelTest : PlaybackControllerTestBase() {
         vm.onHostStarted(); runCurrent()
         engine.controllerPlay(); runCurrent()
         assertEquals(Phase.PLAYING, vm.state.value.playback.phase)
+    }
+
+    // ---- watch-and-delete (Milestone 5)
+
+    @Test fun aSavedCopyPlayedPastTheMarkOffersThePromptAndDeleteReleasesAsTheOwnerWithoutStoppingPlayback() = runTest(dispatcher) {
+        localCopy = true
+        val vm = vm(); playing(vm)
+        assertEquals(app.shoalwatch.data.playback.PlayMethod.LOCAL, vm.state.value.playback.method)
+        at(1_079_000); assertNull(vm.state.value.watched)
+        at(1_081_000); runCurrent()
+        assertEquals(WatchedPromptUi(BEN, ep1, film = false, together = 0, always = false), vm.state.value.watched)
+        vm.watchedDelete(); runCurrent()
+        assertEquals(listOf("release:ben:$ep1:false"), housekeeping.calls.filter { it.startsWith("release") })
+        assertNull(vm.state.value.watched)
+        assertEquals(WatchedMessage.DELETED, vm.state.value.watchedMessage)
+        assertEquals(Phase.PLAYING, vm.state.value.playback.phase)
+        vm.dismissWatchedMessage()
+        assertNull(vm.state.value.watchedMessage)
+    }
+
+    @Test fun aStreamPlayedPastTheMarkOffersNothing() = runTest(dispatcher) {
+        val vm = vm(); playing(vm)
+        at(1_079_000); at(1_081_000); runCurrent()
+        assertNull(vm.state.value.watched)
+        assertEquals(emptyList<String>(), housekeeping.calls)
+    }
+
+    @Test fun keepDownloadDropsItForGood() = runTest(dispatcher) {
+        localCopy = true
+        val vm = vm(); playing(vm)
+        at(1_079_000); at(1_081_000); runCurrent()
+        vm.keepDownload(); runCurrent(); assertNull(vm.state.value.watched)
+        at(1_082_000); runCurrent()
+        assertNull("offered once per item", vm.state.value.watched)
+        assertEquals(emptyList<String>(), housekeeping.calls.filter { it.startsWith("release") })
+    }
+
+    @Test fun switchingAccountDropsThePromptAndALatePressActsAsNobody() = runTest(dispatcher) {
+        localCopy = true
+        val vm = vm(); playing(vm)
+        at(1_079_000); at(1_081_000); runCurrent()
+        assertEquals(BEN, vm.state.value.watched?.session)
+        switchTo(AMY)
+        assertNull(vm.state.value.watched)
+        vm.watchedDelete(); vm.watchedTogether(); runCurrent()
+        assertEquals(emptyList<String>(), housekeeping.calls.filter { it.startsWith("release") })
     }
 }

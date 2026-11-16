@@ -23,7 +23,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
 import app.shoalwatch.R
+import app.shoalwatch.data.downloads.AfterFinish
 import app.shoalwatch.data.downloads.DownloadQuality
+import app.shoalwatch.data.downloads.SharedDelete
 import app.shoalwatch.data.downloads.StorageKind
 import app.shoalwatch.ui.components.AppScreen
 import app.shoalwatch.ui.present.DownloadText
@@ -36,11 +38,14 @@ data class DownloadSettingsActions(
     val onStorage: (StorageKind, String?) -> Unit,
     val onQuality: (DownloadQuality?) -> Unit,
     val onSharing: (Boolean) -> Unit,
+    val onAfterFinish: (AfterFinish) -> Unit = {},
+    val onDeleteShared: (SharedDelete) -> Unit = {},
 )
 
 /**
  * "Download settings": mobile data, where new downloads go (the SD card only while one is mounted, with its plain warning),
- * the quality for new downloads, the active server's sharing switch, and a link to the system notification settings when
+ * the quality for new downloads, the active profile's "When a download finishes playing", the active server's sharing switch
+ * (and, while it is on, "Delete shared downloads"), and a link to the system notification settings when
  * notifications are off. Every row is 48dp or more and says its state; the screen scrolls (`AppScreen`).
  */
 @Composable
@@ -60,7 +65,15 @@ fun DownloadSettingsScreen(state: DownloadSettingsUiState, actions: DownloadSett
         QualityRow(stringResource(R.string.dl_quality_ask), null, state.settings.defaultQuality == null) { actions.onQuality(null) }
         DownloadQuality.entries.forEach { q -> QualityRow(DownloadText.quality(strings, q), null, state.settings.defaultQuality == q) { actions.onQuality(q) } }
         if (state.session != null) {
+            Heading(stringResource(R.string.dl_after_finish))
+            AFTER_FINISH.forEach { (value, label) -> QualityRow(stringResource(label), null, state.afterFinish == value) { actions.onAfterFinish(value) } }
+            Help(stringResource(R.string.dl_after_finish_help))
             SwitchRow(stringResource(R.string.dl_share), stringResource(R.string.dl_share_body, state.serverName.orEmpty()), state.sharing, actions.onSharing)
+            if (state.sharing) {
+                Heading(stringResource(R.string.dl_delete_shared))
+                DELETE_SHARED.forEach { (value, label) -> QualityRow(stringResource(label), null, state.deleteShared == value) { actions.onDeleteShared(value) } }
+                Help(stringResource(R.string.dl_delete_shared_help, state.serverName.orEmpty()))
+            }
         }
         if (!notificationsOn) {
             Text(stringResource(R.string.dl_notifications_off), style = MaterialTheme.typography.bodyMedium)
@@ -73,6 +86,16 @@ fun DownloadSettingsScreen(state: DownloadSettingsUiState, actions: DownloadSett
             ) { Text(stringResource(R.string.dl_notification_settings)) }
         }
     }
+}
+
+private val AFTER_FINISH = listOf(
+    AfterFinish.ASK to R.string.dl_after_finish_ask, AfterFinish.ALWAYS to R.string.dl_after_finish_always, AfterFinish.NEVER to R.string.dl_after_finish_never,
+)
+private val DELETE_SHARED = listOf(SharedDelete.ANYONE to R.string.dl_delete_shared_anyone, SharedDelete.EVERYONE to R.string.dl_delete_shared_everyone)
+
+@Composable
+private fun Help(text: String) {
+    Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 @Composable

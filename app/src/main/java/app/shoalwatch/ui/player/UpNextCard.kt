@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -17,6 +19,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -38,8 +41,9 @@ internal fun UpNextCard(upNext: UpNextState, actions: PlayerActions, modifier: M
     // What a screen reader is told: the first count, then the count at 3 s (a change to this text is what gets announced).
     val first = remember(upNext.itemId) { seconds }
     val announced = if (seconds != null && seconds <= ANNOUNCE_AGAIN_AT && (first ?: 0) > ANNOUNCE_AGAIN_AT) ANNOUNCE_AGAIN_AT else first
-    Card(modifier.widthIn(max = 360.dp), colors = CardDefaults.cardColors(containerColor = Color(0xE6202020), contentColor = OnVideo)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Card(modifier.widthIn(max = 360.dp).testTag(UP_NEXT_TAG), colors = CardDefaults.cardColors(containerColor = Color(0xE6202020), contentColor = OnVideo)) {
+        // Scrolls inside when the space is short (beside the watch-and-delete card), so the card itself stays on screen.
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             val title = upNext.title?.let { stringResource(R.string.up_next, it) } ?: stringResource(R.string.up_next_untitled)
             Text(title, style = MaterialTheme.typography.titleMedium)
             if (seconds != null) {
@@ -62,3 +66,6 @@ internal fun UpNextCard(upNext: UpNextState, actions: PlayerActions, modifier: M
 }
 
 private const val ANNOUNCE_AGAIN_AT = 3
+
+/** The Up next card's test tag. */
+internal const val UP_NEXT_TAG = "up_next_card"

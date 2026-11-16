@@ -404,6 +404,19 @@
     <string name="player_locked_hint">Screen locked. Tap the lock to unlock.</string>
     <string name="player_stream_info">About this video</string>
     <string name="up_next">Up next: %1$s</string>
+    <!-- Watch-and-delete in the player (Milestone 5) -->
+    <string name="watched_episode">You\'ve finished this episode.</string>
+    <string name="watched_film">You\'ve finished this film.</string>
+    <string name="watched_delete">Watched — delete download</string>
+    <string name="watched_together">Watched together</string>
+    <string name="watched_together_label">Watched together: also mark it watched for the other profiles that share it</string>
+    <string name="watched_keep">Keep download</string>
+    <string name="watched_always">This download is deleted when it closes, as set in Download settings.</string>
+    <string name="watched_delete_button_spoken">Watched — delete download, button</string>
+    <string name="watched_deleted">Marked as watched. The download is deleted when this closes.</string>
+    <string name="watched_kept_for_others">Marked as watched. It stays on this phone for another profile.</string>
+    <string name="watched_kept_until_everyone">Marked as watched. It stays on this phone until everyone who shares it has watched it.</string>
+    <string name="watched_failed">Couldn\'t delete this download. You can delete it in Storage.</string>
     <string name="up_next_untitled">Up next: the next episode</string>
     <plurals name="up_next_in">
         <item quantity="one">Playing in %1$d second</item>
@@ -596,6 +609,15 @@
     <string name="dl_quality_ask">Ask each time</string>
     <string name="dl_share">Share downloads between profiles</string>
     <string name="dl_share_body">Profiles signed in to %1$s on this device can watch each other\'s downloads, but only titles their own account is allowed to download. A shared download appears for another profile once Shoalwatch has checked with your server. Each profile keeps its own watched progress.</string>
+    <string name="dl_after_finish">When a download finishes playing</string>
+    <string name="dl_after_finish_ask">Ask each time</string>
+    <string name="dl_after_finish_always">Always delete when finished</string>
+    <string name="dl_after_finish_never">Never</string>
+    <string name="dl_after_finish_help">Deleting frees the space. The show still appears in Downloads and the episode stays watched. For this profile only.</string>
+    <string name="dl_delete_shared">Delete shared downloads</string>
+    <string name="dl_delete_shared_anyone">After anyone has watched</string>
+    <string name="dl_delete_shared_everyone">After everyone has watched</string>
+    <string name="dl_delete_shared_help">For downloads shared between profiles on %1$s.</string>
     <string name="dl_notifications_off">Notifications are off for Shoalwatch, so download progress shows only here.</string>
     <string name="dl_signout_downloads">Downloads that only this profile kept are deleted from this phone.</string>
     <string name="dl_signout_shared">Shared downloads stay for the other profiles that can see them.</string>

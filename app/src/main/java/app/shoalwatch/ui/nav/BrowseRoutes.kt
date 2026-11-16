@@ -223,12 +223,13 @@ internal fun DownloadsRoute(graph: AppGraph, nav: NavHostController) {
 
 @Composable
 internal fun DownloadSettingsRoute(graph: AppGraph, nav: NavHostController) {
-    val vm = graphViewModel { app.shoalwatch.ui.downloads.DownloadSettingsViewModel(graph.serverCatalog, graph.downloads) }
+    val vm = graphViewModel { app.shoalwatch.ui.downloads.DownloadSettingsViewModel(graph.serverCatalog, graph.downloads, graph.housekeeping) }
     val state by vm.state.collectAsStateWithLifecycle()
     androidx.compose.runtime.LaunchedEffect(Unit) { vm.refreshCards() }
     val actions = remember(vm, nav) {
         app.shoalwatch.ui.downloads.DownloadSettingsActions(
             onBack = { nav.popBackStack() }, onMobileData = vm::setMobileData, onStorage = vm::setStorage, onQuality = vm::setDefaultQuality, onSharing = vm::setSharing,
+            onAfterFinish = vm::setAfterFinish, onDeleteShared = vm::setDeleteShared,
         )
     }
     app.shoalwatch.ui.downloads.DownloadSettingsScreen(state, actions)
@@ -261,7 +262,7 @@ internal fun OfflineSeriesRoute(graph: AppGraph, nav: NavHostController, seriesI
 @Composable
 internal fun PlayerRoute(graph: AppGraph, nav: NavHostController, itemId: String, from: StartFrom) {
     val vm = graphStateViewModel(key = "$itemId|$from") { saved ->
-        PlayerViewModel(itemId, from, saved, graph.serverCatalog, { s, scope -> graph.playbackController(s, scope) { true } }, graph.subtitleSettings, graph.qualityDefault, graph.addressSelector::refreshIfOffline)
+        PlayerViewModel(itemId, from, saved, graph.serverCatalog, { s, scope -> graph.playbackController(s, scope) { true } }, graph.subtitleSettings, graph.qualityDefault, graph.addressSelector::refreshIfOffline, graph.housekeeping)
     }
     val state by vm.state.collectAsStateWithLifecycle()
     LaunchedEffect(state.leave) { if (state.leave) nav.popBackStack(Routes.PLAYER, inclusive = true) }
@@ -298,6 +299,10 @@ internal fun PlayerRoute(graph: AppGraph, nav: NavHostController, itemId: String
             onSignIn = { vm.state.value.session?.let { nav.navigate(Routes.signIn(it.serverId)) } },
             onDismissSubtitleNotice = vm::dismissSubtitleNotice,
             onDismissSleepFired = vm::dismissSleepFired,
+            onWatchedDelete = vm::watchedDelete,
+            onWatchedTogether = vm::watchedTogether,
+            onKeepDownload = vm::keepDownload,
+            onDismissWatchedMessage = vm::dismissWatchedMessage,
         )
     }
     PlayerScreen(state, actions, rememberDolbyVisionScreen()) { controlsUp ->

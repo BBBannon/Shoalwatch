@@ -128,6 +128,24 @@ internal class PlaybackControllerTest : PlaybackControllerTestBase() {
         assertEquals(listOf("stopped@1142000"), stopCalls)
     }
 
+    @Test fun theStateSaysFinishedOnceThePlaybackCrossesTheMark() = runTest {
+        val c = controller(); openAndPlay(c)
+        at(1_079_000); assertFalse(c.state.value.finished)
+        at(1_081_000); assertTrue(c.state.value.finished)
+    }
+
+    @Test fun aSeekPastTheMarkLeavesTheStateNotFinished() = runTest {
+        val c = controller(); openAndPlay(c)
+        at(1_000); c.seekTo(1_140_000); runCurrent()
+        at(1_141_000); at(1_142_000)
+        assertFalse(c.state.value.finished)
+    }
+
+    /** Milestone 5 reads "finished" through `stateOf` only: the controller itself is not edited (it is at its size limit). */
+    @Test fun theControllerIsUnchanged() {
+        assertEquals(399, java.io.File("src/main/java/app/shoalwatch/data/playback/PlaybackController.kt").readLines().size)
+    }
+
     @Test fun becomingNoisyReportsTheRealPosition() = runTest {
         val c = controller(); openAndPlay(c)
         at(42_000)

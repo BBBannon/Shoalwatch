@@ -5,6 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -81,18 +83,41 @@ private fun BoxScope.Loading() {
     CircularProgressIndicator(Modifier.align(Alignment.Center).semantics { contentDescription = label }, color = OnVideo)
 }
 
-/** Up next, or else the skip button, at the bottom right (above the seek bar while the controls show). */
+/**
+ * Up next, or else the skip button, at the bottom right (above the seek bar while the controls show), with the watch-and-delete
+ * card stacked above it; on a short screen (landscape phone) the two cards sit side by side. Each card is limited to the space
+ * there is and scrolls inside, so neither leaves the screen or covers the other.
+ */
 @Composable
 private fun BoxScope.Corner(state: PlayerUiState, actions: PlayerActions) {
     val p = state.playback
-    val placed = Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = if (state.controlsVisible) 112.dp else 24.dp)
     val upNext = p.upNext?.takeIf { !it.cancelled }
     val segment = p.segmentNow
-    when {
-        upNext != null -> UpNextCard(upNext, actions, placed)
-        segment != null -> SkipSegmentButton(segment, actions.onSkipSegment, placed)
+    val watched = state.watched
+    val area = Modifier.matchParentSize().padding(start = 16.dp, top = 16.dp, end = 16.dp, bottom = if (state.controlsVisible) 112.dp else 24.dp)
+    BoxWithConstraints(area) {
+        val room = maxHeight
+        val fit = Modifier.heightIn(max = room)
+        if (watched != null && upNext != null && room < SIDE_BY_SIDE_BELOW) {
+            Row(Modifier.align(Alignment.BottomEnd), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Bottom) {
+                WatchedPrompt(watched, actions, Modifier.weight(1f, fill = false).then(fit))
+                UpNextCard(upNext, actions, Modifier.weight(1f, fill = false).then(fit))
+            }
+            return@BoxWithConstraints
+        }
+        Column(Modifier.align(Alignment.BottomEnd), verticalArrangement = Arrangement.spacedBy(8.dp), horizontalAlignment = Alignment.End) {
+            val below = upNext != null || segment != null
+            watched?.let { WatchedPrompt(it, actions, Modifier.heightIn(max = if (below) room / 2 - 4.dp else room)) }
+            val rest = Modifier.heightIn(max = if (watched != null) room / 2 - 4.dp else room)
+            when {
+                upNext != null -> UpNextCard(upNext, actions, rest)
+                segment != null -> SkipSegmentButton(segment, actions.onSkipSegment)
+            }
+        }
     }
 }
+
+private val SIDE_BY_SIDE_BELOW = 480.dp
 
 /** The error in words with what can be done: sign in again, or try again; and Back. */
 @OptIn(ExperimentalLayoutApi::class)
@@ -129,6 +154,12 @@ private fun Notices(state: PlayerUiState, actions: PlayerActions, snackbar: Snac
             }
         }
         actions.onDismissSubtitleNotice()
+    }
+    val watched = state.watchedMessage
+    LaunchedEffect(watched) {
+        if (watched == null) return@LaunchedEffect
+        snackbar.showSnackbar(strings.get(watchedMessageText(watched)))
+        actions.onDismissWatchedMessage()
     }
     LaunchedEffect(state.sleepFired) {
         if (!state.sleepFired) return@LaunchedEffect

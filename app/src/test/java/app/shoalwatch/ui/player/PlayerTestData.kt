@@ -33,6 +33,8 @@ internal class ActionLog {
         onQuality = { calls += "quality:$it" }, onSpeed = { calls += "speed:$it" }, onSleep = { calls += "sleep:$it" },
         onAppearance = { calls += "appearance:${it.sizePercent}" }, onDelay = { calls += "delay:$it" }, onRetry = { calls += "retry" },
         onSignIn = { calls += "signIn" }, onDismissSubtitleNotice = { calls += "dismissNotice" }, onDismissSleepFired = { calls += "dismissSleep" },
+        onWatchedDelete = { calls += "watchedDelete" }, onWatchedTogether = { calls += "watchedTogether" },
+        onKeepDownload = { calls += "keepDownload" }, onDismissWatchedMessage = { calls += "dismissWatched" },
     )
 }
 

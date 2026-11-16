@@ -3,6 +3,7 @@ package app.shoalwatch.ui.player
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.shoalwatch.data.downloads.Housekeeping
 import app.shoalwatch.data.playback.EndReason
 import app.shoalwatch.data.playback.PlaybackController
 import app.shoalwatch.data.playback.PlaybackState
@@ -39,6 +40,7 @@ import kotlinx.coroutines.launch
  *   session: nothing plays; for the same one, that item at that position.
  * - **Quality** starts at [QualityDefault.start]; a choice in the Quality sheet becomes the saved default.
  * - **Controls** hide 4 s after the last touch while playing, never with touch exploration on, a sheet open, or paused.
+ * - **Watch-and-delete** is [WatchedPromptLogic]'s, fed every playback state; dropped when the screen leaves.
  */
 class PlayerViewModel(
     private val itemId: String,
@@ -50,10 +52,12 @@ class PlayerViewModel(
     private val quality: QualityDefault,
     /** Asks the address selector to probe this server again now if it is `Offline` (`ServerConnections.refreshIfOffline`, as every screen's user refresh does): no token, no URL. */
     private val reprobe: (serverId: String) -> Unit,
+    housekeeping: Housekeeping,
 ) : ViewModel() {
     private val _state = MutableStateFlow(PlayerUiState(appearance = subtitleSettings.appearance.value))
     val state: StateFlow<PlayerUiState> = _state.asStateFlow()
 
+    private val watched = WatchedPromptLogic(housekeeping, viewModelScope)
     private var controller: PlaybackController? = null
     private var decided = false
     private var hideJob: Job? = null
@@ -75,6 +79,8 @@ class PlayerViewModel(
         subtitleSettings.refresh() // follows a change in the phone's caption settings made since the last time
         viewModelScope.launch { subtitleSettings.appearance.collect { a -> _state.update { it.copy(appearance = a) } } }
         viewModelScope.launch { catalog.activeSession().collect(::onSession) }
+        viewModelScope.launch { watched.prompt.collect { w -> _state.update { it.copy(watched = w) } } }
+        viewModelScope.launch { watched.messages.collect { m -> _state.update { it.copy(watchedMessage = m) } } }
     }
 
     private suspend fun onSession(s: Session?) {
@@ -118,6 +124,7 @@ class PlayerViewModel(
 
     private fun leave() {
         hideJob?.cancel()
+        watched.onState(PlaybackState.CLOSED)
         _state.update { it.copy(playback = PlaybackState.CLOSED, leave = true, sheet = null) }
     }
 
@@ -128,6 +135,7 @@ class PlayerViewModel(
         val fired = lastSleep != SleepState.Off && p.sleep == SleepState.Off
         lastSleep = p.sleep
         _state.update { it.copy(playback = p, sleepFired = it.sleepFired || fired) }
+        watched.onState(p)
         // The position saved is always the saved item's own (Task 8 review I-3): a new item starts with none.
         if (p.itemId != null && p.itemId != saved.get<String>(KEY_ITEM)) {
             saved[KEY_ITEM] = p.itemId
@@ -204,6 +212,11 @@ class PlayerViewModel(
     fun setDelay(ms: Int) = touched { it.setSubtitleDelay(ms) }
     fun dismissSubtitleNotice() { controller?.dismissSubtitleNotice() }
     fun dismissSleepFired() = _state.update { it.copy(sleepFired = false) }
+    /** Watch-and-delete's buttons: each acts only as the prompt's own session; playback carries on. */
+    fun watchedDelete() = watched.delete()
+    fun watchedTogether() = watched.together()
+    fun keepDownload() = watched.keep()
+    fun dismissWatchedMessage() = _state.update { it.copy(watchedMessage = null) }
     fun setAppearance(a: SubtitleAppearance) = subtitleSettings.update(a)
 
     /**
