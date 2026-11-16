@@ -56,6 +56,37 @@ class OfflineRecoveryTest : PlaystateTestBase() {
         assertEquals(0, plays.recoverUnqueued())
     }
 
+    /** Tasks 6-8 review M2: a newer unsent change of the same kind (here: off Continue Watching, then unwatched) is never replaced by an older recovered one. */
+    @Test fun recoveryNeverReplacesANewerChangeOfTheSameKind() = runBlocking {
+        save(film("a"), film("b"))
+        saveResume(film("a"))
+        gateway.failAll = AppError.Kind.OFFLINE
+        dao.position(s1u1.serverId, s1u1.userId, id("a"), 600_000, now) // a LOCAL play whose stop never got queued
+        dao.stopped(s1u1.serverId, s1u1.userId, id("b"), 5_000_000, finished = true, nowMs = now)
+        now += 60_000
+        playstate.removeFromContinueWatching(s1u1, id("a")) // later: POSITION 0
+        playstate.setPlayed(s1u1, id("b"), false) // later: PLAYED false
+        settle()
+        assertEquals(0, plays.recoverUnqueued())
+        val rows = db.openHelper.readableDatabase.query("SELECT kind, flag, positionMs FROM sync_outbox ORDER BY seq").use { c ->
+            buildList { while (c.moveToNext()) add(Triple(c.getString(0), if (c.isNull(1)) null else c.getInt(1), if (c.isNull(2)) null else c.getLong(2))) }
+        }
+        assertEquals(listOf(Triple("POSITION", null, 0L), Triple("PLAYED", 0, null)), rows)
+    }
+
+    @Test fun anOlderChangeOfTheSameKindIsStillReplacedByTheRecoveredOne() = runBlocking {
+        save(film("a"))
+        saveResume(film("a"))
+        gateway.failAll = AppError.Kind.OFFLINE
+        playstate.removeFromContinueWatching(s1u1, id("a"))
+        settle()
+        now += 60_000
+        dao.position(s1u1.serverId, s1u1.userId, id("a"), 600_000, now) // played after that, and the process died
+        assertEquals(1, plays.recoverUnqueued())
+        assertEquals(listOf("POSITION"), kinds())
+        assertEquals(600_000L, db.openHelper.readableDatabase.query("SELECT positionMs FROM sync_outbox").use { it.moveToFirst(); it.getLong(0) })
+    }
+
     @Test fun aPlayWrittenAfterTheRowItsLandingCoversIsKept() = runBlocking {
         save(film("a"))
         dao.position(s1u1.serverId, s1u1.userId, id("a"), 600_000, now)

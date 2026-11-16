@@ -35,7 +35,7 @@ class OfflinePlays internal constructor(
      * At start, before anything plays: an offline_plays row no outbox row covers is queued in an idempotent form (played → PLAYED
      * true; else POSITION), at the row's own time, marked as from an offline play so its landing deletes it. Never a PLAY, so it
      * can never add a play count. Covers a process that died mid-play (positions every 10 s, no stop) and the instant between a
-     * stop's two writes. Returns how many were queued; a row that cannot be queued is logged by class and left for next time.
+     * stop's two writes. A newer unsent change of the same kind for the item is left as it is (nothing queued). Returns how many were queued; a row that cannot be queued is logged by class and left for next time.
      */
     suspend fun recoverUnqueued(): Int = dao.unqueued().count { p ->
         val kind = items.getItemEntity(p.serverId, p.itemId)?.kind ?: ItemKind.OTHER
@@ -45,8 +45,8 @@ class OfflinePlays internal constructor(
             Change(p.itemId, kind, ChangeKind.POSITION, positionMs = p.positionMs, occurredAt = p.updatedAt, fromOfflinePlay = true)
         }
         try {
-            outbox.enqueue(Session(p.serverId, p.userId), change, OutboxStore.Marks(listOf(p.itemId), emptyList()), REFRESH)
-            true
+            // Never over a newer unsent change of the same kind (Tasks 6-8 review M2): that one is what the user did last.
+            outbox.enqueueUnlessNewer(Session(p.serverId, p.userId), change, OutboxStore.Marks(listOf(p.itemId), emptyList()), REFRESH) != null
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             AppLog.w(TAG, "An offline play could not be queued", e)

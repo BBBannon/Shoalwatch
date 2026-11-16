@@ -149,6 +149,11 @@ internal class OutboxStore(private val db: AppDatabase, private val now: () -> L
         dao.updateSynced(s.serverId, s.userId, at)
     }
 
+    /** As [enqueue], unless an unsent row of the same kind for the item is as new or newer (it would replace it): then null. One transaction. */
+    suspend fun enqueueUnlessNewer(s: Session, change: Change, marks: Marks, refreshKeys: Collection<String>): Long? = db.withTransaction {
+        if (dao.hasSameSince(s.serverId, s.userId, change.itemId, change.kind.name, change.occurredAt)) null else enqueue(s, change, marks, refreshKeys)
+    }
+
     /** MUST be called inside the caller's transaction: [s]'s unsent rows of [kind] for [itemId] go, with their marks (a newer value reached the server). */
     suspend fun dropSame(s: Session, itemId: String, kind: ChangeKind) = db.withTransaction {
         for (old in dao.sameChange(s.serverId, s.userId, itemId, kind.name)) delete(old)

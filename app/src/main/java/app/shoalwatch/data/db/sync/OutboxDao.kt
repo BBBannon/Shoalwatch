@@ -31,6 +31,12 @@ abstract class OutboxDao {
     @Query("SELECT seq FROM sync_outbox WHERE serverId = :serverId AND userId = :userId AND itemId = :itemId AND kind = :kind")
     internal abstract suspend fun sameChange(serverId: String, userId: String, itemId: String, kind: String): List<Long>
 
+    @Query(
+        "SELECT EXISTS(SELECT 1 FROM sync_outbox WHERE serverId = :serverId AND userId = :userId AND itemId = :itemId AND kind = :kind " +
+            "AND occurredAt >= :at)",
+    )
+    internal abstract suspend fun hasSameSince(serverId: String, userId: String, itemId: String, kind: String, at: Long): Boolean
+
     @Query("SELECT * FROM sync_marks WHERE seq = :seq")
     internal abstract suspend fun marksOf(seq: Long): List<SyncMarkEntity>
 
