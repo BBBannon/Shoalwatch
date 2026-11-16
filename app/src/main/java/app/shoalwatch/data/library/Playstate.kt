@@ -38,9 +38,11 @@ interface Playstate {
      * finished: watched on this phone, and a PLAYED tick queued whether or not the report reached the server (Tasks 6-8 review I1:
      * "Finished" fires at the Outro start or 90%, and the server marks a stop played only from 90%). Never a PLAY: the server may
      * count it from its own session, and the tick is absolute (`AlreadyThere` when the server has it played), so it cannot count twice.
-     * !finished: the position on this phone; queued as POSITION only when !reached.
+     * !finished: the position on this phone; queued as POSITION only when !reached. [stoppedAt]: the stop's own time, given to both
+     * of one stop's records: the unreached one is queued at it, and the reached one takes back only POSITION rows up to it (an
+     * overlapping later stop keeps its own; Tasks 11-12 review M5). Without it, now.
      */
-    suspend fun recordStop(s: Session, itemId: String, positionMs: Long, finished: Boolean, reached: Boolean = true, kick: Boolean = true)
+    suspend fun recordStop(s: Session, itemId: String, positionMs: Long, finished: Boolean, reached: Boolean = true, kick: Boolean = true, stoppedAt: Long? = null)
 }
 
 /** What a LOCAL play (a saved copy, Milestone 4) does to the saved library: implemented by [PlaystateRepository]. */

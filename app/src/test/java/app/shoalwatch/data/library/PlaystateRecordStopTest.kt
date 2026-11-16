@@ -11,8 +11,8 @@ import org.junit.Test
 
 /** Where playback stopped, saved on this phone: a finished stop always queues a PLAYED tick; a position only when the stop report did not reach the server. */
 class PlaystateRecordStopTest : PlaystateTestBase() {
-    private fun stop(label: String, positionMs: Long, finished: Boolean = false, reached: Boolean = true) =
-        runBlocking { playstate.recordStop(s1u1, id(label), positionMs, finished, reached) }
+    private fun stop(label: String, positionMs: Long, finished: Boolean = false, reached: Boolean = true, at: Long? = null) =
+        runBlocking { playstate.recordStop(s1u1, id(label), positionMs, finished, reached, stoppedAt = at) }
 
     @Test fun aPositionIsSavedWithNoServerCallAndTheItemComesBackInContinueWatching() {
         save(film("a", ud(positionMs = 0)))
@@ -105,13 +105,14 @@ class PlaystateRecordStopTest : PlaystateTestBase() {
         save(film("a", ud(positionMs = 0)))
         gateway.failOps["setPosition"] = AppError.Kind.OFFLINE
         gateway.failOps["clearResume"] = AppError.Kind.OFFLINE
-        stop("a", 420_000, reached = false) // record #1, before the report leaves
+        val stoppedAt = now
+        stop("a", 420_000, reached = false, at = stoppedAt) // record #1, before the report leaves
         drain()
         now += 1_000
         runBlocking { playstate.removeFromContinueWatching(s1u1, id("a")) }
         drain()
         now += 1_000
-        stop("a", 420_000) // record #2: the report was heard
+        stop("a", 420_000, at = stoppedAt) // record #2: the report was heard
         drain()
         assertEquals("the removal stays on the phone", 0L, userData("a")!!.positionMs)
         assertEquals("and stays queued", 1, queued())
@@ -122,6 +123,30 @@ class PlaystateRecordStopTest : PlaystateTestBase() {
         assertEquals("the removal is sent, and the old position never is", listOf("clearResume:${id("a")}"),
             gateway.calls.drop(from).filter { it.startsWith("clearResume") || it.startsWith("setPosition") })
         assertEquals(0, queued())
+    }
+
+    /**
+     * Tasks 11-12 review M5: stop, replay at once and stop again while the first report is still in flight. The first report is
+     * heard and takes back only rows up to its OWN stop time; the second stop's position stays queued for the outbox.
+     */
+    @Test fun twoOverlappingStopsOfTheSameItemEachTakeBackOnlyTheirOwnPosition() {
+        save(film("a", ud(positionMs = 0)))
+        gateway.failOps["setPosition"] = AppError.Kind.OFFLINE
+        val first = now
+        stop("a", 100_000, reached = false, at = first) // stop 1, record #1
+        now += 1_000
+        val second = now
+        stop("a", 200_000, reached = false, at = second) // stop 2, record #1: its report is in flight too
+        now += 1_000
+        stop("a", 100_000, at = first) // stop 1's report was heard
+        drain()
+        assertEquals("stop 2's position is still queued", 1, queued())
+        assertEquals(200_000L, userData("a")!!.positionMs)
+        gateway.failOps.clear()
+        val from = gateway.calls.size
+        sender.kick(s1u1)
+        drain()
+        assertEquals(listOf("setPosition:${id("a")}:200000"), gateway.calls.drop(from).filter { it.startsWith("setPosition") })
     }
 
     /** Review M3: a stop the server heard carries the newest position, so an earlier unsent position for the item goes (never sent after it). */

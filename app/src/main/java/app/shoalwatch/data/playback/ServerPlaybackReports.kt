@@ -25,6 +25,8 @@ class ServerPlaybackReports internal constructor(
     /** Shared with the sender: the item is held from the stop's first record until its report lands or fails (Tasks 9-10 review I1). */
     private val inFlight: StopsInFlight = StopsInFlight(),
     /** Lets the outbox send for [Session] (`SyncScheduler.changed`): called after the stop report, so the report always goes first. */
+    /** The stop's own time (review M5). Before [changed], so callers keep passing that as a trailing lambda. */
+    private val now: () -> Long = System::currentTimeMillis,
     private val changed: (Session) -> Unit = {},
 ) : PlaybackReports {
     override suspend fun started(s: Session, r: PlaybackReport) = send("start") { gateway.reportStart(s, r) }
@@ -42,13 +44,14 @@ class ServerPlaybackReports internal constructor(
     override suspend fun stopped(s: Session, r: PlaybackReport, finished: Boolean): ReportOutcome {
         // Held for the whole report, so a drain already running for this profile cannot send the tick first (review I1).
         inFlight.hold(s, r.itemId)
+        val stoppedAt = now() // both records of this stop carry it, so another stop of the item never shares its cut-off (review M5)
         val outcome: ReportOutcome
         try {
-            record(s, r, finished, reached = false)
+            record(s, r, finished, reached = false, stoppedAt)
             outcome = send("stop") { gateway.reportStopped(s, r) }
             val kind = (outcome as? ReportOutcome.NotSent)?.kind
             val heard = kind == null || kind in HEARD
-            if (heard && !finished) record(s, r, finished = false, reached = true)
+            if (heard && !finished) record(s, r, finished = false, reached = true, stoppedAt)
         } finally {
             inFlight.release(s, r.itemId)
         }
@@ -58,9 +61,9 @@ class ServerPlaybackReports internal constructor(
         return outcome
     }
 
-    private suspend fun record(s: Session, r: PlaybackReport, finished: Boolean, reached: Boolean) {
+    private suspend fun record(s: Session, r: PlaybackReport, finished: Boolean, reached: Boolean, stoppedAt: Long) {
         try {
-            playstate.recordStop(s, r.itemId, r.positionMs, finished, reached, kick = false)
+            playstate.recordStop(s, r.itemId, r.positionMs, finished, reached, kick = false, stoppedAt = stoppedAt)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

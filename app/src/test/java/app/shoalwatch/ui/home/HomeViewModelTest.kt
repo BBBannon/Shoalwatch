@@ -323,7 +323,7 @@ class HomeViewModelTest {
             override suspend fun setPlayed(s: app.shoalwatch.data.servers.Session, itemId: String, played: Boolean) = error("boom")
             override suspend fun setFavourite(s: app.shoalwatch.data.servers.Session, itemId: String, favourite: Boolean) = error("boom")
             override suspend fun removeFromContinueWatching(s: app.shoalwatch.data.servers.Session, itemId: String) = error("boom")
-            override suspend fun recordStop(s: app.shoalwatch.data.servers.Session, itemId: String, positionMs: Long, finished: Boolean, reached: Boolean, kick: Boolean) = error("boom")
+            override suspend fun recordStop(s: app.shoalwatch.data.servers.Session, itemId: String, positionMs: Long, finished: Boolean, reached: Boolean, kick: Boolean, stoppedAt: Long?) = error("boom")
         })
         v.messages.test {
             v.setPlayed(id(1), true)

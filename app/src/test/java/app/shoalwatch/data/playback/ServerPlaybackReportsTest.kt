@@ -76,6 +76,8 @@ class ServerPlaybackReportsTest {
         assertEquals(listOf("stop:ben:$ITEM:61000:false:unsent", "stop:ben:$ITEM:61000:false"), playstate.calls)
         assertEquals(listOf("stopped@61000"), gateway.calls)
         assertEquals("once the hold ends, as after every stop", listOf("kick:ben"), kicked)
+        assertEquals("both records carry the stop's own time (review M5)", 1, playstate.stoppedAts.distinct().size)
+        assertTrue(playstate.stoppedAts.all { it != null })
     }
 
     @Test fun theStopIsDurableBeforeTheReportLeavesSoAKillMidSendLosesNothing() = runTest {
@@ -113,7 +115,7 @@ class ServerPlaybackReportsTest {
             offline(kind)
             reports().stopped(BEN, report(61_000), finished = false)
             assertEquals(kind.name, listOf("stop:ben:$ITEM:61000:false:unsent", "stop:ben:$ITEM:61000:false"), playstate.calls)
-            assertTrue(kicked.isEmpty())
+            assertEquals("the outbox looks again after every hold (review M1)", listOf("kick:ben"), kicked)
         }
     }
 

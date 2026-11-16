@@ -17,7 +17,7 @@ import org.junit.Test
  */
 class PlaybackOutboxTest : PlaystateTestBase() {
     private val playback = FakePlaybackGateway()
-    private val server by lazy { ServerPlaybackReports(playback, playstate, stopsInFlight) { s -> sender.kick(s) } }
+    private val server by lazy { ServerPlaybackReports(playback, playstate, stopsInFlight, { now }) { s -> sender.kick(s) } }
     private val finished = mutableListOf<Pair<Session, String>>()
     private val local by lazy {
         LocalPlaybackReports(OfflinePlays(db.offlinePlayDao(), { now }, outbox, db.itemDao()), playstate, { now }, LocalPlaying()) { s, item -> finished += s to item }

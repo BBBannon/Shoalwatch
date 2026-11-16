@@ -110,8 +110,11 @@ class FakePlaystate : Playstate {
     override suspend fun setPlayed(s: Session, itemId: String, played: Boolean) = record("played:${who(s)}:$itemId:$played")
     override suspend fun setFavourite(s: Session, itemId: String, favourite: Boolean) = record("favourite:${who(s)}:$itemId:$favourite")
     override suspend fun removeFromContinueWatching(s: Session, itemId: String) = record("remove:${who(s)}:$itemId")
-    override suspend fun recordStop(s: Session, itemId: String, positionMs: Long, finished: Boolean, reached: Boolean, kick: Boolean) =
-        record("stop:${who(s)}:$itemId:$positionMs:$finished" + if (reached) "" else ":unsent")
+    /** The stop time each recordStop was given (ServerPlaybackReports gives both of one stop's records the same). */
+    val stoppedAts = mutableListOf<Long?>()
+
+    override suspend fun recordStop(s: Session, itemId: String, positionMs: Long, finished: Boolean, reached: Boolean, kick: Boolean, stoppedAt: Long?) =
+        stoppedAts.add(stoppedAt).let { record("stop:${who(s)}:$itemId:$positionMs:$finished" + if (reached) "" else ":unsent") }
 }
 
 /**

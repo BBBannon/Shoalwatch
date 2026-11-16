@@ -42,9 +42,6 @@ class PlaystateRepository internal constructor(
 ) : Playstate, LocalPlaystate {
     private val local = PlaystateLocal(library.store, clock)
 
-    /** When each item's last unreached stop was recorded (memory only): a heard stop takes back only rows up to then (Tasks 9-10 review M1). */
-    private val stopTimes = ConcurrentHashMap<Pair<Session, String>, Long>()
-
     /** The end of each user's queue of actions: the next call waits for it. Swapped atomically, in the caller, so the order is the order of the calls. */
     private val tails = ConcurrentHashMap<Session, CompletableDeferred<Unit>>()
 
@@ -57,7 +54,7 @@ class PlaystateRepository internal constructor(
     override suspend fun removeFromContinueWatching(s: Session, itemId: String) =
         act(s, itemId) { item -> local.clearResume(s, item.item.itemId) to change(item, ChangeKind.POSITION, positionMs = 0) }
 
-    override suspend fun recordStop(s: Session, itemId: String, positionMs: Long, finished: Boolean, reached: Boolean, kick: Boolean) =
+    override suspend fun recordStop(s: Session, itemId: String, positionMs: Long, finished: Boolean, reached: Boolean, kick: Boolean, stoppedAt: Long?) =
         act(s, itemId, kick) { item ->
             val p = positionMs.coerceAtLeast(0)
             when {
@@ -68,10 +65,11 @@ class PlaystateRepository internal constructor(
                 // value: the stop's first record already saved this position (Tasks 9-10 review M1).
                 reached -> {
                     val id = item.item.itemId
-                    val newer = outbox.dropSameUntil(s, id, ChangeKind.POSITION, stopTimes.remove(s to id) ?: clock())
+                    // Up to this stop's own time (Tasks 11-12 review M5), so an overlapping later stop keeps its row.
+                    val newer = outbox.dropSameUntil(s, id, ChangeKind.POSITION, stoppedAt ?: clock())
                     (if (newer) local.heard(s, id) else local.stoppedAt(s, id, p)) to null
                 }
-                else -> local.stoppedAt(s, item.item.itemId, p) to change(item, ChangeKind.POSITION, positionMs = p).also { stopTimes[s to item.item.itemId] = it.occurredAt }
+                else -> local.stoppedAt(s, item.item.itemId, p) to change(item, ChangeKind.POSITION, positionMs = p, at = stoppedAt)
             }
         }
 
@@ -94,8 +92,8 @@ class PlaystateRepository internal constructor(
             }
         }
 
-    private fun change(item: ItemRow, kind: ChangeKind, flag: Boolean? = null, positionMs: Long? = null, fromOfflinePlay: Boolean = false) =
-        Change(item.item.itemId, item.item.kind, kind, flag = flag, positionMs = positionMs, occurredAt = clock(), fromOfflinePlay = fromOfflinePlay)
+    private fun change(item: ItemRow, kind: ChangeKind, flag: Boolean? = null, positionMs: Long? = null, fromOfflinePlay: Boolean = false, at: Long? = null) =
+        Change(item.item.itemId, item.item.kind, kind, flag = flag, positionMs = positionMs, occurredAt = at ?: clock(), fromOfflinePlay = fromOfflinePlay)
 
     /** [change] makes the local change for the item as this user may see it, and says what to queue (null: nothing, the server has it). */
     /** [kick] false: the row is queued but no send is asked for (the caller asks once its own report has gone). */
