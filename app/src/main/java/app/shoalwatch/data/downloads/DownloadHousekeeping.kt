@@ -65,8 +65,10 @@ internal class DownloadHousekeeping(
     fun onAccountGone(serverId: String, userId: String): Job = scope.launch(io) {
         safely("account gone") {
             // While the server can be reached, only a confirmation younger than a week inherits (final review M-1).
-            val since = if (reachable(serverId)) now() - WEEK_MS else Long.MIN_VALUE
-            for (key in store.afterAccountGone(serverId, since)) { queue.forget(key); DownloadRepository.deleteFiles(paths, key) }
+            val online = reachable(serverId)
+            val since = if (online) now() - ConfirmationAge.STALE_AFTER_MS else Long.MIN_VALUE
+            val until = if (online) now() + ConfirmationAge.SKEW_MS else Long.MAX_VALUE
+            for (key in store.afterAccountGone(serverId, since, until)) { queue.forget(key); DownloadRepository.deleteFiles(paths, key) }
             unpinnedArtwork()
         }
     }
@@ -82,7 +84,8 @@ internal class DownloadHousekeeping(
      * (Tasks 11-12 review I-2); any other failure (offline, say) stops it, changing nothing more: it is asked again next time.
      */
     suspend fun reconfirm(s: Session) = withContext(io) {
-        val stale = store.unconfirmedShared(s, now() - WEEK_MS, LIMIT)
+        val now = now()
+        val stale = store.unconfirmedShared(s, now - ConfirmationAge.STALE_AFTER_MS, now + ConfirmationAge.SKEW_MS, LIMIT)
         val ids = (stale.map { it.first } + stale.mapNotNull { it.second }).distinct().take(LIMIT)
         try {
             for (id in ids) {
@@ -129,7 +132,6 @@ internal class DownloadHousekeeping(
 
     private companion object {
         const val TAG = "DownloadHousekeeping"
-        const val WEEK_MS = 7L * 24 * 60 * 60 * 1_000
         const val LIMIT = 50
     }
 }

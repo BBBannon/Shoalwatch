@@ -148,6 +148,19 @@ class SavedCopiesTest : DownloadHousekeepingTestBase() {
         assertNotNull("subtitles of a copy already playing still load", media(s1u2))
     }
 
+    /** Final review L-2: the tablet's date set back makes every confirmation look young; one dated ahead of the clock is stale. */
+    @Test fun aConfirmationDatedAheadOfTheClockIsNotPlayedWhileTheServerCanBeReached() {
+        sharedAndConfirmed()
+        reachable = true
+        clock -= 60_000
+        assertNotNull("a minute's difference between clocks is allowed", plan(s1u2))
+        clock -= 30 * DAY // the date was set back a month
+        assertNull(plan(s1u2))
+        assertEquals("and it is re-asked", 1, rechecks.size)
+        reachable = false
+        assertNotNull("offline the decided rule stands", plan(s1u2))
+    }
+
     @Test fun offlineAConfirmationThatCannotBeReAskedStillPlaysHoweverOld() {
         sharedAndConfirmed()
         reachable = false

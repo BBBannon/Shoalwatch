@@ -15,6 +15,17 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /**
+ * How old a sharing confirmation may be: 7 days by the wall clock. One dated more than [SKEW_MS] ahead of the clock is stale
+ * too, so setting the device's date back cannot keep a confirmation young (final review L-2).
+ */
+internal object ConfirmationAge {
+    const val STALE_AFTER_MS = 7L * 24 * 60 * 60 * 1_000
+    const val SKEW_MS = 5L * 60 * 1_000
+
+    fun fresh(confirmedAt: Long, now: Long): Boolean = confirmedAt <= now + SKEW_MS && now - confirmedAt <= STALE_AFTER_MS
+}
+
+/**
  * WHEN the strict sharing rule's re-ask (`DownloadHousekeeping.reconfirm`) runs for the active profile, whichever screen is open
  * (Tasks 13-16 review I-1): on a session change, when the connection to its server comes back, when the app comes to the front,
  * and when playback finds a stale shared copy (`SavedCopies.plan`).

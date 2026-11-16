@@ -78,7 +78,7 @@ internal class SavedCopies(
             AppLog.w(TAG, "saved copy not offered: ${e.javaClass.simpleName}")
             return true
         }
-        if (now() - confirmedAt <= STALE_AFTER_MS || !reachable(s)) return false
+        if (ConfirmationAge.fresh(confirmedAt, now()) || !reachable(s)) return false
         recheck(s)
         return true
     }
@@ -122,6 +122,5 @@ internal class SavedCopies(
 
     private companion object {
         const val TAG = "SavedCopies"
-        const val STALE_AFTER_MS = 7L * 24 * 60 * 60 * 1_000
     }
 }

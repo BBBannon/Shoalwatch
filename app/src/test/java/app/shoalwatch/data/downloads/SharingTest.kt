@@ -160,6 +160,19 @@ class SharingTest : DownloadHousekeepingTestBase() {
         assertEquals("confirmed again three days ago: not asked", 1, facts.calls.size)
     }
 
+    /** Final review L-2: a confirmation dated ahead of the clock (the date was set back) is asked about again. */
+    @Test fun aConfirmationDatedAheadOfTheClockIsAskedAgain() = runBlocking {
+        aDownloads()
+        repo.setSharing(a, true)
+        seen(b, film, series, season1, e1)
+        confirm(b, film)
+        clock -= 30 * DAY
+        facts.allow(film.id, canDownload = false)
+        housekeeping.reconfirm(b)
+        assertEquals(1, facts.calls.size)
+        assertFalse(store.isConfirmed(key(film), b.userId))
+    }
+
     @Test fun aPlanWhoseFactsSayNoRemovesTheChildsPermissionAtOnce() = runBlocking {
         aDownloads()
         repo.setSharing(a, true)

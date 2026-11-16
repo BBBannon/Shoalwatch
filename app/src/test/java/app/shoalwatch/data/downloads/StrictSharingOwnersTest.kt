@@ -81,6 +81,17 @@ class StrictSharingOwnersTest : DownloadHousekeepingTestBase() {
         assertNotNull(plan(b))
     }
 
+    /** Final review L-2: a confirmation dated ahead of the clock is not fresh enough to inherit while the server can be reached. */
+    @Test fun onlineAConfirmationDatedAheadOfTheClockDoesNotInherit() {
+        aDownloadsIt()
+        bConfirmed(daysAgo = 0)
+        clock -= 30 * DAY
+        serverReachable = true
+        runBlocking { hooked.removeAccount(S1, a.userId) }
+        settle()
+        assertNull(download(film))
+    }
+
     @Test fun anInheritedCopyIsReAskedAfterAWeekAndAnExplicitNoRemovesItAndItsFiles() = runBlocking {
         aDownloadsIt()
         bConfirmed(daysAgo = 0)

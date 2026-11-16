@@ -135,15 +135,15 @@ internal class DownloadStore(private val db: AppDatabase, private val now: () ->
     /**
      * The ownership rule after one of [serverId]'s accounts was removed (its ownership has already cascaded away). Each
      * download left with no owner passes, when sharing is on, to every remaining account on the server that the server has
-     * shown the item and confirmed may download it no earlier than [confirmedSince] (the caller passes a week ago while the
-     * server can be reached, else any age: final review M-1); otherwise (no such account, or sharing off) it is deleted. An heir
+     * shown the item and confirmed may download it between [confirmedSince] and [confirmedUntil] (the caller passes a week ago
+     * and a few minutes ahead while the server can be reached, else any time: final review M-1 and L-2); otherwise (no such account, or sharing off) it is deleted. An heir
      * did not fetch the copy, so it stays under the strict sharing rule. Returns the deleted ones, whose files must go.
      */
-    suspend fun afterAccountGone(serverId: String, confirmedSince: Long = Long.MIN_VALUE): List<DownloadKey> = pinning {
+    suspend fun afterAccountGone(serverId: String, confirmedSince: Long = Long.MIN_VALUE, confirmedUntil: Long = Long.MAX_VALUE): List<DownloadKey> = pinning {
         val share = dao.sharing(serverId) == true
         val gone = mutableListOf<DownloadKey>()
         for (row in dao.ownerless(serverId)) {
-            val heirs = if (share) dao.accountsShown(serverId, row.itemId, confirmedSince) else emptyList()
+            val heirs = if (share) dao.accountsShown(serverId, row.itemId, confirmedSince, confirmedUntil) else emptyList()
             if (heirs.isEmpty()) {
                 deleteRow(row)
                 gone += DownloadKey(serverId, row.itemId)
@@ -261,9 +261,12 @@ internal class DownloadStore(private val db: AppDatabase, private val now: () ->
     /** The items [s] owns on its server. */
     suspend fun owned(s: Session): List<String> = dao.ownedItems(s.serverId, s.userId)
 
-    /** Up to [limit] shared downloads [s] does not own whose visibility for [s] was last confirmed before [cutoff]: (item, series). */
-    suspend fun unconfirmedShared(s: Session, cutoff: Long, limit: Int): List<Pair<String, String?>> =
-        dao.unconfirmedShared(s.serverId, s.userId, cutoff, limit).map { it.itemId to it.seriesId }
+    /**
+     * Up to [limit] downloads [s] holds under the strict sharing rule whose visibility or permission was last confirmed before
+     * [cutoff], or whose permission is dated after [ceiling] (the clock was set back): (item, series).
+     */
+    suspend fun unconfirmedShared(s: Session, cutoff: Long, ceiling: Long, limit: Int): List<Pair<String, String?>> =
+        dao.unconfirmedShared(s.serverId, s.userId, cutoff, ceiling, limit).map { it.itemId to it.seriesId }
 
     /** Pinned pictures no download pins any more (an unknown slot is left out). */
     suspend fun unpinnedArtwork(): List<ArtworkKey> = Converters().let { c ->
