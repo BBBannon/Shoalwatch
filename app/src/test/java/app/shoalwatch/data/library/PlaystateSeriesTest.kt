@@ -22,6 +22,7 @@ class PlaystateSeriesTest : PlaystateTestBase() {
         assertEquals(2, unplayed("s1"))
         assertEquals(9, unplayed("show"))
         assertTrue(userData("e1")!!.played)
+        drain() // the send runs in the app scope: the marker clears when it lands
         assertNoPending()
     }
 
@@ -97,6 +98,7 @@ class PlaystateSeriesTest : PlaystateTestBase() {
         assertFalse(userData("s2")!!.played)
         assertEquals(3, unplayed("s2"))
         assertEquals(10, unplayed("show"))
+        drain() // the send runs in the app scope
         assertEquals(listOf("setPlayed:${id("s1")}:true"), gateway.calls.filter { it.startsWith("setPlayed") })
         assertNoPending()
     }
@@ -163,6 +165,7 @@ class PlaystateSeriesTest : PlaystateTestBase() {
         assertEquals(0, unplayed("show"))
         for (x in listOf("s1", "s2")) { assertTrue(userData(x)!!.played); assertEquals(0, unplayed(x)) }
         for (x in listOf("a", "b", "c", "d")) assertTrue("episode $x", userData(x)!!.played)
+        drain() // the send runs in the app scope
         assertEquals(1, gateway.calls.count { it.startsWith("setPlayed") })
         assertNoPending()
     }
