@@ -119,6 +119,28 @@ class ReleaseSafeguardingTest : ReleaseTestBase() {
         assertEquals(listOf(U3), without(SHARERS_SQL, "a.serverId = :serverId AND ", "", a, film.id))
     }
 
+    /** Tasks 11-12 review M4: a profile shown the item, but neither a fetching owner nor cleared by the server for it, is never marked. */
+    @Test fun togetherNeverMarksAProfileTheServerNeverClearedForTheCopy() = runBlocking {
+        sharing(true)
+        seen(a, film); seen(b, film)
+        downloaded(a, film) // B has no permission on record and did not fetch it
+        assertEquals(emptyList<String>(), releases.sharers(a, film.id) { true })
+        val clause = "AND (EXISTS (SELECT 1 FROM download_owners o WHERE o.serverId = d.serverId AND o.itemId = d.itemId AND o.userId = a.userId AND o.fetched = 1) " +
+            "OR EXISTS (SELECT 1 FROM download_permissions p WHERE p.serverId = d.serverId AND p.itemId = d.itemId AND p.userId = a.userId)) "
+        assertEquals("mutation: the permission-or-owner clause is what leaves B out", listOf(b.userId), without(SHARERS_SQL, clause, "", a, film.id))
+    }
+
+    /** Tasks 11-12 review M4: a copy that is not COMPLETE is shared with no one. */
+    @Test fun togetherNeverMarksForACopyThatIsNotComplete() = runBlocking {
+        sharing(true)
+        seen(a, film); seen(b, film)
+        downloaded(a, film)
+        confirm(b, film)
+        store.update(DownloadKey(a.serverId, film.id)) { it.copy(state = DownloadState.RUNNING) }
+        assertEquals(emptyList<String>(), db.housekeepingDao().sharers(a.serverId, a.userId, film.id))
+        assertEquals("mutation: the COMPLETE clause is what leaves B out", listOf(b.userId), without(SHARERS_SQL, "AND d.state = 'COMPLETE' ", "", a, film.id))
+    }
+
     @Test fun anotherServersDownloadWithTheSameIdIsUntouched() = runBlocking {
         seen(a, film); seen(s2u1, film)
         val there = downloaded(s2u1, film)
