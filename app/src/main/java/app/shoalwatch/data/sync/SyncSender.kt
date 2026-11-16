@@ -61,6 +61,9 @@ internal class SyncSender(
     /** A test seam: runs when a drain has found nothing more due, before it ends. */
     @Volatile internal var beforeIdle: suspend (Session) -> Unit = {}
 
+    /** A test seam: runs when a drain has decided to stop (and is no longer joinable), before it ends. */
+    @Volatile internal var beforeStop: suspend (Session) -> Unit = {}
+
     /** Starts a drain for [s] in [scope], or joins the one running. Never throws. */
     fun kick(s: Session): Deferred<DrainResult> = synchronized(lock) {
         running[s]?.let { it.again = true; return it.result }
@@ -137,11 +140,28 @@ internal class SyncSender(
             val stop = (send(s, row) as? Outcome.Stop)?.result ?: continue
             // A kick joined while this request was failing for want of a connection (a reconnection's kick): one more pass for it,
             // so the row goes now rather than at the job's back-off (Tasks 6-8 review M1). Each joined kick buys one pass at most.
-            if (stop == DrainResult.WAITING_FOR_CONNECTION && takeAgain(entry)) done.remove(row.seq) else return stop
+            if (againOrLeave(s, entry, retry = stop == DrainResult.WAITING_FOR_CONNECTION)) {
+                done.remove(row.seq)
+            } else {
+                beforeStop(s)
+                return stop
+            }
         }
     }
 
-    private fun takeAgain(entry: Running): Boolean = synchronized(lock) { entry.again.also { entry.again = false } }
+    /**
+     * The drain is stopping. One step under [lock] (as [lookAgainOrLeave]; Tasks 9-10 review M4): with [retry] and a kick joined,
+     * go round once more; otherwise stop being joinable at once, so a kick from now on starts a new drain instead of being lost.
+     */
+    private fun againOrLeave(s: Session, entry: Running, retry: Boolean): Boolean = synchronized(lock) {
+        if (retry && entry.again) {
+            entry.again = false
+            true
+        } else {
+            if (running[s] === entry) running.remove(s)
+            false
+        }
+    }
 
     /** A test seam: whether a drain for [s] can still be joined. */
     internal fun isDraining(s: Session): Boolean = synchronized(lock) { s in running }

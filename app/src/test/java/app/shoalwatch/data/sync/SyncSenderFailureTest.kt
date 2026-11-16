@@ -43,6 +43,20 @@ class SyncSenderFailureTest : SyncSenderTestBase() {
         assertEquals(0, rawRows().size)
     }
 
+    /** Tasks 9-10 review M4: once a drain has decided to stop, a kick never joins it (it would be lost): it starts a new drain. */
+    @Test fun aKickJustAfterADrainDecidedToStopStartsANewDrain() {
+        enqueue(s1u1, favourite("a"))
+        gateway.failNext("favourite", AppError.Kind.OFFLINE)
+        val late = CompletableDeferred<kotlinx.coroutines.Deferred<DrainResult>>()
+        sender.beforeStop = { s -> if (!late.isCompleted) late.complete(sender.kick(s)) }
+        val first = sender.kick(s1u1)
+        assertEquals(DrainResult.WAITING_FOR_CONNECTION, runBlocking { withTimeout(10_000) { first.await() } })
+        val second = runBlocking { withTimeout(10_000) { late.await() } }
+        assertTrue("the late kick did not join the ending drain", second !== first)
+        assertEquals(DrainResult.EMPTY, runBlocking { withTimeout(10_000) { second.await() } })
+        assertEquals(0, rawRows().size)
+    }
+
     @Test fun withNoKickJoiningANoConnectionStopIsNotRetried() {
         enqueue(s1u1, favourite("a"))
         gateway.failNext("favourite", AppError.Kind.OFFLINE, times = 5)
