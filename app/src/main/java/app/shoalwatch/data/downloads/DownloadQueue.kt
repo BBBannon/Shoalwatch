@@ -25,12 +25,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-internal sealed interface QueueRun {
-    data object Drained : QueueRun
-    data class Retry(val kind: AppError.Kind) : QueueRun
-    data object Stopped : QueueRun
-}
-
 /**
  * Room is the queue; this drains it, one item at a time, writing each step to Room before the next (see "Download queue" in
  * docs/ARCHITECTURE.md). Conversions resume only inside the play session held in [live] (this process, younger than
@@ -113,8 +107,8 @@ internal class DownloadQueue(
             if (!QueueSpace.fits(volumes, row, QueueSpace.remaining(row))) return@attempt failed(j.key, DownloadFailure.NO_SPACE)
             j.status(null)
             val fetched = if (row.quality == DownloadQuality.ORIGINAL) original(j, s, dir) else conversion(j, s, dir)
-            bestEffort { extras.segments(s, j.key) }
-            bestEffort { extras.artwork(s, listOfNotNull(row.itemId, row.seasonId, row.seriesId)) }
+            QueueFailures.bestEffort(TAG) { extras.segments(s, j.key) }
+            QueueFailures.bestEffort(TAG) { extras.artwork(s, listOfNotNull(row.itemId, row.seasonId, row.seriesId)) }
             verify(j, s, dir, fetched)
         } catch (e: QueueEnds) {
             e.step
@@ -132,16 +126,13 @@ internal class DownloadQueue(
             AppLog.w(TAG, "download step failed: ${e.javaClass.simpleName}")
             retry(j.key, (e as? AppError)?.kind ?: AppError.Kind.UNKNOWN)
         } }
-        // A removal the step did not see (it ended in a retry or a failure, with no later write to find the row gone), after
-        // which a fetcher may have made the folder again (`HlsFetcher.open`'s mkdirs, a part file): no folder is left behind
-        // (final review L-5). A new row of the same item cannot be running: this is the one drain.
+        // A removal no write saw (a retry or failure ended the step) leaves no folder a fetcher made again (final review L-5).
         folder?.let { dir -> if (store.get(j.key) == null) { live.remove(j.key); paths.deleteInside(dir) } }
         return step
     }
 
     /** The earliest owner (by when they added it) that can still send. */
-    private suspend fun fetcherOf(key: DownloadKey): Session? =
-        store.owners(key).map { Session(key.serverId, it) }.firstOrNull(hasToken)
+    private suspend fun fetcherOf(key: DownloadKey): Session? = store.owners(key).map { Session(key.serverId, it) }.firstOrNull(hasToken)
 
     private suspend fun original(j: QueueJob, s: Session, folder: File): QueueFetched {
         val key = j.key
@@ -161,12 +152,9 @@ internal class DownloadQueue(
             paths.partFile(folder, ext).takeIf { it.exists() }?.let(paths::deleteInside)
         }
         val fetched = QueueFetched(target, hls = false, shape = null, audioListed = playable.audio.isNotEmpty(), runtimeMs = playable.runtimeMs)
-        // Every byte on the phone comes through ONE sign-in (final review L-7): bytes begun or saved under another owner's
-        // (a `.part`, or a `media.<ext>` renamed before the process died) are deleted and fetched again under this one, from
-        // zero with no validator of theirs. Only then is this sign-in the fetcher.
+        // ONE sign-in's bytes (final review L-7): another owner's `.part` or renamed file goes; this one starts from zero.
         if (!store.isFetcher(key, s.userId)) {
-            part.takeIf { it.exists() }?.let(paths::deleteInside)
-            target.takeIf { it.exists() }?.let(paths::deleteInside)
+            listOf(part, target).filter { it.exists() }.forEach(paths::deleteInside)
             write(key) { it.copy(doneBytes = 0, totalBytes = null, validator = null, restarts = 0) }
             store.markFetcher(key, s.userId)
         }
@@ -176,8 +164,7 @@ internal class DownloadQueue(
         var rerouted = false
         while (true) {
             val row = current(key)
-            // The one space rule, for a size only the response states (final review M-2).
-            val fits = { bytes: Long -> QueueSpace.fits(volumes, row, bytes) }
+            val fits = { bytes: Long -> QueueSpace.fits(volumes, row, bytes) } // the one space rule, also for a size only the response states (M-2)
             val result = files.fetch(route, key.itemId, part, target, row.doneBytes, row.validator, playable.sizeBytes, row.totalBytes, row.restarts, fits, fileProgress(j, row.doneBytes))
             when (result) {
                 FetchResult.Done -> {
@@ -236,10 +223,8 @@ internal class DownloadQueue(
             when (val result = hls.fetch(conv, folder, from, segmentProgress(j))) {
                 FetchResult.Done -> {
                     live.remove(key)
-                    return QueueFetched(
-                        paths.localPlaylist(paths.hlsFolder(folder)), hls = true, shape = conv.segments.map { it.durationMs }, audioListed = audioListed,
-                        runtimeMs = sourceRuntime(conv.resolved),
-                    )
+                    val playlist = paths.localPlaylist(paths.hlsFolder(folder))
+                    return QueueFetched(playlist, hls = true, shape = conv.segments.map { it.durationMs }, audioListed = audioListed, runtimeMs = QueueFailures.sourceRuntime(conv.resolved))
                 }
                 is FetchResult.Failed -> { live.remove(key); throw QueueEnds(failed(key, result.failure)) }
                 FetchResult.Unauthorised -> { live.remove(key); throw QueueEnds(unauthorised(key, s)) }
@@ -271,9 +256,8 @@ internal class DownloadQueue(
         if (plan.method != PlayMethod.TRANSCODE || !plan.source.hls) throw QueueEnds(failed(key, DownloadFailure.SERVER_ERROR))
         val own: List<AudioTrack> = plan.audioTracks.filter { it.index == (plan.audioIndex ?: audio) }.ifEmpty { plan.audioTracks.take(1) }
         extras.tracks(s, key, folder, plan.mediaSourceId, own, plan.subtitleTracks, row.quality)
-        // The playlist's length is checked against the converted source's own runtime, else the item's (W-1); the size
-        // estimate stays the item's.
-        val (opened, result) = hls.open(resolved, folder, sourceRuntime(resolved) ?: row.runtimeMs, ConversionSpace(row.storage, row.volumeId, QueueSpace.estimate(row)))
+        // The playlist's length against the converted source's own runtime, else the item's (W-1); the size estimate stays the item's.
+        val (opened, result) = hls.open(resolved, folder, QueueFailures.sourceRuntime(resolved) ?: row.runtimeMs, ConversionSpace(row.storage, row.volumeId, QueueSpace.estimate(row)))
         if (opened == null) {
             when (result) {
                 is FetchResult.Failed -> throw QueueEnds(failed(key, result.failure))
@@ -358,15 +342,8 @@ internal class DownloadQueue(
     } catch (e: QueueEnds) {
         throw e
     } catch (e: Exception) {
-        throw QueueEnds(
-            when (val kind = AppError.from(e).kind) {
-                AppError.Kind.UNAUTHORISED, AppError.Kind.NOT_SIGNED_IN -> failed(key, DownloadFailure.SIGN_IN_NEEDED)
-                AppError.Kind.FORBIDDEN, AppError.Kind.PLAYBACK_NOT_ALLOWED -> failed(key, DownloadFailure.NOT_ALLOWED)
-                AppError.Kind.SERVER_NOT_FOUND -> failed(key, DownloadFailure.GONE_FROM_SERVER)
-                AppError.Kind.NO_COMPATIBLE_STREAM -> failed(key, DownloadFailure.NOT_PLAYABLE)
-                else -> retry(key, kind)
-            },
-        )
+        val kind = AppError.from(e).kind
+        throw QueueEnds(QueueFailures.of(kind)?.let { failed(key, it) } ?: retry(key, kind))
     }
 
     private suspend fun failed(key: DownloadKey, given: DownloadFailure): QueueStep {
@@ -408,14 +385,7 @@ internal class DownloadQueue(
         }
     }
 
-    private suspend fun bestEffort(block: suspend () -> Unit) {
-        try { block() } catch (e: CancellationException) { throw e } catch (e: Exception) { AppLog.w(TAG, "download extras skipped: ${e.javaClass.simpleName}") }
-    }
-
     private val DownloadEntity.key get() = DownloadKey(serverId, itemId)
-
-    /** The converted source's own runtime (bounded by the mapper), when positive. */
-    private fun sourceRuntime(resolved: app.shoalwatch.data.playback.Resolved): Long? = resolved.plan.runtimeMs?.takeIf { it > 0 }
 
     private companion object {
         const val TAG = "DownloadQueue"

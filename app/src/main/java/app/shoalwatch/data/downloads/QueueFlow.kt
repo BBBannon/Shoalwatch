@@ -1,9 +1,40 @@
 package app.shoalwatch.data.downloads
 
+import app.shoalwatch.core.AppError
+import app.shoalwatch.core.AppLog
+import kotlinx.coroutines.CancellationException
 import app.shoalwatch.data.db.downloads.DownloadKey
+import app.shoalwatch.data.playback.Resolved
 import java.io.File
 
 /* How one item's run in [DownloadQueue] flows: its outcome, the ends that cut it short, and what it carries. */
+
+/** What a drain ends in. */
+internal sealed interface QueueRun {
+    data object Drained : QueueRun
+    data class Retry(val kind: AppError.Kind) : QueueRun
+    data object Stopped : QueueRun
+}
+
+/** The queue's pure rules for what the server said. */
+internal object QueueFailures {
+    /** A server call's error as this item's failure (Task 1's mapping), or null: a retry of that kind. */
+    fun of(kind: AppError.Kind): DownloadFailure? = when (kind) {
+        AppError.Kind.UNAUTHORISED, AppError.Kind.NOT_SIGNED_IN -> DownloadFailure.SIGN_IN_NEEDED
+        AppError.Kind.FORBIDDEN, AppError.Kind.PLAYBACK_NOT_ALLOWED -> DownloadFailure.NOT_ALLOWED
+        AppError.Kind.SERVER_NOT_FOUND -> DownloadFailure.GONE_FROM_SERVER
+        AppError.Kind.NO_COMPATIBLE_STREAM -> DownloadFailure.NOT_PLAYABLE
+        else -> null
+    }
+
+    /** The converted source's own runtime (bounded by the mapper), when positive (W-1). */
+    fun sourceRuntime(resolved: Resolved): Long? = resolved.plan.runtimeMs?.takeIf { it > 0 }
+
+    /** Runs a best-effort part of a download (its extras): a failure is logged by class and skipped. */
+    suspend fun bestEffort(tag: String, block: suspend () -> Unit) {
+        try { block() } catch (e: CancellationException) { throw e } catch (e: Exception) { AppLog.w(tag, "download extras skipped: ${e.javaClass.simpleName}") }
+    }
+}
 
 /** What one item's run ends in: the next item, or the end of this drain. */
 internal sealed interface QueueStep {
