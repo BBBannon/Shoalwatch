@@ -1,11 +1,11 @@
 # Milestone 4 security check (S13)
 
-**Date:** 16/11/2026 · **Branch:** `milestone-4`, after the close-out fix wave (Task 17; the commits are listed in section 4) · **Scope:** SPEC §6, S1–S13, for downloads and offline playback
+**Date:** 16/11/2026 · **Branch:** `milestone-4`, after the close-out fix wave (Task 17) and the final review's fix wave (the commits are listed in section 4) · **Scope:** SPEC §6, S1–S13, for downloads and offline playback
 
 This check was made by reading the code and the tests, and by the unit-test gate. Nothing in it was run on a device or against a real Jellyfin server.
 
-- **Sources read:** the five task reviews of the milestone (`.superpowers/sdd/m4/tasks-*-review.md`), the task reports, and the code at the close-out wave.
-- **Not done here:** the whole-milestone review the plan asks for (Task 17) and its fix wave. That is the controller's next step; this document is its input.
+- **Sources read:** the five task reviews of the milestone (`.superpowers/sdd/m4/tasks-*-review.md`), the task reports, the whole-milestone review (`.superpowers/sdd/m4/final-review.md`) and the code after its fix wave.
+- **The whole-milestone review** found 2 Medium, 11 Low and 4 Nit, plus one finding from the controller's emulator walkthrough (W-1). Each is fixed, or recorded here or in the carried list (section 4).
 
 ## Device results — TO BE FILLED BY THE CONTROLLER
 
@@ -17,27 +17,27 @@ This check was made by reading the code and the tests, and by the unit-test gate
 > - The new deletes (an episode, a season, a series, as owner; none offered to another profile): _not yet run_.
 > - The sharing re-ask with the Downloads tab never opened (clock or server change): _not yet run_.
 > - Screenshots at font scale 1.0 and 2.0 and a TalkBack pass over every Downloads control, the sheet and the settings: _not yet run_.
+> - The final review's fixes: the notice says only "Downloading" / "Downloads finished"; signing the owner out online with the child's confirmation over a week old deletes the copy; the W-1 Original download of the stand-in's 10 s film reaches "Ready to watch": _not yet run_.
 
 ---
 
 ## 1. Summary verdict
 
-**Not yet signed off: code reading and unit tests only.** No finding from the five task reviews is open at Critical or Important. The Minors and Nits are either fixed in the close-out wave or carried with a reason (`docs/reviews/milestone-4-carried.md`).
+**Not yet signed off: code reading and unit tests only.** No finding from the five task reviews or the whole-milestone review is open at Critical, Important or Medium. The Minors, Lows and Nits are fixed, recorded as residual risks (section 5) or carried with a reason (`docs/reviews/milestone-4-carried.md`).
 
 - **Still needed before sign-off:**
   - the controller's device results above;
-  - the whole-milestone review;
-  - Ben's confirmation of the three permissions and the one exported job service that SPEC S9 and S10 do not list (section 5).
+  - Ben's confirmation of the five new permissions (two of them not named by SPEC S9) and the one exported job service that S10 does not list (section 5).
 - **Still unproven:** a real phone and Ben's server (section 6).
 
 | Area | Verdict |
 |---|---|
-| Tokens on the wire, in URLs, logs, notifications and WorkManager | **Strong.** Every byte through the account's own guarded client (`downloadRoute` allows `/Items/{this id}/Download` and `/videos/` only). No title, id or token in a notification, a log line or WorkManager's records (no input data at all) |
+| Tokens on the wire, in URLs, logs, notifications and WorkManager | **Strong.** Every media byte through the account's own guarded client (`downloadRoute` allows `/Items/{this id}/Download` and `/videos/` only); subtitles, skip markers, artwork, `facts` and PlaybackInfo through `ServerApi`'s normal authenticated client, which is the same account's own pinned client. No title, id, size, count or token in a notification, a log line or WorkManager's records (no input data at all) |
 | Paths and deletion | **Strong.** `DownloadPaths` builds every name from validated GUIDs and fixed words (the only file under `data/downloads` that builds a `File`, `DownloadBoundaryTest`). Deletion re-checks the real path inside a root and never follows a link |
-| Untrusted server data | **Good.** Sizes up to 256 GiB, `Content-Range`/`If-Range` checked against one version of the file, the HLS parser bounded (2 MiB, 20,000 segments, VOD only, no keys or byte ranges), segments capped and budgeted, and every finished file verified before it is ready |
-| The shared-tablet rule (strict sharing) | **Strong after the fix wave.** A profile sees, plays or inherits another's copy only with its own server-confirmed `CanDownload` and its own `visible_items` record; a later "no" removes it; the 7-day re-ask runs wherever the app is (I-1 fixed). Offline validity is a recorded residual risk |
-| Removal | **Good.** Only owners pause, cancel or delete; account and server removal follow one tested rule; nothing is left on disk that a remaining profile could not already see |
-| What other apps and devices see | **Good.** One extra exported component, WorkManager's `SystemJobService`, bindable only by the system (`BIND_JOB_SERVICE`). The notice never names a title. Files on a portable SD card are readable on another device (warned) |
+| Untrusted server data | **Good.** Sizes up to 256 GiB and never past the storage reserve, even when the server states no size (the space rule is asked before the first byte: final review M-2), `Content-Range`/`If-Range` checked against one version of the file, the HLS parser bounded (2 MiB, 20,000 segments, VOD only, no keys or byte ranges), segments capped and budgeted, and every finished file verified before it is ready, against the length of the source actually downloaded (W-1) |
+| The shared-tablet rule (strict sharing) | **Strong after the fix waves.** A profile sees, plays or inherits another's copy only with its own server-confirmed `CanDownload` and its own `visible_items` record. Only the owner whose own sign-in fetched a copy is outside the rule: a profile that inherits a copy, or joins it as "already on this phone", is re-asked after 7 days, refused while stale and the server can be reached, and removed as an owner on a later "no" (final review M-1); while the server can be reached it inherits only with a confirmation younger than 7 days. A confirmation dated ahead of the clock is stale (L-2). The re-ask runs wherever the app is (I-1). Offline validity is a recorded residual risk |
+| Removal | **Good.** Only owners pause, cancel or delete; account and server removal follow one tested rule; a deleted download's files, extras and pinned pictures go at once (L-4, L-5). Old copies on an SD card that is out when its server or account goes stay on the card until it is back (carried Tasks 1-4 Minor 1) |
+| What other apps and devices see | **Good.** One extra exported component, WorkManager's `SystemJobService`, bindable only by the system (`BIND_JOB_SERVICE`). The notice never names a title and shows no count, size or progress (the queue is the whole device's). Files on a portable SD card are readable on another device (warned) |
 | Build and supply chain | **Good.** WorkManager 2.12.0 and its declared dependencies, sha256 only; the merged-manifest rules extended and each shown to fail by a fixture (11 rules) |
 
 ---
@@ -51,10 +51,10 @@ This check was made by reading the code and the tests, and by the unit-test gate
 | **S3** | HTTPS by default | **Met** | Downloads use the account's own client, so `CleartextGuard` applies | `DownloadRouteTest.theItemsOwnDownloadIsSentWithTheTokenAndTheCustomHeaders` (the same client as `MediaRouteTest`) |
 | **S4** | Trust on first use; pins | **Met** | The same client, so the pin applies to every download request | `MediaRouteTest` (pinned self-signed server); `DownloadRouteTest` uses the same `ServerApi` path |
 | **S5** | Client certificates | **Met (device unproven)** | The same client path | Milestone 1 tests |
-| **S6** | Token only in `Authorization`; never in a URL, log, error, notification or `toString()` | **Met** | `ServerApi.downloadRoute` (exact path, nothing sent); a 401 told apart by one `ServerApi` call, never by putting the token in a URL (`SERVER_AUTH_REFUSED`); no notification text names anything; WorkManager has no input data; download models print `<redacted>` | `DownloadRouteTest.onlyThisItemsDownloadPathIsAllowedBesidesVideos`, `DownloadNotificationsTest.noTextNamesAnItemAUserOrAnId`, `DownloadWorkerTest.theWorkerHasNoInputData`, `DownloadQueueTest.downloadModelsNeverPrintIdsSizesOrValidators`, `DownloadBoundaryTest` (no `Data.Builder`, no `Log.` call outside `AppLog`); `DownloadSmokeTest` asserts no `api_key` in any URL (device) |
-| **S7** | No third-party hosts | **Met** | No new host; WorkManager's diagnostics receiver removed; no client built outside `HttpClientFactory` | `DownloadBoundaryTest.theDownloadCodeKeepsItsBoundaries`, `ManifestSecurityTest.workManagersDiagnosticsReceiverAndDefaultInitialiserAreRemoved` |
+| **S6** | Token only in `Authorization`; never in a URL, log, error, notification or `toString()` | **Met** | `ServerApi.downloadRoute` (exact path, nothing sent); a 401 told apart by one `ServerApi` call, never by putting the token in a URL (`SERVER_AUTH_REFUSED`); no notification text names or counts anything; WorkManager has no input data; download models print `<redacted>` | `DownloadRouteTest.onlyThisItemsDownloadPathIsAllowedBesidesVideos`, `DownloadNotificationsTest.noTextNamesAnItemAUserAnIdOrANumber`, `DownloadWorkerTest.theWorkerHasNoInputData`, `DownloadQueueTest.downloadModelsNeverPrintIdsSizesOrValidators`, `DownloadBoundaryTest` (no `Data.Builder`; no `Log.` call, `printStackTrace()`, `System.out`/`System.err` or `println(` outside `AppLog`); `DownloadSmokeTest` asserts no `api_key` in any URL (device) |
+| **S7** | No third-party hosts | **Met** | No new host; WorkManager's diagnostics receiver removed; no client built outside `HttpClientFactory` (nor `HttpURLConnection`, `openConnection(`, `java.net.http` or `DefaultHttpDataSource` anywhere: final review L-10) | `DownloadBoundaryTest.theDownloadCodeKeepsItsBoundaries`, `eachRuleCatchesItsWordsAndNamesTheLine`, `ManifestSecurityTest.workManagersDiagnosticsReceiverAndDefaultInitialiserAreRemoved` |
 | **S8** | App lock, recents hiding | **N/A until M7** | — | — |
-| **S9** | Minimum permissions | **Met, with three additions for Ben to confirm** | Merged: `INTERNET`, `ACCESS_NETWORK_STATE`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_DATA_SYNC`, `POST_NOTIFICATIONS` (S9 lists these), **plus `RECEIVE_BOOT_COMPLETED` and `WAKE_LOCK`** (WorkManager's own; section 5), plus androidx.core's signature-level receiver permission. No storage permission | `ManifestSecurityTest.theRequestedPermissionsAreTheMilestone4Ones`, `wakeLockIsNoLongerRemovedBecauseWorkManagerHoldsOneWhileForegroundWorkRuns`, `verifyReleaseManifest`, fixture `bad-extra-permission.xml` |
+| **S9** | Minimum permissions | **Met, with five new permissions (two of them not named by S9) for Ben to confirm** | Merged: `INTERNET`, `ACCESS_NETWORK_STATE`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_DATA_SYNC`, `POST_NOTIFICATIONS` (S9 lists these), **plus `RECEIVE_BOOT_COMPLETED` and `WAKE_LOCK`** (WorkManager's own; section 5), plus androidx.core's signature-level receiver permission. No storage permission | `ManifestSecurityTest.theRequestedPermissionsAreTheMilestone4Ones`, `wakeLockIsNoLongerRemovedBecauseWorkManagerHoldsOneWhileForegroundWorkRuns`, `verifyReleaseManifest`, fixture `bad-extra-permission.xml` |
 | **S10** | App-specific storage; only the launcher exported; immutable `PendingIntent`s | **Met, with one exception for Ben to confirm** | Internal `filesDir/downloads` by default; an SD card's app-specific folder only by choice, with its warning. **WorkManager's `SystemJobService` is exported** with `android:permission="android.permission.BIND_JOB_SERVICE"`, so only the system can bind it (the rule allows exactly that). The notice's tap is an explicit `FLAG_IMMUTABLE` intent | `ManifestSecurityTest.theForegroundServiceIsMergedAsDataSync`, `verifyManifestRuleFixtures` (`bad-unprotected-job-service.xml`, `bad-diagnostics-receiver.xml`, `bad-missing-data-sync.xml`), `DownloadNotificationsTest.theTapIsAnExplicitImmutableIntentToTheDownloadsTabOnly`, `AndroidVolumesTest` |
 | **S11** | Responses untrusted; names never from the server | **Met** | Names from GUIDs and fixed words only; sizes, ranges, playlists and segments bounded; every file verified | `DownloadPathsTest.everyBuilderRefusesABadIdWithItsFixedMessage`, `DownloadGatewayHostileTest`, `FileFetcherHostileTest`, `HlsPlaylistsTest`, `HlsFetcherTest`, `DownloadVerifierTest` |
 | **S12** | Pinned, checksum-verified dependencies | **Met** | `androidx.work:work-runtime` and `work-testing` 2.12.0, sha256 only; the older WorkManager artefacts in the verification file are said plainly in ARCHITECTURE "Version checks" | Gradle dependency verification (the gate) |
@@ -72,8 +72,8 @@ This check was made by reading the code and the tests, and by the unit-test gate
 | 4 | **Range and If-Range against a lying server** | Lengths, totals, validators, 200 to a resume | A 206 must carry the `If-Range` validator sent and the stored total; a 200 to a resume cuts to zero and says so to Room first; three validator changes in a row is "changed on server" | `FileFetcherHostileTest.aContentRangeWithTheWrongStartOrGarbageRestartsAndAWrongTotalIsChangedOnServer`, `aContentLengthThatDisagreesWithTheSizeIsChangedOnServer`, `FileFetcherResumeTest`, `FileFetcherTest.aValidatorThatChangesEveryTimeRestartsAndThreeInARowIsChangedOnServer` | Sound |
 | 5 | **Nothing claimed that is not fsync'd** | Progress counts, segments, subtitles | `force` before each progress save; segments and subtitles renamed only after fsync | `FileFetcherTest.aTornTailIsCutBeforeTheResume` (and the recording `FileChannel`) | Sound |
 | 6 | **The verifier** | Complete, signature, readable, decodable, length, SHA-256 | COMPLETE is written in one place, behind the check and a named media source and container | `DownloadVerifierTest.check2HtmlRenamedMp4IsTheWrongKindOfFile`, `aCopyWithNoMediaSourceIsNeverGood`, `DownloadQueueTest.aRowWithNoContainerOrMediaSourceIsNeverMarkedComplete` | Sound (Dolby Vision is coarse: carried) |
-| 7 | **The strict sharing rule and the visibility joins** | Sees, plays, inherits; revocation; the 7-day re-ask; offline | `MINE_OR_SHARED` and `visible_items` in every offline read; each guarding clause shown to matter by running the query without it; the re-ask runs on a session change, the server coming back and the app coming to the front (`SharingRecheck`), and a stale copy is not played while the server can be reached | `OfflineLibraryVisibilityTest` (a–g), `OfflineLibraryClausesTest` (h–m, each with its clause removed), `SharingTest`, `SavedCopiesTest.aSharedCopyWhoseConfirmationIsOverAWeekOldIsNotPlayedWhileTheServerCanBeReachedUntilReAsked`, `aChildWhoNeverOpensDownloadsLosesTheSharedCopyOnceTheServerSaysNo`, `offlineAConfirmationThatCannotBeReAskedStillPlaysHoweverOld`, `SharingRecheckTest` (each trigger, rate limit, one at a time) | Sound after I-1; mutation evidence in the Task 17 report |
-| 8 | **The removal rules** | Owners only; account and server removal; a 401 | `RemoveOutcome.NotYours` for a non-owner; season and series deletes remove only the profile's own episodes, each through the store's check and `DownloadPaths` | `RemovalRulesTest`, `DownloadRepositoryTest.removeGivesEachOutcome`, `anOwnerRemovingASeasonDeletesEachOfItsEpisodesFoldersAndNothingElse`, `DownloadsViewModelTest.anOwnerRemovesItsOwnEpisodesOfASeasonAndNeverAnotherProfiles`, `OfflineSeriesPhoneRenderTest.anOwnerCanDeleteAnEpisodeAndASeasonAndANonOwnerGetsNeither` | Sound |
+| 7 | **The strict sharing rule and the visibility joins** | Sees, plays, inherits; revocation; the 7-day re-ask; offline | `MINE_OR_SHARED` and `visible_items` in every offline read; each guarding clause shown to matter by running the query without it; the re-ask runs on a session change, the server coming back and the app coming to the front (`SharingRecheck`), the item about to play first (L-11), and one failing item no longer stops it (L-1). Every profile whose own sign-in did not fetch the copy (shared to it, inherited, or joined as "already on this phone": `download_owners.fetched`) is under the rule: a stale copy is not played, nor its subtitles and skip markers served (L-3), while the server can be reached, and a later "no" removes a non-fetching owner too. While the server can be reached, inheritance needs a confirmation younger than 7 days; one dated ahead of the clock is stale everywhere (L-2) | `OfflineLibraryVisibilityTest` (a–g), `OfflineLibraryClausesTest` (h–m, each with its clause removed), `SharingTest`, `StrictSharingOwnersTest` (inheritance online and offline, re-ask and removal of an inherited and a share-only owner, the fetching owner never re-asked), `SavedCopiesTest.aSharedCopyWhoseConfirmationIsOverAWeekOldIsNotPlayedWhileTheServerCanBeReachedUntilReAsked`, `aChildWhoNeverOpensDownloadsLosesTheSharedCopyOnceTheServerSaysNo`, `offlineAConfirmationThatCannotBeReAskedStillPlaysHoweverOld`, `aConfirmationDatedAheadOfTheClockIsNotPlayedWhileTheServerCanBeReached`, `theExtrasOfARefusedStaleCopyAreNotServedFromItWhileTheServerCanBeReached`, `SharingRecheckTest` (each trigger, rate limit, one at a time, the played item first) | Sound after I-1 and M-1; mutation evidence in the Task 17 and final-fix reports |
+| 8 | **The removal rules** | Owners only; account and server removal; a 401 | `RemoveOutcome.NotYours` for a non-owner; season and series deletes remove only the profile's own COMPLETE episodes (queued episodes of that series carry on, and the confirm says so), each through the store's check and `DownloadPaths` | `RemovalRulesTest`, `DownloadRepositoryTest.removeGivesEachOutcome`, `anOwnerRemovingASeasonDeletesEachOfItsEpisodesFoldersAndNothingElse`, `DownloadsViewModelTest.anOwnerRemovesItsOwnEpisodesOfASeasonAndNeverAnotherProfiles`, `OfflineSeriesPhoneRenderTest.anOwnerCanDeleteAnEpisodeAndASeasonAndANonOwnerGetsNeither` | Sound |
 | 9 | **Pinned artwork re-validation** | A file at rest is untrusted | The same eight artwork checks at every read; a failing file and row are dropped | `PinnedArtworkTest.aTamperedPinnedFileIsRefusedDeletedAndThePlaceholderShows` | Sound (no per-profile visibility check at read: carried, Tasks 5-8 Minor 9) |
 | 10 | **`ItemBytes`** | The one data source for the player and the probe | `file:` only for the current saved item, real path strictly inside its folder; links out refused | `ItemBytesTest.aSavedItemCannotReachOutsideItsFolder`, `aLinkInsideTheFolderThatLeadsOutsideIsRefused` | Sound |
 | 11 | **Logs, notifications, WorkManager records** | Tokens, paths, titles | Logs are fixed words and exception class names; the notice is title-free with a private public version; no input data | `DownloadNotificationsTest`, `DownloadWorkerTest.theWorkerHasNoInputData`, `DownloadBoundaryTest` | Sound |
@@ -116,11 +116,33 @@ None, in any of the five reviews.
 | **Tasks 13-16 I-1** | The 7-day re-ask ran only from the Downloads tab, so a child playing from Home kept a stale confirmation | **`e4df4d9`** (`SharingRecheck`; `SavedCopies.plan` streams a stale shared copy while the server can be reached) |
 | **Tasks 13-16 I-2** | An owner could not delete a downloaded episode, season or series | **`845318a`** |
 
+### Whole-milestone review (`final-review.md`) and the controller's walkthrough
+
+| Finding | What | Fixed by |
+|---|---|---|
+| **M-1** | Inheritance ignored the 7-day rule, and an inherited or "already on this phone" owner left the strict rule for good | **`1c14a46`** (`download_owners.fetched`; v4 amended) |
+| **M-2** | An original whose size the server does not state could fill the storage past the reserve | **`998c49c`** |
+| **W-1** (walkthrough) | The check compared the file with the item's runtime, not the downloaded source's, so a good download was thrown away | **`31a4abd`** |
+| L-1 | One item failing its refresh blocked the whole re-ask | `6da3455` |
+| L-2 | Moving the clock back kept a confirmation young | `e23b554` |
+| L-3 | A refused stale copy still served its subtitles and skip markers | `7462c39` |
+| L-4 | A deleted download's pinned pictures stayed until the next start | `ef01e27` |
+| L-5 | A removal mid-fetch could leave an empty item folder | `31c69b7` |
+| L-6 | The Delete confirm promised to free space for a co-owned copy | `307a3bc` |
+| L-7 | A renamed file or a `.part` fetched under another owner's sign-in was kept or resumed | `7d7fa8c` |
+| L-8, L-9 | Owned copies never re-checked online; any profile can switch sharing on | Recorded (section 5) |
+| L-10 | `DownloadBoundaryTest` gaps | `092e230` |
+| L-11 | The item being played might not be among the 50 re-asked | `240ea6b` |
+| Nit | "Delete downloaded series" removes only ready episodes | `6ddd6e7` (the confirm says queued ones carry on) |
+| Nit | `DownloadStore.add` share-only kept an old permission's age | `1c14a46` |
+| Nits | An inherited RUNNING row fails for the heir; a stale shared copy is still listed as ready while online | Carried |
+| Carried Tasks 9-10 Minor 6 | The notice counted the whole device's queue | `b197ae6` (no counts, sizes or progress) |
+
 ### Minor and Nit
 
 - **Fixed in the close-out wave:**
   - Tasks 13-16: M-1 `ee483ac`, M-2 `d51f4f5`, M-3 `76167ad`, M-6 `55b8db1`, M-7 `e3ace36`, M-8 `845318a`, M-9 `523feb3`, M-12 `b814464`.
-  - Tasks 11-12: Minor 2 `97985d7` (security: a copy fetched under another owner's sign-in), Minor 7 `99cc9d2`, Nits 1 and 2 `fe52232`.
+  - Tasks 11-12: Minor 2 `97985d7` (security: a copy fetched under another owner's sign-in; that fix covered only a fetcher with no permission row at all, and was completed by `7d7fa8c` for the final review's L-7: the bytes must have come through the fetching sign-in itself, and a `.part` begun under another owner restarts), Minor 7 `99cc9d2`, Nits 1 and 2 `fe52232`.
   - Tasks 1-4 Minor 4 and Tasks 5-8 Minor 10: `d798d98`.
 - **Fixed earlier** (in each task's own fix wave): as each later review's status table records.
 - **Carried, each with its reason and when:** `docs/reviews/milestone-4-carried.md`. Those that touch security or privacy are listed as residual risks below; none is a data-loss risk.
@@ -129,19 +151,21 @@ None, in any of the five reviews.
 
 ## 5. Residual risks
 
-- **Offline validity of a sharing confirmation (the chosen behaviour).** While the server cannot be reached, a profile's confirmation that cannot be re-asked stays valid however old, so a child on a plane still plays a shared copy its account was once allowed to download, even if the server has since said no. It is re-asked as soon as the server can be reached (on a session change, the server coming back, the app coming to the front, or before the copy is played), and a "no" then removes it at once.
+- **Offline validity of a sharing confirmation (the chosen behaviour).** While the server cannot be reached, a profile's confirmation that cannot be re-asked stays valid however old (and a profile then inherits on it), so a child on a plane still plays a shared copy its account was once allowed to download, even if the server has since said no. It is re-asked as soon as the server can be reached (on a session change, the server coming back, the app coming to the front, or before the copy is played), and a "no" then removes it at once. Offline, a confirmation dated ahead of the clock is not refused either (the same rule).
+- **Owned copies are never re-checked online (final review L-8; a decision for Milestone 5).** A copy the profile's own sign-in fetched plays LOCAL while online without asking the server, and its pinned `visible_items` record is re-checked only when a screen refreshes the item, so a later parental-rating change on the server does not hide it. SPEC demands the re-ask only for shared copies; this is recorded, not fixed.
+- **Any profile can switch "Share downloads between profiles" on (final review L-9).** A child can turn it on for its server. The strict sharing rule limits what that gains (only titles the child's own account may download, once the server has said so). The fix is Milestone 7's app lock, or an owner-of-server check.
 - **Permissions and an exported component awaiting the owner's confirmation.**
   - SPEC S9 lists `FOREGROUND_SERVICE` (+ data-sync type) and `POST_NOTIFICATIONS`. The build also has `FOREGROUND_SERVICE_DATA_SYNC` (the data-sync type itself), and **`RECEIVE_BOOT_COMPLETED`** and **`WAKE_LOCK`**, which WorkManager needs ("survives reboot", and its wake lock while foreground work runs).
-  - So **five permissions** are new in this milestone; **Ben to confirm** them, in particular the two S9 does not name.
+  - So **five permissions** are new in this milestone, **two of them not named by S9** (`RECEIVE_BOOT_COMPLETED`, `WAKE_LOCK`); **Ben to confirm** them.
   - SPEC S10 says only the launcher is exported; WorkManager's **`SystemJobService`** is exported too, protected by `BIND_JOB_SERVICE` (only the system can bind it). **Ben to confirm.** The SPEC is not edited.
 - **Files on a portable SD card are not encrypted** and can be read on another device (the settings warn; tokens, the database and artwork are never on the card). Encryption at rest (Media3 `AesCipherDataSource` with a Keystore key) is for Ben to decide at Milestone 8.
 - **Downloads on internal storage** are protected by Android's file-based encryption and the app sandbox only.
 - **Media3's extractors parse the downloaded bytes in-process**, during verification and playback, as in streaming (text tracks still pass through unread: Milestone 3 M3).
-- **A server can make the app download up to 256 GiB per item** to its own `/Items/{id}/Download` or `/videos/` paths, bounded by the free-space check and reserve.
+- **A server can make the app download up to 256 GiB per item** to its own `/Items/{id}/Download` or `/videos/` paths, bounded by the free space above the reserve (1 GiB internal, 256 MiB on a card). The rule is asked before the first byte even when the server states no size, and a `NO_SPACE` cuts the part file to zero (final review M-2). Saved subtitles (at most 30 × 8 MiB) are written with no space check of their own, inside the reserve's slack.
 - **The 6-hour `dataSync` limit** (Android 15) pauses a long series plainly ("Open Shoalwatch to carry on"); **Android 16 job quotas** may delay work.
 - **Originals are guarded twice, conversions once:** an original needs `CanDownload` (or unknown) AND the server's own `/Download` permission; a conversion through `/videos/` needs `CanDownload` to be a confirmed `true` and is never offered when it is unknown.
 - **A LOCAL play sends nothing to the server until Milestone 5;** `offline_plays` keeps it. Until then a later server change to that item's watched state does not reach the tablet while its offline marker is pending.
-- **Carried hardening (Minor, see the carried list):** pinned artwork has no per-profile visibility check at read (Tasks 5-8 Minor 9); the HLS master is not tied to the item's own path (Tasks 5-8 Minor 3); `PlannedItem.confirmed` is caller-settable inside the module (Tasks 11-12 Minor 9); a second profile learns that a title it may download is already on the phone (Tasks 1-4 Minor 7); the queue's counts are device-wide (Tasks 9-10 Minor 6).
+- **Carried hardening (Minor, see the carried list):** pinned artwork has no per-profile visibility check at read (Tasks 5-8 Minor 9); the HLS master is not tied to the item's own path (Tasks 5-8 Minor 3); `PlannedItem.confirmed` is caller-settable inside the module (Tasks 11-12 Minor 9); a second profile learns that a title it may download is already on the phone (Tasks 1-4 Minor 7). The device-wide notice counts (Tasks 9-10 Minor 6) are fixed: the notice shows none.
 
 ---
 
@@ -181,5 +205,6 @@ Added by the task reports and this wave:
 
 ## 7. Status after the check (16/11/2026, branch `milestone-4`)
 
-- Unit-test gate: see the Task 17 report (`.superpowers/sdd/m4/task-17-report.md`) for the exact command and result.
-- Open before sign-off: the controller's device results (above), the whole-milestone review and its fix wave, and Ben's confirmation of the permissions and the job service (section 5).
+- Unit-test gate: see the final-fix report (`.superpowers/sdd/m4/final-fixes-report.md`) for the exact command and result.
+- Open before sign-off: the controller's device results (above), and Ben's confirmation of the permissions and the job service (section 5).
+- **Uninstall first:** the v4 schema was amended again (`download_owners.fetched`), so an earlier Milestone 4 debug install crashes on open.
