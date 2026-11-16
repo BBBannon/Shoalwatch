@@ -17,7 +17,10 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 
-/** The download notification: plain fixed words only, never a title or a profile, and a tap that can only open the Downloads tab. */
+/**
+ * The download notification: plain fixed words only, never a title, a profile, a size or a count (the queue holds every
+ * profile's downloads: carried Tasks 9-10 Minor 6), and a tap that can only open the Downloads tab.
+ */
 @RunWith(RobolectricTestRunner::class)
 class DownloadNotificationsTest {
     private val context = ApplicationProvider.getApplicationContext<Context>()
@@ -41,16 +44,16 @@ class DownloadNotificationsTest {
         assertNull(channel.sound)
     }
 
-    @Test fun runningSaysWhereItIsWithAProgressBarAndIsPrivate() {
-        val n = notifications.running(3, 12, 0.25f)
-        assertEquals("Downloading 3 of 12", n.extras.getCharSequence(Notification.EXTRA_TITLE).toString())
-        assertEquals(100, n.extras.getInt(Notification.EXTRA_PROGRESS_MAX))
-        assertEquals(25, n.extras.getInt(Notification.EXTRA_PROGRESS))
+    /** No position, count or per-item progress: the item downloading may be another profile's. */
+    @Test fun runningSaysOnlyDownloadingWithAnIndeterminateBarAndIsPrivate() {
+        val n = notifications.running()
+        assertEquals("Downloading", n.extras.getCharSequence(Notification.EXTRA_TITLE).toString())
+        assertTrue("indeterminate: no per-item progress", n.extras.getBoolean(Notification.EXTRA_PROGRESS_INDETERMINATE))
+        assertEquals(0, n.extras.getInt(Notification.EXTRA_PROGRESS))
         assertTrue("ongoing", n.flags and Notification.FLAG_ONGOING_EVENT != 0)
         assertEquals(NotificationCompat.VISIBILITY_PRIVATE, n.visibility)
         assertEquals("Shoalwatch is downloading", n.publicVersion.extras.getCharSequence(Notification.EXTRA_TITLE).toString())
         assertEquals(DownloadNotifications.CHANNEL, n.channelId)
-        assertTrue("indeterminate while unknown", notifications.running(1, 1, null).extras.getBoolean(Notification.EXTRA_PROGRESS_INDETERMINATE))
     }
 
     @Test fun theWaitingTextsAreExactlyThePlansWords() {
@@ -59,20 +62,20 @@ class DownloadNotificationsTest {
         assertEquals("Downloads paused. Open Shoalwatch to carry on.", title(notifications.waiting(QueueStatus.PausedByTimeLimit)))
     }
 
-    @Test fun finishedIsPostedWithTheCountWhenNotificationsAreAllowed() {
-        notifications.finished(4)
+    @Test fun finishedIsPostedWithNoCountWhenNotificationsAreAllowed() {
+        notifications.finished()
         val posted = shadowOf(manager).allNotifications.single()
         assertEquals("Downloads finished", title(posted))
-        assertEquals("4 ready to watch offline", posted.extras.getCharSequence(Notification.EXTRA_TEXT).toString())
+        assertNull("no count", posted.extras.getCharSequence(Notification.EXTRA_TEXT))
         assertFalse("not ongoing", posted.flags and Notification.FLAG_ONGOING_EVENT != 0)
         manager.cancelAll()
         shadowOf(manager).setNotificationsEnabled(false)
-        notifications.finished(4)
+        notifications.finished()
         assertTrue("nothing posted when notifications are off", shadowOf(manager).allNotifications.isEmpty())
     }
 
     @Test fun theTapIsAnExplicitImmutableIntentToTheDownloadsTabOnly() {
-        for (n in listOf(notifications.running(1, 2, null), notifications.waiting(QueueStatus.WaitingForWifi))) {
+        for (n in listOf(notifications.running(), notifications.waiting(QueueStatus.WaitingForWifi))) {
             val tap: PendingIntent = assertNotNullAndGet(n.contentIntent)
             val shadow = shadowOf(tap)
             assertTrue("immutable", shadow.flags and PendingIntent.FLAG_IMMUTABLE != 0)
@@ -92,14 +95,14 @@ class DownloadNotificationsTest {
         assertNull(MainActivity.requestedTab(null))
     }
 
-    @Test fun noTextNamesAnItemAUserOrAnId() {
-        val all = listOf(notifications.running(2, 5, 0.5f), notifications.waiting(QueueStatus.WaitingForWifi),
+    @Test fun noTextNamesAnItemAUserAnIdOrANumber() {
+        val all = listOf(notifications.running(), notifications.waiting(QueueStatus.WaitingForWifi),
             notifications.waiting(QueueStatus.PausedByTimeLimit), notifications.starting()).flatMap(::texts)
-        notifications.finished(2)
+        notifications.finished()
         val finished = shadowOf(manager).allNotifications.flatMap(::texts)
         for (t in all + finished) {
             assertFalse("an id: $t", Regex("[0-9a-f]{32}").containsMatchIn(t))
-            assertTrue("only the plan's words: $t", t in ALLOWED || t.startsWith("android.") || t.isBlank() || t == "true" || t == "false" || t.all { it.isDigit() })
+            assertTrue("only the plan's words: $t", t in ALLOWED || t.startsWith("android.") || t.isBlank() || t == "true" || t == "false")
         }
     }
 
@@ -109,8 +112,8 @@ class DownloadNotificationsTest {
 
     private companion object {
         val ALLOWED = setOf(
-            "Downloading 2 of 5", "Shoalwatch is downloading", "Waiting for Wi-Fi", "Downloads paused. Open Shoalwatch to carry on.",
-            "Downloads finished", "2 ready to watch offline", "Waiting for a connection",
+            "Downloading", "Shoalwatch is downloading", "Waiting for Wi-Fi", "Downloads paused. Open Shoalwatch to carry on.",
+            "Downloads finished", "Waiting for a connection",
         )
     }
 }

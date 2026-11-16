@@ -57,17 +57,19 @@ class DownloadWorkerTest {
 
     private fun progressOf(info: androidx.work.ForegroundInfo) = info.notification.extras.getInt(android.app.Notification.EXTRA_PROGRESS)
 
-    @Test fun theDrainRunsInTheForegroundAndEachNewStepUpdatesItsNotice() {
+    /** The notice never counts or measures the queue (it holds every profile's downloads): one "Downloading" for the run. */
+    @Test fun theDrainRunsInTheForegroundWithOneNoticeThatNeverCountsTheQueue() {
         drain = QueueDrain { _, progress ->
             progress(QueueStatus.Running(1, 2, 0.5f))
-            progress(QueueStatus.Running(1, 2, 0.502f)) // the same percent: not shown again
+            progress(QueueStatus.Running(1, 2, 0.502f))
             progress(QueueStatus.Running(2, 2, 0.25f))
             QueueRun.Drained
         }
         runBlocking { worker().doWork() }
-        assertEquals("starting, then two progress notices", 3, foregrounds.size)
+        assertEquals("starting, then one Downloading notice", 2, foregrounds.size)
         assertTrue(foregrounds.all { it.notificationId == DownloadNotifications.ID && it.foregroundServiceType == ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC })
-        assertEquals(listOf(50, 25), foregrounds.drop(1).map(::progressOf))
+        assertEquals(listOf(0), foregrounds.drop(1).map(::progressOf))
+        assertEquals("Downloading", foregrounds.last().notification.extras.getCharSequence(android.app.Notification.EXTRA_TITLE).toString())
     }
 
     @Test fun anythingCompletedPostsTheFinishedNoticeAndNothingCompletedDoesNot() {
