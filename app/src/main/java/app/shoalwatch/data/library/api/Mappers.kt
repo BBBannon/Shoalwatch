@@ -16,6 +16,7 @@ import app.shoalwatch.data.library.Sort
 import app.shoalwatch.data.library.SortBy
 import app.shoalwatch.data.library.UserData
 import app.shoalwatch.data.servers.JellyfinId
+import app.shoalwatch.data.sync.ServerUserData
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.longOrNull
@@ -34,6 +35,9 @@ internal object Limits {
     const val TOTAL_MAX = 1_000_000
     const val MAX_VIEWS = 100
     const val MAX_SEASONS = 1000
+    const val PLAY_COUNT_MAX = 100_000
+    const val POSITION_TICKS_MAX = Long.MAX_VALUE / 10_000
+    val LAST_PLAYED_RANGE: ClosedRange<Instant> = Instant.parse("2000-01-01T00:00:00Z")..Instant.parse("2200-01-01T00:00:00Z")
 }
 
 private val IMAGE_TAG = Regex("[A-Za-z0-9]{1,64}")
@@ -125,6 +129,18 @@ internal fun UserItemDataDto.toUserData(): UserData {
         unplayedItemCount = intIn(unplayedItemCount, 0..Limits.COUNT_MAX),
     )
 }
+
+/**
+ * The server's copy for the outbox (Milestone 5), range-checked: `PlayCount` 0..100,000 else unknown, position 0..`Long.MAX_VALUE / 10,000`
+ * ticks else 0, `LastPlayedDate` 2000-01-01..2200-01-01 else unknown.
+ */
+internal fun UserItemDataDto.toServerUserData(): ServerUserData = ServerUserData(
+    played = played == true,
+    playCount = intIn(playCount, 0..Limits.PLAY_COUNT_MAX),
+    positionMs = playbackPositionTicks?.takeIf { it in 0..Limits.POSITION_TICKS_MAX }?.let(Ticks::toMs) ?: 0L,
+    favourite = isFavorite == true,
+    lastPlayedAt = instant(lastPlayedDate)?.takeIf { it in Limits.LAST_PLAYED_RANGE }?.toEpochMilli(),
+)
 
 /** The item survives a UserData that cannot be read: it just has none. */
 internal fun BaseItemDto.toItemWithUserData(): ItemWithUserData? =

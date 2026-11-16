@@ -79,7 +79,7 @@ app.shoalwatch
 │   │                DownloadScheduler, DownloadNotifications, DownloadHousekeeping (removal rules, reconfirm), SharingRecheck (when the re-ask runs),
 │   │                Downloads (the seam screens use) + DownloadRepository; api/ DownloadDtos, DownloadGateway (+ DownloadFacts, DownloadGatewayImpl);
 │   │                see "Downloads (`data/downloads`)"
-│   ├── sync/        OfflinePlays (the `offline_plays` record Milestone 5's outbox sends; see "Offline playback"), SyncModels (`ChangeKind`, `Change`, `SyncStatus`, `DrainResult`, `ServerUserData`, `UserDataUpdate`), OutboxStore (see "Sync outbox")
+│   ├── sync/        OfflinePlays (the `offline_plays` record Milestone 5's outbox sends; see "Offline playback"), SyncModels (`ChangeKind`, `Change`, `SyncStatus`, `DrainResult`, `ServerUserData`, `UserDataUpdate`), OutboxStore, ConflictRule, api/SyncGateway (+ SyncGatewayImpl, UpdateUserItemDataBody, SyncJson) (see "Sync outbox")
 └── ui/          theme, nav, components, one package per screen group (see "UI" below); ui/downloads: the Downloads tab, the offline series screen,
                  the sheet, the buttons and settings, and Removal (what a Delete asks and removes), all through the `Downloads` seam
 ```
@@ -636,7 +636,7 @@ The on-phone copy of what the server told us, and the only thing browsing screen
 
 Tests: `PlaystateResumeTest`, `PlaystatePlayedTest`, `PlaystateSeriesTest`, `PlaystateConcurrencyTest`, `PlaystateRestoreTest` (order, shared badges, revoked mid-action), `PlaystateRefreshRaceTest`, `PlaystateStalenessTest` (the rule, ordering, acknowledgement), `PlaystateStampTest`, `PlaystateCoalesceTest`, `PlaystateSweepTest`, `LocalChangeLogTest`, `SourceShapeTest` (no main file over 400 lines or 45% blank) (fake gateway, real in-memory Room through the real `LibraryRepository`, injected clock).
 
-## Sync outbox (`data/sync`: `OutboxStore`)
+## Sync outbox (`data/sync`: `OutboxStore`, `ConflictRule`, `SyncGateway`)
 
 SPEC §3.2: a profile's watched-state changes are kept on the phone until the server confirms them, item by item, and are sent in order, once, and only as that profile. Milestone 5 builds this in layers; the scheduler, the worker and the move of the tidy-up actions onto the outbox come in later tasks.
 
@@ -650,7 +650,27 @@ SPEC §3.2: a profile's watched-state changes are kept on the phone until the se
 - A row whose `kind` this version cannot read is deleted on read, with its marks, and logged in fixed words.
 - `status(session, signedIn)`: waiting rows, stuck rows, `needsSignIn` (rows waiting and not signed in), `lastSyncedAt` from `sync_state`. It and `serversWithWork` are guarded like the store's reads (`ReadHealth`): a failed read emits `SyncStatus.NONE` (or no servers) and never throws. `touchSynced` writes `sync_state` only for an account that still exists.
 
-Tests: `OutboxStoreTest`, `OutboxOrderTest` (in-memory Room).
+**`ConflictRule`** (pure) decides what to send from the row and the server's copy (`GET /UserItems/{id}/UserData`). "Newer on the server" is `server.lastPlayedAt >= row.occurredAt − 2 min`: inside the margin the server wins, because there is no server-time endpoint to measure clock skew and the server's copy is the one that cannot lose "watched".
+
+| Row | Server copy | Sent |
+|---|---|---|
+| PLAYED true, film or episode | played | nothing (`AlreadyThere`) |
+| | not played, or unknown | `Played`, `PlayCount = max(count, 1)` (left out when unknown), position 0 |
+| PLAYED true, season, series or other | not read | `POST /UserPlayedItems/{id}` (the server marks the children) |
+| PLAYED false | not played | nothing |
+| | played and newer | nothing: the server's copy shows (**watched is never undone by a sync**) |
+| | played and older, or unknown | `DELETE /UserPlayedItems/{id}` |
+| FAVOURITE | not read | `POST` / `DELETE /UserFavoriteItems/{id}` |
+| POSITION p | newer | nothing: the later change wins |
+| | older, or unknown | the position, and `LastPlayedDate` only when p > 0 |
+| PLAY at t | sent before and the server's count has reached the stored one | nothing (the earlier send landed) |
+| | otherwise | `Played`, the stored count or else server + 1 (left out when unknown), and `LastPlayedDate = t` and position 0 only when not newer on the server |
+
+**Why a retry cannot double-count:** a PLAY's count is computed once, from the server's copy, stored by `markSending` before the request leaves, and every retry sends that same absolute number, or nothing once the server shows it. No request ever carries `datePlayed`, so the server's "add one per dated mark" path is never used. The worst case (another device plays the item between the read and the write) is one play under-counted, never one over.
+
+**`SyncGateway`** (`data/sync/api`, `SyncGatewayImpl` on `ServerApi` and `LibraryGateway`): every call is as the row's own `Session`, `userId` is always that session's user, paths are built only from normalised ids (anything else is `SERVER_NOT_FOUND` with nothing sent), and every call opts in to `ServerApi`'s one network retry (a read, or an absolute or idempotent write). Bodies are `UpdateUserItemDataBody` encoded by `SyncJson.ENCODER` (`explicitNulls = false`: only the fields meant are sent); dates are whole seconds in UTC (`2026-11-15T14:05:00Z`). The user-data read is bounded at 64 KiB, decoded with every field nullable (a wrongly typed field is `SERVER_ERROR`), and range-checked by `UserItemDataDto.toServerUserData` (`Mappers.kt`): `PlayCount` 0..100,000 else unknown, position 0..`Long.MAX_VALUE / 10,000` ticks else 0, `LastPlayedDate` 2000-01-01..2200-01-01 else unknown. A 404 from the user-data route asks `GET /Items/{id}`: found means a server without the route (an unknown copy, null); its own failure passes through. `itemGone` is true only when `GET /Items/{id}` is `SERVER_NOT_FOUND` and `GET /UserViews` then succeeds: a redirect or a proxy answering 404 for everything is not "gone".
+
+Tests: `OutboxStoreTest`, `OutboxOrderTest` (in-memory Room); `ConflictRuleTest`; `SyncGatewayTest`, `SyncGatewayHostileTest` (real `ServerApi` and OkHttp, MockWebServer; a quoted `"true"` for `Played` is read as true by the shared decoder, any other string is `SERVER_ERROR`).
 
 ## Download files (`DownloadPaths`, `Volumes`, `DownloadPrefs`)
 
