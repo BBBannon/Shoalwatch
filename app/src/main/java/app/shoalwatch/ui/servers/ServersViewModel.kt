@@ -167,7 +167,8 @@ class ServersViewModel(
         }
     }
 
-    fun dismissConfirm() = local.update { it.copy(confirm = null) }
+    /** Ignored while the confirmed action runs: it happens anyway, so the dialog stays until it has (Tasks 9-10 review M6). */
+    fun dismissConfirm() = local.update { if (it.busy) it else it.copy(confirm = null) }
     fun dismissError() = local.update { it.copy(error = null) }
     fun dismissNotice() = local.update { it.copy(notice = null) }
 

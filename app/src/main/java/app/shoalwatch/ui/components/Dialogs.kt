@@ -30,7 +30,8 @@ val SecureDialog = DialogProperties(securePolicy = SecureFlagPolicy.SecureOn)
 
 /**
  * A confirmation for something that can't be undone. [confirmLabel] is in the error colour; Cancel is the default. [busyLabel]: the
- * action is under way; the confirm button shows a spinner with these words instead, and does nothing more.
+ * action is under way; the confirm button shows a spinner with these words instead, and neither it, Cancel nor Back does anything
+ * more (the action will happen: Tasks 9-10 review M6).
  */
 @Composable
 fun ConfirmDialog(
@@ -42,7 +43,7 @@ fun ConfirmDialog(
     content: @Composable () -> Unit,
 ) {
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (busyLabel == null) onDismiss() },
         properties = SecureDialog,
         title = { Text(title, Modifier.semantics { heading() }) },
         text = {
@@ -52,7 +53,7 @@ fun ConfirmDialog(
                 content()
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = busyLabel == null) { Text(stringResource(R.string.action_cancel)) } },
         confirmButton = {
             TextButton(
                 onClick = onConfirm, enabled = busyLabel == null, modifier = Modifier.heightIn(min = 48.dp),

@@ -168,6 +168,12 @@ class ManagementRenderTest {
         assertTrue("the spinner is there", rule.onAllNodes(SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.ProgressBarRangeInfo), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
     }
 
+    @Test fun whileSendingCancelIsDisabled() {
+        show { ServersScreen(servers.copy(confirm = Confirm.SignOut("s1", "u2", "amy", "Den", waiting = 1), busy = true, sending = true), serversActions) }
+        val cancel = rule.onAllNodes(hasText(context.getString(R.string.action_cancel)) and hasClickAction()).fetchSemanticsNodes().single()
+        assertTrue("Cancel does nothing while the changes are sent", cancel.config.contains(androidx.compose.ui.semantics.SemanticsProperties.Disabled))
+    }
+
     @Test @Config(qualifiers = PHONE) fun theSendingButtonFitsAtTwiceTheFontSize() {
         show(2f) { ServersScreen(servers.copy(confirm = Confirm.SignOut("s1", "u2", "amy", "Den", waiting = 12), busy = true, sending = true), serversActions) }
         assertTrue(shown("Sending changes…"))

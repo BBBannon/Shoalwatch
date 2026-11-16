@@ -76,6 +76,21 @@ class ServersSyncTest {
         assertFalse(vm.state.value.sending)
     }
 
+    /** Tasks 9-10 review M6: while it sends, Cancel and Back do nothing, so the dialog never says "cancelled" over a sign-out that still happens. */
+    @Test fun whileSendingCancelDoesNotCloseTheDialog() = runTest(main.dispatcher) {
+        sync.onSendNow = { awaitCancellation() }
+        sync.set(amys, waiting = 1)
+        val vm = vm()
+        vm.askSignOut("s1", "u2")
+        runCurrent()
+        vm.confirm()
+        runCurrent()
+        vm.dismissConfirm()
+        assertTrue("still asked while sending", vm.state.value.confirm is Confirm.SignOut)
+        advanceTimeBy(10_001)
+        assertEquals(listOf("s1" to "u2"), auth.signedOut)
+    }
+
     @Test fun theSignOutDialogShowsTheCountOnlyWhenThereIsOne() = runTest(main.dispatcher) {
         sync.set(amys, waiting = 4)
         val vm = vm()
