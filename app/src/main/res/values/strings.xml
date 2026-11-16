@@ -500,12 +500,12 @@
     <string name="dl_delete_season">Delete downloaded season</string>
     <string name="dl_delete_series">Delete downloaded series</string>
     <plurals name="dl_delete_episodes_confirm">
-        <item quantity="one">Delete your %1$s downloaded episode? It takes up %2$s on this phone.</item>
-        <item quantity="other">Delete your %1$s downloaded episodes? They take up %2$s on this phone.</item>
+        <item quantity="one">Delete your %1$s downloaded episode? It takes up %2$s on this phone. Episodes still downloading carry on.</item>
+        <item quantity="other">Delete your %1$s downloaded episodes? They take up %2$s on this phone. Episodes still downloading carry on.</item>
     </plurals>
     <plurals name="dl_delete_episodes_size_unknown">
-        <item quantity="one">Delete your %1$s downloaded episode?</item>
-        <item quantity="other">Delete your %1$s downloaded episodes?</item>
+        <item quantity="one">Delete your %1$s downloaded episode? Episodes still downloading carry on.</item>
+        <item quantity="other">Delete your %1$s downloaded episodes? Episodes still downloading carry on.</item>
     </plurals>
     <string name="dl_kept_for_others">Removed from your downloads. It stays on this phone for another profile.</string>
     <string name="dl_not_yours">Only the profile that downloaded this can delete it.</string>

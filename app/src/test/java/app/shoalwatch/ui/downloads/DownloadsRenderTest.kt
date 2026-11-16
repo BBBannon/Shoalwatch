@@ -157,6 +157,12 @@ abstract class DownloadsRenderBase : RenderBase() {
         assertTrue("never a promise to free it", "frees" !in stringsPlural(R.plurals.dl_delete_episodes_confirm, 2, "3.6 GB"))
     }
 
+    /** Final review nit: a series or season delete takes the ready episodes only, and says plainly that queued ones carry on. */
+    @Test fun aSeriesDeleteSaysEpisodesStillDownloadingCarryOn() {
+        screen(OfflineLibrary(emptyList(), emptyList(), emptyList()), confirm = RemoveRequest(RemoveKind.SERIES, listOf("a", "b"), 3_600_000_000))
+        assertShown("Delete your 2 downloaded episodes? They take up 3.6 GB on this phone. Episodes still downloading carry on.")
+    }
+
     @Test fun cancellingAQueuedDownloadDoesNotClaimItsFullSize() {
         screen(OfflineLibrary(listOf(running), emptyList(), emptyList()), confirm = removeOne(running.download.itemId, running))
         assertShown(text(R.string.dl_delete_size_unknown))
