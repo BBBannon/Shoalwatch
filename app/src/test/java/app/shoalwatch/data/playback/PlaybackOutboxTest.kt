@@ -5,6 +5,7 @@ import app.shoalwatch.data.downloads.LocalPlaying
 import app.shoalwatch.data.library.PlaystateTestBase
 import app.shoalwatch.data.servers.Session
 import app.shoalwatch.data.sync.OfflinePlays
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -16,7 +17,7 @@ import org.junit.Test
  */
 class PlaybackOutboxTest : PlaystateTestBase() {
     private val playback = FakePlaybackGateway()
-    private val server by lazy { ServerPlaybackReports(playback, playstate) }
+    private val server by lazy { ServerPlaybackReports(playback, playstate) { s -> sender.kick(s) } }
     private val finished = mutableListOf<Pair<Session, String>>()
     private val local by lazy {
         LocalPlaybackReports(OfflinePlays(db.offlinePlayDao(), { now }, outbox, db.itemDao()), playstate, { now }, LocalPlaying()) { s, item -> finished += s to item }
@@ -76,13 +77,32 @@ class PlaybackOutboxTest : PlaystateTestBase() {
         assertEquals(listOf(900_000L), rows().map { it.positionMs })
     }
 
-    @Test fun aSignedOutAccountQueuesNothing() = runBlocking {
+    @Test fun aStopWhileTheSignInIsRejectedIsKeptForTheNextSignIn() = runBlocking {
         save(film("film", ud(positionMs = 0)))
         playback.failOps["stopped"] = AppError.of(AppError.Kind.NOT_SIGNED_IN)
+        gateway.failAll = AppError.Kind.NOT_SIGNED_IN
         server.stopped(s1u1, report(61_000), finished = false)
         settle()
+        assertEquals(listOf(61_000L), rows().map { it.positionMs })
+        assertEquals(61_000, userData("film")!!.positionMs)
+    }
+
+    /** Tasks 6-8 review M3: the app closed while the stop was being sent still has it queued, with the stop's own time. */
+    @Test fun aStopCutOffMidSendIsStillQueuedWithItsTime() = runBlocking {
+        save(film("film", ud(positionMs = 0)))
+        val held = kotlinx.coroutines.CompletableDeferred<Unit>()
+        playback.gate = held
+        val at = now
+        val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default)
+        val stopping = scope.async { server.stopped(s1u1, report(1_234_000), finished = false) }
+        kotlinx.coroutines.withTimeout(5_000) { while (rows().isEmpty()) kotlinx.coroutines.delay(5) }
+        stopping.cancel()
+        scope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
+        assertEquals(listOf(Row(s1u1.userId, "POSITION", null, 1_234_000, at, false)), rows())
+        assertEquals(1_234_000, userData("film")!!.positionMs)
+        sender.kick(s1u1).await() // a later drain (the next start, the job) sends it
         assertEquals(0, queued())
-        assertEquals(0, userData("film")!!.positionMs)
+        assertEquals(listOf("setPosition:${id("film")}:1234000"), gateway.calls.filter { it.startsWith("setPosition") })
     }
 
     @Test fun aFinishedLocalStopQueuesExactlyOnePlayAtTheStopsTimeAndCallsOnFinishedOnce() = runBlocking {

@@ -97,15 +97,33 @@ class PlaystateRecordStopTest : PlaystateTestBase() {
         assertNoPending()
     }
 
-    @Test fun aStopTheServerHeardDoesNotClearTheMarkerOfAnEarlierUnsentChange() {
+    /** Review M3: a stop the server heard carries the newest position, so an earlier unsent position for the item goes (never sent after it). */
+    @Test fun aStopTheServerHeardTakesBackAnEarlierUnsentPositionForTheItem() {
         save(film("a", ud(positionMs = 0)))
+        save(film("b", ud(positionMs = 0)))
         gateway.failOps["setPosition"] = AppError.Kind.OFFLINE
         stop("a", 100_000, reached = false)
+        stop("b", 50_000, reached = false)
         drain()
-        stop("a", 200_000) // heard by the server, but the row before it is still waiting
+        stop("a", 200_000) // heard by the server
         drain()
-        assertEquals(1, queued())
-        assertEquals(1, pendingRows())
+        assertEquals("only b's row is left", 1, queued())
+        assertEquals(200_000, userData("a")!!.positionMs)
+        gateway.failOps.clear()
+        val from = gateway.calls.size
+        sender.kick(s1u1)
+        drain()
+        assertEquals("a's old position is never sent", listOf("setPosition:${id("b")}:50000"), gateway.calls.drop(from).filter { it.startsWith("setPosition") })
+        assertEquals(0, queued())
+        assertNoPending()
+    }
+
+    @Test fun aStopNotYetToBeSentIsQueuedWithoutAskingForASend() {
+        save(film("a", ud(positionMs = 0)))
+        runBlocking { playstate.recordStop(s1u1, id("a"), 300_000, finished = false, reached = false, kick = false) }
+        drain()
+        assertEquals("queued, durable", 1, queued())
+        assertTrue("but no send asked for yet: the report goes first", changedFor.isEmpty())
     }
 
     @Test fun aRefreshAskedBeforeTheStopCannotOverwriteTheNewPosition() = runBlocking {

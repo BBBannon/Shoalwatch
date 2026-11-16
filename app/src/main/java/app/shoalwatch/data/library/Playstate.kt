@@ -40,7 +40,7 @@ interface Playstate {
      * count it from its own session, and the tick is absolute (`AlreadyThere` when the server has it played), so it cannot count twice.
      * !finished: the position on this phone; queued as POSITION only when !reached.
      */
-    suspend fun recordStop(s: Session, itemId: String, positionMs: Long, finished: Boolean, reached: Boolean = true)
+    suspend fun recordStop(s: Session, itemId: String, positionMs: Long, finished: Boolean, reached: Boolean = true, kick: Boolean = true)
 }
 
 /** What a LOCAL play (a saved copy, Milestone 4) does to the saved library: implemented by [PlaystateRepository]. */

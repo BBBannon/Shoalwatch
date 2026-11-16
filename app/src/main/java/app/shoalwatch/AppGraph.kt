@@ -122,12 +122,12 @@ class AppGraph(private val appContext: Context) {
     val serverStore: ServerStore by lazy { ServerStore(
         database, secretBox, serverClients::evict,
         onServerRemoved = {
-            activePlayback.end(it); playbackReports.forget(it)
+            activePlayback.end(it)
             addressSelector.forget(it); libraryRepository.forget(it); artworkEviction.onServerRemoved(it)
             downloadHousekeeping.onServerRemoved(it)
         },
         onAccountGone = { server, user ->
-            activePlayback.end(server, user); playbackReports.forget(server, user)
+            activePlayback.end(server, user)
             libraryRepository.forget(server, user); artworkEviction.onAccountGone(server)
             downloadHousekeeping.onAccountGone(server, user) // the ownership rule; a 401 keeps the account row, so nothing goes
         },
@@ -273,7 +273,7 @@ class AppGraph(private val appContext: Context) {
         PlaystateRepository(libraryRepository, outboxStore, { s -> syncScheduler.changed(s) }, appScope, Dispatchers.IO, System::currentTimeMillis)
     }
     /** Progress reports and the final stop (also saved through `playstate`, queued when the server missed it); see "Progress reports and teardown" in docs/ARCHITECTURE.md. */
-    val playbackReports: ServerPlaybackReports by lazy { ServerPlaybackReports(playbackGateway, playstate) }
+    val playbackReports: ServerPlaybackReports by lazy { ServerPlaybackReports(playbackGateway, playstate) { s -> syncScheduler.changed(s) } }
     /** Who is playing: ended by the store hooks above and whenever the active session changes. */
     val activePlayback: ActivePlayback by lazy {
         ActivePlayback({ s -> serverStore.cachedToken(s.serverId, s.userId) != null }).also { a ->

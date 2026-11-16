@@ -7,7 +7,6 @@ import app.shoalwatch.data.playback.PlaybackFakes.SOURCE
 import app.shoalwatch.data.servers.Connection
 import app.shoalwatch.ui.FakeConnections
 import app.shoalwatch.ui.address
-import app.shoalwatch.ui.browse.AMY
 import app.shoalwatch.ui.browse.BEN
 import app.shoalwatch.ui.browse.FakePlaystate
 import kotlinx.coroutines.async
@@ -28,7 +27,8 @@ class ServerPlaybackReportsTest {
     private fun report(positionMs: Long = 61_000, item: String = ITEM) =
         PlaybackReport(item, SOURCE, PSID, PlayMethod.TRANSCODE, positionMs, paused = false, audioIndex = 1, subtitleIndex = null)
 
-    private fun kotlinx.coroutines.test.TestScope.reports() = ServerPlaybackReports(gateway, playstate)
+    private val kicked = mutableListOf<String>()
+    private fun kotlinx.coroutines.test.TestScope.reports() = ServerPlaybackReports(gateway, playstate) { s -> kicked += "kick:" + if (s == BEN) "ben" else "other" }
 
     private fun offline(kind: AppError.Kind = AppError.Kind.OFFLINE) { gateway.failOps["stopped"] = AppError.of(kind) }
 
@@ -62,34 +62,52 @@ class ServerPlaybackReportsTest {
         assertEquals(ReportOutcome.NotSent(AppError.Kind.UNKNOWN), r.stopped(BEN, report(), finished = false))
     }
 
-    @Test fun stoppedSendsThenRecordsTheStopLocally() = runTest {
+    /**
+     * Tasks 6-8 review M3: the stop is saved and queued (not yet sent) BEFORE the report leaves, so a process death mid-send
+     * cannot lose it; once the server has heard an unfinished stop its queued position goes again (never sent twice).
+     */
+    @Test fun aHeardStopIsQueuedBeforeTheSendThenTakenBackAndNothingIsKicked() = runTest {
         val r = reports()
         assertEquals(ReportOutcome.Sent, r.stopped(BEN, report(61_000), finished = false))
+        assertEquals(listOf("stop:ben:$ITEM:61000:false:unsent", "stop:ben:$ITEM:61000:false"), playstate.calls)
         assertEquals(listOf("stopped@61000"), gateway.calls)
-        assertEquals(listOf("stop:ben:$ITEM:61000:false"), playstate.calls)
+        assertTrue("nothing left to send", kicked.isEmpty())
     }
 
-    @Test fun aFinishedStopIsRecordedAsFinished() = runTest {
+    @Test fun theStopIsDurableBeforeTheReportLeavesSoAKillMidSendLosesNothing() = runTest {
+        val r = reports()
+        val held = kotlinx.coroutines.CompletableDeferred<Unit>()
+        gateway.gate = held
+        val stopping = backgroundScope.async { r.stopped(BEN, report(61_000), finished = false) }
+        runCurrent()
+        assertEquals("queued while the report is still being sent", listOf("stop:ben:$ITEM:61000:false:unsent"), playstate.calls)
+        stopping.cancel() // the process dies mid-send
+        runCurrent()
+        assertEquals("the queued row stays for the outbox", listOf("stop:ben:$ITEM:61000:false:unsent"), playstate.calls)
+        assertTrue("and it is not sent before the report", kicked.isEmpty())
+    }
+
+    @Test fun aFinishedStopStaysQueuedAndIsKickedAfterTheReport() = runTest {
         reports().stopped(BEN, report(5_000_000), finished = true)
-        assertEquals(listOf("stop:ben:$ITEM:5000000:true"), playstate.calls)
+        assertEquals("PLAYED stays queued (review I1)", listOf("stop:ben:$ITEM:5000000:true:unsent"), playstate.calls)
+        assertEquals(listOf("stopped@5000000", "kick:ben"), gateway.calls + kicked)
     }
 
-    @Test fun aStopTheServerCouldNotBeReachedForIsSavedAsUnsentForTheOutbox() = runTest {
+    @Test fun aStopTheServerCouldNotBeReachedForStaysQueuedAndIsKicked() = runTest {
         for (kind in listOf(AppError.Kind.OFFLINE, AppError.Kind.NETWORK, AppError.Kind.TIMEOUT, AppError.Kind.SERVER_ERROR)) {
-            playstate.calls.clear()
+            playstate.calls.clear(); kicked.clear()
             offline(kind)
             assertEquals(ReportOutcome.NotSent(kind), reports().stopped(BEN, report(61_000), finished = false))
             assertEquals(kind.name, listOf("stop:ben:$ITEM:61000:false:unsent"), playstate.calls)
+            assertEquals(listOf("kick:ben"), kicked)
         }
-        playstate.calls.clear()
-        reports().stopped(BEN, report(5_000_000), finished = true)
-        assertEquals(listOf("stop:ben:$ITEM:5000000:true:unsent"), playstate.calls)
     }
 
     @Test fun anyOtherFailureIsSavedOnThePhoneOnlyAsBefore() = runTest {
         offline(AppError.Kind.FORBIDDEN)
         reports().stopped(BEN, report(61_000), finished = false)
-        assertEquals(listOf("stop:ben:$ITEM:61000:false"), playstate.calls)
+        assertEquals(listOf("stop:ben:$ITEM:61000:false:unsent", "stop:ben:$ITEM:61000:false"), playstate.calls)
+        assertTrue(kicked.isEmpty())
     }
 
     @Test fun thereIsNoResendWhenTheConnectionReturnsTheOutboxDoesIt() = runTest {
@@ -104,36 +122,17 @@ class ServerPlaybackReportsTest {
         assertEquals(1, playstate.calls.size)
     }
 
-    @Test fun aStopFailingBecauseTheAccountIsSignedOutIsNotKeptOrSavedLocally() = runTest {
+    @Test fun aStopWhileTheSignInIsRejectedStaysQueuedForTheNextSignIn() = runTest {
         val r = reports()
         offline(AppError.Kind.NOT_SIGNED_IN)
         assertEquals(ReportOutcome.NotSent(AppError.Kind.NOT_SIGNED_IN), r.stopped(BEN, report(), finished = false)); runCurrent()
         assertEquals(1, gateway.calls.size)
-        assertTrue("nothing written for a signed-out account", playstate.calls.isEmpty())
+        assertEquals("kept, as the account's other rows are (a removed account's rows go with it)", listOf("stop:ben:$ITEM:61000:false:unsent"), playstate.calls)
     }
 
-    @Test fun aStopForAnAccountForgottenWhileItWasBeingSentIsNotKept() = runTest {
-        val r = reports()
-        val held = kotlinx.coroutines.CompletableDeferred<Unit>()
-        gateway.gate = held
-        offline()
-        val stopping = backgroundScope.async { r.stopped(BEN, report(), finished = false) }
-        runCurrent()
-        r.forget(BEN.serverId, BEN.userId)
-        gateway.gate = null; held.complete(Unit); stopping.await()
-        assertEquals(1, gateway.calls.size)
-        assertTrue("nothing written for an account that went", playstate.calls.isEmpty())
-    }
-
-    @Test fun forgettingAnotherAccountWhileAStopIsSentLeavesThatStopKeptAndSaved() = runTest {
-        val r = reports()
-        val held = kotlinx.coroutines.CompletableDeferred<Unit>()
-        gateway.gate = held
-        offline()
-        val stopping = backgroundScope.async { r.stopped(BEN, report(61_000), finished = false) }
-        runCurrent()
-        r.forget(AMY.serverId, AMY.userId) // another account going (a 401, a sign-out) is not Ben's business
-        gateway.gate = null; held.complete(Unit); stopping.await()
-        assertEquals("saved, and queued, for Ben", listOf("stop:ben:$ITEM:61000:false:unsent"), playstate.calls)
+    @Test fun aStopThatCannotBeSavedIsStillReported() = runTest {
+        playstate.failWith = AppError.of(AppError.Kind.SERVER_NOT_FOUND)
+        assertEquals(ReportOutcome.Sent, reports().stopped(BEN, report(61_000), finished = false))
+        assertEquals(listOf("stopped@61000"), gateway.calls)
     }
 }

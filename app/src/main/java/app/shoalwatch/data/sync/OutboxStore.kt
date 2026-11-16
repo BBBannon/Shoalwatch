@@ -149,6 +149,11 @@ internal class OutboxStore(private val db: AppDatabase, private val now: () -> L
         dao.updateSynced(s.serverId, s.userId, at)
     }
 
+    /** MUST be called inside the caller's transaction: [s]'s unsent rows of [kind] for [itemId] go, with their marks (a newer value reached the server). */
+    suspend fun dropSame(s: Session, itemId: String, kind: ChangeKind) = db.withTransaction {
+        for (old in dao.sameChange(s.serverId, s.userId, itemId, kind.name)) delete(old)
+    }
+
     private suspend fun delete(seq: Long) {
         dao.deleteMarks(seq)
         dao.deleteRow(seq)

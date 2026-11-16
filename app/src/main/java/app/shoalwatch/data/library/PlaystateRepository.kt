@@ -54,13 +54,15 @@ class PlaystateRepository internal constructor(
     override suspend fun removeFromContinueWatching(s: Session, itemId: String) =
         act(s, itemId) { item -> local.clearResume(s, item.item.itemId) to change(item, ChangeKind.POSITION, positionMs = 0) }
 
-    override suspend fun recordStop(s: Session, itemId: String, positionMs: Long, finished: Boolean, reached: Boolean) =
-        act(s, itemId) { item ->
+    override suspend fun recordStop(s: Session, itemId: String, positionMs: Long, finished: Boolean, reached: Boolean, kick: Boolean) =
+        act(s, itemId, kick) { item ->
             val p = positionMs.coerceAtLeast(0)
             when {
                 // Always queued (review I1): "Finished" can fire at the Outro, below the server's own 90% "played" mark. Absolute, so never counted twice.
                 finished -> local.played(s, item, true) to change(item, ChangeKind.PLAYED, flag = true)
-                else -> local.stoppedAt(s, item.item.itemId, p) to if (reached) null else change(item, ChangeKind.POSITION, positionMs = p)
+                // A stop the server heard carries the newest position: an unsent one for the item would only be older (review M3).
+                reached -> local.stoppedAt(s, item.item.itemId, p).also { outbox.dropSame(s, item.item.itemId, ChangeKind.POSITION) } to null
+                else -> local.stoppedAt(s, item.item.itemId, p) to change(item, ChangeKind.POSITION, positionMs = p)
             }
         }
 
@@ -79,7 +81,8 @@ class PlaystateRepository internal constructor(
         Change(item.item.itemId, item.item.kind, kind, flag = flag, positionMs = positionMs, occurredAt = clock(), fromOfflinePlay = fromOfflinePlay)
 
     /** [change] makes the local change for the item as this user may see it, and says what to queue (null: nothing, the server has it). */
-    private suspend fun act(s: Session, rawId: String, change: suspend (ItemRow) -> Pair<Touched, Change?>) {
+    /** [kick] false: the row is queued but no send is asked for (the caller asks once its own report has gone). */
+    private suspend fun act(s: Session, rawId: String, kick: Boolean = true, change: suspend (ItemRow) -> Pair<Touched, Change?>) {
         val id = JellyfinId.parseOrNull(rawId)?.value ?: throw AppError.of(AppError.Kind.SERVER_NOT_FOUND)
         val done = CompletableDeferred<Unit>()
         val mine = CompletableDeferred<Unit>()
@@ -87,7 +90,7 @@ class PlaystateRepository internal constructor(
         val work = scope.launch(io) {
             try {
                 before?.await() // never fails: a queue entry is only ever completed normally
-                done.completeWith(runCatching { perform(s, id, change) })
+                done.completeWith(runCatching { perform(s, id, kick, change) })
             } finally {
                 // Last in the queue means the queue is about to go idle: a marker no outbox row covers cannot be live, so it is cleared now.
                 try {
@@ -111,7 +114,7 @@ class PlaystateRepository internal constructor(
         }
     }
 
-    private suspend fun perform(s: Session, id: String, change: suspend (ItemRow) -> Pair<Touched, Change?>) {
+    private suspend fun perform(s: Session, id: String, kick: Boolean, change: suspend (ItemRow) -> Pair<Touched, Change?>) {
         val (touched, queued) = try {
             library.writeGated {
                 local.transaction {
@@ -131,7 +134,7 @@ class PlaystateRepository internal constructor(
         } catch (e: Exception) {
             throw AppError.from(e) // a transaction that throws leaves nothing changed, and nothing queued
         }
-        if (queued == null) library.refreshInBackground(s, touched.recompute) else changed(s)
+        if (queued == null) library.refreshInBackground(s, touched.recompute) else if (kick) changed(s)
     }
 
     private suspend fun clearLeftovers(s: Session) {
