@@ -128,6 +128,20 @@ class LockBoundaryTest {
         }
     }
 
+    /**
+     * Review M5 of Tasks 9-10: `MainActivity` hands its own start and stop to `ActivityPip`'s rule (so a start in the small window
+     * is not a return: review C1) and hands it the lock gate itself, so nothing in the activity can swap leaving and returning.
+     */
+    @Test fun theActivityTellsTheLockOnlyThroughThePictureInPictureRule() {
+        val text = File(root, "ui/MainActivity.kt").readText()
+        val onStart = text.substringAfter("override fun onStart(").substringBefore("override fun ")
+        val onStop = text.substringAfter("override fun onStop(").substringBefore("override fun ")
+        assertTrue("onStart asks the rule", onStart.contains("pip.onActivityStarted()"))
+        assertTrue("onStop asks the rule", onStop.contains("pip.onActivityStopped()"))
+        assertTrue("never straight to the gate", !onStart.contains("lockGate") && !onStop.contains("lockGate"))
+        assertTrue("the gate itself", text.contains("trips = { ShoalwatchApp.graph(this).lockParts.lockGate }"))
+    }
+
     @Test fun theLaunchIntentIsCleanedBeforeAnythingIsDrawn() {
         val onCreate = File(root, "ui/MainActivity.kt").readText().substringAfter("override fun onCreate(").substringBefore("override fun ")
         val clean = onCreate.indexOf("sanitised(")

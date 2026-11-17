@@ -7,6 +7,7 @@ import androidx.activity.ComponentActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import app.shoalwatch.core.AppLog
+import app.shoalwatch.security.AppTrips
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -16,7 +17,7 @@ import kotlinx.coroutines.flow.asStateFlow
  * (`setAutoEnterEnabled` while playing and [autoEnter]): that is the fix for gesture navigation, where trying in
  * `onUserLeaveHint` after the gesture fails (the official app's Android 14+ bug). Android 10–11 enters from `onUserLeaveHint`.
  *
- * Entering counts as leaving for the app lock ([onLeft]); back to the full screen counts as returning ([onReturned]). Closing
+ * Entering counts as leaving for the app lock ([trips]' `onLeft`); back to the full screen counts as returning (`onReturned`). Closing
  * the window stops the activity first, so it is not a return: the activity's own stop and start ([onActivityStopped],
  * [onActivityStarted]) count that trip, and the player pauses on the stop as it always has. A start while still in the small
  * window (the screen off and on, a recreation there) is not a return either: only the expand is (review C1 of Tasks 9-10).
@@ -24,8 +25,8 @@ import kotlinx.coroutines.flow.asStateFlow
 internal class ActivityPip(
     private val activity: ComponentActivity,
     private val autoEnter: () -> Boolean,
-    private val onLeft: () -> Unit,
-    private val onReturned: () -> Unit,
+    /** Told about leaving and returning: the graph's `LockGate` (a recording fake in tests). */
+    private val trips: () -> AppTrips,
     /** The Android version (a parameter so the 10–11 path is tested on the one SDK the suite runs, as `SettingsScreen` does). */
     private val sdkInt: Int = Build.VERSION.SDK_INT,
 ) : PipHost {
@@ -85,12 +86,12 @@ internal class ActivityPip(
     fun onActivityStarted() {
         val inPip = activity.isInPictureInPictureMode
         mutableInPip.value = inPip
-        if (!inPip) onReturned()
+        if (!inPip) trips().onReturned()
     }
 
     /** The activity stopped: leaving, unless it is only a configuration change (turning the phone, resizing the window). */
     fun onActivityStopped() {
-        if (!activity.isChangingConfigurations) onLeft()
+        if (!activity.isChangingConfigurations) trips().onLeft()
     }
 
     private fun onUserLeaveHint() {
@@ -101,9 +102,9 @@ internal class ActivityPip(
     private fun onModeChanged(inPip: Boolean) {
         mutableInPip.value = inPip
         when {
-            inPip -> onLeft()
+            inPip -> trips().onLeft()
             // Back to the full screen. Closing the window stops the activity before this is said: not a return.
-            activity.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) -> onReturned()
+            activity.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) -> trips().onReturned()
         }
     }
 

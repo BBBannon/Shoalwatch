@@ -35,6 +35,10 @@ class PictureInPictureTest {
     private var autoEnter = true
     private val gate = mutableListOf<String>()
     private val presses = mutableListOf<String>()
+    private val recorder = object : AppTrips {
+        override fun onLeft() { gate += "left" }
+        override fun onReturned() { gate += "returned" }
+    }
 
     @Before fun pipSupported() {
         shadowOf(context.packageManager).setSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE, true)
@@ -43,7 +47,7 @@ class PictureInPictureTest {
     /** [sdkInt]: the Android version the host acts for (the suite runs one SDK; a second Robolectric SDK runs it out of memory). */
     private fun host(sdkInt: Int = Build.VERSION.SDK_INT): Pair<ActivityController<ComponentActivity>, ActivityPip> {
         val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup()
-        return controller to ActivityPip(controller.get(), { autoEnter }, { gate += "left" }, { gate += "returned" }, sdkInt)
+        return controller to ActivityPip(controller.get(), { autoEnter }, { recorder }, sdkInt)
     }
 
     @Test fun theAspectIsTheVideosClampedToWhatAndroidAllows() {
@@ -169,72 +173,62 @@ class PictureInPictureTest {
             assertEquals(listOf("left"), gate)
         } finally { controller.destroy() }
     }
-    private val recorder = object : AppTrips {
-        override fun onLeft() { gate += "left" }
-        override fun onReturned() { gate += "returned" }
-    }
 
-    /** `MainActivity` itself, telling [recorder] instead of the graph's `LockGate` (review M5 of Tasks 9-10). */
-    private fun mainActivity(): ActivityController<MainActivity> {
-        val controller = Robolectric.buildActivity(MainActivity::class.java)
-        controller.get().trips = { recorder }
-        return controller
-    }
-
-    /** Review M5: the activity's own stop and start, and the window's mode changes, reach the lock as leaving and returning. */
-    @Test fun theActivityTellsTheLockWhenItIsLeftAndReturnedTo() {
-        val controller = mainActivity().setup()
+    /** Outside the small window the activity's own start is a return and its stop is leaving (`MainActivity` forwards both). */
+    @Test fun outsideTheWindowAStartIsAReturnAndAStopIsLeaving() {
+        val (controller, pip) = host()
         try {
-            assertEquals("a start is a return", listOf("returned"), gate)
+            pip.onActivityStarted()
+            assertEquals(listOf("returned"), gate)
             controller.pause().stop()
-            assertEquals("a stop is leaving", listOf("returned", "left"), gate)
-            controller.start().resume()
-            assertEquals(listOf("returned", "left", "returned"), gate)
-            gate.clear()
-            controller.get().onPictureInPictureModeChanged(true, Configuration())
-            controller.get().onPictureInPictureModeChanged(false, Configuration())
-            assertEquals("entering is leaving, expanding is returning", listOf("left", "returned"), gate)
-        } finally { controller.pause().stop().destroy() }
+            pip.onActivityStopped()
+            assertEquals(listOf("returned", "left"), gate)
+        } finally { controller.destroy() }
     }
 
     /**
      * Review C1 of Tasks 9-10: a PiP activity is stopped and started again while it stays in the small window (the screen off and
      * on, the keyguard). That start is not a return, or the timer from entering would be gone and expanding hours later would
-     * skip the PIN: only the expand is.
+     * skip the PIN: only the expand is. (First shown RED on `MainActivity` itself; driven here, through the very functions
+     * `MainActivity.onStart`/`onStop` call, as each full launch of the app costs the one-JVM suite too much memory.)
      */
     @Test fun aStopAndStartWhileStillInTheSmallWindowIsNotAReturn() {
-        val controller = mainActivity().setup()
-        val activity = controller.get()
-        val host = activity as PipHost
+        val (controller, pip) = host()
         try {
-            host.wish(wish(playing = true)) {}
-            assertTrue(host.enterNow())
-            activity.onPictureInPictureModeChanged(true, Configuration())
-            gate.clear()
+            pip.wish(wish(playing = true)) {}
+            assertTrue(pip.enterNow())
+            controller.get().onPictureInPictureModeChanged(true, Configuration())
+            assertEquals("entering is leaving", listOf("left"), gate)
             controller.pause().stop() // the screen goes off with the small window up
+            pip.onActivityStopped()
             controller.start() // and on again: still in the small window
-            assertTrue("still in the small window", activity.isInPictureInPictureMode)
-            assertEquals("no return while in the small window", listOf("left"), gate)
-            activity.onPictureInPictureModeChanged(false, Configuration()) // expanded: now it is a return
-            assertEquals(listOf("left", "returned"), gate)
-            assertFalse(host.inPip.value)
+            pip.onActivityStarted()
+            assertTrue("still in the small window", controller.get().isInPictureInPictureMode)
+            assertEquals("no return while in the small window", listOf("left", "left"), gate)
+            controller.get().onPictureInPictureModeChanged(false, Configuration()) // expanded: now it is a return
+            assertEquals(listOf("left", "left", "returned"), gate)
+            assertFalse(pip.inPip.value)
         } finally {
-            host.wish(null, null)
+            pip.wish(null, null)
             controller.pause().stop().destroy()
         }
     }
+
     /** Review M3 of Tasks 9-10: an activity started in the small window (recreated there) is told so without a mode change. */
-    @Test fun aStartInTheSmallWindowSaysSo() {
-        val controller = mainActivity().setup()
-        val host = controller.get() as PipHost
+    @Test fun aStartInTheSmallWindowSaysSoAndIsNotAReturn() {
+        val (controller, pip) = host()
         try {
-            host.wish(wish(playing = true)) {}
-            assertTrue(host.enterNow()) // in the window; this instance never hears the mode change, as a recreated one does not
-            assertFalse(host.inPip.value)
-            controller.pause().stop().start()
-            assertTrue(host.inPip.value)
+            pip.wish(wish(playing = true)) {}
+            assertTrue(pip.enterNow()) // in the window; this instance never hears the mode change, as a recreated one does not
+            assertFalse(pip.inPip.value)
+            controller.pause().stop()
+            pip.onActivityStopped()
+            controller.start()
+            pip.onActivityStarted()
+            assertTrue(pip.inPip.value)
+            assertEquals(listOf("left"), gate)
         } finally {
-            host.wish(null, null)
+            pip.wish(null, null)
             controller.pause().stop().destroy()
         }
     }
@@ -243,7 +237,7 @@ class PictureInPictureTest {
     @Test fun theWishGoingInTheSmallWindowClosesIt() {
         val controller = Robolectric.buildActivity(PipTestActivity::class.java).setup()
         val activity = controller.get()
-        val pip = ActivityPip(activity, { autoEnter }, { gate += "left" }, { gate += "returned" })
+        val pip = ActivityPip(activity, { autoEnter }, { recorder })
         try {
             pip.wish(wish()) {}
             pip.wish(null, null)
@@ -260,7 +254,7 @@ class PictureInPictureTest {
     @Test fun anAspectTheDeviceRefusesIsNotACrash() {
         val controller = Robolectric.buildActivity(PipTestActivity::class.java).setup()
         val activity = controller.get()
-        val pip = ActivityPip(activity, { autoEnter }, { gate += "left" }, { gate += "returned" })
+        val pip = ActivityPip(activity, { autoEnter }, { recorder })
         try {
             activity.refusal = IllegalArgumentException("aspect ratio out of range")
             pip.wish(wish(4000, 1000)) {}

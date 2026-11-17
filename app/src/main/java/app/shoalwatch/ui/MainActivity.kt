@@ -13,7 +13,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import app.shoalwatch.data.downloads.DownloadNotifications
-import app.shoalwatch.security.AppTrips
 import app.shoalwatch.ui.components.LocalArtworkLoader
 import app.shoalwatch.ui.nav.AppRoot
 import app.shoalwatch.ui.player.ActivityPip
@@ -31,14 +30,10 @@ import app.shoalwatch.ui.theme.ShoalwatchTheme
  */
 class MainActivity : ComponentActivity(), PipHost {
     private val openTab = mutableStateOf<String?>(null)
-
-    /** Told when the app is left and returned to: the graph's `LockGate` (a test hands a recording fake: review M5 of Tasks 9-10). */
-    internal var trips: () -> AppTrips = { ShoalwatchApp.graph(this).lockParts.lockGate }
     private val pip = ActivityPip(
         this,
         autoEnter = { ShoalwatchApp.graph(this).lockParts.pipPrefs.autoEnter.value },
-        onLeft = { trips().onLeft() },
-        onReturned = { trips().onReturned() },
+        trips = { ShoalwatchApp.graph(this).lockParts.lockGate }, // the lock gate itself: nothing here can swap leaving and returning
     )
     override val inPip: StateFlow<Boolean> get() = pip.inPip
     override fun wish(w: PipWish?, onPlayPause: (() -> Unit)?) = pip.wish(w, onPlayPause)
