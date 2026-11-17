@@ -1,3 +1,4 @@
+v1.146 — 17/11/2026 — Leaving the app just after unlocking it with a fingerprint now locks it again as your "Lock after" setting says, instead of staying open for up to two minutes
 v1.145 — 17/11/2026 — On a tablet turned on its side, a show opened from Continue Watching keeps that episode in view when its season list updates
 v1.144 — 17/11/2026 — Changing a lock setting in Settings when the phone cannot read its saved data now says the change was not saved instead of closing the app, and the message goes once a later change is saved
 v1.143 — 17/11/2026 — A film in the small picture-in-picture window no longer closes when the phone switches to dark mode or its language or text size changes

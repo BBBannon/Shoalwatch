@@ -44,7 +44,8 @@ data class Judged(val session: Session?) {
  * The one lock state for the app (Milestone 7; see "App lock" in docs/ARCHITECTURE.md). The rules:
  * 1. Start, and a return after [LockSettings.lockAfter]: the app lock (when on and the phone is secure) first, then the active
  *    profile's PIN when it is protected, else open.
- * 2. Leaving is timed by [clock] (monotonic) only; [expectReturn] makes the next trip not count.
+ * 2. Leaving is timed by [clock] (monotonic) only; [expectReturn] makes the next trip not count (it must start within
+ *    [EXPECT_WINDOW_MS] and before [tripDone], and is still capped at max(Lock after, [EXCUSED_CAP_MS])).
  * 3. Whenever the active profile changes to a protected one, it is locked unless [ProvedSwitches.consume] says its PIN was just
  *    typed for that switch: this catches every path that makes a profile active (a sign-in, "Sign in again", a restore), not only
  *    the switcher. A change to an unprotected profile, or to nobody, opens a profile lock. The lock is decided at once, from the
@@ -209,6 +210,13 @@ class LockGate(
      * It must start within [EXPECT_WINDOW_MS], so a screen that never stops the activity cannot leave the next real trip uncounted.
      */
     fun expectReturn() = synchronized(lock) { expectedAt = clock.nowMs() }
+
+    /**
+     * The system screen [expectReturn] was for has answered (yes, no or cancel). A fingerprint prompt is a system window that never
+     * stops the activity, so without this its excuse would stay pending and excuse the next real trip (final review M1). A trip the
+     * screen did start is already under way and is not touched.
+     */
+    fun tripDone() = synchronized(lock) { expectedAt = null }
 
     /** [DeviceAuth] said yes. */
     fun appUnlocked() = synchronized(lock) {

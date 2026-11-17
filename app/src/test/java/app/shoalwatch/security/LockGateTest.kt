@@ -214,6 +214,27 @@ class LockGateTest : LibraryTestBase() {
         assertEquals(LockState.Profile(adult, "ann"), gate.state.value)
     }
 
+    @Test fun aPromptThatAnsweredWithoutStoppingTheAppExcusesNoLaterTrip() = runTest {
+        prefs.setLockAfter(LockAfter.IMMEDIATELY)
+        val gate = openAsAdult()
+        gate.expectReturn() // a fingerprint prompt: a system window, so the activity never stops
+        gate.tripDone() // it answered
+        clock.ms += 1_000
+        gate.onLeft(); clock.ms += 1_000; gate.onReturned()
+        assertEquals(LockState.Profile(adult, "ann"), gate.state.value)
+    }
+
+    @Test fun aPromptThatStoppedTheAppStillExcusesItsOwnTrip() = runTest {
+        prefs.setLockAfter(LockAfter.IMMEDIATELY)
+        val gate = openAsAdult()
+        gate.expectReturn(); gate.onLeft() // the screen-lock fallback is an activity
+        gate.tripDone() // it answered before the app was back
+        clock.ms += 5_000; gate.onReturned()
+        assertEquals(LockState.Open, gate.state.value)
+        gate.onLeft(); clock.ms += 1_000; gate.onReturned()
+        assertEquals(LockState.Profile(adult, "ann"), gate.state.value)
+    }
+
     @Test fun theAppLockReturnsAfterTimeAway() = runTest {
         prefs.setAppLock(true)
         val gate = gate()

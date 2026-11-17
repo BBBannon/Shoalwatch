@@ -219,7 +219,12 @@ internal fun SettingsRoute(graph: AppGraph, nav: NavHostController) {
                 if (activity != null) {
                     scope.launch {
                         parts.lockGate.expectReturn()
-                        if (parts.deviceAuth.authenticate(activity, title, subtitle) == AuthOutcome.SUCCESS) vm.setAppLock(on)
+                        val outcome = try {
+                            parts.deviceAuth.authenticate(activity, title, subtitle)
+                        } finally {
+                            parts.lockGate.tripDone() // the prompt answered: its excuse ends here (final review M1)
+                        }
+                        if (outcome == AuthOutcome.SUCCESS) vm.setAppLock(on)
                     }
                 }
             },

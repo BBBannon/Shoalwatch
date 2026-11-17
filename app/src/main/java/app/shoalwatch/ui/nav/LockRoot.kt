@@ -163,6 +163,7 @@ private fun rememberUnlockPrompt(gate: LockGate, auth: DeviceAuth, onUnavailable
                             AuthOutcome.CANCELLED, AuthOutcome.FAILED -> Unit
                         }
                     } finally {
+                        gate.tripDone() // the prompt answered: its excuse ends here (final review M1)
                         running = false
                     }
                 }

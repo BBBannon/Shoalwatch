@@ -26,6 +26,17 @@ class LockBoundaryTest {
         assertTrue("only on SUCCESS: $line", line.contains("AuthOutcome.SUCCESS"))
     }
 
+    @Test fun everyExpectedTripIsEndedWhenItsPromptAnswers() {
+        val expecting = filesCalling(Regex("""\.expectReturn\("""))
+        assertEquals(listOf("ui/KeyChainCertChooser.kt", "ui/nav/LockRoot.kt", "ui/nav/Routes.kt"), expecting)
+        for (path in expecting) {
+            val text = File(root, path).readText()
+            val expects = Regex("""\.expectReturn\(""").findAll(text).count()
+            val dones = Regex("""\.tripDone\(""").findAll(text).count()
+            assertTrue("$path: every expectReturn() needs a tripDone() when the prompt answers", dones >= expects)
+        }
+    }
+
     @Test fun aPinIsClearedOnlyWithTheProofOfAPasswordSignIn() {
         assertEquals(listOf("LockParts.kt"), filesCalling(Regex("""\.clear\(\s*it\s*\)|[Ll]ocks\.clear\(""")))
         assertEquals("the proof is made only by the lock screen", listOf("ui/lock/LockViewModel.kt"), filesCalling(Regex("""ClearProof\.afterPasswordSignIn\(""")))
