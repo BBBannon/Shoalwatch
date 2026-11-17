@@ -25,6 +25,8 @@ internal class ActivityPip(
     private val autoEnter: () -> Boolean,
     private val onLeft: () -> Unit,
     private val onReturned: () -> Unit,
+    /** The Android version (a parameter so the 10–11 path is tested on the one SDK the suite runs, as `SettingsScreen` does). */
+    private val sdkInt: Int = Build.VERSION.SDK_INT,
 ) : PipHost {
     private val mutableInPip = MutableStateFlow(false)
     override val inPip: StateFlow<Boolean> = mutableInPip.asStateFlow()
@@ -47,7 +49,7 @@ internal class ActivityPip(
         if (w != null) register() else unregister()
         if (!supported) return
         // Android 10–11 has no auto-enter, so nothing needs withdrawing there; the params are still kept current for the button.
-        if (w == null && Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+        if (w == null && sdkInt < Build.VERSION_CODES.S) return
         try {
             activity.setPictureInPictureParams(if (w != null) pipParams(activity, w, w.playing && autoEnter()) else noPipParams())
         } catch (e: IllegalStateException) {
@@ -67,7 +69,7 @@ internal class ActivityPip(
     }
 
     private fun onUserLeaveHint() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) return // auto-enter does it, during the gesture
+        if (sdkInt >= Build.VERSION_CODES.S) return // auto-enter does it, during the gesture
         if (current?.playing == true && autoEnter()) enterNow()
     }
 

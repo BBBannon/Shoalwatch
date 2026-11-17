@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.os.Build
 import android.os.Looper
 import android.util.Rational
 import androidx.activity.ComponentActivity
@@ -20,7 +21,6 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.android.controller.ActivityController
-import org.robolectric.annotation.Config
 
 /**
  * Picture-in-picture (Milestone 7 Task 9): the window's params (aspect, one immutable explicit action, auto-enter while playing),
@@ -37,17 +37,14 @@ class PictureInPictureTest {
 
     @Before fun pipSupported() {
         shadowOf(context.packageManager).setSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE, true)
-        // Below Android 13 `ContextCompat.registerReceiver(..., RECEIVER_NOT_EXPORTED)` guards the receiver with androidx.core's
-        // signature permission (in the merged manifest, so the app holds it on a phone); Robolectric grants nothing by itself.
-        shadowOf(context as android.app.Application).grantPermissions("${context.packageName}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION")
     }
 
-    private fun host(): Pair<ActivityController<ComponentActivity>, ActivityPip> {
+    /** [sdkInt]: the Android version the host acts for (the suite runs one SDK; a second Robolectric SDK runs it out of memory). */
+    private fun host(sdkInt: Int = Build.VERSION.SDK_INT): Pair<ActivityController<ComponentActivity>, ActivityPip> {
         val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup()
-        return controller to ActivityPip(controller.get(), { autoEnter }, { gate += "left" }, { gate += "returned" })
+        return controller to ActivityPip(controller.get(), { autoEnter }, { gate += "left" }, { gate += "returned" }, sdkInt)
     }
 
-    @Config(sdk = [34])
     @Test fun theAspectIsTheVideosClampedToWhatAndroidAllows() {
         assertEquals(Rational(16, 9), pipParams(context, wish()).aspectRatio)
         assertEquals(Rational(239, 100), pipParams(context, wish(4000, 1000)).aspectRatio)
@@ -55,7 +52,6 @@ class PictureInPictureTest {
         assertEquals("unknown size", Rational(16, 9), pipParams(context, wish(0, 0)).aspectRatio)
     }
 
-    @Config(sdk = [34])
     @Test fun oneActionAnImmutableBroadcastToThisPackageOnly() {
         val actions = pipParams(context, wish()).actions
         assertEquals(1, actions.size)
@@ -69,7 +65,6 @@ class PictureInPictureTest {
         assertEquals(context.getString(R.string.pip_play), pipParams(context, wish(playing = false)).actions.single().title)
     }
 
-    @Config(sdk = [34])
     @Test fun autoEnterOnlyWhilePlayingAndNoSeamlessResize() {
         assertTrue(pipParams(context, wish(playing = true)).isAutoEnterEnabled)
         assertFalse(pipParams(context, wish(playing = false)).isAutoEnterEnabled)
@@ -99,9 +94,8 @@ class PictureInPictureTest {
         } finally { controller.pause().stop().destroy() }
     }
 
-    @Config(sdk = [30])
     @Test fun onAndroid11LeavingWhilePlayingEntersPip() {
-        val (controller, pip) = host()
+        val (controller, pip) = host(sdkInt = 30)
         try {
             pip.wish(wish(playing = true)) {}
             controller.userLeaving()
@@ -109,11 +103,10 @@ class PictureInPictureTest {
         } finally { controller.pause().stop().destroy() }
     }
 
-    @Config(sdk = [30])
     @Test fun onAndroid11LeavingPausedOrWithTheSettingOffOrNoWishDoesNot() {
         for (case in listOf("paused", "setting off", "no wish")) {
             autoEnter = case != "setting off"
-            val (controller, pip) = host()
+            val (controller, pip) = host(sdkInt = 30)
             try {
                 if (case != "no wish") pip.wish(wish(playing = case != "paused")) {}
                 controller.userLeaving()
@@ -122,10 +115,9 @@ class PictureInPictureTest {
         }
     }
 
-    @Config(sdk = [30])
     @Test fun theButtonEntersWheneverAWishExistsEvenWithTheSettingOff() {
         autoEnter = false
-        val (controller, pip) = host()
+        val (controller, pip) = host(sdkInt = 30)
         try {
             assertFalse("no wish, no window", pip.enterNow())
             pip.wish(wish(playing = false)) {}
