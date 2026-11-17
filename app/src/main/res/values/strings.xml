@@ -707,4 +707,8 @@
         <item quantity="other">%1$s changes haven\'t reached this server yet. Shoalwatch will try to send them first. Any it can\'t send are deleted from this phone.</item>
     </plurals>
     <string name="sync_sending_first">Sending changes…</string>
+
+    <!-- Settings (Milestone 7): each profile's own playback settings -->
+    <string name="settings_autoplay">Play the next episode automatically</string>
+    <string name="settings_autoplay_help">When an episode ends, the next one starts after a short countdown. For this profile only.</string>
 </resources>

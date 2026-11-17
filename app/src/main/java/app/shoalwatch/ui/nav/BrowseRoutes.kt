@@ -102,6 +102,7 @@ internal fun HomeRoute(graph: AppGraph, nav: NavHostController, fresh: Boolean) 
             onSetFavourite = vm::setFavourite,
             onSubmitSwitch = vm::submitSwitch,
             onDismissSwitch = vm::dismissSwitch,
+            onOpenSettings = { nav.navigate(Routes.SETTINGS) },
         )
     }
     AppShell(Tab.HOME, nav::switchTab, snackbar) { HomeScreen(state, actions, vm.messages, snackbar, prompt, vm.switchPin) }
@@ -294,7 +295,7 @@ internal fun OfflineSeriesRoute(graph: AppGraph, nav: NavHostController, seriesI
 @Composable
 internal fun PlayerRoute(graph: AppGraph, nav: NavHostController, itemId: String, from: StartFrom) {
     val vm = graphStateViewModel(key = "$itemId|$from") { saved ->
-        PlayerViewModel(itemId, from, saved, graph.serverCatalog, { s, scope -> graph.playbackController(s, scope) { true } }, graph.subtitleSettings, graph.qualityDefault, graph.addressSelector::refreshIfOffline, graph.housekeeping)
+        PlayerViewModel(itemId, from, saved, graph.serverCatalog, { s, scope -> graph.playbackController(s, scope, graph.lockParts.profilePlayback.autoplayReader(s, scope)) }, graph.subtitleSettings, graph.qualityDefault, graph.addressSelector::refreshIfOffline, graph.housekeeping)
     }
     val state by vm.state.collectAsStateWithLifecycle()
     LaunchedEffect(state.leave) { if (state.leave) nav.popBackStack(Routes.PLAYER, inclusive = true) }

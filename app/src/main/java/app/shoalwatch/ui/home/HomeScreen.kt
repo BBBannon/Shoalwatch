@@ -86,6 +86,8 @@ class HomeActions(
     val onSetFavourite: (itemId: String, favourite: Boolean) -> Unit,
     val onSubmitSwitch: () -> Unit = {},
     val onDismissSwitch: () -> Unit = {},
+    /** The account menu's "Settings" (Milestone 7). */
+    val onOpenSettings: () -> Unit = {},
 )
 
 /**

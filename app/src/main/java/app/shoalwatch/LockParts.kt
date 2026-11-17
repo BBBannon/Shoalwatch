@@ -2,6 +2,7 @@ package app.shoalwatch
 
 import android.content.Context
 import app.shoalwatch.core.SystemMonotonicClock
+import app.shoalwatch.data.playback.ProfilePlayback
 import app.shoalwatch.data.servers.ProfileSwitch
 import app.shoalwatch.data.servers.ProfileSwitcher
 import app.shoalwatch.data.servers.ProvedSwitches
@@ -46,6 +47,9 @@ internal class LockParts(graph: AppGraph) {
 
     /** The wait between wrong "Forgot PIN" passwords (review M5), kept in the same private file. */
     val forgotThrottle = ForgotThrottle(graph.appContext.getSharedPreferences("security_prefs", Context.MODE_PRIVATE), SystemMonotonicClock)
+
+    /** Each profile's own "Play the next episode automatically" (Room `profile_playback`). */
+    val profilePlayback = ProfilePlayback(graph.database.profileDao())
 
     /** The phone's own screen lock prompt. */
     val deviceAuth: DeviceAuth = FrameworkDeviceAuth(graph.appContext)

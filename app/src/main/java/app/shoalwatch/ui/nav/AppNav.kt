@@ -78,6 +78,8 @@ internal object Routes {
     /** One downloaded series, offline (Milestone 4). A malformed id reads as "This is no longer available". */
     const val DOWNLOADED_SERIES = "downloads/series/{$ARG_SERIES}"
     const val DOWNLOAD_SETTINGS = "download_settings"
+    /** Settings (Milestone 7): not an account route, so a session change pops it. */
+    const val SETTINGS = "settings"
     const val STORAGE = "downloads/storage"
 
     fun home(fresh: Boolean = false) = "home?$ARG_FRESH=$fresh"
@@ -192,6 +194,7 @@ private fun AppNavHost(graph: AppGraph, start: String, openTab: String?, onTabOp
         )
         composable(Routes.SERVERS) { ServersRoute(graph, nav) }
         composable(Routes.DOWNLOAD_SETTINGS) { DownloadSettingsRoute(graph, nav) }
+        composable(Routes.SETTINGS) { SettingsRoute(graph, nav) }
         composable(Routes.SERVER_EDIT, serverArg) { ServerEditRoute(graph, nav, it.arguments?.getString(Routes.ARG_SERVER).orEmpty()) }
         adminDestinations(graph, nav)
     }

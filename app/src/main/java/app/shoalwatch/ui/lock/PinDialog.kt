@@ -30,7 +30,8 @@ import app.shoalwatch.ui.components.LocalCovered
 /**
  * A PIN asked for in a dialog (switching into a protected profile, signing one out, "Use another profile" on the lock screen). A
  * [SecureDialog] window (kept out of screenshots and recents) behind the obscured-touch filter; the field is focused first.
- * [failed]: the try could not be saved (see [pinAnswerText]).
+ * [failed]: the try could not be saved (see [pinAnswerText]). [note]: a line of the caller's own (Settings: the PINs did not
+ * match), shown when there is no answer to show.
  */
 @Composable
 internal fun PinDialog(
@@ -43,6 +44,7 @@ internal fun PinDialog(
     onDismiss: () -> Unit,
     failed: Boolean = false,
     busy: Boolean = false,
+    note: String? = null,
 ) {
     if (LocalCovered.current) return // under the lock cover (review M1)
     AlertDialog(
@@ -57,7 +59,7 @@ internal fun PinDialog(
                 ObscuredTouchHint(obscured)
                 Text(body)
                 PinField(pin, stringResource(R.string.pin_label), onConfirm, Modifier.focusRequester(focus), enabled = !busy)
-                ErrorMessage(pinAnswerText(answer, failed))
+                ErrorMessage(pinAnswerText(answer, failed) ?: note)
             }
         },
         dismissButton = {

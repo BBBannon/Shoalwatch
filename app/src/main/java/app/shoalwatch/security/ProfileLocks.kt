@@ -27,6 +27,12 @@ interface ProfileProtection {
     suspend fun protect(s: Session, pin: CharArray): Boolean
 
     /**
+     * Zeroes [pin]. The current PIN, counted like any try (Settings asks it before "Change PIN", whose own check counts again).
+     * @throws AppError when the count cannot be saved: nothing is checked then.
+     */
+    suspend fun check(s: Session, pin: CharArray): PinCheck
+
+    /**
      * Zeroes both arrays. Correct ⇒ the new PIN replaces the old one.
      * @throws IllegalArgumentException when [new] breaks [PinRules] (screens check first); nothing is checked or counted then.
      */
@@ -89,7 +95,7 @@ class ProfileLocks(
      * wait is measured from this process's own clock (see the class note).
      * @throws AppError when the count cannot be saved (a full or damaged database): nothing is checked then.
      */
-    suspend fun check(s: Session, pin: CharArray): PinCheck = try {
+    override suspend fun check(s: Session, pin: CharArray): PinCheck = try {
         mutex.withLock { withContext(io) { checkLocked(s, pin) } }
     } finally {
         pin.fill('\u0000')

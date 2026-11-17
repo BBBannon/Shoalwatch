@@ -72,9 +72,9 @@ internal abstract class PlaybackControllerTestBase {
     fun TestScope.controller(player: PlayerEngine = engine) = controllerFor(session, backgroundScope, player)
 
     /** For [s] on [scope] (a screen's scope); the reports' scope is still the test's background scope. */
-    fun TestScope.controllerFor(s: Session, scope: CoroutineScope, player: PlayerEngine = engine) = PlaybackController(
+    fun TestScope.controllerFor(s: Session, scope: CoroutineScope, player: PlayerEngine = engine, autoplayNext: () -> Boolean = { autoplay }) = PlaybackController(
         s, player, PlaybackResolver(gateway, { caps }, routes, StandardTestDispatcher(testScheduler), savedLookup, savedFailed), playerReports, playerGateway, library,
-        EpisodeNavigator(library), activePlayback, scope, backgroundScope, clock, { autoplay },
+        EpisodeNavigator(library), activePlayback, scope, backgroundScope, clock, autoplayNext,
         trackPrefs, SubtitleLoader(playerGateway, StandardTestDispatcher(testScheduler)), { captions },
     )
 

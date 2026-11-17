@@ -14,6 +14,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
 
 /**
  * The switcher as a fake: [protected] profiles answer `NeedsPin` to [switchTo]; [switchWithPin] accepts [rightPin] (and then
@@ -91,5 +92,64 @@ class FakeDeviceAuth(var outcome: AuthOutcome = AuthOutcome.SUCCESS, var secure:
     override suspend fun authenticate(activity: Activity, title: String, subtitle: String): AuthOutcome {
         prompts++
         return outcome
+    }
+}
+
+/**
+ * Profile protection as a fake: [pins] holds each protected profile's PIN (as typed, for the test only). Every call is recorded
+ * with the PIN as typed, and every array handed in is kept in [arrays] so a test can see it was zeroed. [failure] is thrown by
+ * every call (a `HouseholdLockedException` for the data layer's refusal).
+ */
+class FakeProfileLocks : app.shoalwatch.security.ProfileProtection {
+    val pins = MutableStateFlow<Map<Session, String>>(emptyMap())
+    var wrongAnswer: PinCheck = PinCheck.Wrong(4)
+    var failure: Exception? = null
+    val calls = mutableListOf<String>()
+    val arrays = mutableListOf<CharArray>()
+
+    override val protectedProfiles: Flow<Set<Session>> = pins.map { it.keys }
+    override fun isProtectedFlow(s: Session): Flow<Boolean> = pins.map { s in it }
+
+    private fun answer(s: Session, typed: String): PinCheck = when (val right = pins.value[s]) {
+        null -> PinCheck.NotProtected
+        typed -> PinCheck.Correct
+        else -> wrongAnswer
+    }
+
+    override suspend fun protect(s: Session, pin: CharArray): Boolean = zeroing(pin) {
+        calls += "protect:${s.userId}:${String(pin)}"
+        failure?.let { throw it }
+        if (s in pins.value) return@zeroing false
+        pins.value = pins.value + (s to String(pin))
+        true
+    }
+
+    override suspend fun check(s: Session, pin: CharArray): PinCheck = zeroing(pin) {
+        calls += "check:${s.userId}:${String(pin)}"
+        failure?.let { throw it }
+        answer(s, String(pin))
+    }
+
+    override suspend fun changePin(s: Session, old: CharArray, new: CharArray): PinCheck = zeroing(old) {
+        zeroing(new) {
+            calls += "changePin:${s.userId}:${String(old)}:${String(new)}"
+            failure?.let { throw it }
+            answer(s, String(old)).also { if (it == PinCheck.Correct) pins.value = pins.value + (s to String(new)) }
+        }
+    }
+
+    override suspend fun unprotect(s: Session, pin: CharArray): PinCheck = zeroing(pin) {
+        calls += "unprotect:${s.userId}:${String(pin)}"
+        failure?.let { throw it }
+        answer(s, String(pin)).also { if (it == PinCheck.Correct) pins.value = pins.value - s }
+    }
+
+    private inline fun <T> zeroing(pin: CharArray, block: () -> T): T {
+        arrays += pin
+        try {
+            return block()
+        } finally {
+            pin.fill('\u0000')
+        }
     }
 }

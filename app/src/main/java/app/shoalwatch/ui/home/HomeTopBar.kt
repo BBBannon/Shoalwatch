@@ -184,6 +184,10 @@ private fun AccountButton(state: HomeUiState, actions: HomeActions) {
                 text = { Text(stringResource(R.string.home_manage), style = MaterialTheme.typography.bodyLarge) },
                 onClick = { open = false; actions.onOpenServers() },
             )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.settings_open), style = MaterialTheme.typography.bodyLarge) },
+                onClick = { open = false; actions.onOpenSettings() },
+            )
         }
     }
 }

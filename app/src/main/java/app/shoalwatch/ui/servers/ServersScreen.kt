@@ -71,6 +71,8 @@ class ServersActions(
     val onChooseGrownUp: (AccountSummary) -> Unit = {},
     val onSubmitGrownUp: () -> Unit = {},
     val onDismissGrownUp: () -> Unit = {},
+    /** The top bar's "Settings": the app's own Settings screen (Milestone 7), not a server's connection settings. */
+    val onOpenAppSettings: () -> Unit = {},
 )
 
 /** The PIN dialogs the Servers screen can show: a switch into a protected profile, or a grown-up's check. */
@@ -87,6 +89,9 @@ fun ServersScreen(state: ServersUiState, actions: ServersActions, dialogs: Serve
     AppScreen(
         title = stringResource(R.string.servers_title),
         onBack = actions.onBack,
+        actions = {
+            TextButton(onClick = actions.onOpenAppSettings, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.settings_open)) }
+        },
         bottomBar = { PrimaryButton(stringResource(R.string.servers_add), actions.onAddServer) },
     ) {
         ErrorMessage(state.error)

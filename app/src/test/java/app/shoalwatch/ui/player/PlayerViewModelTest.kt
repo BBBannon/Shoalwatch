@@ -81,12 +81,16 @@ internal class PlayerViewModelTest : PlaybackControllerTestBase() {
     @Before fun main() = Dispatchers.setMain(dispatcher)
     @After fun reset() = Dispatchers.resetMain()
 
+    /** The profile's own "Play the next episode automatically", read as the route reads it (Milestone 7). */
+    private val profileDao = app.shoalwatch.data.playback.FakeProfileDao()
+    private val profilePlayback = app.shoalwatch.data.playback.ProfilePlayback(profileDao)
+
     private fun TestScope.vm(saved: SavedStateHandle = SavedStateHandle(), from: StartFrom = StartFrom.RESUME, settle: Boolean = true): PlayerViewModel {
         val factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T =
                 // The controller runs on the test's background scope: its endless tick loops would keep a ViewModel scope from ever going idle.
-                PlayerViewModel(ep1, from, saved, catalog, { s, _ -> made += s; controllerFor(s, backgroundScope) }, settings, quality,
+                PlayerViewModel(ep1, from, saved, catalog, { s, scope -> made += s; controllerFor(s, backgroundScope, autoplayNext = profilePlayback.autoplayReader(s, scope)) }, settings, quality,
                     { serverId -> reprobed += serverId; onReprobe() }, housekeeping) as T
         }
         return ViewModelProvider.create(store, factory)[PlayerViewModel::class.java].also { if (settle) runCurrent() }
@@ -400,5 +404,27 @@ internal class PlayerViewModelTest : PlaybackControllerTestBase() {
         assertNull(vm.state.value.watched)
         vm.watchedDelete(); vm.watchedTogether(); runCurrent()
         assertEquals(emptyList<String>(), housekeeping.calls.filter { it.startsWith("release") })
+    }
+
+    // ---- "Play the next episode automatically" (Milestone 7)
+
+    @Test fun withTheProfilesAutoplayOffUpNextWaitsForATap() = runTest(dispatcher) {
+        profileDao.setAutoplay(BEN, false)
+        val vm = vm(); playing(vm)
+        engine.positionMs = runtime; engine.isPlaying = false; engine.emit(EngineEvent.Ended); runCurrent()
+        assertEquals(ep2, vm.state.value.playback.upNext?.itemId)
+        assertNull("no countdown", vm.state.value.playback.upNext?.secondsLeft)
+        advanceTimeBy(20_000); runCurrent()
+        assertEquals("nothing played by itself", ep1, vm.state.value.playback.itemId)
+        assertEquals(1, engine.loads.size)
+    }
+
+    @Test fun withTheProfilesAutoplayOnUpNextCountsDownAndPlays() = runTest(dispatcher) {
+        profileDao.setAutoplay(AMY, false) // another profile's choice changes nothing for ben
+        val vm = vm(); playing(vm)
+        engine.positionMs = runtime; engine.isPlaying = false; engine.emit(EngineEvent.Ended); runCurrent()
+        assertEquals(10, vm.state.value.playback.upNext?.secondsLeft)
+        advanceTimeBy(10_000); runCurrent()
+        assertEquals(ep2, vm.state.value.playback.itemId)
     }
 }
