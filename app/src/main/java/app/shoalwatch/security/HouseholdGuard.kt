@@ -90,8 +90,10 @@ class HouseholdGuard(
     }
 
     override suspend fun confirm(grownUp: Session, pin: CharArray): PinCheck = try {
+        // The pass is for the profile that was active when the PIN was typed: a switch during the check records none (final review M6).
+        val typedFor = active()
         val check = locks.check(grownUp, pin)
-        if (check == PinCheck.Correct) pass = Pass(clock.nowMs(), active(), grownUp)
+        if (check == PinCheck.Correct && active() == typedFor) pass = Pass(clock.nowMs(), typedFor, grownUp)
         check
     } finally {
         pin.fill('\u0000')

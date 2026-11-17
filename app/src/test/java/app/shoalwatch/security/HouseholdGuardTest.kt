@@ -26,7 +26,8 @@ import javax.crypto.KeyGenerator
  */
 class HouseholdGuardTest : LibraryTestBase() {
     private val key = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
-    private val hasher = PinHasher(SecretBox { key }, iterations = 1_000)
+    private var duringCheck: () -> Unit = {}
+    private val hasher = PinHasher(SecretBox { duringCheck(); key }, iterations = 1_000)
     private val clock = TestMonotonic()
     private val adultA = AccountSummary(S1, U1, "ann")
     private val kidA = AccountSummary(S1, U2, "bob")
@@ -88,6 +89,16 @@ class HouseholdGuardTest : LibraryTestBase() {
         catalog.activeFlow.value = kidA // and back: the pass stays ended
         runCurrent()
         assertFalse(guard.allows())
+    }
+
+    @Test fun aSwitchWhileThePinIsCheckedRecordsNoPass() = runTest {
+        val guard = guard()
+        protect(adult)
+        duringCheck = { catalog.activeFlow.value = otherA } // the active profile changes while the PIN is being checked
+        assertEquals(PinCheck.Correct, guard.confirm(adult, "4826".toCharArray()))
+        duringCheck = {}
+        runCurrent()
+        assertFalse("the PIN was typed for the profile before the switch", guard.allows())
     }
 
     @Test fun endPassEndsIt() = runTest {
