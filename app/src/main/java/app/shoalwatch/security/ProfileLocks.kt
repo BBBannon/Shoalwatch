@@ -4,6 +4,7 @@ import app.shoalwatch.core.AppError
 import app.shoalwatch.core.MonotonicClock
 import app.shoalwatch.data.db.profile.ProfileDao
 import app.shoalwatch.data.servers.Session
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -72,7 +73,11 @@ class ProfileLocks(
         pin.fill('\u0000')
     }
 
-    /** Zeroes [pin]. Wrong PINs are counted in Room; the wait is measured from this process's own clock (see the class note). */
+    /**
+     * Zeroes [pin]. Every try is counted in Room before the verifier is opened, and the count is put back on a right PIN; the
+     * wait is measured from this process's own clock (see the class note).
+     * @throws AppError when the count cannot be saved (a full or damaged database): nothing is checked then.
+     */
     suspend fun check(s: Session, pin: CharArray): PinCheck = try {
         mutex.withLock { withContext(io) { checkLocked(s, pin) } }
     } finally {
@@ -126,20 +131,39 @@ class ProfileLocks(
             val leftMs = PinThrottle.waitMs(failures) - (now - anchor)
             if (leftMs > 0) return PinCheck.Wait(((leftMs + 999) / 1000).toInt())
         }
+        // Counted before the verifier is tried (review I1): if the count cannot be saved, nothing is checked, so a full disk or
+        // a process killed mid-check never gives an uncounted guess.
+        val counted = if (failures == Int.MAX_VALUE) failures else failures + 1
+        try {
+            dao.setFailures(s.serverId, s.userId, counted)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            throw AppError.of(AppError.Kind.UNKNOWN, e)
+        }
         val right = try {
             hasher.matches(pin, lock.verifier)
         } catch (e: AppError) {
+            restore(s, failures) // an unreadable verifier counts nothing
             return PinCheck.Unreadable
         }
         if (right) {
-            if (failures != 0) dao.setFailures(s.serverId, s.userId, 0)
+            restore(s, 0)
             anchors.remove(s)
             return PinCheck.Correct
         }
-        val counted = failures + 1
-        dao.setFailures(s.serverId, s.userId, counted)
         anchors[s] = clock.nowMs()
         return PinCheck.Wrong((PinThrottle.FREE_TRIES - counted).coerceAtLeast(0))
+    }
+
+    /** Best effort: if this write fails the stored count stays one higher, which can only make a wait come sooner. */
+    private suspend fun restore(s: Session, failures: Int) {
+        try {
+            dao.setFailures(s.serverId, s.userId, failures)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+        }
     }
 
     override fun toString() = "ProfileLocks(<redacted>)"

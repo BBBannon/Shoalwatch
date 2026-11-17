@@ -192,6 +192,34 @@ class ProfileLocksTest : LibraryTestBase() {
         assertEquals(5, failures(a))
     }
 
+    /** Review I1: a wrong PIN is counted BEFORE the verifier is tried, so a count that cannot be saved gives no free guesses. */
+    @Test fun whenTheCountCannotBeSavedNoPinIsEverCorrect() = runTest {
+        locks().protect(a, pin("4826"))
+        val real = db.profileDao()
+        var full = true
+        val dao = object : app.shoalwatch.data.db.profile.ProfileDao by real {
+            override suspend fun setFailures(serverId: String, userId: String, failures: Int): Int =
+                if (full) throw android.database.sqlite.SQLiteFullException("database or disk is full") else real.setFailures(serverId, userId, failures)
+        }
+        val locks = ProfileLocks(dao, hasher, clock, StandardTestDispatcher(testScheduler))
+        listOf("4826", "0000").forEach { text ->
+            val p = pin(text)
+            try {
+                val answer = locks.check(a, p)
+                org.junit.Assert.fail("answered $answer without saving the count")
+            } catch (_: app.shoalwatch.core.AppError) {
+            }
+            assertTrue(p.isZeroed())
+        }
+        assertEquals("nothing was counted, and nothing was checked", 0, failures(a))
+        full = false
+        repeat(5) { locks.check(a, pin("0000")) }
+        assertEquals("the count and wait still apply", PinCheck.Wait(30), locks.check(a, pin("4826")))
+        clock.ms += 30_000
+        assertEquals(PinCheck.Correct, locks.check(a, pin("4826")))
+        assertEquals("reset on Correct", 0, failures(a))
+    }
+
     @Test fun toStringNamesNothing() = runTest {
         assertEquals("ProfileLocks(<redacted>)", locks().toString())
     }
