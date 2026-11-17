@@ -6,8 +6,8 @@ import app.shoalwatch.data.servers.Session
 /**
  * The only key to [ProfileLocks.clear] (Tasks 1-2 review M1): proof that the locked profile's own server password was just
  * accepted ("Forgot PIN" on the lock screen). It is made only from the account the server returned for that password, and only
- * when that account is exactly the locked profile. `ClearProofBoundaryTest` keeps [afterPasswordSignIn] in the lock screen's
- * ViewModel, right after `signInWithPassword`, and `clear` in `LockParts`.
+ * when that account is exactly the locked profile. `LockBoundaryTest` keeps [afterPasswordSignIn] to one call, in the lock screen's
+ * ViewModel's "Forgot PIN" right after `signInWithPassword`, the constructor to this factory, and `clear` in `LockParts`.
  */
 class ClearProof private constructor(val session: Session) {
     override fun toString() = "ClearProof(<redacted>)"
