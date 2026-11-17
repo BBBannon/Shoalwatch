@@ -7,6 +7,7 @@ import androidx.compose.runtime.State
 import app.shoalwatch.data.servers.Session
 import app.shoalwatch.security.LockState
 import app.shoalwatch.ui.nav.collectAtOnce
+import java.time.Duration
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.resetMain
@@ -31,7 +32,12 @@ class LockStateAtOnceTest {
         val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup()
         try {
             controller.get().setContent { seen = gate.collectAtOnce() }
-            shadowOf(Looper.getMainLooper()).idle()
+            // The collector starts in an effect, after the first frame: wait for it (bounded), or the lock below would race it.
+            repeat(100) {
+                if (gate.subscriptionCount.value > 0) return@repeat
+                shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(16))
+            }
+            assertEquals("the UI is collecting the gate", 1, gate.subscriptionCount.value)
             assertEquals(LockState.Open, seen.value)
             val locked = LockState.Profile(Session("s1", "u1"), "Ben")
             gate.value = locked // as `onReturned` does in `onStart`, on the main thread
