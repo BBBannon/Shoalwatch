@@ -103,6 +103,20 @@ class ManifestSecurityTest {
         assertEquals("merge", service.toolsNode())
     }
 
+    /**
+     * D-1 (Milestone 5 device run): WorkManager's own RescheduleReceiver is switched on and off at run time, and Android saves
+     * that switch lazily, so a reboot soon after a change can find it off with work still queued. This receiver is always on and
+     * never exported; its delivery starts the process, and `ShoalwatchApp.onCreate` sends and requeues whatever waits.
+     */
+    @Test
+    fun anAlwaysOnBootReceiverStartsTheAppAfterARestartAndIsNotExported() {
+        val boot = elements("receiver").single { it.attr("name") == ".BootReceiver" }
+        assertEquals("false", boot.attr("exported"))
+        assertEquals(null, boot.attr("enabled")) // the default, true: never switched at run time
+        val actions = boot.getElementsByTagName("action").let { list -> (0 until list.length).map { (list.item(it) as Element).attr("name") } }
+        assertEquals(listOf("android.intent.action.BOOT_COMPLETED"), actions)
+    }
+
     @Test
     fun onlyMainActivityIsExported() {
         val tags = listOf("activity", "activity-alias", "service", "receiver", "provider")

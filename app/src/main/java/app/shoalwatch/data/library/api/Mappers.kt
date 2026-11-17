@@ -142,6 +142,9 @@ internal fun UserItemDataDto.toServerUserData(): ServerUserData = ServerUserData
     lastPlayedAt = instant(lastPlayedDate)?.takeIf { it in Limits.LAST_PLAYED_RANGE }?.toEpochMilli(),
 )
 
+/** The outbox's copy from an item's own UserData; null when it has none that can be read. */
+internal fun BaseItemDto.toServerUserData(): ServerUserData? = userData?.toUserDataDto()?.toServerUserData()
+
 /** The item survives a UserData that cannot be read: it just has none. */
 internal fun BaseItemDto.toItemWithUserData(): ItemWithUserData? =
     toItem()?.let { ItemWithUserData(it, userData?.toUserDataDto()?.toUserData()) }

@@ -251,10 +251,11 @@ internal fun StorageRoute(graph: AppGraph, nav: NavHostController) {
             onConfirm = vm::confirm, onCancel = vm::cancel, onTryAgain = vm::tryAgain, onOpenServers = { nav.navigate(Routes.SERVERS) },
         )
     }
-    androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize()) {
+    // On the theme's surface, as AppScreen's screens are: without it the dark theme drew black text on the dark window (device run W-6).
+    androidx.compose.material3.Surface(androidx.compose.ui.Modifier.fillMaxSize()) { androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize()) {
         app.shoalwatch.ui.downloads.StorageScreen(state, actions, vm.messages, snackbar)
         androidx.compose.material3.SnackbarHost(snackbar, androidx.compose.ui.Modifier.align(androidx.compose.ui.Alignment.BottomCenter).navigationBarsPadding())
-    }
+    } }
 }
 
 @Composable
@@ -287,10 +288,11 @@ internal fun OfflineSeriesRoute(graph: AppGraph, nav: NavHostController, seriesI
             onOpenServers = { nav.navigate(Routes.SERVERS) },
         )
     }
-    androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize()) {
+    // On the theme's surface (device run W-6, as StorageRoute).
+    androidx.compose.material3.Surface(androidx.compose.ui.Modifier.fillMaxSize()) { androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize()) {
         OfflineSeriesScreen(state, actions, vm.messages, snackbar)
         androidx.compose.material3.SnackbarHost(snackbar, androidx.compose.ui.Modifier.align(androidx.compose.ui.Alignment.BottomCenter).navigationBarsPadding())
-    }
+    } }
 }
 
 /**

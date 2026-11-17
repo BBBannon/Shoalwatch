@@ -1,15 +1,20 @@
-v1.132 — 17/11/2026 — On a tablet turned on its side, series and film pages now show in two side-by-side panels
-v1.131 — 17/11/2026 — A video now keeps playing in a small window when you leave the app (it works with swipe navigation on newer phones), with play and pause in the window and a setting to turn it off
-v1.130 — 17/11/2026 — With a screen reader, the “finished this episode” card and Up next are now read before the player’s buttons
-v1.129 — 17/11/2026 — Added a Settings screen: turn off playing the next episode by itself for your profile, protect your profile with a PIN, and lock the app with your phone’s screen lock
-v1.128 — 17/11/2026 — Cleared every problem flagged by Android's code checker, with no change to how the app behaves on older phones
-v1.127 — 17/11/2026 — If the phone cannot read the saved locks for a moment, the lock, Home and Servers screens now wait and try again instead of closing the app.
-v1.126 — 17/11/2026 — If the phone cannot read the saved locks for a moment, the app now stays locked and says so instead of closing.
-v1.125 — 17/11/2026 — After a wrong password under "Forgot PIN", the lock screen now waits a little before the next try, which slows down guessing (your server may still lock an account after a few wrong passwords).
-v1.124 — 17/11/2026 — A menu or pop-up left open before the app locked no longer shows over the lock screen.
-v1.123 — 17/11/2026 — Password managers are no longer offered on the lock screen, "Forgot PIN" or any PIN box, and the keyboard is asked not to remember PINs.
-v1.122 — 17/11/2026 — Switching to a protected profile now asks for its PIN, protected profiles are marked "Protected", and household settings (sharing downloads, deleting shared downloads, server settings, removing a server) ask for a grown-up's PIN.
-v1.121 — 17/11/2026 — Added a lock screen: a protected profile asks for its PIN (with "Forgot PIN?" using the server password), the app can ask for the phone's screen lock, and links from other apps can no longer open a page inside Shoalwatch.
+v1.137 — 17/11/2026 — On a tablet turned on its side, series and film pages now show in two side-by-side panels
+v1.136 — 17/11/2026 — A video now keeps playing in a small window when you leave the app (it works with swipe navigation on newer phones), with play and pause in the window and a setting to turn it off
+v1.135 — 17/11/2026 — With a screen reader, the “finished this episode” card and Up next are now read before the player’s buttons
+v1.134 — 17/11/2026 — Added a Settings screen: turn off playing the next episode by itself for your profile, protect your profile with a PIN, and lock the app with your phone’s screen lock
+v1.133 — 17/11/2026 — Cleared every problem flagged by Android's code checker, with no change to how the app behaves on older phones
+v1.132 — 17/11/2026 — If the phone cannot read the saved locks for a moment, the lock, Home and Servers screens now wait and try again instead of closing the app.
+v1.131 — 17/11/2026 — If the phone cannot read the saved locks for a moment, the app now stays locked and says so instead of closing.
+v1.130 — 17/11/2026 — After a wrong password under "Forgot PIN", the lock screen now waits a little before the next try, which slows down guessing (your server may still lock an account after a few wrong passwords).
+v1.129 — 17/11/2026 — A menu or pop-up left open before the app locked no longer shows over the lock screen.
+v1.128 — 17/11/2026 — Password managers are no longer offered on the lock screen, "Forgot PIN" or any PIN box, and the keyboard is asked not to remember PINs.
+v1.127 — 17/11/2026 — Switching to a protected profile now asks for its PIN, protected profiles are marked "Protected", and household settings (sharing downloads, deleting shared downloads, server settings, removing a server) ask for a grown-up's PIN.
+v1.126 — 17/11/2026 — Added a lock screen: a protected profile asks for its PIN (with "Forgot PIN?" using the server password), the app can ask for the phone's screen lock, and links from other apps can no longer open a page inside Shoalwatch.
+v1.125 — 17/11/2026 — Milestone 5 finished: ticks show straight away, even offline, and reach your server in order with the time you actually watched; finishing a downloaded episode offers one press to mark it watched and delete it; shared tablets follow one clear rule for shared downloads; the next episodes can download by themselves on Wi-Fi; and a new Storage screen shows what is using space.
+v1.124 — 17/11/2026 — The Storage screen and a downloaded series' page are now readable in the dark theme.
+v1.123 — 17/11/2026 — On servers that don't share watch details directly, a later watch on another device is no longer undone, and play counts now go up.
+v1.122 — 17/11/2026 — Changes made just before the phone restarts are now sent by themselves once it is back online, without opening the app.
+v1.121 — 17/11/2026 — Recorded the first emulator results for syncing watched changes: they reach the server in order, but a change waiting during a phone restart is only sent once the app is opened again.
 v1.120 — 16/11/2026 — If a firewall blocks the message sent when you stop watching, where you stopped is now kept and sent later instead of being lost.
 v1.119 — 16/11/2026 — After watching part of a download offline and then carrying on online, the app no longer goes back to the old offline spot after it restarts.
 v1.118 — 16/11/2026 — Taking something off Continue Watching after watching part of a download offline now stays that way after the app restarts.

@@ -81,6 +81,26 @@ class SyncGatewayTest : ServerApiTestBase() {
         assertEquals("/Items/$item", next().requestUrl!!.encodedPath)
     }
 
+    /**
+     * Device run W-2/W-3: a server without the user-data route still sends UserData on the item. Thrown away, a later watch on
+     * another device was undone by an older untick, and a tick left the count at 0. The same one request, read as the copy.
+     */
+    @Test fun aNotFoundRouteReadsTheServersCopyFromTheItemItself() = runBlocking {
+        web.enqueue(json("{}", code = 404))
+        web.enqueue(json("""{"Id":"$item","Name":"Film","Type":"Movie","UserData":{"Played":true,"PlayCount":2,"PlaybackPositionTicks":50000,"IsFavorite":false,"LastPlayedDate":"2026-11-17T15:00:00Z"}}"""))
+        val copy = gateway.userData(session, item)
+        assertEquals(ServerUserData(true, 2, 5, false, Instant.parse("2026-11-17T15:00:00Z").toEpochMilli()), copy)
+        assertRequest("GET", "/UserItems/$item/UserData")
+        assertEquals("/Items/$item", next().requestUrl!!.encodedPath)
+        tokenOnlyInItsHeader()
+    }
+
+    @Test fun aNotFoundRouteWithAnItemThatIsNotSafeIsAServerError() {
+        web.enqueue(json("{}", code = 404))
+        web.enqueue(json("""{"Id":"not-a-guid","Name":"Film","Type":"Movie","UserData":{"Played":true}}"""))
+        assertEquals(AppError.Kind.SERVER_ERROR, failure { runBlocking { gateway.userData(session, item) } }.kind)
+    }
+
     @Test fun aNotFoundRouteWithTheItemGoneFailsAsNotFound() {
         web.enqueue(json("{}", code = 404))
         web.enqueue(json("{}", code = 404))
