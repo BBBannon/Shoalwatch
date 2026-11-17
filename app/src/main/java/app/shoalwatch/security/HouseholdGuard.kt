@@ -4,6 +4,7 @@ import app.shoalwatch.core.MonotonicClock
 import app.shoalwatch.data.servers.AccountSummary
 import app.shoalwatch.data.servers.ServerCatalog
 import app.shoalwatch.data.servers.Session
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -14,7 +15,9 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /** The household settings check, as screens see it (Task 6). */
@@ -67,6 +70,13 @@ class HouseholdGuard(
 
     override val askNeeded: StateFlow<Boolean> =
         combine(locks.protectedProfiles, catalog.activeSession()) { set, active -> set.isNotEmpty() && (active == null || active !in set) }
+            // A failed read never crashes the app (review M6): until it reads again, a grown-up is asked for.
+            .retryWhen { cause, _ ->
+                if (cause is CancellationException) return@retryWhen false
+                emit(true)
+                delay(LockGate.READ_RETRY_MS)
+                true
+            }
             .distinctUntilChanged()
             .stateIn(scope, SharingStarted.Eagerly, false)
 

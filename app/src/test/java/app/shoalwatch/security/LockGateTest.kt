@@ -8,6 +8,12 @@ import app.shoalwatch.TestMonotonic
 import app.shoalwatch.U1
 import app.shoalwatch.U2
 import app.shoalwatch.data.db.LibraryTestBase
+import app.shoalwatch.data.db.profile.ProfileDao
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.test.advanceTimeBy
 import app.shoalwatch.data.servers.AccountSummary
 import app.shoalwatch.data.servers.ProvedSwitches
 import app.shoalwatch.ui.FakeCatalog
@@ -56,8 +62,20 @@ class LockGateTest : LibraryTestBase() {
         prefs = LockPrefs(context.getSharedPreferences("lock-gate-test", 0).also { it.edit().clear().commit() })
     }
 
+    /** Review M6: makes the protected set's read, and the store's own "is it protected?", fail like a broken database. */
+    private val readsFail = MutableStateFlow(false)
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun failingDao(real: ProfileDao) = object : ProfileDao by real {
+        override fun observeProtected() = readsFail.flatMapLatest { failing ->
+            if (failing) flow { throw android.database.sqlite.SQLiteException("disk I/O error") } else real.observeProtected()
+        }
+        override suspend fun lock(serverId: String, userId: String) =
+            if (readsFail.value) throw android.database.sqlite.SQLiteException("disk I/O error") else real.lock(serverId, userId)
+    }
+
     private fun TestScope.gate(): LockGate {
-        locks = ProfileLocks(db.profileDao(), hasher, clock, StandardTestDispatcher(testScheduler)) {}
+        locks = ProfileLocks(failingDao(db.profileDao()), hasher, clock, StandardTestDispatcher(testScheduler)) {}
         household = HouseholdGuard(locks, catalog, clock, backgroundScope) { true }
         return LockGate(prefs.settings, locks, catalog, proved, household, { secure }, clock, backgroundScope) { prefs.setAppLock(false) }
     }
@@ -84,6 +102,39 @@ class LockGateTest : LibraryTestBase() {
         assertEquals(LockState.Profile(adult, "ann"), gate.settled())
         assertEquals(PinCheck.Correct, gate.unlockProfile("4826".toCharArray()))
         return gate
+    }
+
+    // ---- review M6: a read that fails never crashes and never opens
+
+    @Test fun aBrokenReadOfTheProtectedSetKeepsTheLockAndSaysSo() = runTest {
+        val gate = gate()
+        protectAdult()
+        catalog.activeFlow.value = adultA
+        gate.start()
+        assertEquals(LockState.Profile(adult, "ann"), gate.settled())
+        readsFail.value = true
+        settle()
+        assertEquals(LockState.Profile(adult, "ann"), gate.state.value)
+        assertTrue("a plain error to show", gate.readFailed.value)
+        assertNull(gate.openFor.value)
+        readsFail.value = false
+        advanceTimeBy(LockGate.READ_RETRY_MS + 1)
+        settle()
+        assertFalse("read again once it works", gate.readFailed.value)
+        assertEquals(LockState.Profile(adult, "ann"), gate.state.value)
+    }
+
+    @Test fun aBrokenReadAfterForgotPinStaysLockedWithoutACrash() = runTest {
+        val gate = gate()
+        protectAdult()
+        catalog.activeFlow.value = adultA
+        gate.start()
+        assertEquals(LockState.Profile(adult, "ann"), gate.settled())
+        readsFail.value = true
+        gate.profileCleared(adult)
+        settle()
+        assertEquals(LockState.Profile(adult, "ann"), gate.state.value)
+        assertTrue(gate.readFailed.value)
     }
 
     // ---- rule 1: start

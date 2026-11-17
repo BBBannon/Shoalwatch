@@ -88,6 +88,7 @@ internal fun LockScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Icon(Icons.Filled.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(48.dp))
+            if (state.readFailed) ErrorMessage(stringResource(R.string.lock_read_failed))
             when (val lock = state.lock) {
                 LockState.App -> AppLock(actions, unavailable)
                 is LockState.Profile -> ProfileLock(lock, state, pin, password, actions)

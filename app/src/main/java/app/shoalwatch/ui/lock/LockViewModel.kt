@@ -52,6 +52,8 @@ data class LockUiState(
     val lockedServerName: String? = null,
     /** "Forgot PIN" must wait this many seconds before the next try (review M5), or null. */
     val forgotWait: Int? = null,
+    /** The gate could not read the saved locks just now (review M6): the lock stays, with a plain error. */
+    val readFailed: Boolean = false,
     /** A protected profile chosen under "Use another profile": its name, for the PIN dialog. */
     val choosing: OtherProfile? = null,
 ) {
@@ -100,14 +102,14 @@ class LockViewModel(
         }
     }
 
-    val state: StateFlow<LockUiState> = combine(gate.state, everyone, catalog.servers, local) { lock, all, servers, l ->
+    val state: StateFlow<LockUiState> = combine(gate.state, everyone, catalog.servers, local, gate.readFailed) { lock, all, servers, l, failed ->
         val locked = (lock as? LockState.Profile)?.session
         LockUiState(
             lock = lock,
             others = all.filter { Session(it.serverId, it.userId) != locked },
             pinAnswer = l.pinAnswer, pinFailed = l.pinFailed, busy = l.busy, forgot = l.forgot, forgotError = l.forgotError,
             forgotOtherAccount = l.forgotOtherAccount, lockedServerName = servers.firstOrNull { it.id == locked?.serverId }?.name,
-            choosing = l.choosing, forgotWait = l.forgotWait,
+            choosing = l.choosing, forgotWait = l.forgotWait, readFailed = failed,
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, LockUiState())
 
@@ -186,7 +188,7 @@ class LockViewModel(
         password.clearText()
         val wait = forgotThrottle.waitSeconds(locked.session)
         if (wait > 0) {
-            chars.fill(' ')
+            chars.fill('\u0000')
             local.update { it.copy(forgotWait = wait, forgotError = null, forgotOtherAccount = false) }
             return
         }

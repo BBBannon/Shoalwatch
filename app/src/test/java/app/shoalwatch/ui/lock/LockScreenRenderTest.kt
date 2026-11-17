@@ -112,6 +112,12 @@ abstract class LockScreenRenderTest : RenderBase() {
         assertShown(text(R.string.lock_forgot_other_account))
     }
 
+    @Test fun aFailedReadIsAPlainError() {
+        lockScreen(profile.copy(readFailed = true))
+        assertShown(text(R.string.lock_read_failed))
+        assertShown(text(R.string.lock_profile_title, "Ben"))
+    }
+
     @Test fun theForgotPanelSaysHowLongToWait() {
         lockScreen(profile.copy(forgot = true, forgotWait = 30, forgotError = app.shoalwatch.core.AppError.Kind.UNAUTHORISED))
         assertShown(text(R.string.lock_forgot_wait, app.shoalwatch.ui.present.waitWords(Strings(context.resources), 30)))

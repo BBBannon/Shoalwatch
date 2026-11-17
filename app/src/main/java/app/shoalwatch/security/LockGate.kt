@@ -10,7 +10,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.launch
 
 sealed interface LockState {
@@ -68,6 +70,11 @@ class LockGate(
     /** The active session once the gate has judged it and found it open; null while any lock applies or a judgement is pending. */
     val openFor: StateFlow<Judged?> = judged.asStateFlow()
 
+    private val failedRead = MutableStateFlow(false)
+
+    /** True while the gate's last read of the saved locks failed (review M6): the lock stays as it is and the lock screen says so. */
+    val readFailed: StateFlow<Boolean> = failedRead.asStateFlow()
+
     private val hide = MutableStateFlow(true) // hidden until the settings and the protected profiles are known
 
     /** True while the recents preview must be hidden: hideInRecents, or appLock, or any protected profile. */
@@ -90,7 +97,19 @@ class LockGate(
             started = true
         }
         scope.launch {
-            combine(catalog.activeAccount, locks.protectedProfiles, settings) { a, p, s -> Triple(a, p, s) }.collect { (a, p, s) -> step(a, p, s) }
+            // A failed read (review M6) never crashes the app and never opens anything: the lock stays as it is, the lock screen
+            // says so, and the read starts again. A profile change meanwhile is not judged, so `openFor` keeps it covered.
+            combine(catalog.activeAccount, locks.protectedProfiles, settings) { a, p, s -> Triple(a, p, s) }
+                .retryWhen { cause, _ ->
+                    if (cause is CancellationException) return@retryWhen false
+                    failedRead.value = true
+                    delay(READ_RETRY_MS)
+                    true
+                }
+                .collect { (a, p, s) ->
+                    step(a, p, s)
+                    failedRead.value = false
+                }
         }
     }
 
@@ -205,7 +224,17 @@ class LockGate(
 
     /** After "Forgot PIN" cleared the profile's protection (Task 5). Opens only once the store agrees it is no longer protected. */
     fun profileCleared(s: Session) {
-        scope.launch { if (!locks.isProtected(s)) openIfLocked(s) }
+        scope.launch {
+            val cleared = try {
+                !locks.isProtected(s)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                failedRead.value = true // cannot tell: still protected, and the lock screen says so (review M6)
+                false
+            }
+            if (cleared) openIfLocked(s)
+        }
     }
 
     private fun openIfLocked(s: Session) = synchronized(lock) {
@@ -256,6 +285,9 @@ class LockGate(
     companion object {
         /** How soon after [expectReturn] the activity must stop for that trip not to count. */
         const val EXPECT_WINDOW_MS = 10_000L
+
+        /** How long after a failed read of the protected profiles the gate reads them again (review M6). */
+        const val READ_RETRY_MS = 5_000L
 
         /** The longest an excused trip may last before it locks anyway (or "Lock after", if that is longer). */
         const val EXCUSED_CAP_MS = 120_000L
