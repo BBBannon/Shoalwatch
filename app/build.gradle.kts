@@ -210,6 +210,8 @@ val releaseExpectedPermissions = setOf(
     "android.permission.POST_NOTIFICATIONS",
     // Declared (signature level) by androidx.core for receivers registered as not exported.
     "app.shoalwatch.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
+    // Milestone 7: the app lock's phone screen lock prompt (BiometricPrompt).
+    "android.permission.USE_BIOMETRIC",
 )
 
 androidComponents {

@@ -68,7 +68,7 @@ class ManifestSecurityTest {
     private fun Element.toolsNode(): String? = getAttributeNS(toolsNs, "node").takeIf { it.isNotEmpty() }
 
     @Test
-    fun theRequestedPermissionsAreTheMilestone4Ones() {
+    fun theRequestedPermissionsAreTheMilestone4OnesAndTheAppLocksPrompt() {
         // A `tools:node="remove"` entry is a removal of a library's request, not a request. WAKE_LOCK, RECEIVE_BOOT_COMPLETED and
         // FOREGROUND_SERVICE arrive from work-runtime's own manifest (the merged release manifest is checked by verifyReleaseManifest).
         val permissions = elements("uses-permission").filter { it.toolsNode() != "remove" }.map { it.attr("name") }
@@ -76,6 +76,7 @@ class ManifestSecurityTest {
             setOf(
                 "android.permission.INTERNET", "android.permission.ACCESS_NETWORK_STATE",
                 "android.permission.FOREGROUND_SERVICE_DATA_SYNC", "android.permission.POST_NOTIFICATIONS",
+                "android.permission.USE_BIOMETRIC", // Milestone 7: the app lock's phone screen lock prompt
             ),
             permissions.toSet(),
         )

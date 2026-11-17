@@ -33,6 +33,7 @@ fun rememberClientCertChooser(): ClientCertChooser {
                 null
             } else {
                 suspendCancellableCoroutine { continuation ->
+                    app.shoalwatch.ShoalwatchApp.graph(activity).lockParts.lockGate.expectReturn() // the chooser is not "leaving"
                     KeyChain.choosePrivateKeyAlias(
                         activity,
                         { alias -> if (continuation.isActive) continuation.resume(alias) },

@@ -1,0 +1,318 @@
+package app.shoalwatch.security
+
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
+import app.shoalwatch.S1
+import app.shoalwatch.S2
+import app.shoalwatch.TestMonotonic
+import app.shoalwatch.U1
+import app.shoalwatch.U2
+import app.shoalwatch.data.db.LibraryTestBase
+import app.shoalwatch.data.servers.AccountSummary
+import app.shoalwatch.data.servers.ProvedSwitches
+import app.shoalwatch.ui.FakeCatalog
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import java.io.File
+import javax.crypto.KeyGenerator
+
+/**
+ * The app lock's rules (Milestone 7 Task 4) on a fake monotonic clock, the fake catalog and the real [ProfileLocks] and
+ * [ProvedSwitches]. Adult = (S1, U1, "ann"), kid = (S1, U2, "bob"), other = (S2, U1, "cat").
+ */
+class LockGateTest : LibraryTestBase() {
+    private val key = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
+    private val hasher = PinHasher(SecretBox { key }, iterations = 1_000)
+    private val clock = TestMonotonic()
+    private val adultA = AccountSummary(S1, U1, "ann")
+    private val kidA = AccountSummary(S1, U2, "bob")
+    private val otherA = AccountSummary(S2, U1, "cat")
+    private val adult = s1u1
+    private val catalog = FakeCatalog(accounts = listOf(adultA, kidA, otherA), active = kidA)
+    private val proved = ProvedSwitches(clock)
+    private var secure = true
+    private lateinit var prefs: LockPrefs
+    private lateinit var locks: ProfileLocks
+    private lateinit var household: HouseholdGuard
+
+    @Before fun freshPrefs() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        prefs = LockPrefs(context.getSharedPreferences("lock-gate-test", 0).also { it.edit().clear().commit() })
+    }
+
+    private fun TestScope.gate(): LockGate {
+        locks = ProfileLocks(db.profileDao(), hasher, clock, StandardTestDispatcher(testScheduler))
+        household = HouseholdGuard(locks, catalog, clock, backgroundScope)
+        return LockGate(prefs.settings, locks, catalog, proved, household, { secure }, clock, backgroundScope) { prefs.setAppLock(false) }
+    }
+
+    /**
+     * Lets work the gate has waiting on Room's own threads finish (the store's answer to "is it protected?"), for the checks that
+     * something did NOT happen. Real time only lets those threads run; every rule's time is the fake clock.
+     */
+    private suspend fun TestScope.settle() = repeat(20) {
+        advanceUntilIdle()
+        withContext(Dispatchers.IO) { Thread.sleep(25) }
+    }
+
+    private suspend fun LockGate.settled(): LockState = state.first { it != LockState.Checking }
+
+    private suspend fun protectAdult() = assertTrue(locks.protect(adult, "4826".toCharArray()))
+
+    /** Starts with the adult protected and active, unlocked, as after typing the PIN. */
+    private suspend fun TestScope.openAsAdult(): LockGate {
+        val gate = gate()
+        protectAdult()
+        catalog.activeFlow.value = adultA
+        gate.start()
+        assertEquals(LockState.Profile(adult, "ann"), gate.settled())
+        assertEquals(PinCheck.Correct, gate.unlockProfile("4826".toCharArray()))
+        return gate
+    }
+
+    // ---- rule 1: start
+
+    @Test fun withNothingOnItChecksThenOpens() = runTest {
+        val gate = gate()
+        assertEquals(LockState.Checking, gate.state.value)
+        gate.start()
+        assertEquals(LockState.Open, gate.settled())
+    }
+
+    @Test fun withTheAppLockOnItAsksForThePhonesScreenLock() = runTest {
+        prefs.setAppLock(true)
+        val gate = gate()
+        gate.start()
+        assertEquals(LockState.App, gate.settled())
+    }
+
+    @Test fun aProtectedActiveProfileIsLockedAtStart() = runTest {
+        val gate = gate()
+        protectAdult()
+        catalog.activeFlow.value = adultA
+        gate.start()
+        assertEquals(LockState.Profile(adult, "ann"), gate.settled())
+    }
+
+    @Test fun theAppLockComesFirstThenTheProfile() = runTest {
+        prefs.setAppLock(true)
+        val gate = gate()
+        protectAdult()
+        catalog.activeFlow.value = adultA
+        gate.start()
+        assertEquals(LockState.App, gate.settled())
+        gate.appUnlocked()
+        assertEquals(LockState.Profile(adult, "ann"), gate.state.value)
+    }
+
+    // ---- rule 2: leaving and returning
+
+    @Test fun oneMinuteLocksAtSixtySecondsAway() = runTest {
+        val gate = openAsAdult()
+        gate.onLeft(); clock.ms += 59_000; gate.onReturned()
+        assertEquals(LockState.Open, gate.state.value)
+        gate.onLeft(); clock.ms += 60_000; gate.onReturned()
+        assertEquals(LockState.Profile(adult, "ann"), gate.state.value)
+    }
+
+    @Test fun immediatelyLocksOnAnyLeave() = runTest {
+        prefs.setLockAfter(LockAfter.IMMEDIATELY)
+        val gate = openAsAdult()
+        gate.onLeft(); gate.onReturned()
+        assertEquals(LockState.Profile(adult, "ann"), gate.state.value)
+    }
+
+    @Test fun aSecondLeaveKeepsTheEarlierTime() = runTest {
+        val gate = openAsAdult()
+        gate.onLeft(); clock.ms += 30_000
+        gate.onLeft(); clock.ms += 30_000
+        gate.onReturned()
+        assertEquals(LockState.Profile(adult, "ann"), gate.state.value)
+    }
+
+    @Test fun anExpectedTripDoesNotCountButTheNextOneDoes() = runTest {
+        val gate = openAsAdult()
+        gate.expectReturn(); gate.onLeft(); clock.ms += 600_000; gate.onReturned()
+        assertEquals(LockState.Open, gate.state.value)
+        gate.onLeft(); clock.ms += 600_000; gate.onReturned()
+        assertEquals(LockState.Profile(adult, "ann"), gate.state.value)
+    }
+
+    @Test fun anExpectedTripThatNeverStartsDoesNotExcuseALaterOne() = runTest {
+        val gate = openAsAdult()
+        gate.expectReturn() // a prompt that did not stop the activity
+        clock.ms += 60_000
+        gate.onLeft(); clock.ms += 600_000; gate.onReturned()
+        assertEquals(LockState.Profile(adult, "ann"), gate.state.value)
+    }
+
+    @Test fun theAppLockReturnsAfterTimeAway() = runTest {
+        prefs.setAppLock(true)
+        val gate = gate()
+        gate.start()
+        assertEquals(LockState.App, gate.settled())
+        gate.appUnlocked()
+        assertEquals(LockState.Open, gate.state.value)
+        gate.onLeft(); clock.ms += 60_000; gate.onReturned()
+        assertEquals(LockState.App, gate.state.value)
+    }
+
+    // ---- rule 3: profile changes
+
+    @Test fun anUnprovedChangeToAProtectedProfileLocksIt() = runTest {
+        val gate = gate()
+        protectAdult()
+        gate.start()
+        assertEquals(LockState.Open, gate.settled())
+        catalog.activeFlow.value = adultA // as a sign-in, "Sign in again" or a restore sets it
+        assertEquals(LockState.Profile(adult, "ann"), gate.state.first { it is LockState.Profile })
+    }
+
+    @Test fun aProvedChangeStaysOpen() = runTest {
+        val gate = gate()
+        protectAdult()
+        gate.start()
+        assertEquals(LockState.Open, gate.settled())
+        proved.record(adult)
+        catalog.activeFlow.value = adultA
+        settle()
+        assertEquals(LockState.Open, gate.state.value)
+        assertFalse("the proof was used", proved.consume(adult))
+    }
+
+    @Test fun aChangeToAnUnprotectedProfileOrNobodyOpensTheProfileLock() = runTest {
+        val gate = gate()
+        protectAdult()
+        catalog.activeFlow.value = adultA
+        gate.start()
+        assertEquals(LockState.Profile(adult, "ann"), gate.settled())
+        catalog.activeFlow.value = kidA
+        assertEquals(LockState.Open, gate.state.first { it == LockState.Open })
+        catalog.activeFlow.value = adultA
+        gate.state.first { it is LockState.Profile }
+        catalog.activeFlow.value = null
+        assertEquals(LockState.Open, gate.state.first { it == LockState.Open })
+    }
+
+    @Test fun theRightPinOpensAndAWrongOneDoesNot() = runTest {
+        val gate = gate()
+        protectAdult()
+        catalog.activeFlow.value = adultA
+        gate.start()
+        gate.settled()
+        val wrong = "1111".toCharArray()
+        assertEquals(PinCheck.Wrong(4), gate.unlockProfile(wrong))
+        assertTrue(wrong.all { it == '\u0000' })
+        assertEquals(LockState.Profile(adult, "ann"), gate.state.value)
+        assertEquals(PinCheck.Correct, gate.unlockProfile("4826".toCharArray()))
+        assertEquals(LockState.Open, gate.state.value)
+    }
+
+    @Test fun profileClearedOpensOnlyOnceTheProtectionIsGone() = runTest {
+        val gate = gate()
+        protectAdult()
+        catalog.activeFlow.value = adultA
+        gate.start()
+        gate.settled()
+        gate.profileCleared(adult) // still protected in the store: nothing
+        settle()
+        assertEquals(LockState.Profile(adult, "ann"), gate.state.value)
+        locks.clear(adult)
+        gate.profileCleared(adult)
+        assertEquals(LockState.Open, gate.state.first { it == LockState.Open })
+    }
+
+    // ---- rule 5: no secure screen lock
+
+    @Test fun withoutASecureScreenLockTheAppLockIsTurnedOff() = runTest {
+        prefs.setAppLock(true)
+        secure = false
+        val gate = gate()
+        gate.start()
+        assertEquals(LockState.Open, gate.settled())
+        assertFalse(prefs.settings.value.appLock)
+    }
+
+    @Test fun withoutASecureScreenLockAProtectedProfileIsStillLocked() = runTest {
+        prefs.setAppLock(true)
+        secure = false
+        val gate = gate()
+        protectAdult()
+        catalog.activeFlow.value = adultA
+        gate.start()
+        assertEquals(LockState.Profile(adult, "ann"), gate.settled())
+        assertFalse(prefs.settings.value.appLock)
+    }
+
+    @Test fun turningTheAppLockOffWhileAskingChecksAgain() = runTest {
+        prefs.setAppLock(true)
+        val gate = gate()
+        gate.start()
+        assertEquals(LockState.App, gate.settled())
+        prefs.setAppLock(false)
+        assertEquals(LockState.Open, gate.state.first { it == LockState.Open })
+    }
+
+    // ---- rule 6: the household pass
+
+    @Test fun everyMoveIntoALockEndsTheHouseholdPass() = runTest {
+        val gate = gate()
+        protectAdult()
+        gate.start()
+        gate.settled()
+        assertEquals(PinCheck.Correct, household.confirm(adult, "4826".toCharArray()))
+        assertTrue(household.allows())
+        prefs.setLockAfter(LockAfter.IMMEDIATELY)
+        prefs.setAppLock(true)
+        advanceUntilIdle()
+        gate.onLeft(); gate.onReturned()
+        assertEquals(LockState.App, gate.state.value)
+        assertFalse("into App", household.allows())
+    }
+
+    @Test fun aMoveIntoTheProfileLockEndsThePassToo() = runTest {
+        val gate = openAsAdult()
+        assertTrue(locks.protect(s2u1, "5937".toCharArray()))
+        assertEquals(PinCheck.Correct, household.confirm(s2u1, "5937".toCharArray()))
+        assertTrue(household.allowsSignOut(s2u1))
+        gate.onLeft(); clock.ms += 60_000; gate.onReturned()
+        assertEquals(LockState.Profile(adult, "ann"), gate.state.value)
+        assertFalse("into Profile", household.allowsSignOut(s2u1))
+    }
+
+    // ---- rule 7: recents
+
+    @Test fun theRecentsPreviewIsHiddenForEachOfTheThreeCauses() = runTest {
+        val gate = gate()
+        gate.start()
+        assertFalse(gate.hideRecents.first { !it })
+        prefs.setHideInRecents(true)
+        assertTrue(gate.hideRecents.first { it })
+        prefs.setHideInRecents(false)
+        gate.hideRecents.first { !it }
+        prefs.setAppLock(true)
+        assertTrue(gate.hideRecents.first { it })
+        prefs.setAppLock(false)
+        gate.hideRecents.first { !it }
+        protectAdult()
+        assertTrue(gate.hideRecents.first { it })
+    }
+
+    @Test fun profileStateIsRedactedAndTheWallClockIsNeverRead() {
+        assertEquals("Profile(<redacted>)", LockState.Profile(adult, "ann").toString())
+        val source = File("src/main/java/app/shoalwatch/security/LockGate.kt").readText()
+        listOf("System.currentTimeMillis", "Instant.now", "Clock.system", "Date(", "SystemClock").forEach {
+            assertFalse("$it in LockGate", it in source)
+        }
+    }
+}

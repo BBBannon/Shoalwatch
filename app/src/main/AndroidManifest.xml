@@ -13,6 +13,11 @@
     -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!--
+        The app lock (Milestone 7) asks for the phone's own screen lock through the framework BiometricPrompt, which needs
+        USE_BIOMETRIC (a normal permission, granted at install). Nothing about the person or the answer is kept.
+    -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
 
     <!--
         usesCleartextTraffic="true" is deliberate. Users may opt in to a plain-HTTP LAN server, per

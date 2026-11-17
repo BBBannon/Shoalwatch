@@ -1,10 +1,15 @@
 package app.shoalwatch
 
+import android.content.Context
 import app.shoalwatch.core.SystemMonotonicClock
 import app.shoalwatch.data.servers.ProfileSwitch
 import app.shoalwatch.data.servers.ProfileSwitcher
 import app.shoalwatch.data.servers.ProvedSwitches
+import app.shoalwatch.security.DeviceAuth
+import app.shoalwatch.security.FrameworkDeviceAuth
 import app.shoalwatch.security.HouseholdGuard
+import app.shoalwatch.security.LockGate
+import app.shoalwatch.security.LockPrefs
 import app.shoalwatch.security.PinHasher
 import app.shoalwatch.security.ProfileLocks
 import kotlinx.coroutines.Dispatchers
@@ -28,4 +33,16 @@ internal class LockParts(graph: AppGraph) {
 
     /** The household check, enforced by the catalog, the authenticator and the two download settings. */
     val householdGuard = HouseholdGuard(profileLocks, graph.serverCatalog, SystemMonotonicClock, graph.appScope)
+
+    /** The app lock settings, in the private `security_prefs` file (excluded from backup like every preferences file). */
+    val lockPrefs = LockPrefs(graph.appContext.getSharedPreferences("security_prefs", Context.MODE_PRIVATE))
+
+    /** The phone's own screen lock prompt. */
+    val deviceAuth: DeviceAuth = FrameworkDeviceAuth(graph.appContext)
+
+    /** The one lock state for the app; started by `ShoalwatchApp`, told about leaving and returning by `MainActivity`. */
+    val lockGate = LockGate(
+        lockPrefs.settings, profileLocks, graph.serverCatalog, provedSwitches, householdGuard, deviceAuth::available,
+        SystemMonotonicClock, graph.appScope,
+    ) { lockPrefs.setAppLock(false) }
 }

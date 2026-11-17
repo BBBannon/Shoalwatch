@@ -31,6 +31,7 @@ class ShoalwatchApp : Application(), SingletonImageLoader.Factory, Configuration
         graph.downloadHousekeeping.onStart() // requeue what a dead process left, sweep orphans, kick if anything waits
         graph.startSync() // queue what a dead process left in offline_plays, then send the outbox (and on each reconnection)
         graph.housekeepingParts.autoDownloadNext.start() // waiting "download next episodes" requests, now and on each reconnection
+        graph.lockParts.lockGate.start() // the app lock and profile locks: asks at every cold start (see "App lock" in docs/ARCHITECTURE.md)
     }
 
     override val workManagerConfiguration: Configuration
