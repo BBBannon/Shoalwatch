@@ -81,6 +81,25 @@ abstract class SeriesTwoPaneRenderBase : RenderBase() {
         assertTrue(describedStarting("Episode 1, Second"))
     }
 
+    /** Review M6 of Tasks 9-10: the chips are in the other pane, so a new season starts the episode list at its top. */
+    @Test fun choosingASeasonStartsTheEpisodesAtTheTop() {
+        if (!twoPane) return
+        val state = mutableStateOf(ready)
+        show { SeriesScreen(state.value, actions, emptyFlow(), snackbar) }
+        val episodesList = SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange).and(SemanticsMatcher.keyIsDefined(SemanticsProperties.CollectionInfo)) // the right pane's list
+        rule.onNode(episodesList).performScrollToNode(rowOf(18))
+        rule.waitForIdle()
+        assertTrue("scrolled down first", rule.onAllNodes(rowOf(1)).fetchSemanticsNodes().isEmpty())
+        state.value = ready.copy(selectedSeasonId = id(62), episodes = (1..20).map { episode(70 + it, 2, it, name = "Second $it") })
+        rule.waitForIdle()
+        val first = rule.onAllNodes(describedMatcher("Episode 1, Second 1")).fetchSemanticsNodes()
+        assertTrue("episode 1 of the new season is shown", first.isNotEmpty())
+    }
+
+    private fun describedMatcher(prefix: String) = SemanticsMatcher("description starts with $prefix") { node ->
+        node.config.getOrNull(SemanticsProperties.ContentDescription)?.any { it.startsWith(prefix) } == true
+    }
+
     @Test fun theHighlightedEpisodeIsScrolledIntoViewInTheRightPane() {
         show { SeriesScreen(ready.copy(highlightEpisodeId = id(18)), actions, emptyFlow(), snackbar) }
         rule.waitForIdle()

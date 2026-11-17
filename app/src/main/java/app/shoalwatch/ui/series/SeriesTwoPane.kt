@@ -76,6 +76,15 @@ internal fun SeriesTwoPane(state: SeriesUiState, actions: SeriesActions, downloa
         }
     }
 
+    // A season chosen in the left pane starts the right one at its top (review M6 of Tasks 9-10); the first season shown does not
+    // move the list, so the highlight's own scroll stands.
+    var shownSeason by rememberSaveable { mutableStateOf(state.selectedSeasonId) }
+    LaunchedEffect(state.selectedSeasonId) {
+        val before = shownSeason
+        shownSeason = state.selectedSeasonId
+        if (before != null && before != state.selectedSeasonId) listState.scrollToItem(0)
+    }
+
     Row(Modifier.fillMaxSize()) {
         Column(Modifier.width(AboutPaneWidth).fillMaxHeight()) {
             if (heroArtwork != null) HeroBackdrop(heroArtwork, title, actions.onBack) else BackBar(actions.onBack)
