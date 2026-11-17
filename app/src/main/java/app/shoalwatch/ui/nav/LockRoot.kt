@@ -86,6 +86,8 @@ internal fun rememberActive(catalog: ServerCatalog): Judged? {
  * their ViewModels are cleared and the player sends its stop); once open again, Home (Welcome with no server), fresh. Anything that
  * navigates while locked (a session change, a notification's tab) is undone at once: the effect watches the stack.
  */
+// No public API gives the whole back stack as a flow (currentBackStackEntryFlow is the top only, visibleEntries the visible ones).
+@android.annotation.SuppressLint("RestrictedApi")
 @Composable
 internal fun ResetOnLock(nav: NavHostController, state: LockState, hasServers: suspend () -> Boolean) {
     val locked = state.locked

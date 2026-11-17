@@ -63,6 +63,7 @@ internal fun NavGraphBuilder.adminDestinations(
 
 /** Pops every admin screen at once; does nothing unless an admin screen is on top (so it can never pop Home). */
 internal fun NavHostController.leaveAdmin() {
+    @android.annotation.SuppressLint("RestrictedApi") // no public API gives the whole back stack; currentBackStackEntry is the top
     fun top() = currentBackStack.value.lastOrNull { it.destination !is NavGraph }?.destination?.route
     while (top() in AdminRoutes.ALL) {
         if (!popBackStack()) return

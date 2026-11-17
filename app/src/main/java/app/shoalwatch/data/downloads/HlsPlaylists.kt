@@ -39,7 +39,7 @@ internal object HlsPlaylists {
         if (text.length > MAX_CHARS) return Parsed.Refused("size")
         val folder = folderOf(playlistPath) ?: return Parsed.Refused("path")
         if (text.any { it.isISOControl() && it != '\n' && it != '\r' }) return Parsed.Refused("control")
-        val lines = text.removePrefix("﻿").split('\n').map { it.removeSuffix("\r").take(MAX_LINE).trim() }.filter { it.isNotEmpty() }
+        val lines = text.removePrefix("\uFEFF").split('\n').map { it.removeSuffix("\r").take(MAX_LINE).trim() }.filter { it.isNotEmpty() }
         if (lines.firstOrNull() != "#EXTM3U") return Parsed.Refused("header")
         return if (lines.any { it.startsWith("#EXT-X-STREAM-INF") }) master(lines, folder) else media(lines, folder)
     }

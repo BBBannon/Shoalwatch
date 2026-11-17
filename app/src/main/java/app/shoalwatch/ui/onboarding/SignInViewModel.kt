@@ -232,7 +232,7 @@ class SignInViewModel(
             } catch (e: Exception) {
                 mutableState.update { it.copy(submitting = false, error = AppError.from(e).userMessage) }
             } finally {
-                secret?.fill(' ')
+                secret?.fill('\u0000')
                 if (!keepPassword) password.clearText()
             }
         }

@@ -1,3 +1,4 @@
+v1.128 — 17/11/2026 — Cleared every problem flagged by Android's code checker, with no change to how the app behaves on older phones
 v1.127 — 17/11/2026 — If the phone cannot read the saved locks for a moment, the lock, Home and Servers screens now wait and try again instead of closing the app.
 v1.126 — 17/11/2026 — If the phone cannot read the saved locks for a moment, the app now stays locked and says so instead of closing.
 v1.125 — 17/11/2026 — After a wrong password under "Forgot PIN", the lock screen now waits a little before the next try, which slows down guessing (your server may still lock an account after a few wrong passwords).

@@ -3,6 +3,7 @@ package app.shoalwatch.data.playback.engine
 import android.content.Context
 import android.graphics.Color
 import android.view.View
+import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.SubtitleView

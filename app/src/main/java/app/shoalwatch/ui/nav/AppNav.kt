@@ -236,6 +236,7 @@ internal fun ClearBrowsingOnSessionChange(nav: NavHostController, catalog: Serve
             withContext(Dispatchers.Main.immediate) {
                 // A sign-in as another account (from Servers) has already taken the app to a fresh Home, alone: leave that one be.
                 val here = nav.currentBackStackEntry
+                @android.annotation.SuppressLint("RestrictedApi") // no public API gives the whole back stack; currentBackStackEntry is the top
                 val alone = nav.currentBackStack.value.count { it.destination !is NavGraph } == 1
                 if (alone && here?.destination?.route == Routes.HOME && here.arguments?.getBoolean(Routes.ARG_FRESH) == true) {
                     nav.clearTabStates()

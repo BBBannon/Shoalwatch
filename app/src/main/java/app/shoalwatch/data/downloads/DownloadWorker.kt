@@ -78,6 +78,9 @@ internal class DownloadWorker(context: Context, params: WorkerParameters, privat
     }
 
     /** Why it stopped, said plainly: the 6-hour limit, or Wi-Fi (or any connection) gone. */
+    // stopReason is marked API 31 but in WorkManager 2.12.0 it is a plain read of the worker's own field (javap): on API 29-30 the
+    // in-process network tracker still sets STOP_REASON_CONSTRAINT_CONNECTIVITY, and JobScheduler stops give STOP_REASON_UNKNOWN.
+    @android.annotation.SuppressLint("NewApi")
     private fun stopped() {
         when (stopReason) {
             WorkInfo.STOP_REASON_FOREGROUND_SERVICE_TIMEOUT -> waiting(QueueStatus.PausedByTimeLimit)

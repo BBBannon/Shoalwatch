@@ -1,5 +1,6 @@
 package app.shoalwatch.data.playback.engine
 
+import androidx.annotation.OptIn
 import androidx.media3.common.text.Cue
 import androidx.media3.common.util.UnstableApi
 
