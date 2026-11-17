@@ -60,7 +60,7 @@ class LockGateTest : LibraryTestBase() {
 
     @Before fun freshPrefs() {
         val context = ApplicationProvider.getApplicationContext<Context>()
-        prefs = LockPrefs(context.getSharedPreferences("lock-gate-test", 0).also { it.edit().clear().commit() })
+        prefs = LockPrefs(context.getSharedPreferences("lock-gate-test", 0).also { it.edit().clear().commit() }) {}
     }
 
     /** Review M6: makes the protected set's read, and the store's own "is it protected?", fail like a broken database. */
@@ -78,7 +78,7 @@ class LockGateTest : LibraryTestBase() {
     private fun TestScope.gate(): LockGate {
         locks = ProfileLocks(failingDao(db.profileDao()), hasher, clock, StandardTestDispatcher(testScheduler)) {}
         household = HouseholdGuard(locks, catalog, clock, backgroundScope) { true }
-        return LockGate(prefs.settings, locks, catalog, proved, household, { secure }, clock, backgroundScope) { prefs.setAppLock(false) }
+        return LockGate(prefs.settings, locks, catalog, proved, household, { secure }, clock, backgroundScope) { prefs.turnOffAppLock() }
     }
 
     /**
@@ -393,7 +393,7 @@ class LockGateTest : LibraryTestBase() {
             }
         }
         val frozen = ProfileLocks(held, hasher, clock, StandardTestDispatcher(testScheduler)) {}
-        return LockGate(prefs.settings, frozen, catalog, proved, household, { secure }, clock, backgroundScope) { prefs.setAppLock(false) }
+        return LockGate(prefs.settings, frozen, catalog, proved, household, { secure }, clock, backgroundScope) { prefs.turnOffAppLock() }
     }
 
     @Test fun aChangeToAProtectedProfileLocksAtOnceWithoutReadingTheStore() = runTest {

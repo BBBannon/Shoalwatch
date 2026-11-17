@@ -43,8 +43,8 @@ internal class LockParts(graph: AppGraph) {
     /** The household check, enforced by the catalog, the authenticator and the two download settings. */
     val householdGuard: HouseholdGuard = HouseholdGuard(profileLocks, graph.serverCatalog, SystemMonotonicClock, graph.appScope) { lockGate.isOpenFor(it) }
 
-    /** The app lock settings, in the private `security_prefs` file (excluded from backup like every preferences file). */
-    val lockPrefs = LockPrefs(graph.appContext.getSharedPreferences("security_prefs", Context.MODE_PRIVATE))
+    /** The app lock settings, in the private `security_prefs` file (excluded from backup like every preferences file); household-checked. */
+    val lockPrefs = LockPrefs(graph.appContext.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)) { householdGuard.require() }
 
     /** The wait between wrong "Forgot PIN" passwords (review M5), kept in the same private file. */
     val forgotThrottle = ForgotThrottle(graph.appContext.getSharedPreferences("security_prefs", Context.MODE_PRIVATE), SystemMonotonicClock)
@@ -62,5 +62,5 @@ internal class LockParts(graph: AppGraph) {
     val lockGate: LockGate = LockGate(
         lockPrefs.settings, profileLocks, graph.serverCatalog, provedSwitches, householdGuard, deviceAuth::available,
         SystemMonotonicClock, graph.appScope,
-    ) { lockPrefs.setAppLock(false) }
+    ) { lockPrefs.turnOffAppLock() }
 }

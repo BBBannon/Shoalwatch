@@ -66,9 +66,14 @@ class ProfilePlaybackTest : LibraryTestBase() {
 /** Only the playback rows, in memory and observable; the lock methods are not used by [ProfilePlayback]. */
 internal class FakeProfileDao : ProfileDao {
     private val rows = MutableStateFlow<Map<Session, Boolean>>(emptyMap())
+    /** When set, a write throws it (a full disk). */
+    var failure: Exception? = null
     fun setAutoplay(s: Session, on: Boolean) { rows.value = rows.value + (s to on) }
     override fun observeAutoplay(serverId: String, userId: String): Flow<Boolean?> = rows.map { it[Session(serverId, userId)] }
-    override suspend fun upsertPlayback(row: ProfilePlaybackEntity) { setAutoplay(Session(row.serverId, row.userId), row.autoplayNext) }
+    override suspend fun upsertPlayback(row: ProfilePlaybackEntity) {
+        failure?.let { throw it }
+        setAutoplay(Session(row.serverId, row.userId), row.autoplayNext)
+    }
     override fun observeProtected(): Flow<List<ProfileKeyRow>> = error("not used")
     override suspend fun lock(serverId: String, userId: String): ProfileLockEntity? = error("not used")
     override suspend fun insertLock(serverId: String, userId: String, verifier: ByteArray): Long = error("not used")

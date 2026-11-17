@@ -92,8 +92,8 @@ class SwitchPathsTest {
         val proved = ProvedSwitches(clock)
         val plain = StoreCatalog(s)
         household = HouseholdGuard(locks, plain, clock, backgroundScope) { gate.isOpenFor(it) }
-        val prefs = LockPrefs(ApplicationProvider.getApplicationContext<Context>().getSharedPreferences("paths", 0).also { it.edit().clear().commit() })
-        gate = LockGate(prefs.settings, locks, plain, proved, household, { true }, clock, backgroundScope) { prefs.setAppLock(false) }
+        val prefs = LockPrefs(ApplicationProvider.getApplicationContext<Context>().getSharedPreferences("paths", 0).also { it.edit().clear().commit() }) {}
+        gate = LockGate(prefs.settings, locks, plain, proved, household, { true }, clock, backgroundScope) { prefs.turnOffAppLock() }
         val switcher = ProfileSwitch(s::setActive, { s.cachedToken(it.serverId, it.userId) != null }, locks, proved)
         return Parts(gate, StoreCatalog(s, { locks.isProtected(it) }, { household }), switcher, household, locks)
     }

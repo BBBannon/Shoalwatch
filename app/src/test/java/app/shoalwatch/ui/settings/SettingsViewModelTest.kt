@@ -46,9 +46,11 @@ class SettingsViewModelTest {
     private val dao = FakeProfileDao()
     private val locks = FakeProfileLocks()
     private val household = FakeHousehold(ask = false, grownUps = listOf(adult))
+    /** The store's own household check (as `LockParts` wires `HouseholdGuard.require`), refusing on demand. */
+    private var storeRefuses = false
     private val prefs = LockPrefs(
         ApplicationProvider.getApplicationContext<Context>().getSharedPreferences("settings_vm_test", Context.MODE_PRIVATE).also { it.edit().clear().commit() },
-    )
+    ) { if (storeRefuses) throw HouseholdLockedException() }
     private var secure = true
     private val hideRecents = MutableStateFlow(false)
 
@@ -262,6 +264,54 @@ class SettingsViewModelTest {
         vm.grownUpSays("4826")
         assertTrue(prefs.settings.value.hideInRecents)
         assertEquals(LockAfter.IMMEDIATELY, vm.state.value.lock.lockAfter)
+    }
+
+    /** Review I1 of Tasks 7-8: the screen's check passed, but the store refuses (the pass ran out): nothing saved, the race line. */
+    @Test fun aRefusalFromTheStoreSavesNoLockSettingAndShowsTheRaceLine() {
+        storeRefuses = true
+        val vm = vm()
+        vm.setAppLock(true)
+        vm.setLockAfter(LockAfter.FIFTEEN_MINUTES)
+        vm.setHideInRecents(true)
+        assertEquals("nothing saved", app.shoalwatch.security.LockSettings(), prefs.settings.value)
+        assertTrue(vm.state.value.householdRace)
+    }
+
+    /** Review M1 of Tasks 7-8: Cancel while the current PIN is being checked stays cancelled, whatever the check says. */
+    @Test fun cancellingWhileTheCurrentPinIsCheckedIsNotUndone() {
+        locks.pins.value = mapOf(BEN to "2468")
+        val vm = vm()
+        for ((start, typed) in listOf<Pair<() -> Unit, String>>({ vm.startChangePin() } to "2468", { vm.startChangePin() } to "1111", { vm.startRemovePin() } to "1111")) {
+            start()
+            val hold = kotlinx.coroutines.CompletableDeferred<Unit>()
+            locks.hold = hold
+            vm.type(typed)
+            vm.cancelPin()
+            hold.complete(Unit)
+            assertNull("Cancel stays cancelled ($typed)", vm.state.value.pinStep)
+            assertNull(vm.state.value.pinAnswer)
+            locks.hold = null
+        }
+        vm.startChangePin()
+        vm.type("2468")
+        assertEquals("not cancelled: the next step", PinStep.NEW_FOR_CHANGE, vm.state.value.pinStep)
+    }
+
+    /** Review M4 of Tasks 7-8: a failed autoplay write, and a PIN that was not set, say so. */
+    @Test fun aChangeThatWasNotSavedSaysSo() {
+        val vm = vm()
+        dao.failure = android.database.sqlite.SQLiteFullException("database or disk is full")
+        vm.setAutoplay(false)
+        assertTrue("autoplay", vm.state.value.notSaved)
+        assertTrue("the switch shows what is stored", vm.state.value.autoplay)
+        dao.failure = null
+        vm.startProtect()
+        assertFalse("a new step clears it", vm.state.value.notSaved)
+        vm.type("2468")
+        locks.pins.value = mapOf(BEN to "1357") // protected meanwhile, elsewhere: protect says false
+        vm.type("2468")
+        assertNull(vm.state.value.pinStep)
+        assertTrue("protect said no", vm.state.value.notSaved)
     }
 
     @Test fun withNobodyProtectedTheLockSettingsSaveAtOnce() {

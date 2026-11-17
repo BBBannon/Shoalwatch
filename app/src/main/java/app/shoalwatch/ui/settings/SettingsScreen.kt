@@ -55,6 +55,7 @@ fun SettingsScreen(
     state.pinStep?.let { PinStepDialog(state, it, pin, actions) }
     AppScreen(title = stringResource(R.string.settings_title), onBack = actions.onBack) {
         if (state.householdRace) ErrorMessage(stringResource(R.string.grownup_race))
+        if (state.notSaved) ErrorMessage(stringResource(R.string.settings_not_saved))
         SettingsHeading(stringResource(R.string.settings_playback))
         if (state.session != null) {
             SettingsSwitch(stringResource(R.string.settings_autoplay), stringResource(R.string.settings_autoplay_help), state.autoplay, actions.onAutoplay)

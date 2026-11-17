@@ -89,7 +89,7 @@ class LockViewModelTest : LibraryTestBase() {
         }
         locks = ProfileLocks(dao, PinHasher(SecretBox { key }, iterations = 1_000), clock, Dispatchers.IO) {}
         val household = HouseholdGuard(locks, catalog, clock, backgroundScope) { true }
-        val prefs = LockPrefs(ApplicationProvider.getApplicationContext<Context>().getSharedPreferences("lock-vm", 0).also { it.edit().clear().commit() })
+        val prefs = LockPrefs(ApplicationProvider.getApplicationContext<Context>().getSharedPreferences("lock-vm", 0).also { it.edit().clear().commit() }) {}
         gate = LockGate(prefs.settings, locks, catalog, ProvedSwitches(clock), household, { true }, clock, backgroundScope) { }
         assertTrue(locks.protect(adult, "4826".toCharArray()))
         if (protectOther) assertTrue(locks.protect(other, "1357".toCharArray()))

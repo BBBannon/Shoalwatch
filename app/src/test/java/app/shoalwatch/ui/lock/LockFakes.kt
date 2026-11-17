@@ -104,6 +104,8 @@ class FakeProfileLocks : app.shoalwatch.security.ProfileProtection {
     val pins = MutableStateFlow<Map<Session, String>>(emptyMap())
     var wrongAnswer: PinCheck = PinCheck.Wrong(4)
     var failure: Exception? = null
+    /** When set, `check` and `unprotect` wait for it before answering (a check still running). */
+    var hold: kotlinx.coroutines.CompletableDeferred<Unit>? = null
     val calls = mutableListOf<String>()
     val arrays = mutableListOf<CharArray>()
 
@@ -126,6 +128,7 @@ class FakeProfileLocks : app.shoalwatch.security.ProfileProtection {
 
     override suspend fun check(s: Session, pin: CharArray): PinCheck = zeroing(pin) {
         calls += "check:${s.userId}:${String(pin)}"
+        hold?.await()
         failure?.let { throw it }
         answer(s, String(pin))
     }
@@ -140,6 +143,7 @@ class FakeProfileLocks : app.shoalwatch.security.ProfileProtection {
 
     override suspend fun unprotect(s: Session, pin: CharArray): PinCheck = zeroing(pin) {
         calls += "unprotect:${s.userId}:${String(pin)}"
+        hold?.await()
         failure?.let { throw it }
         answer(s, String(pin)).also { if (it == PinCheck.Correct) pins.value = pins.value - s }
     }

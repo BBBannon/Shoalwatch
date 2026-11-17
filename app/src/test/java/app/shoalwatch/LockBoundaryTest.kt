@@ -55,6 +55,11 @@ class LockBoundaryTest {
         assertTrue("inside submitForgot", forgot.contains("ClearProof.afterPasswordSignIn(locked.session, account)"))
     }
 
+    /** Review I1 of Tasks 7-8: the lock settings' one write without the household check is `LockGate`'s rule 5, wired in `LockParts`. */
+    @Test fun onlyLockPartsTurnsTheAppLockOffWithoutTheHouseholdCheck() {
+        assertEquals(listOf("LockParts.kt"), filesCalling(Regex("""\.turnOffAppLock\(""")))
+    }
+
     @Test fun noScreenChangesTheActiveProfileButThroughTheSwitcher() {
         assertEquals("ui/ calls setActive", emptyList<String>(), filesCalling(Regex("""\.setActive\(""")).filter { it.startsWith("ui/") })
     }

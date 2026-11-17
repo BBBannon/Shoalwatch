@@ -57,6 +57,8 @@ data class SettingsUiState(
     val pinTooShort: Boolean = false,
     /** The data layer refused (the grown-up's pass ran out meanwhile): "A grown-up's PIN is needed. Try again." */
     val householdRace: Boolean = false,
+    /** A change was not saved (autoplay's write failed, or the PIN was not set): "That change wasn't saved. Try again." */
+    val notSaved: Boolean = false,
 ) {
     override fun toString() = "SettingsUiState(<redacted>)"
 }
@@ -71,6 +73,7 @@ private data class Steps(
     val mismatch: Boolean = false,
     val tooShort: Boolean = false,
     val race: Boolean = false,
+    val notSaved: Boolean = false,
 )
 
 /**
@@ -99,6 +102,9 @@ class SettingsViewModel(
     private var newPin: CharArray? = null
     private var currentPin: CharArray? = null
 
+    /** Moves on at every end of the steps (Cancel, a session change …): an answer for an earlier run is dropped (review M1 of Tasks 7-8). */
+    private var generation = 0
+
     private val active = catalog.activeAccount.map { a -> a?.let { Session(it.serverId, it.userId) to it.userName } }.distinctUntilChanged()
 
     private val profile = active.flatMapLatest { pair ->
@@ -114,7 +120,7 @@ class SettingsViewModel(
     val state: StateFlow<SettingsUiState> = combine(profile, device, steps, pip?.autoEnter ?: flowOf(true)) { (who, auto, prot), (lock, sec, forced), st, pipAuto ->
         SettingsUiState(
             who?.first, who?.second, auto, pipAuto, prot, lock, sec, forced,
-            st.step, st.answer, st.failed, st.mismatch, st.tooShort, st.race,
+            st.step, st.answer, st.failed, st.mismatch, st.tooShort, st.race, st.notSaved,
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, SettingsUiState(deviceSecure = secure.value))
 
@@ -137,7 +143,15 @@ class SettingsViewModel(
     /** For the active profile only, as itself (no grown-up check: it changes nothing for anyone else). */
     fun setAutoplay(on: Boolean) {
         val s = state.value.session ?: return
-        viewModelScope.launch { quietly { playback.setAutoplay(s, on) } }
+        viewModelScope.launch {
+            try {
+                playback.setAutoplay(s, on)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                steps.update { it.copy(notSaved = true) } // the switch shows what is stored (review M4 of Tasks 7-8)
+            }
+        }
     }
 
     fun startProtect() = startSteps(PinStep.NEW) { !it.profileProtected }
@@ -150,15 +164,16 @@ class SettingsViewModel(
         if (!running.compareAndSet(false, true)) return
         val typed = pin.text.toPinArray()
         pin.clearText()
+        val run = generation
         viewModelScope.launch {
             try {
-                submit(s, step, typed)
+                submit(s, step, typed, run)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: HouseholdLockedException) {
-                endSteps(Steps(race = true))
+                if (run == generation) endSteps(Steps(race = true))
             } catch (e: Exception) {
-                endSteps(Steps(step = firstOf(step), failed = true))
+                if (run == generation) endSteps(Steps(step = firstOf(step), failed = true))
             } finally {
                 typed.fill('\u0000')
                 running.set(false)
@@ -171,14 +186,25 @@ class SettingsViewModel(
     /** After the system prompt said yes (the screen runs it, as the lock screen does). Grown-up check first. */
     fun setAppLock(on: Boolean) {
         if (on && !deviceSecure()) return
-        grownUp.guard { prefs.setAppLock(on) }
+        grownUp.guard { save { prefs.setAppLock(on) } }
     }
 
-    fun setLockAfter(value: LockAfter) = grownUp.guard { prefs.setLockAfter(value) }
+    fun setLockAfter(value: LockAfter) = grownUp.guard { save { prefs.setLockAfter(value) } }
 
     fun setHideInRecents(on: Boolean) {
         if (state.value.recentsForced) return
-        grownUp.guard { prefs.setHideInRecents(on) }
+        grownUp.guard { save { prefs.setHideInRecents(on) } }
+    }
+
+    /** A lock setting, written in this screen's scope (the store asks the household check again: review I1 of Tasks 7-8). */
+    private fun save(write: suspend () -> Unit) {
+        viewModelScope.launch {
+            try {
+                write()
+            } catch (e: HouseholdLockedException) {
+                steps.update { it.copy(race = true) }
+            }
+        }
     }
 
     /** The phone's screen lock may have been set or removed while the app was away. */
@@ -204,8 +230,11 @@ class SettingsViewModel(
         }
     }
 
-    /** [typed] is zeroed by the caller (and by [protection], which zeroes whatever it is given). */
-    private suspend fun submit(s: Session, step: PinStep, typed: CharArray) {
+    /**
+     * [typed] is zeroed by the caller (and by [protection], which zeroes whatever it is given). After each call that can wait
+     * (a counted check), nothing is shown unless the steps are still [run]: Cancel during the check stays cancelled.
+     */
+    private suspend fun submit(s: Session, step: PinStep, typed: CharArray, run: Int) {
         when (step) {
             PinStep.NEW, PinStep.NEW_FOR_CHANGE -> {
                 if (!PinRules.valid(typed)) {
@@ -226,8 +255,8 @@ class SettingsViewModel(
                 }
                 newPin = null
                 if (step == PinStep.REPEAT) {
-                    protection.protect(s, chosen)
-                    endSteps(Steps())
+                    val saved = protection.protect(s, chosen)
+                    if (run == generation) endSteps(Steps(notSaved = !saved)) // false: protected meanwhile (review M4)
                 } else {
                     val old = currentPin
                     currentPin = null
@@ -235,7 +264,9 @@ class SettingsViewModel(
                         zero(chosen)
                         return endSteps(Steps())
                     }
-                    when (val check = protection.changePin(s, old, chosen)) {
+                    val check = protection.changePin(s, old, chosen)
+                    if (run != generation) return
+                    when (check) {
                         PinCheck.Correct, PinCheck.NotProtected -> endSteps(Steps())
                         else -> endSteps(Steps(step = PinStep.CURRENT_FOR_CHANGE, answer = check))
                     }
@@ -250,6 +281,10 @@ class SettingsViewModel(
                     zero(kept)
                     throw e
                 }
+                if (run != generation) {
+                    zero(kept)
+                    return
+                }
                 when (check) {
                     PinCheck.Correct -> {
                         zero(currentPin)
@@ -260,9 +295,13 @@ class SettingsViewModel(
                     else -> { zero(kept); steps.value = Steps(step = step, answer = check) }
                 }
             }
-            PinStep.CURRENT_FOR_REMOVE -> when (val check = protection.unprotect(s, typed)) {
-                PinCheck.Correct, PinCheck.NotProtected -> endSteps(Steps())
-                else -> steps.value = Steps(step = step, answer = check)
+            PinStep.CURRENT_FOR_REMOVE -> {
+                val check = protection.unprotect(s, typed)
+                if (run != generation) return
+                when (check) {
+                    PinCheck.Correct, PinCheck.NotProtected -> endSteps(Steps())
+                    else -> steps.value = Steps(step = step, answer = check)
+                }
             }
         }
     }
@@ -275,6 +314,7 @@ class SettingsViewModel(
 
     /** Every held PIN is zeroed and the field cleared, whatever comes next. */
     private fun endSteps(next: Steps) {
+        generation++
         zero(newPin)
         zero(currentPin)
         newPin = null
@@ -284,15 +324,6 @@ class SettingsViewModel(
     }
 
     private fun zero(chars: CharArray?) = chars?.fill('\u0000')
-
-    private suspend fun quietly(block: suspend () -> Unit) {
-        try {
-            block()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-        }
-    }
 
     override fun toString() = "SettingsViewModel(<redacted>)"
 }
