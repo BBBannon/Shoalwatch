@@ -8,7 +8,22 @@
 
 ## Device results
 
-**Not run yet.** The controller fills this in: the on-device suite (including `SyncSmokeTest`), the walkthrough against `tools/mockjelly` as `ben`, `anna` and `kid` (Task 16 brief), screenshots at font scale 1.0 and 2.0, and the TalkBack pass.
+**Partly run, 17/11/2026, emulator `shoalwatch_test2` (API 36), build `46ca154`, against `tools/mockjelly` on 8096.**
+
+**On-device suite: 26 / 26 passed, 0 failures, 0 skipped** (`connectedDebugAndroidTest`), including `SyncSmokeTest` (3 tests) on its first ever run.
+
+**Walkthrough (as `ben` only):**
+
+| Step | Result |
+|---|---|
+| Airplane mode: tick 3 films watched, favourite 1, remove 1 from Continue Watching | **Pass:** each change shows at once; header says "Offline" |
+| Reconnect, then open the app (start-up trigger) | **Pass:** all 5 sent in order, all as ben: user-data read then `POST /UserItems/{id}/UserData` (`Played`, `PlayCount`, position) per tick, `POST /UserFavoriteItems`, position-only post for the Continue Watching removal. No `datePlayed` |
+| Airplane mode: untick 1; Home; `am kill` (process gone); reconnect; **app not opened** | **Pass:** the system started the app's job; untick sent as ben (`DELETE /UserPlayedItems`) about 38 s after reconnecting |
+| Airplane mode: untick 1; Home; **reboot**; reconnect; app not opened | **FAIL (open finding D-1):** after 4+ min nothing sent. The row is waiting in `sync_outbox` (seq 7, PLAYED=0), but **no job is scheduled for the app after the reboot**, and WorkManager's `RescheduleReceiver` is in the package's `disabledComponents`. It is sent at the next app start (start-up trigger), so nothing is lost, only delayed. Not yet diagnosed: whether WorkManager 2.12 expects JobScheduler to keep the job across reboot (and why it did not), or needs the receiver enabled |
+
+Tester error, for the record: the first "swipe away" was done with `am force-stop`, which cancels an app's jobs by design (Android's stopped state); nothing was sent until the app was opened. Re-done with `am kill` (row 3).
+
+**Not run yet:** the download-to-credits prompt and Storage; the `--lose-reply-once`, `--markplayed-counts`, `--userdata-ignores-dates`, `--no-userdata-get`, `--clock-skew=600` repeats; sharing rules with `anna`; `kid` and Night Shift; auto-download next; sign-out with changes waiting; font scale 2.0 screenshots; TalkBack pass.
 
 ## 1. Summary verdict
 
