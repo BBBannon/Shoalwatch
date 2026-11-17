@@ -1,3 +1,8 @@
+v1.142 — 17/11/2026 — Cancelling a PIN in Settings while it is being checked now stays cancelled
+v1.141 — 17/11/2026 — Settings now tells you when a change could not be saved
+v1.140 — 17/11/2026 — On a tablet turned on its side, choosing another season of a show now starts its episode list at the top
+v1.139 — 17/11/2026 — The small video window now closes when the video ends or stops, instead of showing a page in it
+v1.138 — 17/11/2026 — The app lock now asks again when the small video window is opened up after the lock time, even if the screen was turned off and on meanwhile
 v1.137 — 17/11/2026 — On a tablet turned on its side, series and film pages now show in two side-by-side panels
 v1.136 — 17/11/2026 — A video now keeps playing in a small window when you leave the app (it works with swipe navigation on newer phones), with play and pause in the window and a setting to turn it off
 v1.135 — 17/11/2026 — With a screen reader, the “finished this episode” card and Up next are now read before the player’s buttons
