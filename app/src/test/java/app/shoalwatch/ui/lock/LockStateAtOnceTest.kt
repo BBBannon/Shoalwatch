@@ -7,7 +7,9 @@ import androidx.compose.runtime.State
 import app.shoalwatch.data.servers.Session
 import app.shoalwatch.security.LockState
 import app.shoalwatch.ui.nav.collectAtOnce
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.test.resetMain
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -23,14 +25,19 @@ import org.robolectric.Shadows.shadowOf
 @RunWith(RobolectricTestRunner::class)
 class LockStateAtOnceTest {
     @Test fun aLockSetOnTheMainThreadIsSeenBeforeTheCallReturns() {
+        Dispatchers.resetMain() // the real main dispatcher, whatever an earlier test in this JVM left behind
         val gate = MutableStateFlow<LockState>(LockState.Open)
         lateinit var seen: State<LockState>
-        val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
-        activity.setContent { seen = gate.collectAtOnce() }
-        shadowOf(Looper.getMainLooper()).idle()
-        assertEquals(LockState.Open, seen.value)
-        val locked = LockState.Profile(Session("s1", "u1"), "Ben")
-        gate.value = locked // as `onReturned` does in `onStart`, on the main thread
-        assertEquals("seen inside the same main-thread call", locked, seen.value)
+        val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup()
+        try {
+            controller.get().setContent { seen = gate.collectAtOnce() }
+            shadowOf(Looper.getMainLooper()).idle()
+            assertEquals(LockState.Open, seen.value)
+            val locked = LockState.Profile(Session("s1", "u1"), "Ben")
+            gate.value = locked // as `onReturned` does in `onStart`, on the main thread
+            assertEquals("seen inside the same main-thread call", locked, seen.value)
+        } finally {
+            controller.pause().stop().destroy()
+        }
     }
 }
