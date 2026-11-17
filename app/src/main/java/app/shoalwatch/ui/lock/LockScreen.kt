@@ -1,6 +1,5 @@
 package app.shoalwatch.ui.lock
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -23,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -82,17 +82,20 @@ internal fun LockScreen(
     unavailable: Boolean = false,
 ) {
     NoAutofill()
-    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).takesEveryTouch(), contentAlignment = Alignment.TopCenter) {
-        Column(
-            Modifier.widthIn(max = 600.dp).fillMaxWidth().safeDrawingPadding().imePadding().verticalScroll(rememberScrollState()).padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Icon(Icons.Filled.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(48.dp))
-            if (state.readFailed) ErrorMessage(stringResource(R.string.lock_read_failed))
-            when (val lock = state.lock) {
-                LockState.App -> AppLock(actions, unavailable)
-                is LockState.Profile -> ProfileLock(lock, state, pin, password, actions)
-                else -> Unit
+    // On the theme's Surface, so its words take the theme's text colour (walkthrough W7-1: black on near-black in the dark theme).
+    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Box(Modifier.fillMaxSize().takesEveryTouch(), contentAlignment = Alignment.TopCenter) {
+            Column(
+                Modifier.widthIn(max = 600.dp).fillMaxWidth().safeDrawingPadding().imePadding().verticalScroll(rememberScrollState()).padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Icon(Icons.Filled.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(48.dp))
+                if (state.readFailed) ErrorMessage(stringResource(R.string.lock_read_failed))
+                when (val lock = state.lock) {
+                    LockState.App -> AppLock(actions, unavailable)
+                    is LockState.Profile -> ProfileLock(lock, state, pin, password, actions)
+                    else -> Unit
+                }
             }
         }
     }

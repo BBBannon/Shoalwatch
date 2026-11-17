@@ -4,7 +4,11 @@ import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.unit.dp
 import app.shoalwatch.R
@@ -17,7 +21,9 @@ import app.shoalwatch.ui.browse.RenderBase
 import app.shoalwatch.ui.browse.TABLET
 import app.shoalwatch.ui.nav.LockCover
 import app.shoalwatch.ui.present.Strings
+import app.shoalwatch.ui.theme.DarkColours
 import kotlinx.coroutines.flow.MutableStateFlow
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.robolectric.annotation.Config
@@ -48,6 +54,27 @@ abstract class LockScreenRenderTest : RenderBase() {
         assertShown(text(R.string.lock_app_body))
         assertShown(text(R.string.lock_unlock))
         assertTargets()
+    }
+
+    /** The colour [label] is drawn in, as laid out (the theme's content colour when the text names none). */
+    private fun colourOf(label: String): Color {
+        val node = rule.onAllNodesWithText(label, useUnmergedTree = true).fetchSemanticsNodes().first()
+        val results = mutableListOf<TextLayoutResult>()
+        node.config.getOrNull(SemanticsActions.GetTextLayoutResult)?.action?.invoke(results)
+        return results.first().layoutInput.style.color
+    }
+
+    /** Walkthrough W7-1: in the dark theme the words were black on near-black, as the screen sat on no Surface. */
+    @Test fun theWordsAreInTheThemesTextColourInTheDarkTheme() {
+        lockScreen(LockUiState(lock = LockState.App))
+        assertEquals(DarkColours.onBackground, colourOf(text(R.string.lock_app_title)))
+        assertEquals(DarkColours.onBackground, colourOf(text(R.string.lock_app_body)))
+    }
+
+    @Test fun theProfileLocksWordsAreInTheThemesTextColourInTheDarkTheme() {
+        lockScreen(profile)
+        listOf(text(R.string.lock_profile_title, "Ben"), text(R.string.lock_profile_body), text(R.string.lock_other_heading), "Kid on Test Jellyfin")
+            .forEach { assertEquals(it, DarkColours.onBackground, colourOf(it)) }
     }
 
     @Test fun theAppLockWhenTheScreenLockCannotBeUsed() {
