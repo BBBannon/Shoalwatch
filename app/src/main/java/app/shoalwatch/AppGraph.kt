@@ -185,7 +185,7 @@ class AppGraph(internal val appContext: Context) {
     val downloads: Downloads by lazy {
         DownloadRepository(
             downloadStore, database.offlineLibraryDao(), database.itemDao(), downloadPlanner, downloadScheduler, downloadPrefs, downloadVolumes, downloadPaths, appScope,
-            removed = { downloadQueue.forget(it) },
+            removed = { downloadQueue.forget(it) }, household = lockParts.householdGuard,
         )
     }
     /** The removal rules and the start-up tidy-up (see "Removal rules" in docs/ARCHITECTURE.md). */
@@ -318,8 +318,10 @@ class AppGraph(internal val appContext: Context) {
     val authRepository: AuthRepository by lazy { AuthRepository(jellyfinGateway, serverStore, deviceIdentity, addressSelector) }
 
     /** What ViewModels use: the same stores without access tokens. */
-    val serverCatalog: ServerCatalog by lazy { StoreCatalog(serverStore) }
-    val authenticator: Authenticator by lazy { AuthenticatorImpl(authRepository) }
+    val serverCatalog: ServerCatalog by lazy { StoreCatalog(serverStore, { lockParts.profileLocks.isProtected(it) }, { lockParts.householdGuard }) }
+    val authenticator: Authenticator by lazy { AuthenticatorImpl(authRepository) { lockParts.householdGuard } }
+    /** Profile PINs, switching, the household check and the app lock (see "Profile PINs" in docs/ARCHITECTURE.md). */
+    internal val lockParts by lazy { LockParts(this) }
 
     // ---- Sync-back (Milestone 5, data/sync): see "Sync outbox" in docs/ARCHITECTURE.md.
     internal val outboxStore: OutboxStore by lazy { OutboxStore(database, System::currentTimeMillis) }

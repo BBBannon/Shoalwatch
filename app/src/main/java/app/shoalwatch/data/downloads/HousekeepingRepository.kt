@@ -23,6 +23,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import app.shoalwatch.security.HouseholdGuard
+import app.shoalwatch.security.HouseholdLockedException
 import kotlinx.coroutines.launch
 
 /**
@@ -47,6 +49,8 @@ class HousekeepingRepository internal constructor(
     /** The press while the player has the copy open (it remembers it for the stop) and the local-only mark (review I1). */
     private val inPlayer: (Session, String) -> Boolean = { _, _ -> false },
     private val markHere: suspend (Session, String) -> Unit = { _, _ -> },
+    /** The household check: "Delete shared downloads" is a household setting (Milestone 7). */
+    private val household: HouseholdGuard? = null,
 ) : Housekeeping {
     override fun profileSettings(s: Session): Flow<ProfileSettings> = guarded(ProfileSettings()) {
         dao.observeProfile(s.serverId, s.userId).map { row -> row?.let { ProfileSettings(it.afterFinish, it.autoNextCount) } ?: ProfileSettings() }
@@ -72,10 +76,13 @@ class HousekeepingRepository internal constructor(
         return guarded(SharedDelete.ANYONE) { dao.observeDeleteShared(serverId).map { it ?: SharedDelete.ANYONE } }
     }
 
-    override suspend fun setSharedDelete(s: Session, value: SharedDelete) = action {
-        dao.insertServerSettingsIfMissing(s.serverId)
-        dao.updateDeleteShared(s.serverId, value)
-        Unit
+    /** @throws HouseholdLockedException (outside [action], so it reaches the screen as itself); nothing is changed. */
+    override suspend fun setSharedDelete(s: Session, value: SharedDelete) {
+        household?.require()
+        action {
+            dao.insertServerSettingsIfMissing(s.serverId)
+            dao.updateDeleteShared(s.serverId, value)
+        }
     }
 
     override suspend fun releaseChoice(s: Session, itemId: String): ReleaseChoice = action { releases.choice(s, itemId, signedIn(s)) }

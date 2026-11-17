@@ -37,5 +37,6 @@ internal class HousekeepingParts(graph: AppGraph) {
             graph.offlinePlays.watched(s, id) // first: a process that dies now still sends watched at the next start
             graph.localPlaystate.markWatchedHere(s, id)
         },
+        household = graph.lockParts.householdGuard,
     )
 }
