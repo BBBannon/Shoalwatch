@@ -1,3 +1,4 @@
+v1.122 — 17/11/2026 — Changes made just before the phone restarts are now sent by themselves once it is back online, without opening the app.
 v1.121 — 17/11/2026 — Recorded the first emulator results for syncing watched changes: they reach the server in order, but a change waiting during a phone restart is only sent once the app is opened again.
 v1.120 — 16/11/2026 — If a firewall blocks the message sent when you stop watching, where you stopped is now kept and sent later instead of being lost.
 v1.119 — 16/11/2026 — After watching part of a download offline and then carrying on online, the app no longer goes back to the old offline spot after it restarts.
