@@ -15,6 +15,7 @@ import app.shoalwatch.data.servers.AccountSummary
 import app.shoalwatch.data.servers.ProvedSwitches
 import app.shoalwatch.data.servers.Session
 import app.shoalwatch.security.ClearProof
+import app.shoalwatch.security.ForgotThrottle
 import app.shoalwatch.security.HouseholdGuard
 import app.shoalwatch.security.LockGate
 import app.shoalwatch.security.LockPrefs
@@ -62,6 +63,7 @@ class LockViewModelTest : LibraryTestBase() {
     private lateinit var gate: LockGate
     private val cleared = mutableListOf<Session>()
     private var full = false
+    private val forgotPrefs = ApplicationProvider.getApplicationContext<Context>().getSharedPreferences("lock-vm-forgot", 0).also { it.edit().clear().commit() }
 
     @Before fun names() {
         catalog.serverList.value = listOf(testServer(id = S1).copy(name = "Test Jellyfin"), testServer(id = S2).copy(name = "Cabin"))
@@ -85,7 +87,7 @@ class LockViewModelTest : LibraryTestBase() {
         assertTrue(locks.protect(adult, "4826".toCharArray()))
         if (protectOther) assertTrue(locks.protect(other, "1357".toCharArray()))
         gate.start()
-        val vm = LockViewModel(gate, switcher, catalog, auth, locks.protectedProfiles) { proof ->
+        val vm = LockViewModel(gate, switcher, catalog, auth, locks.protectedProfiles, ForgotThrottle(forgotPrefs, clock)) { proof ->
             cleared += proof.session
             locks.clear(proof)
         }
@@ -212,6 +214,42 @@ class LockViewModelTest : LibraryTestBase() {
         assertFalse(locks.isProtected(adult))
         assertEquals(LockState.Open, gate.state.value)
         assertEquals("", vm.password.text.toString())
+    }
+
+    /** Review M5: a child cannot try server passwords as fast as the server answers (Jellyfin would lock the parent's account). */
+    @Test fun forgotPinWaitsAfterAWrongPasswordAndSendsNothingMeanwhile() = runTest {
+        val vm = vm()
+        auth.onPassword = { _, _ -> throw AppError.of(AppError.Kind.UNAUTHORISED) }
+        vm.openForgot()
+        vm.password.setTextAndPlaceCursorAtEnd("wrong1")
+        vm.submitForgot()
+        settle()
+        assertEquals(1, auth.passwordCalls.size)
+        assertEquals(30, vm.state.value.forgotWait)
+        vm.password.setTextAndPlaceCursorAtEnd("wrong2")
+        vm.submitForgot()
+        settle()
+        assertEquals("nothing sent while waiting", 1, auth.passwordCalls.size)
+        assertEquals("", vm.password.text.toString())
+        assertEquals(30, vm.state.value.forgotWait)
+        clock.ms += 30_000
+        vm.password.setTextAndPlaceCursorAtEnd("wrong3")
+        vm.submitForgot()
+        settle()
+        assertEquals(2, auth.passwordCalls.size)
+        assertEquals(60, vm.state.value.forgotWait)
+        assertTrue(locks.isProtected(adult))
+    }
+
+    @Test fun anOfflineForgotTryCostsNoWait() = runTest {
+        val vm = vm()
+        auth.routeAnswer = { null }
+        vm.openForgot()
+        vm.password.setTextAndPlaceCursorAtEnd("hunter2")
+        vm.submitForgot()
+        settle()
+        assertNull(vm.state.value.forgotWait)
+        assertEquals(AppError.Kind.OFFLINE, vm.state.value.forgotError)
     }
 
     @Test fun aChangeOfLockClearsEveryFieldAndTheChoice() = runTest {

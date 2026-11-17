@@ -112,6 +112,11 @@ abstract class LockScreenRenderTest : RenderBase() {
         assertShown(text(R.string.lock_forgot_other_account))
     }
 
+    @Test fun theForgotPanelSaysHowLongToWait() {
+        lockScreen(profile.copy(forgot = true, forgotWait = 30, forgotError = app.shoalwatch.core.AppError.Kind.UNAUTHORISED))
+        assertShown(text(R.string.lock_forgot_wait, app.shoalwatch.ui.present.waitWords(Strings(context.resources), 30)))
+    }
+
     @Test fun theChosenProfilesPinDialog() {
         lockScreen(profile.copy(choosing = others[1], pinAnswer = PinCheck.Wrong(4)))
         assertShown(text(R.string.switch_pin_title, "Anna"))

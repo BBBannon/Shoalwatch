@@ -29,6 +29,8 @@ import app.shoalwatch.ui.components.NoAutofill
 import app.shoalwatch.ui.components.NoKeyboardLearning
 import app.shoalwatch.ui.components.PrimaryButton
 import app.shoalwatch.ui.components.SecureWindow
+import app.shoalwatch.ui.present.rememberStrings
+import app.shoalwatch.ui.present.waitWords
 
 /**
  * "Forgot PIN" inside the lock screen: the locked profile's server password, which removes the PIN. The window is
@@ -67,6 +69,7 @@ internal fun ForgotPinPanel(state: LockUiState, password: TextFieldState, onSubm
 
 @Composable
 private fun forgotErrorText(state: LockUiState, server: String): String? = when {
+    state.forgotWait != null -> stringResource(R.string.lock_forgot_wait, waitWords(rememberStrings(), state.forgotWait))
     state.forgotOtherAccount -> stringResource(R.string.lock_forgot_other_account)
     state.forgotError == AppError.Kind.OFFLINE -> stringResource(R.string.lock_forgot_offline, server)
     state.forgotError != null -> AppError.of(state.forgotError).userMessage

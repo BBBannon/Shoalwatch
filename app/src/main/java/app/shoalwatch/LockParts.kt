@@ -7,6 +7,7 @@ import app.shoalwatch.data.servers.ProfileSwitcher
 import app.shoalwatch.data.servers.ProvedSwitches
 import app.shoalwatch.security.ClearProof
 import app.shoalwatch.security.DeviceAuth
+import app.shoalwatch.security.ForgotThrottle
 import app.shoalwatch.security.FrameworkDeviceAuth
 import app.shoalwatch.security.HouseholdGuard
 import app.shoalwatch.security.LockGate
@@ -42,6 +43,9 @@ internal class LockParts(graph: AppGraph) {
 
     /** The app lock settings, in the private `security_prefs` file (excluded from backup like every preferences file). */
     val lockPrefs = LockPrefs(graph.appContext.getSharedPreferences("security_prefs", Context.MODE_PRIVATE))
+
+    /** The wait between wrong "Forgot PIN" passwords (review M5), kept in the same private file. */
+    val forgotThrottle = ForgotThrottle(graph.appContext.getSharedPreferences("security_prefs", Context.MODE_PRIVATE), SystemMonotonicClock)
 
     /** The phone's own screen lock prompt. */
     val deviceAuth: DeviceAuth = FrameworkDeviceAuth(graph.appContext)

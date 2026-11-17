@@ -116,7 +116,7 @@ internal fun ResetOnLock(nav: NavHostController, state: LockState, hasServers: s
 internal fun LockRoute(graph: AppGraph, lock: LockState) {
     val parts = graph.lockParts
     val vm = graphViewModel {
-        LockViewModel(parts.lockGate, parts.switcher, graph.serverCatalog, graph.authenticator, parts.profileLocks.protectedProfiles, parts.clearProtection)
+        LockViewModel(parts.lockGate, parts.switcher, graph.serverCatalog, graph.authenticator, parts.profileLocks.protectedProfiles, parts.forgotThrottle, parts.clearProtection)
     }
     val state by vm.state.collectAsState()
     var unavailable by remember { mutableStateOf(false) }

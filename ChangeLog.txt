@@ -1,3 +1,4 @@
+v1.125 — 17/11/2026 — After a wrong password under "Forgot PIN", the lock screen now waits a little before the next try, so a server account cannot be locked out by rapid guessing.
 v1.124 — 17/11/2026 — A menu or pop-up left open before the app locked no longer shows over the lock screen.
 v1.123 — 17/11/2026 — Password managers are no longer offered on the lock screen, "Forgot PIN" or any PIN box, and the keyboard is asked not to remember PINs.
 v1.122 — 17/11/2026 — Switching to a protected profile now asks for its PIN, protected profiles are marked "Protected", and household settings (sharing downloads, deleting shared downloads, server settings, removing a server) ask for a grown-up's PIN.

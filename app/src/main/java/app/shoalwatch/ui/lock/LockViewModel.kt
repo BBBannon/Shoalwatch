@@ -11,6 +11,7 @@ import app.shoalwatch.data.servers.ServerCatalog
 import app.shoalwatch.data.servers.Session
 import app.shoalwatch.data.servers.SwitchResult
 import app.shoalwatch.security.ClearProof
+import app.shoalwatch.security.ForgotThrottle
 import app.shoalwatch.security.LockGate
 import app.shoalwatch.security.LockState
 import app.shoalwatch.security.PinCheck
@@ -49,6 +50,8 @@ data class LockUiState(
     val forgotOtherAccount: Boolean = false,
     /** The locked profile's server name, for the "Forgot PIN" words. */
     val lockedServerName: String? = null,
+    /** "Forgot PIN" must wait this many seconds before the next try (review M5), or null. */
+    val forgotWait: Int? = null,
     /** A protected profile chosen under "Use another profile": its name, for the PIN dialog. */
     val choosing: OtherProfile? = null,
 ) {
@@ -68,11 +71,13 @@ class LockViewModel(
     private val authenticator: Authenticator,
     /** The profiles that are protected (for the "Protected" marks). */
     protectedProfiles: Flow<Set<Session>>,
+    private val forgotThrottle: ForgotThrottle,
     private val clearProtection: suspend (ClearProof) -> Unit,
 ) : ViewModel() {
     private data class Local(
         val pinAnswer: PinCheck? = null, val pinFailed: Boolean = false, val busy: Boolean = false, val forgot: Boolean = false,
         val forgotError: AppError.Kind? = null, val forgotOtherAccount: Boolean = false, val choosing: OtherProfile? = null,
+        val forgotWait: Int? = null,
     )
 
     private val local = MutableStateFlow(Local())
@@ -102,7 +107,7 @@ class LockViewModel(
             others = all.filter { Session(it.serverId, it.userId) != locked },
             pinAnswer = l.pinAnswer, pinFailed = l.pinFailed, busy = l.busy, forgot = l.forgot, forgotError = l.forgotError,
             forgotOtherAccount = l.forgotOtherAccount, lockedServerName = servers.firstOrNull { it.id == locked?.serverId }?.name,
-            choosing = l.choosing,
+            choosing = l.choosing, forgotWait = l.forgotWait,
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, LockUiState())
 
@@ -162,21 +167,30 @@ class LockViewModel(
 
     fun openForgot() {
         password.clearText()
-        local.update { it.copy(forgot = true, forgotError = null, forgotOtherAccount = false) }
+        local.update { it.copy(forgot = true, forgotError = null, forgotOtherAccount = false, forgotWait = null) }
     }
 
     fun closeForgot() {
         password.clearText()
-        local.update { it.copy(forgot = false, forgotError = null, forgotOtherAccount = false) }
+        local.update { it.copy(forgot = false, forgotError = null, forgotOtherAccount = false, forgotWait = null) }
     }
 
-    /** Quick Connect is not offered here: an approval from another device is not proof the account is yours. */
+    /**
+     * Quick Connect is not offered here: an approval from another device is not proof the account is yours. While [ForgotThrottle]
+     * says wait, nothing is sent (review M5); a wrong password or another account's starts the next wait.
+     */
     fun submitForgot() {
         val locked = gate.state.value as? LockState.Profile ?: return
         if (local.value.busy) return
         val chars = password.text.toPinArray()
         password.clearText()
-        local.update { it.copy(busy = true, forgotError = null, forgotOtherAccount = false) }
+        val wait = forgotThrottle.waitSeconds(locked.session)
+        if (wait > 0) {
+            chars.fill(' ')
+            local.update { it.copy(forgotWait = wait, forgotError = null, forgotOtherAccount = false) }
+            return
+        }
+        local.update { it.copy(busy = true, forgotError = null, forgotOtherAccount = false, forgotWait = null) }
         viewModelScope.launch {
             try {
                 val route = authenticator.signInRoute(locked.session.serverId)
@@ -187,15 +201,22 @@ class LockViewModel(
                 val account = authenticator.signInWithPassword(route, locked.userName, chars)
                 val proof = ClearProof.afterPasswordSignIn(locked.session, account)
                 if (proof == null) {
-                    local.update { it.copy(forgotOtherAccount = true) }
+                    forgotThrottle.failed(locked.session)
+                    local.update { it.copy(forgotOtherAccount = true, forgotWait = forgotThrottle.waitSeconds(locked.session)) }
                 } else {
+                    forgotThrottle.succeeded(locked.session)
                     clearProtection(proof)
                     gate.profileCleared(locked.session)
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                local.update { it.copy(forgotError = AppError.from(e).kind) }
+                val kind = AppError.from(e).kind
+                if (kind == AppError.Kind.UNAUTHORISED) {
+                    forgotThrottle.failed(locked.session)
+                    local.update { it.copy(forgotWait = forgotThrottle.waitSeconds(locked.session)) }
+                }
+                local.update { it.copy(forgotError = kind) }
             } finally {
                 chars.fill('\u0000')
                 local.update { it.copy(busy = false) }

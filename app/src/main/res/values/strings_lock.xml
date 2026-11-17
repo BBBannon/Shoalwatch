@@ -42,6 +42,7 @@
     <string name="lock_forgot_submit">Sign in and remove PIN</string>
     <string name="lock_forgot_offline">You’re offline. Connect to %1$s to sign in.</string>
     <string name="lock_forgot_other_account">That’s a different account.</string>
+    <string name="lock_forgot_wait">That password was not accepted. Try again in %1$s.</string>
 
     <!-- Switching and the grown-up check (Task 6) -->
     <string name="switch_pin_title">Switch to %1$s?</string>
