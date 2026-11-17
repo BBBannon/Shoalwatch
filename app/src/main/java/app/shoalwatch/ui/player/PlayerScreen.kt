@@ -31,6 +31,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.traversalIndex
+import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -86,7 +88,8 @@ private fun BoxScope.Loading() {
 /**
  * Up next, or else the skip button, at the bottom right (above the seek bar while the controls show), with the watch-and-delete
  * card stacked above it; on a short screen (landscape phone) the two cards sit side by side. Each card is limited to the space
- * there is and scrolls inside, so neither leaves the screen or covers the other.
+ * there is and scrolls inside, so neither leaves the screen or covers the other. The corner is one traversal group read before
+ * the controls (`PlayerCornerOrderTest`).
  */
 @Composable
 private fun BoxScope.Corner(state: PlayerUiState, actions: PlayerActions) {
@@ -95,7 +98,8 @@ private fun BoxScope.Corner(state: PlayerUiState, actions: PlayerActions) {
     val segment = p.segmentNow
     val watched = state.watched
     val area = Modifier.matchParentSize().padding(start = 16.dp, top = 16.dp, end = 16.dp, bottom = if (state.controlsVisible) 112.dp else 24.dp)
-    BoxWithConstraints(area) {
+    // Read first by TalkBack (Milestone 7 Task 8): the prompt, then Up next, then the controls, though the top bar is above them.
+    BoxWithConstraints(area.semantics { isTraversalGroup = true; traversalIndex = -1f }) {
         val room = maxHeight
         val fit = Modifier.heightIn(max = room)
         if (watched != null && upNext != null && room < SIDE_BY_SIDE_BELOW) {

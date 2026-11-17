@@ -6,7 +6,9 @@ import org.junit.Test
 import java.io.File
 
 /**
- * Structural rules for the lock (Milestone 7): who may open it and who may remove a PIN without one. Source scans of `src/main`.
+ * Structural rules for the lock (Milestone 7): who may open it and who may remove a PIN without one; what screens may name; where
+ * a PIN may live; the secure dialogs; the lock's clock; and the launch intent cleaned before anything is drawn. Source scans of
+ * `src/main`; a comment line never counts, and failures name the file and line.
  */
 class LockBoundaryTest {
     private val root = File("src/main/java/app/shoalwatch")
@@ -62,5 +64,71 @@ class LockBoundaryTest {
             val code = File(root, it).readLines().filterNot { l -> l.trim().startsWith("*") || l.trim().startsWith("/") }.joinToString("\n")
             assertTrue("$it uses Quick Connect", !code.contains("quickConnect"))
         }
+    }
+
+    /** Every code line (comments dropped) of the files under [dirs], as "path:line: text". */
+    private fun codeLines(vararg dirs: String): List<Pair<String, String>> = sources
+        .map { it.relativeTo(root).invariantSeparatorsPath to it }
+        .filter { (path, _) -> dirs.any { path.startsWith(it) } }
+        .flatMap { (path, file) ->
+            file.readLines().mapIndexedNotNull { i, line ->
+                val t = line.trim()
+                if (t.startsWith("//") || t.startsWith("*") || t.startsWith("/*")) null else "$path:${i + 1}" to line
+            }
+        }
+
+    private fun offences(lines: List<Pair<String, String>>, regex: Regex) = lines.filter { regex.containsMatchIn(it.second) }.map { "${it.first}: ${it.second.trim()}" }
+
+    @Test fun screensNeverNameTheStoreTheLockTablesTheHasherOrTheProvedSwitches() {
+        val banned = Regex("""(ServerStore|ProfileDao|ProfileLockEntity|PinHasher|ProvedSwitches)""")
+        assertEquals(emptyList<String>(), offences(codeLines("ui/"), banned))
+    }
+
+    /**
+     * A PIN or password is a `CharArray` or a `TextFieldState`, never a `String`. The one named exception is the wire call that
+     * puts the password into the JSON body the server requires (`JellyfinGateway.authenticateByName`, Milestone 1): the request
+     * body is text, so a `String` exists there whatever the parameter type.
+     */
+    @Test fun noPinOrPasswordIsAString() {
+        val wire = Regex("""fun authenticateByName\(""")
+        val found = offences(codeLines("ui/", "data/", "security/"), Regex("""(pin|Pin|password)\s*:\s*String"""))
+            .filterNot { it.startsWith("data/servers/JellyfinGateway") && wire.containsMatchIn(it) }
+        assertEquals(emptyList<String>(), found)
+    }
+
+    @Test fun lockAndSettingsScreensKeepNoPinAnywhereElse() {
+        val lines = codeLines("ui/lock/", "ui/settings/")
+        val saveablePin = Regex("""(pin|Pin|password|Password)\w*\s*(by|=)\s*rememberSaveable""")
+        assertEquals(emptyList<String>(), offences(lines, saveablePin))
+        assertEquals(emptyList<String>(), offences(lines, Regex("""SavedStateHandle|ClipboardManager|LocalClipboard""")))
+        assertEquals(emptyList<String>(), offences(lines, Regex("""(?<![A-Za-z])Log\.""")))
+    }
+
+    @Test fun everyDialogInTheLockAndSettingsScreensIsSecure() {
+        val opens = Regex("""(?<![\w.])(AlertDialog|Dialog|BasicAlertDialog)\(""")
+        val missing = sources.filter { f -> f.relativeTo(root).invariantSeparatorsPath.let { it.startsWith("ui/lock/") || it.startsWith("ui/settings/") } }
+            .flatMap { f ->
+                val lines = f.readLines()
+                lines.indices.filter { i -> opens.containsMatchIn(lines[i]) && !lines[i].trim().startsWith("*") && !lines[i].trim().startsWith("//") }
+                    .filterNot { i -> lines.subList(i, minOf(lines.size, i + 4)).any { it.contains("properties = SecureDialog") } }
+                    .map { "${f.relativeTo(root).invariantSeparatorsPath}:${it + 1}: ${lines[it].trim()}" }
+            }
+        assertEquals(emptyList<String>(), missing)
+    }
+
+    @Test fun theLockIsTimedOnlyByTheMonotonicClock() {
+        listOf("security/ProfileLocks.kt", "security/LockGate.kt").forEach { path ->
+            val found = offences(codeLines(path), Regex("""System\.currentTimeMillis|Instant\.now"""))
+            assertEquals(path, emptyList<String>(), found)
+        }
+    }
+
+    @Test fun theLaunchIntentIsCleanedBeforeAnythingIsDrawn() {
+        val onCreate = File(root, "ui/MainActivity.kt").readText().substringAfter("override fun onCreate(").substringBefore("override fun ")
+        val clean = onCreate.indexOf("sanitised(")
+        val draw = onCreate.indexOf("setContent")
+        assertTrue("MainActivity.onCreate cleans the intent", clean >= 0)
+        assertTrue("setContent is in onCreate", draw >= 0)
+        assertTrue("sanitised( comes before setContent", clean < draw)
     }
 }
