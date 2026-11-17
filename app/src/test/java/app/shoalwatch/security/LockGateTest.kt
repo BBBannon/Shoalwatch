@@ -9,6 +9,7 @@ import app.shoalwatch.U1
 import app.shoalwatch.U2
 import app.shoalwatch.data.db.LibraryTestBase
 import app.shoalwatch.data.db.profile.ProfileDao
+import app.shoalwatch.data.db.profile.ProfileLockEntity
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
@@ -17,6 +18,7 @@ import kotlinx.coroutines.test.advanceTimeBy
 import app.shoalwatch.data.servers.AccountSummary
 import app.shoalwatch.data.servers.ProvedSwitches
 import app.shoalwatch.ui.FakeCatalog
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -32,7 +34,6 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 import app.shoalwatch.data.servers.Session
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runCurrent
 import java.io.File
@@ -376,9 +377,22 @@ class LockGateTest : LibraryTestBase() {
     // ---- review I3: the gate decides at once, and nothing is open for a profile it has not judged
 
     /** A gate whose store reads never answer (its own [ProfileLocks] runs on a dispatcher nobody advances). */
+    /**
+     * Holds the store's own "is it protected?" until completed (review M4). The earlier frozen dispatcher on a second scheduler did
+     * not hold it: the read failed at once, the gate took that as "protected" and locked, so the I3 test passed for the wrong reason.
+     */
+    private val storeHeld = CompletableDeferred<Unit>()
+
     private fun TestScope.frozenGate(): LockGate {
         gate()
-        val frozen = ProfileLocks(db.profileDao(), hasher, clock, StandardTestDispatcher(TestCoroutineScheduler())) {}
+        val real = db.profileDao()
+        val held = object : ProfileDao by real {
+            override suspend fun lock(serverId: String, userId: String): ProfileLockEntity? {
+                storeHeld.await()
+                return real.lock(serverId, userId)
+            }
+        }
+        val frozen = ProfileLocks(held, hasher, clock, StandardTestDispatcher(testScheduler)) {}
         return LockGate(prefs.settings, frozen, catalog, proved, household, { secure }, clock, backgroundScope) { prefs.setAppLock(false) }
     }
 
@@ -402,8 +416,12 @@ class LockGateTest : LibraryTestBase() {
         assertEquals(Judged(Session(S1, U2)), gate.openFor.value)
         catalog.activeFlow.value = otherA
         runCurrent()
+        assertEquals("the change was stepped and is not locked", LockState.Open, gate.state.value)
         assertNull("not judged while the store has not answered", gate.openFor.value)
         assertFalse(gate.isOpenFor(Session(S2, U1)))
+        storeHeld.complete(Unit)
+        settle()
+        assertEquals("judged once the store says it is not protected", Judged(Session(S2, U1)), gate.openFor.value)
     }
 
     @Test fun nothingIsOpenUntilTheGateHasJudgedTheFirstProfile() = runTest {
