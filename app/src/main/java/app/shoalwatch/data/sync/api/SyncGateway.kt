@@ -5,6 +5,9 @@ import app.shoalwatch.core.Ticks
 import app.shoalwatch.data.api.ServerApi
 import app.shoalwatch.data.library.api.LibraryGateway
 import app.shoalwatch.data.library.api.UserItemDataDto
+import app.shoalwatch.data.library.api.BaseItemDto
+import app.shoalwatch.data.library.api.toItemWithUserData
+import app.shoalwatch.data.library.api.toServerUserData
 import app.shoalwatch.data.library.api.toServerUserData
 import app.shoalwatch.data.servers.JellyfinId
 import app.shoalwatch.data.servers.Session
@@ -23,7 +26,10 @@ import java.time.temporal.ChronoUnit
  * ever carries `datePlayed`.
  */
 internal interface SyncGateway {
-    /** GET /UserItems/{id}/UserData?userId=. Null: the route answered 404 but GET /Items/{id} found the item (a server without the route). */
+    /**
+     * GET /UserItems/{id}/UserData?userId=. On a server without that route (404), the copy is the UserData of GET /Items/{id}
+     * (device run W-2/W-3); null only when that item has none that can be read.
+     */
     suspend fun userData(s: Session, itemId: String): ServerUserData?
 
     /** POST /UserItems/{id}/UserData?userId= with only [body]'s non-null fields. Idempotent (absolute values), so ServerApi's one retry is allowed. */
@@ -52,8 +58,11 @@ internal class SyncGatewayImpl(private val api: ServerApi, private val library: 
             api.get(s, "/UserItems/$id/UserData", withUser(s), UserItemDataDto.serializer(), maxBytes = MAX_USER_DATA_BYTES, retry = true)
         } catch (e: AppError) {
             if (e.kind != AppError.Kind.SERVER_NOT_FOUND) throw e
-            library.item(s, id) // the item is there (else its own failure passes through): this server has no user-data route
-            return null
+            // A server without the route: the same GET /Items/{id} as LibraryGateway.item, read for its UserData too. The item's
+            // own failure passes through, and an item that is not safe to hand on is a server error, as there.
+            val item = api.get(s, "/Items/$id", withUser(s), BaseItemDto.serializer())
+            item.toItemWithUserData() ?: throw AppError.of(AppError.Kind.SERVER_ERROR)
+            return item.toServerUserData()
         }
         return dto.toServerUserData()
     }
