@@ -56,6 +56,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import app.shoalwatch.R
+import app.shoalwatch.data.library.Item
 import app.shoalwatch.data.library.ItemKind
 import app.shoalwatch.data.playback.StartFrom
 import app.shoalwatch.data.library.ItemWithUserData
@@ -73,6 +74,7 @@ import app.shoalwatch.ui.components.HeroBackdrop
 import app.shoalwatch.ui.components.ProgressBarThin
 import app.shoalwatch.ui.components.ReadableBox
 import app.shoalwatch.ui.components.RefreshLine
+import app.shoalwatch.ui.components.isTwoPane
 import app.shoalwatch.ui.components.SignedOutNotice
 import app.shoalwatch.ui.components.SkeletonBlock
 import app.shoalwatch.ui.components.WatchedButton
@@ -135,8 +137,9 @@ fun DetailScreen(state: DetailUiState, actions: DetailActions, messages: Flow<St
                 }
                 item == null || session == null -> Loading(actions.onBack)
                 else -> {
+                    val twoPane = isTwoPane()
                     PullRefresh(isRefreshing = state.pulling, onRefresh = actions.onRefresh, modifier = Modifier.fillMaxSize(), belowStatusBar = true) {
-                        Content(state, item, session, actions, download)
+                        if (twoPane) DetailTwoPane(state, item, session, actions, download) else Content(state, item, session, actions, download)
                     }
                     RefreshLine(state.refreshing && !state.pulling, Modifier.statusBarsPadding().align(Alignment.TopCenter))
                 }
@@ -145,7 +148,7 @@ fun DetailScreen(state: DetailUiState, actions: DetailActions, messages: Flow<St
     }
 }
 
-private fun bannerActions(state: DetailUiState, actions: DetailActions) =
+internal fun bannerActions(state: DetailUiState, actions: DetailActions) =
     BannerActions(actions.onRefresh, { state.session?.let { actions.onSignIn(it.serverId) } }, { state.session?.let { actions.onReview(it.serverId) } })
 
 /** The first load: a Back bar and the shape of the page's text and button, so nothing jumps much. (Whether there is a picture is not known yet.) */
@@ -170,11 +173,8 @@ private fun Loading(onBack: () -> Unit) {
 private fun Content(state: DetailUiState, entry: ItemWithUserData, session: Session, actions: DetailActions, download: DownloadControls?) {
     val strings = rememberStrings()
     val item = entry.item
-    val data = entry.userData
     val facts = detailFacts(strings, item)
-    val percent = percentWatched(item, data)
-    val resume = resumeLabel(strings, data?.positionMs ?: 0)
-    val watched = data?.played == true
+    val resume = resumeLabel(strings, entry.userData?.positionMs ?: 0)
     val overview = remember(item.overview) { plainOverview(item.overview) }
     val title = item.displayName(strings)
 
@@ -186,10 +186,7 @@ private fun Content(state: DetailUiState, entry: ItemWithUserData, session: Sess
             if (hero != null) HeroBackdrop(hero, title, actions.onBack) else BackBar(actions.onBack)
             state.banner?.let { FreshnessBanner(it, bannerActions(state, actions)) }
             Column(Modifier.padding(horizontal = Gutter), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (item.kind == ItemKind.EPISODE) {
-                    val line = joinAll(strings, listOfNotNull(item.seriesName?.takeIf { it.isNotBlank() }, episodeCode(strings, item)))
-                    if (line != null) Text(line, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
-                }
+                if (item.kind == ItemKind.EPISODE) EpisodeLine(item)
                 if (hero == null && item.kind != ItemKind.EPISODE) {
                     Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         Artwork(item.primaryArtwork(session), null, aspect = ArtworkAspect.POSTER, title = title, modifier = Modifier.width(96.dp))
@@ -198,47 +195,91 @@ private fun Content(state: DetailUiState, entry: ItemWithUserData, session: Sess
                 } else {
                     TitleAndFacts(title, facts, actions.onRefresh, MaterialTheme.typography.headlineMedium)
                 }
-                WatchState(watched, resume, percent?.let { strings.get(R.string.state_percent_watched, it.toString()) }, percent)
-                Button(
-                    onClick = { actions.onPlay(if (resume != null) StartFrom.RESUME else StartFrom.BEGINNING) },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-                ) {
-                    Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(24.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(resume ?: stringResource(R.string.detail_play), style = MaterialTheme.typography.titleMedium)
-                }
-                if (resume != null) {
-                    TextButton(onClick = { actions.onPlay(StartFrom.BEGINNING) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                        Text(stringResource(R.string.detail_play_from_start), style = MaterialTheme.typography.labelLarge)
-                    }
-                }
+                WatchStateFor(entry)
+                PlayButtons(resume, actions)
                 if (download != null && (item.kind == ItemKind.MOVIE || item.kind == ItemKind.EPISODE)) DetailDownloadButton(item.id, download)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    WatchedButton(
-                        stringResource(if (watched) R.string.sheet_mark_unwatched else R.string.sheet_mark_watched),
-                        watched = watched, working = state.working.contains(Work(item.id, ActionKind.PLAYED)),
-                        onClick = { actions.onSetPlayed(!watched) }, modifier = Modifier.weight(1f),
-                    )
-                    FavouriteButton(data?.favourite == true, state.working.contains(Work(item.id, ActionKind.FAVOURITE)), { actions.onSetFavourite(data?.favourite != true) })
-                }
-                val seriesId = item.seriesId
-                if (item.kind == ItemKind.EPISODE && seriesId != null) {
-                    TextButton(onClick = { actions.onOpen(Destination.Series(seriesId, item.seasonId ?: item.parentId)) }, modifier = Modifier.heightIn(min = 48.dp)) {
-                        Text(stringResource(R.string.sheet_go_series), style = MaterialTheme.typography.labelLarge)
-                    }
-                }
-                if (overview.isNotEmpty()) {
-                    Text(stringResource(R.string.detail_overview_heading), style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
-                    ExpandableText(overview)
-                }
+                MarkAndFavourite(state, entry, actions)
+                GoToSeries(item, actions)
+                Overview(overview)
             }
         }
     }
 }
 
+/* The page's blocks, shared by the one-column page and the two panes ([DetailTwoPane], Task 10). */
+
+/** An episode's series and code ("Series 50 · S2 E5") above its title. */
+@Composable
+internal fun EpisodeLine(item: Item) {
+    val strings = rememberStrings()
+    val line = joinAll(strings, listOfNotNull(item.seriesName?.takeIf { it.isNotBlank() }, episodeCode(strings, item))) ?: return
+    Text(line, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+}
+
+/** "Resume from 23 min" with "Play from start" under it, or "Play". */
+@Composable
+internal fun PlayButtons(resume: String?, actions: DetailActions) {
+    Button(
+        onClick = { actions.onPlay(if (resume != null) StartFrom.RESUME else StartFrom.BEGINNING) },
+        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+    ) {
+        Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(24.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(resume ?: stringResource(R.string.detail_play), style = MaterialTheme.typography.titleMedium)
+    }
+    if (resume != null) {
+        TextButton(onClick = { actions.onPlay(StartFrom.BEGINNING) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+            Text(stringResource(R.string.detail_play_from_start), style = MaterialTheme.typography.labelLarge)
+        }
+    }
+}
+
+/** The watched state of [entry] in words, with its bar. */
+@Composable
+internal fun WatchStateFor(entry: ItemWithUserData) {
+    val strings = rememberStrings()
+    val data = entry.userData
+    val percent = percentWatched(entry.item, data)
+    WatchState(data?.played == true, resumeLabel(strings, data?.positionMs ?: 0), percent?.let { strings.get(R.string.state_percent_watched, it.toString()) }, percent)
+}
+
+/** "Mark as watched" (or unwatched) and the favourite button. */
+@Composable
+internal fun MarkAndFavourite(state: DetailUiState, entry: ItemWithUserData, actions: DetailActions) {
+    val item = entry.item
+    val data = entry.userData
+    val watched = data?.played == true
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        WatchedButton(
+            stringResource(if (watched) R.string.sheet_mark_unwatched else R.string.sheet_mark_watched),
+            watched = watched, working = state.working.contains(Work(item.id, ActionKind.PLAYED)),
+            onClick = { actions.onSetPlayed(!watched) }, modifier = Modifier.weight(1f),
+        )
+        FavouriteButton(data?.favourite == true, state.working.contains(Work(item.id, ActionKind.FAVOURITE)), { actions.onSetFavourite(data?.favourite != true) })
+    }
+}
+
+/** An episode's "Go to series". */
+@Composable
+internal fun GoToSeries(item: Item, actions: DetailActions) {
+    val seriesId = item.seriesId
+    if (item.kind != ItemKind.EPISODE || seriesId == null) return
+    TextButton(onClick = { actions.onOpen(Destination.Series(seriesId, item.seasonId ?: item.parentId)) }, modifier = Modifier.heightIn(min = 48.dp)) {
+        Text(stringResource(R.string.sheet_go_series), style = MaterialTheme.typography.labelLarge)
+    }
+}
+
+/** "Overview" (a heading) and the text, when there is one. */
+@Composable
+internal fun Overview(overview: String) {
+    if (overview.isEmpty()) return
+    Text(stringResource(R.string.detail_overview_heading), style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
+    ExpandableText(overview)
+}
+
 /** The title (a screen-reader heading with a Refresh action) and the facts under it. */
 @Composable
-private fun TitleAndFacts(title: String, facts: Facts, onRefresh: () -> Unit, style: TextStyle) {
+internal fun TitleAndFacts(title: String, facts: Facts, onRefresh: () -> Unit, style: TextStyle) {
     Text(title, style = style, modifier = Modifier.refreshAction(onRefresh).semantics { heading() })
     facts.text?.let { shown ->
         Text(shown, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.semantics { contentDescription = facts.spoken ?: shown })

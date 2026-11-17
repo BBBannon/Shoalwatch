@@ -718,4 +718,8 @@
     <string name="player_pip">Picture-in-picture</string>
     <string name="pip_play">Play</string>
     <string name="pip_pause">Pause</string>
+
+    <!-- Two panes on a landscape tablet (Milestone 7): headings for screen readers at the top of each pane -->
+    <string name="pane_series_about">About the series</string>
+    <string name="pane_series_episodes">Episodes</string>
 </resources>

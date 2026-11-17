@@ -11,6 +11,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.remember
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -45,6 +50,24 @@ fun screenWidth(): Dp = LocalConfiguration.current.screenWidthDp.dp
 
 @Composable
 fun isWideScreen(): Boolean = screenWidth() >= WideBreakpoint
+
+/**
+ * From this window width the series and film pages use two panes (a landscape tablet; not a portrait one, where one 840dp column
+ * reads better). The window's own width, so split screen and free-form windows follow it.
+ */
+val TwoPaneWidth = 900.dp
+
+@Composable
+fun isTwoPane(): Boolean = screenWidth() >= TwoPaneWidth
+
+/** The heading at the top of a pane (two panes only): a screen-reader heading, shown too. */
+@Composable
+fun PaneHeading(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = modifier.padding(horizontal = Gutter).padding(top = 8.dp).semantics { heading() },
+    )
+}
 
 @Composable
 fun wideCardWidth(): Dp = if (isWideScreen()) TabletWideCardWidth else PhoneWideCardWidth
