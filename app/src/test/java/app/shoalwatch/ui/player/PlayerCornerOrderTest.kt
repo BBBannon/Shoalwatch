@@ -105,6 +105,19 @@ abstract class PlayerCornerOrderBase : RenderBase() {
         )
     }
 
+    /**
+     * Review M3 of Tasks 7-8: the same rule without reflection, so a Compose change that breaks [traversal] (checked on Compose
+     * BOM 2025.12.01) still leaves a guard: the corner holding both cards is a traversal group read first (index -1).
+     */
+    @Test fun theCornerIsATraversalGroupReadFirst() {
+        showBoth()
+        val corner = SemanticsMatcher.expectValue(SemanticsProperties.IsTraversalGroup, true)
+            .and(SemanticsMatcher.expectValue(SemanticsProperties.TraversalIndex, -1f))
+            .and(androidx.compose.ui.test.hasAnyDescendant(androidx.compose.ui.test.hasTestTag(WATCHED_PROMPT_TAG)))
+            .and(androidx.compose.ui.test.hasAnyDescendant(androidx.compose.ui.test.hasTestTag(UP_NEXT_TAG)))
+        assertEquals(1, rule.onAllNodes(corner, useUnmergedTree = true).fetchSemanticsNodes().size)
+    }
+
     @Test fun theCardIsAPoliteLiveRegion() {
         showBoth()
         rule.onNode(hasContentDescription(spoken).and(SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, androidx.compose.ui.semantics.LiveRegionMode.Polite)))
