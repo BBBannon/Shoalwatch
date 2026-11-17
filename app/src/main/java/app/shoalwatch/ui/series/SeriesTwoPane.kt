@@ -21,6 +21,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -41,6 +42,7 @@ import app.shoalwatch.ui.downloads.DownloadControls
 import app.shoalwatch.ui.present.displayName
 import app.shoalwatch.ui.present.plainOverview
 import app.shoalwatch.ui.present.rememberStrings
+import kotlinx.coroutines.launch
 
 /** The left pane's width on a landscape tablet. */
 private val AboutPaneWidth = 400.dp
@@ -76,14 +78,10 @@ internal fun SeriesTwoPane(state: SeriesUiState, actions: SeriesActions, downloa
         }
     }
 
-    // A season chosen in the left pane starts the right one at its top (review M6 of Tasks 9-10); the first season shown does not
-    // move the list, so the highlight's own scroll stands.
-    var shownSeason by rememberSaveable { mutableStateOf(state.selectedSeasonId) }
-    LaunchedEffect(state.selectedSeasonId) {
-        val before = shownSeason
-        shownSeason = state.selectedSeasonId
-        if (before != null && before != state.selectedSeasonId) listState.scrollToItem(0)
-    }
+    // A season the user chooses in the left pane starts the right one at its top (review M6 of Tasks 9-10). Only the chip does:
+    // a season the library chooses itself after a refresh keeps the highlight's scroll (re-review N3).
+    val scope = rememberCoroutineScope()
+    val toTop = { scope.launch { listState.scrollToItem(0) }; Unit }
 
     Row(Modifier.fillMaxSize()) {
         Column(Modifier.width(AboutPaneWidth).fillMaxHeight()) {
@@ -99,7 +97,7 @@ internal fun SeriesTwoPane(state: SeriesUiState, actions: SeriesActions, downloa
                     if (overview.isNotEmpty()) ExpandableText(overview, Modifier.padding(horizontal = Gutter))
                     SeriesActionsRow(state, actions, download)
                 }
-                if (state.seasons.isNotEmpty()) SeasonChips(state, actions)
+                if (state.seasons.isNotEmpty()) SeasonChips(state, actions, onPicked = toTop)
             }
         }
         Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.TopCenter) {

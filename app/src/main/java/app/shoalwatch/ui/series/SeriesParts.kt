@@ -113,8 +113,9 @@ internal fun SeriesActionsRow(state: SeriesUiState, actions: SeriesActions, down
     }
 }
 
+/** [onPicked]: told when the user taps a chip, before the pick goes to the ViewModel (the two-pane page resets its episodes). */
 @Composable
-internal fun SeasonChips(state: SeriesUiState, actions: SeriesActions) {
+internal fun SeasonChips(state: SeriesUiState, actions: SeriesActions, onPicked: () -> Unit = {}) {
     val strings = rememberStrings()
     val rowState = rememberLazyListState()
     val selected = state.seasons.indexOfFirst { it.item.id == state.selectedSeasonId }
@@ -123,7 +124,7 @@ internal fun SeasonChips(state: SeriesUiState, actions: SeriesActions) {
         items(state.seasons, key = { it.item.id }) { season ->
             FilterChip(
                 selected = season.item.id == state.selectedSeasonId,
-                onClick = { actions.onPickSeason(season.item.id) },
+                onClick = { onPicked(); actions.onPickSeason(season.item.id) },
                 label = { Text(seasonLabel(strings, season.item)) },
             )
         }
