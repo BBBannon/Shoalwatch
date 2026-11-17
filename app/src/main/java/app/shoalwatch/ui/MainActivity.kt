@@ -13,6 +13,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import app.shoalwatch.data.downloads.DownloadNotifications
+import app.shoalwatch.security.AppTrips
 import app.shoalwatch.ui.components.LocalArtworkLoader
 import app.shoalwatch.ui.nav.AppRoot
 import app.shoalwatch.ui.player.ActivityPip
@@ -30,11 +31,14 @@ import app.shoalwatch.ui.theme.ShoalwatchTheme
  */
 class MainActivity : ComponentActivity(), PipHost {
     private val openTab = mutableStateOf<String?>(null)
+
+    /** Told when the app is left and returned to: the graph's `LockGate` (a test hands a recording fake: review M5 of Tasks 9-10). */
+    internal var trips: () -> AppTrips = { ShoalwatchApp.graph(this).lockParts.lockGate }
     private val pip = ActivityPip(
         this,
         autoEnter = { ShoalwatchApp.graph(this).lockParts.pipPrefs.autoEnter.value },
-        onLeft = { ShoalwatchApp.graph(this).lockParts.lockGate.onLeft() },
-        onReturned = { ShoalwatchApp.graph(this).lockParts.lockGate.onReturned() },
+        onLeft = { trips().onLeft() },
+        onReturned = { trips().onReturned() },
     )
     override val inPip: StateFlow<Boolean> get() = pip.inPip
     override fun wish(w: PipWish?, onPlayPause: (() -> Unit)?) = pip.wish(w, onPlayPause)
@@ -58,14 +62,14 @@ class MainActivity : ComponentActivity(), PipHost {
     /** In front: anything queued is kicked again (it also resumes after Android's 6-hour data-sync limit). */
     override fun onStart() {
         super.onStart()
-        ShoalwatchApp.graph(this).lockParts.lockGate.onReturned() // first: a lock is decided before anything else runs
+        pip.onActivityStarted() // first: a lock is decided before anything else runs (not a return while in the small window)
         ShoalwatchApp.graph(this).downloadsInFront()
     }
 
     /** Leaving the app starts the app lock's timer; turning the phone or resizing the window does not. */
     override fun onStop() {
         super.onStop()
-        if (!isChangingConfigurations) ShoalwatchApp.graph(this).lockParts.lockGate.onLeft()
+        pip.onActivityStopped()
     }
 
     override fun onNewIntent(intent: Intent) {

@@ -17,8 +17,9 @@ import kotlinx.coroutines.flow.asStateFlow
  * `onUserLeaveHint` after the gesture fails (the official app's Android 14+ bug). Android 10–11 enters from `onUserLeaveHint`.
  *
  * Entering counts as leaving for the app lock ([onLeft]); back to the full screen counts as returning ([onReturned]). Closing
- * the window stops the activity first, so it is not a return: the activity's own `onStop`/`onStart` count that trip, and the
- * player pauses on the stop as it always has.
+ * the window stops the activity first, so it is not a return: the activity's own stop and start ([onActivityStopped],
+ * [onActivityStarted]) count that trip, and the player pauses on the stop as it always has. A start while still in the small
+ * window (the screen off and on, a recreation there) is not a return either: only the expand is (review C1 of Tasks 9-10).
  */
 internal class ActivityPip(
     private val activity: ComponentActivity,
@@ -47,12 +48,17 @@ internal class ActivityPip(
         current = w
         this.onPlayPause = onPlayPause
         if (w != null) register() else unregister()
+        // The player went while in the small window (the last episode ended, playback failed, the lock cover): close the window
+        // rather than show the page beneath in it (review M1 of Tasks 9-10). That stops the activity: leaving, as any close is.
+        if (w == null && mutableInPip.value && !activity.isChangingConfigurations) activity.moveTaskToBack(false)
         if (!supported) return
         // Android 10–11 has no auto-enter, so nothing needs withdrawing there; the params are still kept current for the button.
         if (w == null && sdkInt < Build.VERSION_CODES.S) return
         try {
             activity.setPictureInPictureParams(if (w != null) pipParams(activity, w, w.playing && autoEnter()) else noPipParams())
         } catch (e: IllegalStateException) {
+            AppLog.w(TAG, "picture-in-picture params refused", e)
+        } catch (e: IllegalArgumentException) { // an aspect outside this device's range (review M4 of Tasks 9-10)
             AppLog.w(TAG, "picture-in-picture params refused", e)
         }
     }
@@ -65,7 +71,26 @@ internal class ActivityPip(
         } catch (e: IllegalStateException) {
             AppLog.w(TAG, "picture-in-picture refused", e)
             false
+        } catch (e: IllegalArgumentException) {
+            AppLog.w(TAG, "picture-in-picture refused", e)
+            false
         }
+    }
+
+    /**
+     * The activity started. In the small window this is not a return (review C1 of Tasks 9-10): the timer from entering stays,
+     * so expanding after "Lock after" still locks. The window state is read here too, as an activity recreated in the small
+     * window never hears the mode change (review M3).
+     */
+    fun onActivityStarted() {
+        val inPip = activity.isInPictureInPictureMode
+        mutableInPip.value = inPip
+        if (!inPip) onReturned()
+    }
+
+    /** The activity stopped: leaving, unless it is only a configuration change (turning the phone, resizing the window). */
+    fun onActivityStopped() {
+        if (!activity.isChangingConfigurations) onLeft()
     }
 
     private fun onUserLeaveHint() {

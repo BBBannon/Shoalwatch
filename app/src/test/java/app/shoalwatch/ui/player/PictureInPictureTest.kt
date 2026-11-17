@@ -10,6 +10,7 @@ import android.util.Rational
 import androidx.activity.ComponentActivity
 import androidx.test.core.app.ApplicationProvider
 import app.shoalwatch.R
+import app.shoalwatch.security.AppTrips
 import app.shoalwatch.ui.MainActivity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -167,5 +168,125 @@ class PictureInPictureTest {
             assertFalse(pip.inPip.value)
             assertEquals(listOf("left"), gate)
         } finally { controller.destroy() }
+    }
+    private val recorder = object : AppTrips {
+        override fun onLeft() { gate += "left" }
+        override fun onReturned() { gate += "returned" }
+    }
+
+    /** `MainActivity` itself, telling [recorder] instead of the graph's `LockGate` (review M5 of Tasks 9-10). */
+    private fun mainActivity(): ActivityController<MainActivity> {
+        val controller = Robolectric.buildActivity(MainActivity::class.java)
+        controller.get().trips = { recorder }
+        return controller
+    }
+
+    /** Review M5: the activity's own stop and start, and the window's mode changes, reach the lock as leaving and returning. */
+    @Test fun theActivityTellsTheLockWhenItIsLeftAndReturnedTo() {
+        val controller = mainActivity().setup()
+        try {
+            assertEquals("a start is a return", listOf("returned"), gate)
+            controller.pause().stop()
+            assertEquals("a stop is leaving", listOf("returned", "left"), gate)
+            controller.start().resume()
+            assertEquals(listOf("returned", "left", "returned"), gate)
+            gate.clear()
+            controller.get().onPictureInPictureModeChanged(true, Configuration())
+            controller.get().onPictureInPictureModeChanged(false, Configuration())
+            assertEquals("entering is leaving, expanding is returning", listOf("left", "returned"), gate)
+        } finally { controller.pause().stop().destroy() }
+    }
+
+    /**
+     * Review C1 of Tasks 9-10: a PiP activity is stopped and started again while it stays in the small window (the screen off and
+     * on, the keyguard). That start is not a return, or the timer from entering would be gone and expanding hours later would
+     * skip the PIN: only the expand is.
+     */
+    @Test fun aStopAndStartWhileStillInTheSmallWindowIsNotAReturn() {
+        val controller = mainActivity().setup()
+        val activity = controller.get()
+        val host = activity as PipHost
+        try {
+            host.wish(wish(playing = true)) {}
+            assertTrue(host.enterNow())
+            activity.onPictureInPictureModeChanged(true, Configuration())
+            gate.clear()
+            controller.pause().stop() // the screen goes off with the small window up
+            controller.start() // and on again: still in the small window
+            assertTrue("still in the small window", activity.isInPictureInPictureMode)
+            assertEquals("no return while in the small window", listOf("left"), gate)
+            activity.onPictureInPictureModeChanged(false, Configuration()) // expanded: now it is a return
+            assertEquals(listOf("left", "returned"), gate)
+            assertFalse(host.inPip.value)
+        } finally {
+            host.wish(null, null)
+            controller.pause().stop().destroy()
+        }
+    }
+    /** Review M3 of Tasks 9-10: an activity started in the small window (recreated there) is told so without a mode change. */
+    @Test fun aStartInTheSmallWindowSaysSo() {
+        val controller = mainActivity().setup()
+        val host = controller.get() as PipHost
+        try {
+            host.wish(wish(playing = true)) {}
+            assertTrue(host.enterNow()) // in the window; this instance never hears the mode change, as a recreated one does not
+            assertFalse(host.inPip.value)
+            controller.pause().stop().start()
+            assertTrue(host.inPip.value)
+        } finally {
+            host.wish(null, null)
+            controller.pause().stop().destroy()
+        }
+    }
+
+    /** Review M1 of Tasks 9-10: the player going while in the small window (the last episode ended) closes the window. */
+    @Test fun theWishGoingInTheSmallWindowClosesIt() {
+        val controller = Robolectric.buildActivity(PipTestActivity::class.java).setup()
+        val activity = controller.get()
+        val pip = ActivityPip(activity, { autoEnter }, { gate += "left" }, { gate += "returned" })
+        try {
+            pip.wish(wish()) {}
+            pip.wish(null, null)
+            assertEquals("not in the window: nothing to close", 0, activity.movedBack)
+            pip.wish(wish()) {}
+            assertTrue(pip.enterNow())
+            activity.onPictureInPictureModeChanged(true, Configuration())
+            pip.wish(null, null)
+            assertEquals("closed", 1, activity.movedBack)
+        } finally { controller.pause().stop().destroy() }
+    }
+
+    /** Review M4 of Tasks 9-10: a device with a narrower aspect range refuses the params with IllegalArgumentException; no crash. */
+    @Test fun anAspectTheDeviceRefusesIsNotACrash() {
+        val controller = Robolectric.buildActivity(PipTestActivity::class.java).setup()
+        val activity = controller.get()
+        val pip = ActivityPip(activity, { autoEnter }, { gate += "left" }, { gate += "returned" })
+        try {
+            activity.refusal = IllegalArgumentException("aspect ratio out of range")
+            pip.wish(wish(4000, 1000)) {}
+            assertFalse(pip.enterNow())
+            pip.wish(null, null)
+        } finally { controller.pause().stop().destroy() }
+    }
+}
+
+/** An activity that records closing its task and can refuse the picture-in-picture params as an OEM build may. */
+class PipTestActivity : ComponentActivity() {
+    var movedBack = 0
+    var refusal: RuntimeException? = null
+
+    override fun moveTaskToBack(nonRoot: Boolean): Boolean {
+        movedBack++
+        return true
+    }
+
+    override fun setPictureInPictureParams(params: android.app.PictureInPictureParams) {
+        refusal?.let { throw it }
+        super.setPictureInPictureParams(params)
+    }
+
+    override fun enterPictureInPictureMode(params: android.app.PictureInPictureParams): Boolean {
+        refusal?.let { throw it }
+        return super.enterPictureInPictureMode(params)
     }
 }

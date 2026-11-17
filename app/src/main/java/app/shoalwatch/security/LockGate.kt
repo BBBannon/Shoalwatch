@@ -29,6 +29,12 @@ sealed interface LockState {
     }
 }
 
+/** Leaving the app and coming back, as the activity tells it: [LockGate] (a recording fake in tests). */
+interface AppTrips {
+    fun onLeft()
+    fun onReturned()
+}
+
 /** A session the gate has judged and found open ([session] null = nobody active). */
 data class Judged(val session: Session?) {
     override fun toString() = "Judged(<redacted>)"
@@ -61,7 +67,7 @@ class LockGate(
     private val scope: CoroutineScope,
     /** Turns the app lock off in [LockPrefs] (rule 5). */
     private val appLockOff: () -> Unit,
-) {
+) : AppTrips {
     private val mutableState = MutableStateFlow<LockState>(LockState.Checking)
     val state: StateFlow<LockState> = mutableState.asStateFlow()
 
@@ -171,7 +177,7 @@ class LockGate(
     fun isOpenFor(s: Session?): Boolean = judged.value == Judged(s)
 
     /** The activity stopped (not a configuration change), or entered picture-in-picture. The earliest time is kept. */
-    fun onLeft() = synchronized(lock) {
+    override fun onLeft() = synchronized(lock) {
         val now = clock.nowMs()
         val expected = expectedAt
         expectedAt = null
@@ -184,7 +190,7 @@ class LockGate(
     }
 
     /** The activity started again, or left picture-in-picture for the full screen. */
-    fun onReturned() = synchronized(lock) {
+    override fun onReturned() = synchronized(lock) {
         if (ignoringTrip) {
             ignoringTrip = false
             // An excused trip is still capped (review M1): leaving the app from inside a system screen is really leaving.
