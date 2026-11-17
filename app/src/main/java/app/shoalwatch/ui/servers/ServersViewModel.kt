@@ -17,6 +17,7 @@ import androidx.compose.foundation.text.input.TextFieldState
 import app.shoalwatch.data.servers.ProfileSwitcher
 import app.shoalwatch.security.Household
 import app.shoalwatch.security.HouseholdLockedException
+import app.shoalwatch.security.retryingReads
 import app.shoalwatch.ui.lock.GrownUpAsk
 import app.shoalwatch.ui.lock.GrownUpFlow
 import app.shoalwatch.ui.lock.SwitchFlow
@@ -172,7 +173,7 @@ class ServersViewModel(
     }
 
     val state: StateFlow<ServersUiState> =
-        combine(rows, catalog.activeAccount, local, adminServer, protection) { rows, active, local, adminServerId, protectedSet ->
+        combine(rows, catalog.activeAccount, local, adminServer, protection.retryingReads()) { rows, active, local, adminServerId, protectedSet ->
             ServersUiState(
                 loading = false,
                 servers = rows.map { (server, accounts) ->

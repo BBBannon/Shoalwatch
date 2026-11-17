@@ -29,7 +29,11 @@ import app.shoalwatch.ui.FakeCatalog
 import app.shoalwatch.ui.MainDispatcherRule
 import app.shoalwatch.ui.testServer
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
@@ -74,7 +78,10 @@ class LockViewModelTest : LibraryTestBase() {
         withContext(Dispatchers.IO) { Thread.sleep(20) }
     }
 
-    private suspend fun TestScope.vm(protectOther: Boolean = false): LockViewModel {
+    private suspend fun TestScope.vm(
+        protectOther: Boolean = false,
+        protection: (Flow<Set<Session>>) -> Flow<Set<Session>> = { it },
+    ): LockViewModel {
         val real = db.profileDao()
         val dao = object : ProfileDao by real {
             override suspend fun setFailures(serverId: String, userId: String, failures: Int): Int =
@@ -87,7 +94,7 @@ class LockViewModelTest : LibraryTestBase() {
         assertTrue(locks.protect(adult, "4826".toCharArray()))
         if (protectOther) assertTrue(locks.protect(other, "1357".toCharArray()))
         gate.start()
-        val vm = LockViewModel(gate, switcher, catalog, auth, locks.protectedProfiles, ForgotThrottle(forgotPrefs, clock)) { proof ->
+        val vm = LockViewModel(gate, switcher, catalog, auth, protection(locks.protectedProfiles), ForgotThrottle(forgotPrefs, clock)) { proof ->
             cleared += proof.session
             locks.clear(proof)
         }
@@ -134,6 +141,21 @@ class LockViewModelTest : LibraryTestBase() {
         assertEquals(listOf("bob" to false, "cat" to true), others.map { it.userName to it.isProtected })
         assertEquals(listOf("Test Jellyfin", "Cabin"), others.map { it.serverName })
         assertEquals("OtherProfile(<redacted>)", others.first().toString())
+    }
+
+    @Test fun aFailedReadOfTheLocksNeverCrashesAndTheMarksComeBack() = runTest {
+        // Re-review I-A: the screen's own copy of the protected set must not end the app on a failed read; it reads again.
+        var reads = 0
+        val vm = vm(protectOther = true) { real ->
+            flow {
+                if (reads++ == 0) throw android.database.sqlite.SQLiteException("disk I/O error")
+                emitAll(real)
+            }
+        }
+        advanceTimeBy(LockGate.READ_RETRY_MS + 1)
+        settle()
+        assertEquals(2, reads)
+        assertEquals(listOf("bob" to false, "cat" to true), vm.state.value.others.map { it.userName to it.isProtected })
     }
 
     @Test fun anUnprotectedOtherSwitchesOnceAndTheGateOpens() = runTest {

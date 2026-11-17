@@ -15,6 +15,7 @@ import app.shoalwatch.security.ForgotThrottle
 import app.shoalwatch.security.LockGate
 import app.shoalwatch.security.LockState
 import app.shoalwatch.security.PinCheck
+import app.shoalwatch.security.retryingReads
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -96,7 +97,7 @@ class LockViewModel(
             flowOf(emptyList())
         } else {
             combine(servers.map { s -> catalog.accounts(s.id).map { list -> list.map { it to s.name } } }) { it.toList().flatten() }
-                .combine(protectedProfiles) { list, set ->
+                .combine(protectedProfiles.retryingReads()) { list, set ->
                     list.map { (a, server) -> OtherProfile(a.serverId, a.userId, a.userName, server, Session(a.serverId, a.userId) in set) }
                 }
         }

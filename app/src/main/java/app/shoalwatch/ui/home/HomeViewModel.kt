@@ -14,6 +14,7 @@ import app.shoalwatch.data.servers.ServerCatalog
 import app.shoalwatch.data.servers.ServerConnections
 import app.shoalwatch.data.servers.ServerSummary
 import app.shoalwatch.data.servers.Session
+import app.shoalwatch.security.retryingReads
 import app.shoalwatch.ui.ConnectionView
 import app.shoalwatch.ui.browse.FAILED_LOCALLY
 import app.shoalwatch.ui.browse.ItemActions
@@ -101,7 +102,7 @@ class HomeViewModel(
                 flowOf(null)
             } else {
                 val (server, account) = active
-                combine(connections.connection(server.id), catalog.accounts(server.id), protection) { connection, accounts, set ->
+                combine(connections.connection(server.id), catalog.accounts(server.id), protection.retryingReads()) { connection, accounts, set ->
                     val mine = set.filter { it.serverId == server.id }.mapTo(HashSet()) { it.userId }
                     Shell(Session(account.serverId, account.userId), server, account, accounts, connection.toView(), mine)
                 }
