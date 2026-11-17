@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import app.shoalwatch.R
 import app.shoalwatch.security.LockState
 import app.shoalwatch.ui.components.ErrorMessage
+import app.shoalwatch.ui.components.NoAutofill
 import app.shoalwatch.ui.components.PrimaryButton
 
 class LockActions(
@@ -68,7 +69,8 @@ internal fun Modifier.takesEveryTouch(): Modifier = pointerInput(Unit) {
 
 /**
  * The lock screen, drawn opaque over everything (the host beneath has no semantics while it shows). [unavailable]: the phone's
- * screen lock could not be used just now. At font scale 2.0 everything scrolls; every button is 48dp or more.
+ * screen lock could not be used just now. At font scale 2.0 everything scrolls; every button is 48dp or more. Its window is out of
+ * autofill while it shows ([NoAutofill], review I1).
  */
 @Composable
 internal fun LockScreen(
@@ -79,6 +81,7 @@ internal fun LockScreen(
     actions: LockActions,
     unavailable: Boolean = false,
 ) {
+    NoAutofill()
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).takesEveryTouch(), contentAlignment = Alignment.TopCenter) {
         Column(
             Modifier.widthIn(max = 600.dp).fillMaxWidth().safeDrawingPadding().imePadding().verticalScroll(rememberScrollState()).padding(24.dp),

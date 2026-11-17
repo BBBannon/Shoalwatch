@@ -19,6 +19,8 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import app.shoalwatch.security.PinRules
+import app.shoalwatch.ui.components.NoAutofill
+import app.shoalwatch.ui.components.NoKeyboardLearning
 
 /** Digits 0-9 only: anything else typed or pasted is refused whole. */
 private val DigitsOnly = InputTransformation {
@@ -28,21 +30,25 @@ private val DigitsOnly = InputTransformation {
 /**
  * The one PIN field (Milestone 7): a number pad, always hidden (never even the last digit), no autocorrect, at most
  * [PinRules.MAX] digits. Like the sign-in password, accessibility sees only bullets of the same length on the node flagged as a
- * password, never the digits. The PIN lives only in [state].
+ * password, never the digits. The PIN lives only in [state]. Its window is kept out of autofill and the keyboard is asked not to
+ * learn it (Tasks 5-6 review I1).
  */
 @Composable
 fun PinField(state: TextFieldState, label: String, onDone: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
-    OutlinedSecureTextField(
-        state = state,
-        modifier = modifier.fillMaxWidth().semantics {
-            password()
-            editableText = AnnotatedString("•".repeat(state.text.length))
-        },
-        label = { Text(label) },
-        enabled = enabled,
-        inputTransformation = InputTransformation.maxLength(PinRules.MAX).then(DigitsOnly),
-        textObfuscationMode = TextObfuscationMode.Hidden,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, autoCorrectEnabled = false, imeAction = ImeAction.Done),
-        onKeyboardAction = KeyboardActionHandler { onDone() },
-    )
+    NoAutofill()
+    NoKeyboardLearning {
+        OutlinedSecureTextField(
+            state = state,
+            modifier = modifier.fillMaxWidth().semantics {
+                password()
+                editableText = AnnotatedString("•".repeat(state.text.length))
+            },
+            label = { Text(label) },
+            enabled = enabled,
+            inputTransformation = InputTransformation.maxLength(PinRules.MAX).then(DigitsOnly),
+            textObfuscationMode = TextObfuscationMode.Hidden,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, autoCorrectEnabled = false, imeAction = ImeAction.Done),
+            onKeyboardAction = KeyboardActionHandler { onDone() },
+        )
+    }
 }

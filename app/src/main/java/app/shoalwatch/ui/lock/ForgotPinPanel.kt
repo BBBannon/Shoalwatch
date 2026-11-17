@@ -25,32 +25,38 @@ import androidx.compose.ui.unit.dp
 import app.shoalwatch.R
 import app.shoalwatch.core.AppError
 import app.shoalwatch.ui.components.ErrorMessage
+import app.shoalwatch.ui.components.NoAutofill
+import app.shoalwatch.ui.components.NoKeyboardLearning
 import app.shoalwatch.ui.components.PrimaryButton
 import app.shoalwatch.ui.components.SecureWindow
 
 /**
  * "Forgot PIN" inside the lock screen: the locked profile's server password, which removes the PIN. The window is
  * `FLAG_SECURE` while this shows ([SecureWindow]); the password field is masked to accessibility like the sign-in one. No Quick
- * Connect here (see the plan's Decisions).
+ * Connect here (see the plan's Decisions). The window is kept out of autofill and the keyboard asked not to learn the password
+ * ([NoAutofill], review I1): the password must be typed, not filled by a password manager.
  */
 @Composable
 internal fun ForgotPinPanel(state: LockUiState, password: TextFieldState, onSubmit: () -> Unit, onCancel: () -> Unit) {
     SecureWindow()
+    NoAutofill()
     val server = state.lockedServerName.orEmpty()
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text(stringResource(R.string.lock_forgot_body, server), style = MaterialTheme.typography.bodyLarge)
-        OutlinedSecureTextField(
-            state = password,
-            modifier = Modifier.fillMaxWidth().semantics {
-                password()
-                editableText = AnnotatedString("•".repeat(password.text.length))
-            },
-            label = { Text(stringResource(R.string.password_label)) },
-            enabled = !state.busy,
-            textObfuscationMode = TextObfuscationMode.RevealLastTyped,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false, imeAction = ImeAction.Go),
-            onKeyboardAction = KeyboardActionHandler { onSubmit() },
-        )
+        NoKeyboardLearning {
+            OutlinedSecureTextField(
+                state = password,
+                modifier = Modifier.fillMaxWidth().semantics {
+                    password()
+                    editableText = AnnotatedString("•".repeat(password.text.length))
+                },
+                label = { Text(stringResource(R.string.password_label)) },
+                enabled = !state.busy,
+                textObfuscationMode = TextObfuscationMode.RevealLastTyped,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false, imeAction = ImeAction.Go),
+                onKeyboardAction = KeyboardActionHandler { onSubmit() },
+            )
+        }
         ErrorMessage(forgotErrorText(state, server))
         PrimaryButton(stringResource(R.string.lock_forgot_submit), onSubmit, loading = state.busy)
         TextButton(onClick = onCancel, enabled = !state.busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
