@@ -124,8 +124,9 @@ class ProfileLocks(
         pin.fill('\u0000')
     }
 
-    /** After a password sign-in from "Forgot PIN" (Task 5): the profile is no longer protected. */
-    internal suspend fun clear(s: Session) {
+    /** After a password sign-in from "Forgot PIN" (Task 5): the profile is no longer protected. Only a [ClearProof] opens it. */
+    internal suspend fun clear(proof: ClearProof) {
+        val s = proof.session
         mutex.withLock {
             withContext(io) {
                 dao.deleteLock(s.serverId, s.userId)

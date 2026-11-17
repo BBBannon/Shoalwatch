@@ -126,6 +126,12 @@ object ManifestRules {
             problems += "only $launcherActivity (and $JOB_SERVICE with $BIND_JOB_SERVICE) may be exported, found $exported"
         }
 
+        // Milestone 1 Q5: an empty task affinity stops another app's activity joining Shoalwatch's task.
+        val launcher = elements("activity").singleOrNull { it.attr("name") == launcherActivity }
+        if (launcher == null || !launcher.hasAttributeNS(NS, "taskAffinity") || launcher.attr("taskAffinity") != "") {
+            problems += "the launcher activity must set taskAffinity to empty"
+        }
+
         // Android 14+ refuses a foreground service without its declared type: the download worker's is dataSync, and only that.
         val services = elements("service")
         val typed = services.filter { it.hasAttributeNS(NS, "foregroundServiceType") }
@@ -251,6 +257,7 @@ tasks.register<VerifyManifestRuleFixtures>("verifyManifestRuleFixtures") {
             "bad-unprotected-job-service.xml" to "may be exported",
             "bad-diagnostics-receiver.xml" to "may be exported",
             "bad-missing-data-sync.xml" to "foregroundServiceType must be dataSync",
+            "bad-task-affinity.xml" to "taskAffinity to empty",
         ),
     )
     report.set(layout.buildDirectory.file("reports/release-manifest/fixtures.txt"))

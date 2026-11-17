@@ -13,6 +13,9 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.remember
+import app.shoalwatch.security.LockState
 import app.shoalwatch.ui.shell.Tab
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -46,6 +49,9 @@ import androidx.navigation.NavHostController
 /** Screens and their paths. Server ids go through [Uri.encode] so any id is a safe path segment. */
 internal object Routes {
     const val WELCOME = "welcome"
+
+    /** The one empty route while the app or a profile is locked (`ResetOnLock`). */
+    const val LOCKED = "locked"
     const val ADD_SERVER = "add_server"
     const val ARG_FRESH = "fresh"
 
@@ -107,11 +113,24 @@ internal object Routes {
 @Composable
 fun AppRoot(graph: AppGraph, openTab: String? = null, onTabOpened: () -> Unit = {}) {
     val startup = graphViewModel { StartupViewModel(graph.serverCatalog) }
-    when (startup.state.collectAsStateWithLifecycle().value) {
+    val gate = graph.lockParts.lockGate
+    // Not paused with the lifecycle: the lock must be current the moment the app is seen again.
+    val lock by gate.state.collectAsState()
+    val openFor by gate.openFor.collectAsState()
+    val active = rememberActive(graph.serverCatalog)
+    when (val first = startup.state.collectAsStateWithLifecycle().value) {
         StartupState.Loading -> SplashScreen()
         StartupState.Failed -> StartupFailedScreen(onRetry = startup::retry)
-        StartupState.Welcome -> AppNavHost(graph, Routes.WELCOME, null, onTabOpened)
-        StartupState.Home -> AppNavHost(graph, Routes.HOME, openTab, onTabOpened)
+        StartupState.Welcome, StartupState.Home -> if (lock == LockState.Checking) {
+            SplashScreen()
+        } else {
+            val start = if (first == StartupState.Welcome) Routes.WELCOME else Routes.HOME
+            LockCover(
+                openFor, active,
+                host = { AppNavHost(graph, start, if (first == StartupState.Home) openTab else null, onTabOpened, lock) },
+                cover = { LockRoute(graph, lock) },
+            )
+        }
     }
 }
 
@@ -130,11 +149,14 @@ private fun AnimatedContentTransitionScope<NavBackStackEntry>.betweenTabs() =
     initialState.destination.route in TabRoutes && targetState.destination.route in TabRoutes
 
 @Composable
-private fun AppNavHost(graph: AppGraph, start: String, openTab: String?, onTabOpened: () -> Unit) {
+private fun AppNavHost(graph: AppGraph, start: String, openTab: String?, onTabOpened: () -> Unit, lock: LockState) {
     val nav = rememberNavController()
-    // The download notice's tap: the Downloads tab, over Home as every tab is.
-    LaunchedEffect(openTab) {
-        if (openTab == Routes.DOWNLOADS) {
+    // Locked from the start: nothing of the profile is ever composed beneath the lock.
+    val first = remember { if (lock.locked) Routes.LOCKED else start }
+    ResetOnLock(nav, lock) { graph.serverCatalog.servers.first().isNotEmpty() }
+    // The download notice's tap: the Downloads tab, over Home as every tab is; kept until the app is open.
+    LaunchedEffect(openTab, lock == LockState.Open) {
+        if (openTab == Routes.DOWNLOADS && lock == LockState.Open) {
             nav.switchTab(Tab.DOWNLOADS)
             onTabOpened()
         }
@@ -143,13 +165,14 @@ private fun AppNavHost(graph: AppGraph, start: String, openTab: String?, onTabOp
     val serverArg = listOf(navArgument(Routes.ARG_SERVER) { type = NavType.StringType })
     NavHost(
         navController = nav,
-        startDestination = start,
+        startDestination = first,
         // Between the tabs (Home, Search, Downloads) there is only a short fade: they are siblings, not a journey.
         enterTransition = { if (betweenTabs()) fadeIn(tween(150)) else fadeIn(tween(220)) + slideInHorizontally(tween(220)) { it / 16 } },
         exitTransition = { fadeOut(tween(if (betweenTabs()) 100 else 160)) },
         popEnterTransition = { fadeIn(tween(if (betweenTabs()) 150 else 220)) },
         popExitTransition = { if (betweenTabs()) fadeOut(tween(100)) else fadeOut(tween(160)) + slideOutHorizontally(tween(220)) { it / 16 } },
     ) {
+        composable(Routes.LOCKED) {}
         composable(Routes.WELCOME) { AddServerRoute(graph, nav, firstRun = true) }
         composable(Routes.ADD_SERVER) { AddServerRoute(graph, nav, firstRun = false) }
         composable(Routes.SIGN_IN, serverArg + navArgument(Routes.ARG_USER) { type = NavType.StringType; nullable = true; defaultValue = null }) {

@@ -1,0 +1,90 @@
+package app.shoalwatch.ui.lock
+
+import android.app.Activity
+import app.shoalwatch.data.servers.AccountSummary
+import app.shoalwatch.data.servers.ProfileSwitcher
+import app.shoalwatch.data.servers.Session
+import app.shoalwatch.data.servers.SwitchResult
+import app.shoalwatch.security.AuthOutcome
+import app.shoalwatch.security.DeviceAuth
+import app.shoalwatch.security.Household
+import app.shoalwatch.security.PinCheck
+import app.shoalwatch.ui.FakeCatalog
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+
+/**
+ * The switcher as a fake: [protected] profiles answer `NeedsPin` to [switchTo]; [switchWithPin] accepts [rightPin] (and then
+ * makes the profile active in [catalog], when given), else answers [wrongAnswer]. Every call is recorded, with the PIN as typed.
+ */
+class FakeSwitcher(private val catalog: FakeCatalog? = null) : ProfileSwitcher {
+    val protected = mutableSetOf<Session>()
+    val gone = mutableSetOf<Session>()
+    var rightPin = "4826"
+    var wrongAnswer: PinCheck = PinCheck.Wrong(4)
+    var failure: Exception? = null
+    /** When set, [switchWithPin] waits for it (to test a second tap while one runs). */
+    var hold: CompletableDeferred<Unit>? = null
+    val switchToCalls = mutableListOf<Session>()
+    val pinCalls = mutableListOf<Pair<Session, String>>()
+    val pinArrays = mutableListOf<CharArray>()
+
+    override suspend fun switchTo(serverId: String, userId: String): SwitchResult {
+        val s = Session(serverId, userId)
+        switchToCalls += s
+        failure?.let { throw it }
+        return when (s) {
+            in gone -> SwitchResult.Gone
+            in protected -> SwitchResult.NeedsPin
+            else -> SwitchResult.Switched.also { catalog?.setActive(serverId, userId) }
+        }
+    }
+
+    override suspend fun switchWithPin(serverId: String, userId: String, pin: CharArray): SwitchResult = try {
+        val s = Session(serverId, userId)
+        pinCalls += s to String(pin)
+        pinArrays += pin
+        hold?.await()
+        failure?.let { throw it }
+        when {
+            s in gone -> SwitchResult.Gone
+            String(pin) == rightPin -> SwitchResult.Switched.also { catalog?.setActive(serverId, userId) }
+            else -> SwitchResult.NotSwitched(wrongAnswer)
+        }
+    } finally {
+        pin.fill('\u0000')
+    }
+}
+
+/** The household check as a fake: [askNeeded] is set by the test; [confirm] accepts [rightPin] for anyone in [grownUpList]. */
+class FakeHousehold(ask: Boolean = true, grownUps: List<AccountSummary> = emptyList()) : Household {
+    val ask = MutableStateFlow(ask)
+    val grownUpList = MutableStateFlow(grownUps)
+    var rightPin = "4826"
+    var wrongAnswer: PinCheck = PinCheck.Wrong(4)
+    var failure: Exception? = null
+    val confirms = mutableListOf<Pair<Session, String>>()
+
+    override val askNeeded: StateFlow<Boolean> = this.ask
+    override val grownUps: Flow<List<AccountSummary>> = grownUpList
+
+    override suspend fun confirm(grownUp: Session, pin: CharArray): PinCheck = try {
+        confirms += grownUp to String(pin)
+        failure?.let { throw it }
+        if (String(pin) == rightPin && grownUpList.value.any { Session(it.serverId, it.userId) == grownUp }) PinCheck.Correct else wrongAnswer
+    } finally {
+        pin.fill('\u0000')
+    }
+}
+
+/** The phone's screen lock as a fake: answers [outcome] and counts the prompts. */
+class FakeDeviceAuth(var outcome: AuthOutcome = AuthOutcome.SUCCESS, var secure: Boolean = true) : DeviceAuth {
+    var prompts = 0
+    override fun available() = secure
+    override suspend fun authenticate(activity: Activity, title: String, subtitle: String): AuthOutcome {
+        prompts++
+        return outcome
+    }
+}

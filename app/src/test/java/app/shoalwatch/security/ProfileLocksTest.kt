@@ -162,7 +162,7 @@ class ProfileLocksTest : LibraryTestBase() {
         val locks = locks()
         locks.protect(a, pin("4826"))
         repeat(6) { locks.check(a, pin("0000")) }
-        locks.clear(a)
+        locks.clear(ClearProof.afterPasswordSignIn(a, app.shoalwatch.data.servers.AccountSummary(a.serverId, a.userId, "ann"))!!)
         assertFalse(locks.isProtected(a))
         assertTrue("a new PIN can be set and has no old wait", locks.protect(a, pin("2468")))
         assertEquals(PinCheck.Correct, locks.check(a, pin("2468")))

@@ -233,7 +233,7 @@ class LockGateTest : LibraryTestBase() {
         gate.profileCleared(adult) // still protected in the store: nothing
         settle()
         assertEquals(LockState.Profile(adult, "ann"), gate.state.value)
-        locks.clear(adult)
+        locks.clear(ClearProof.afterPasswordSignIn(adult, adultA)!!)
         gate.profileCleared(adult)
         assertEquals(LockState.Open, gate.state.first { it == LockState.Open })
     }

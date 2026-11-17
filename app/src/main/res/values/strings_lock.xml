@@ -7,8 +7,51 @@
         <item quantity="one">That PIN isn’t right. 1 try left before a wait.</item>
         <item quantity="other">That PIN isn’t right. %1$d tries left before a wait.</item>
     </plurals>
-    <string name="pin_wrong_last">That PIN isn’t right. The next wrong PIN starts a wait.</string>
+    <!-- Wrong(0): the wait has already started with this wrong PIN (Task 5, controller decision). -->
+    <string name="pin_wrong_last">That PIN isn’t right. Too many wrong PINs. Try again in %1$s.</string>
     <string name="pin_wait">Too many wrong PINs. Try again in %1$s.</string>
     <string name="pin_unreadable">This PIN can’t be checked on this phone any more. Use Forgot PIN.</string>
     <string name="pin_rules">Use 4 to 12 digits.</string>
+    <!-- The try could not be saved (a full or damaged phone): nothing was checked. -->
+    <string name="pin_not_saved">The PIN wasn’t checked because this phone couldn’t save the try. Your phone may be out of space. Free up some space and try again.</string>
+    <plurals name="wait_minutes">
+        <item quantity="one">1 minute</item>
+        <item quantity="other">%1$s minutes</item>
+    </plurals>
+    <plurals name="wait_seconds">
+        <item quantity="one">1 second</item>
+        <item quantity="other">%1$s seconds</item>
+    </plurals>
+    <string name="wait_minutes_seconds">%1$s %2$s</string>
+
+    <!-- Lock screen (Task 5) -->
+    <string name="lock_app_title">Shoalwatch is locked</string>
+    <string name="lock_app_body">Unlock with your phone’s screen lock.</string>
+    <string name="lock_unlock">Unlock</string>
+    <string name="lock_prompt_title">Unlock Shoalwatch</string>
+    <string name="lock_prompt_subtitle">Use your fingerprint, face or screen lock</string>
+    <string name="lock_unavailable">Your phone’s screen lock can’t be used right now. Try again.</string>
+    <string name="lock_profile_title">%1$s’s profile is protected</string>
+    <string name="lock_profile_body">Enter the PIN for this profile.</string>
+    <string name="lock_other_heading">Use another profile</string>
+    <string name="lock_other_row">%1$s on %2$s</string>
+    <string name="lock_other_row_protected_cd">%1$s on %2$s, protected</string>
+    <string name="lock_protected">Protected</string>
+    <string name="lock_forgot">Forgot PIN?</string>
+    <string name="lock_forgot_body">Sign in to %1$s with its server password. This removes the PIN, and you can set a new one in Settings.</string>
+    <string name="lock_forgot_submit">Sign in and remove PIN</string>
+    <string name="lock_forgot_offline">You’re offline. Connect to %1$s to sign in.</string>
+    <string name="lock_forgot_other_account">That’s a different account.</string>
+
+    <!-- Switching and the grown-up check (Task 6) -->
+    <string name="switch_pin_title">Switch to %1$s?</string>
+    <string name="switch_pin_body">%1$s’s profile is protected. Enter its PIN.</string>
+    <string name="switch_pin_confirm">Switch</string>
+    <string name="profile_protected_cd">%1$s, protected</string>
+    <string name="grownup_title">A grown-up’s PIN is needed</string>
+    <string name="grownup_body">This setting changes things for everyone on this phone. Choose a protected profile and enter its PIN.</string>
+    <string name="grownup_confirm">Continue</string>
+    <string name="grownup_race">A grown-up’s PIN is needed. Try again.</string>
+    <string name="signout_pin_title">Sign out %1$s?</string>
+    <string name="signout_pin_body">%1$s’s profile is protected. Enter its PIN to sign it out.</string>
 </resources>

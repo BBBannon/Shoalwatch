@@ -5,6 +5,7 @@ import app.shoalwatch.core.SystemMonotonicClock
 import app.shoalwatch.data.servers.ProfileSwitch
 import app.shoalwatch.data.servers.ProfileSwitcher
 import app.shoalwatch.data.servers.ProvedSwitches
+import app.shoalwatch.security.ClearProof
 import app.shoalwatch.security.DeviceAuth
 import app.shoalwatch.security.FrameworkDeviceAuth
 import app.shoalwatch.security.HouseholdGuard
@@ -32,6 +33,9 @@ internal class LockParts(graph: AppGraph) {
         { s -> graph.serverStore.awaitWarmed(); graph.serverStore.cachedToken(s.serverId, s.userId) != null },
         profileLocks, provedSwitches,
     )
+
+    /** "Forgot PIN": removes a profile's protection, only with the proof its own server password was just accepted. */
+    val clearProtection: suspend (ClearProof) -> Unit = { profileLocks.clear(it) }
 
     /** The household check, enforced by the catalog, the authenticator and the two download settings. */
     val householdGuard: HouseholdGuard = HouseholdGuard(profileLocks, graph.serverCatalog, SystemMonotonicClock, graph.appScope) { lockGate.isOpenFor(it) }

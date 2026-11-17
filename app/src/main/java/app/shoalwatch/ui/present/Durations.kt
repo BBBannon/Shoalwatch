@@ -65,3 +65,15 @@ fun episodeCode(strings: Strings, item: Item): String? {
         else -> null
     }
 }
+
+/** A PIN wait in words: "30 seconds", "1 minute", "2 minutes 30 seconds" (Milestone 7 lock screens). */
+fun waitWords(strings: Strings, seconds: Int): String {
+    val s = seconds.coerceAtLeast(1)
+    val minutes = s / 60
+    val rest = s % 60
+    return when {
+        minutes == 0 -> strings.plural(R.plurals.wait_seconds, rest)
+        rest == 0 -> strings.plural(R.plurals.wait_minutes, minutes)
+        else -> strings.get(R.string.wait_minutes_seconds, strings.plural(R.plurals.wait_minutes, minutes), strings.plural(R.plurals.wait_seconds, rest))
+    }
+}

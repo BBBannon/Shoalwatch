@@ -1,6 +1,8 @@
 package app.shoalwatch.ui
 
+import android.content.ComponentName
 import android.content.Intent
+import app.shoalwatch.BuildConfig
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -24,6 +26,8 @@ class MainActivity : ComponentActivity() {
     private val openTab = mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Before anything reads it (Navigation acts on an intent's data as a deep link: Milestone 6 check M9).
+        intent = sanitised(intent)
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         if (savedInstanceState == null) openTab.value = requestedTab(intent)
@@ -50,11 +54,25 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        requestedTab(intent)?.let { openTab.value = it }
+        val clean = sanitised(intent)
+        super.onNewIntent(clean)
+        setIntent(clean)
+        requestedTab(clean)?.let { openTab.value = it }
     }
 
     companion object {
+        /**
+         * A copy of [intent] with no data, no clip data, no categories but LAUNCHER, and only the `open_tab=downloads` extra (else
+         * none). Navigation therefore never sees an `android-app://androidx.navigation/…` deep link (closes the Milestone 6 check's M9).
+         */
+        internal fun sanitised(intent: Intent?): Intent {
+            val clean = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+            clean.component = ComponentName(BuildConfig.APPLICATION_ID, MainActivity::class.java.name)
+            requestedTab(intent)?.let { clean.putExtra(DownloadNotifications.EXTRA_OPEN_TAB, it) }
+            intent?.flags?.let { clean.flags = it and (Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP) }
+            return clean
+        }
+
         /** The tab a launch asks for: only exactly `downloads`, from the download notice; anything else is nothing. */
         internal fun requestedTab(intent: Intent?): String? =
             intent?.getStringExtra(DownloadNotifications.EXTRA_OPEN_TAB)?.takeIf { it == DownloadNotifications.TAB_DOWNLOADS }
