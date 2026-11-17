@@ -146,6 +146,7 @@ class SettingsViewModel(
         viewModelScope.launch {
             try {
                 playback.setAutoplay(s, on)
+                steps.update { it.copy(notSaved = false) } // a later save that worked clears the line (re-review nit)
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
@@ -201,8 +202,13 @@ class SettingsViewModel(
         viewModelScope.launch {
             try {
                 write()
+                steps.update { it.copy(notSaved = false) }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: HouseholdLockedException) {
                 steps.update { it.copy(race = true) }
+            } catch (_: Exception) { // the store's household check could not read (re-review N2): never a crash
+                steps.update { it.copy(notSaved = true) }
             }
         }
     }

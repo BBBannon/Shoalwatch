@@ -48,9 +48,14 @@ class SettingsViewModelTest {
     private val household = FakeHousehold(ask = false, grownUps = listOf(adult))
     /** The store's own household check (as `LockParts` wires `HouseholdGuard.require`), refusing on demand. */
     private var storeRefuses = false
+    /** The store's household check failing to read (Room: the disk full, the database broken). */
+    private var storeFails: Exception? = null
     private val prefs = LockPrefs(
         ApplicationProvider.getApplicationContext<Context>().getSharedPreferences("settings_vm_test", Context.MODE_PRIVATE).also { it.edit().clear().commit() },
-    ) { if (storeRefuses) throw HouseholdLockedException() }
+    ) {
+        storeFails?.let { throw it }
+        if (storeRefuses) throw HouseholdLockedException()
+    }
     private var secure = true
     private val hideRecents = MutableStateFlow(false)
 
@@ -277,6 +282,22 @@ class SettingsViewModelTest {
         assertTrue(vm.state.value.householdRace)
     }
 
+    /** Re-review N2: the store's household check cannot read (the disk full): nothing saved, the "not saved" line, no crash. */
+    @Test fun aFailedReadInTheStoresCheckSavesNothingAndSaysSo() {
+        storeFails = android.database.sqlite.SQLiteFullException("database or disk is full")
+        val vm = vm()
+        vm.setAppLock(true)
+        vm.setLockAfter(LockAfter.FIFTEEN_MINUTES)
+        vm.setHideInRecents(true)
+        assertEquals("nothing saved", app.shoalwatch.security.LockSettings(), prefs.settings.value)
+        assertTrue(vm.state.value.notSaved)
+        assertFalse("not the race line", vm.state.value.householdRace)
+        storeFails = null
+        vm.setLockAfter(LockAfter.FIFTEEN_MINUTES)
+        assertEquals(LockAfter.FIFTEEN_MINUTES, prefs.settings.value.lockAfter)
+        assertFalse("a later save clears it", vm.state.value.notSaved)
+    }
+
     /** Review M1 of Tasks 7-8: Cancel while the current PIN is being checked stays cancelled, whatever the check says. */
     @Test fun cancellingWhileTheCurrentPinIsCheckedIsNotUndone() {
         locks.pins.value = mapOf(BEN to "2468")
@@ -305,6 +326,9 @@ class SettingsViewModelTest {
         assertTrue("autoplay", vm.state.value.notSaved)
         assertTrue("the switch shows what is stored", vm.state.value.autoplay)
         dao.failure = null
+        vm.setAutoplay(false)
+        assertFalse("a later save clears it (re-review nit)", vm.state.value.notSaved)
+        assertFalse(vm.state.value.autoplay)
         vm.startProtect()
         assertFalse("a new step clears it", vm.state.value.notSaved)
         vm.type("2468")
