@@ -19,6 +19,7 @@ import app.shoalwatch.ui.lock.PinDialog
 class SettingsActions(
     val onBack: () -> Unit,
     val onAutoplay: (Boolean) -> Unit = {},
+    val onPipAuto: (Boolean) -> Unit = {},
     val onProtect: () -> Unit = {},
     val onChangePin: () -> Unit = {},
     val onRemovePin: () -> Unit = {},
@@ -34,8 +35,8 @@ class SettingsActions(
 )
 
 /**
- * Settings (Milestone 7): Playback (this profile's autoplay), This profile (its PIN), App lock ("Lock after" too), Privacy (hide
- * in recent apps) and a link to Download settings. Every group is a heading, every row 48dp or more and says its state; the screen
+ * Settings (Milestone 7): Playback (this profile's autoplay; picture-in-picture on leaving, for the phone), This profile (its
+ * PIN), App lock ("Lock after" too), Privacy (hide in recent apps) and a link to Download settings. Every group is a heading, every row 48dp or more and says its state; the screen
  * scrolls (`AppScreen`). The PIN steps and the grown-up check are secure dialogs. [sdkInt]: Android 10–12 has only `FLAG_SECURE`
  * to hide the recents preview, which also stops screenshots, and the help says so.
  */
@@ -54,9 +55,12 @@ fun SettingsScreen(
     state.pinStep?.let { PinStepDialog(state, it, pin, actions) }
     AppScreen(title = stringResource(R.string.settings_title), onBack = actions.onBack) {
         if (state.householdRace) ErrorMessage(stringResource(R.string.grownup_race))
+        SettingsHeading(stringResource(R.string.settings_playback))
         if (state.session != null) {
-            SettingsHeading(stringResource(R.string.settings_playback))
             SettingsSwitch(stringResource(R.string.settings_autoplay), stringResource(R.string.settings_autoplay_help), state.autoplay, actions.onAutoplay)
+        }
+        SettingsSwitch(stringResource(R.string.settings_pip), stringResource(R.string.settings_pip_help), state.pipAuto, actions.onPipAuto)
+        if (state.session != null) {
             SettingsHeading(stringResource(R.string.settings_profile, state.userName.orEmpty()))
             if (state.profileProtected) {
                 Text(stringResource(R.string.settings_protected), style = MaterialTheme.typography.bodyLarge)

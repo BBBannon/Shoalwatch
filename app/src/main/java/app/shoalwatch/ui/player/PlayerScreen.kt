@@ -26,7 +26,11 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -47,13 +51,16 @@ import app.shoalwatch.ui.present.rememberStrings
 /**
  * The player: the picture ([video], given the route's `VideoSurface`; empty in tests and previews), the touch layer, the
  * controls, Up next or the skip button, an error with Try again, the sheets, and the notices (subtitles that could not be read
- * or drawn, the sleep timer pausing) as snackbars. [dolbyVisionScreen]: for the stream-info line only.
+ * or drawn, the sleep timer pausing) as snackbars. [dolbyVisionScreen]: for the stream-info line only. [inPip]: in the
+ * picture-in-picture window only the picture and its subtitles (no controls, gestures, cards, sheets or snackbars; a notice waits
+ * for the full screen); back from it, the controls show once.
  */
 @Composable
 fun PlayerScreen(
     state: PlayerUiState,
     actions: PlayerActions,
     dolbyVisionScreen: Boolean = false,
+    inPip: Boolean = false,
     video: @Composable (controlsUp: Boolean) -> Unit = {},
 ) {
     val strings = rememberStrings()
@@ -63,9 +70,12 @@ fun PlayerScreen(
     val snackbar = remember { SnackbarHostState() }
     // Locked, the system Back (an edge swipe with the bars hidden) does not leave: it shows the lock and its hint instead.
     BackHandler(enabled = state.locked) { actions.onTapSurface() }
-    Notices(state, actions, snackbar)
+    ControlsAfterPip(inPip, state.controlsVisible, actions.onTapSurface)
+    if (!inPip) Notices(state, actions, snackbar)
     Box(Modifier.fillMaxSize().background(Color.Black)) {
-        video(state.controlsVisible)
+        // Always the first child, so the picture's view is kept as the window changes size.
+        video(state.controlsVisible && !inPip)
+        if (inPip) return@Box
         if (p.phase == Phase.FAILED) {
             Failed(p.error ?: AppError.Kind.PLAYBACK_FAILED, actions)
         } else {
@@ -76,7 +86,18 @@ fun PlayerScreen(
         }
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp))
     }
-    if (!state.locked) PlayerSheetHost(state, actions, streamLine, hdrLine)
+    if (!state.locked && !inPip) PlayerSheetHost(state, actions, streamLine, hdrLine)
+}
+
+/** Back from the picture-in-picture window to the full screen: the controls show once (then hide as usual). */
+@Composable
+private fun ControlsAfterPip(inPip: Boolean, controlsVisible: Boolean, show: () -> Unit) {
+    val visible by rememberUpdatedState(controlsVisible)
+    var wasInPip by remember { mutableStateOf(false) }
+    LaunchedEffect(inPip) {
+        if (wasInPip && !inPip && !visible) show()
+        wasInPip = inPip
+    }
 }
 
 @Composable

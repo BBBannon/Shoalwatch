@@ -53,9 +53,10 @@ internal val Scrim = Color(0x99000000)
 private val Target = 48.dp
 
 /**
- * The controls over the picture: Back, the title and the top-row buttons (wrapping into more rows at large text, and scrolling
- * if even that does not fit), the centre row (previous, back 10 s, play/pause, forward 10 s, next), and the seek bar with the
- * elapsed and remaining time. Locked, only the lock button and its hint are shown.
+ * The controls over the picture: Back, the title and the top-row buttons (Picture-in-picture among them where the window allows
+ * it; wrapping into more rows at large text, and scrolling if even that does not fit), the centre row (previous, back 10 s,
+ * play/pause, forward 10 s, next), and the seek bar with the elapsed and remaining time. Locked, only the lock button and its
+ * hint are shown.
  */
 @Composable
 internal fun PlayerControls(state: PlayerUiState, actions: PlayerActions, streamLine: String?) {
@@ -89,6 +90,7 @@ private fun TopArea(state: PlayerUiState, actions: PlayerActions, streamLine: St
         ControlButton(PlayerIcons.Sleep, stringResource(R.string.player_sleep), onClick = { actions.onOpenSheet(PlayerSheet.SLEEP) })
         ControlButton(PlayerIcons.TextStyle, stringResource(R.string.player_subtitle_style), onClick = { actions.onOpenSheet(PlayerSheet.SUBTITLE_STYLE) })
         ControlButton(Icons.Filled.Info, stringResource(R.string.player_stream_info), onClick = { actions.onOpenSheet(PlayerSheet.STREAM_INFO) })
+        actions.onEnterPip?.let { ControlButton(PlayerIcons.PictureInPicture, stringResource(R.string.player_pip), it) }
         ControlButton(Icons.Filled.Lock, stringResource(R.string.player_lock), actions.onToggleLock)
     }
 }

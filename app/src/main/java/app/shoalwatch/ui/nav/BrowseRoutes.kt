@@ -11,7 +11,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import app.shoalwatch.AppGraph
 import app.shoalwatch.data.playback.PlaybackState
+import android.content.pm.PackageManager
+import androidx.compose.ui.platform.LocalContext
+import app.shoalwatch.ui.components.LocalCovered
 import app.shoalwatch.ui.player.HostLifecycle
+import app.shoalwatch.ui.player.LocalPipHost
+import app.shoalwatch.ui.player.PipEffect
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import app.shoalwatch.ui.player.PlayerActions
 import app.shoalwatch.ui.player.PlayerScreen
 import app.shoalwatch.ui.player.PlayerViewModel
@@ -303,7 +310,12 @@ internal fun PlayerRoute(graph: AppGraph, nav: NavHostController, itemId: String
     PlayerWindow(keepOn = playing, locked = state.locked)
     HostLifecycle(onStopped = vm::onHostStopped, onStarted = vm::onHostStarted)
     TouchExploration(vm::setTouchExploration)
-    val actions = remember(vm, nav) {
+    // Picture-in-picture (Milestone 7): wished for while this player shows and nothing covers it; the small window's button plays and pauses.
+    val pip = LocalPipHost.current?.takeIf { LocalContext.current.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE) }
+    val inPip by (pip?.inPip ?: NotInPip).collectAsStateWithLifecycle()
+    val aspect by (vm.video?.aspectRatio ?: NoAspect).collectAsStateWithLifecycle()
+    PipEffect(state, enabled = !LocalCovered.current, onPlayPause = vm::playPause, aspect = aspect)
+    val actions = remember(vm, nav, pip) {
         PlayerActions(
             onBack = { nav.popBackStack(Routes.PLAYER, inclusive = true) },
             onTapSurface = vm::tapSurface,
@@ -336,11 +348,14 @@ internal fun PlayerRoute(graph: AppGraph, nav: NavHostController, itemId: String
             onWatchedTogether = vm::watchedTogether,
             onKeepDownload = vm::keepDownload,
             onDismissWatchedMessage = vm::dismissWatchedMessage,
+            onEnterPip = pip?.let { host -> { host.enterNow(); Unit } },
         )
     }
-    PlayerScreen(state, actions, rememberDolbyVisionScreen()) { controlsUp ->
+    PlayerScreen(state, actions, rememberDolbyVisionScreen(), inPip) { controlsUp ->
         VideoSurface(vm.video, vm.cues, state.appearance, controlsUp)
     }
 }
 
 private const val SKIP_MS = 10_000L
+private val NotInPip: StateFlow<Boolean> = MutableStateFlow(false)
+private val NoAspect: StateFlow<Float?> = MutableStateFlow(null)

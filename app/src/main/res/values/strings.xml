@@ -711,4 +711,11 @@
     <!-- Settings (Milestone 7): each profile's own playback settings -->
     <string name="settings_autoplay">Play the next episode automatically</string>
     <string name="settings_autoplay_help">When an episode ends, the next one starts after a short countdown. For this profile only.</string>
+    <string name="settings_pip">Keep playing in a small window when you leave the app</string>
+    <string name="settings_pip_help">Picture-in-picture, while a video is playing.</string>
+
+    <!-- Picture-in-picture (Milestone 7) -->
+    <string name="player_pip">Picture-in-picture</string>
+    <string name="pip_play">Play</string>
+    <string name="pip_pause">Pause</string>
 </resources>

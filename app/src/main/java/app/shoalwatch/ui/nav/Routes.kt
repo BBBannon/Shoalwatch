@@ -192,7 +192,7 @@ internal fun SettingsRoute(graph: AppGraph, nav: NavHostController) {
     val vm = graphViewModel {
         SettingsViewModel(
             graph.serverCatalog, parts.profilePlayback, parts.profileLocks, parts.lockPrefs, parts.householdGuard, parts.deviceAuth::available,
-            parts.lockGate.hideRecents,
+            parts.lockGate.hideRecents, parts.pipPrefs,
         )
     }
     val state by vm.state.collectAsStateWithLifecycle()
@@ -209,6 +209,7 @@ internal fun SettingsRoute(graph: AppGraph, nav: NavHostController) {
         SettingsActions(
             onBack = { nav.popBackStack() },
             onAutoplay = vm::setAutoplay,
+            onPipAuto = vm::setPipAuto,
             onProtect = vm::startProtect,
             onChangePin = vm::startChangePin,
             onRemovePin = vm::startRemovePin,

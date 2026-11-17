@@ -4,6 +4,7 @@ import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.clearText
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.shoalwatch.data.playback.PipPrefs
 import app.shoalwatch.data.playback.ProfilePlayback
 import app.shoalwatch.data.servers.ServerCatalog
 import app.shoalwatch.data.servers.Session
@@ -37,6 +38,8 @@ data class SettingsUiState(
     val session: Session? = null,
     val userName: String? = null,
     val autoplay: Boolean = true,
+    /** "Keep playing in a small window when you leave the app": a device setting, not this profile's. */
+    val pipAuto: Boolean = true,
     val profileProtected: Boolean = false,
     val lock: LockSettings = LockSettings(),
     /** The phone has a secure screen lock (the app lock row is off and explained without one). */
@@ -85,6 +88,7 @@ class SettingsViewModel(
     household: Household,
     private val deviceSecure: () -> Boolean,
     hideRecents: StateFlow<Boolean>,
+    private val pip: PipPrefs? = null,
 ) : ViewModel() {
     val pin = TextFieldState()
     internal val grownUp = GrownUpFlow(household, viewModelScope)
@@ -107,9 +111,9 @@ class SettingsViewModel(
         Triple(lock, sec, hide && (lock.appLock || set.isNotEmpty() || !lock.hideInRecents))
     }
 
-    val state: StateFlow<SettingsUiState> = combine(profile, device, steps) { (who, auto, prot), (lock, sec, forced), st ->
+    val state: StateFlow<SettingsUiState> = combine(profile, device, steps, pip?.autoEnter ?: flowOf(true)) { (who, auto, prot), (lock, sec, forced), st, pipAuto ->
         SettingsUiState(
-            who?.first, who?.second, auto, prot, lock, sec, forced,
+            who?.first, who?.second, auto, pipAuto, prot, lock, sec, forced,
             st.step, st.answer, st.failed, st.mismatch, st.tooShort, st.race,
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, SettingsUiState(deviceSecure = secure.value))
@@ -126,6 +130,9 @@ class SettingsViewModel(
             }
         }
     }
+
+    /** Picture-in-picture on leaving the app: a device setting with no grown-up check (it shows nobody else's anything). */
+    fun setPipAuto(on: Boolean) { pip?.setAutoEnter(on) }
 
     /** For the active profile only, as itself (no grown-up check: it changes nothing for anyone else). */
     fun setAutoplay(on: Boolean) {

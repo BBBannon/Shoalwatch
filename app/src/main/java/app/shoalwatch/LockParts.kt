@@ -2,6 +2,7 @@ package app.shoalwatch
 
 import android.content.Context
 import app.shoalwatch.core.SystemMonotonicClock
+import app.shoalwatch.data.playback.PipPrefs
 import app.shoalwatch.data.playback.ProfilePlayback
 import app.shoalwatch.data.servers.ProfileSwitch
 import app.shoalwatch.data.servers.ProfileSwitcher
@@ -50,6 +51,9 @@ internal class LockParts(graph: AppGraph) {
 
     /** Each profile's own "Play the next episode automatically" (Room `profile_playback`). */
     val profilePlayback = ProfilePlayback(graph.database.profileDao())
+
+    /** "Keep playing in a small window when you leave the app" (picture-in-picture), a device setting in `playback_prefs`. */
+    val pipPrefs = PipPrefs(graph.appContext.getSharedPreferences("playback_prefs", Context.MODE_PRIVATE))
 
     /** The phone's own screen lock prompt. */
     val deviceAuth: DeviceAuth = FrameworkDeviceAuth(graph.appContext)

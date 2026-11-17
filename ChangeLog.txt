@@ -1,3 +1,4 @@
+v1.131 — 17/11/2026 — A video now keeps playing in a small window when you leave the app (it works with swipe navigation on newer phones), with play and pause in the window and a setting to turn it off
 v1.130 — 17/11/2026 — With a screen reader, the “finished this episode” card and Up next are now read before the player’s buttons
 v1.129 — 17/11/2026 — Added a Settings screen: turn off playing the next episode by itself for your profile, protect your profile with a PIN, and lock the app with your phone’s screen lock
 v1.128 — 17/11/2026 — Cleared every problem flagged by Android's code checker, with no change to how the app behaves on older phones

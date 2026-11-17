@@ -1,0 +1,97 @@
+package app.shoalwatch.ui.player
+
+import android.content.IntentFilter
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.ComponentActivity
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import app.shoalwatch.core.AppLog
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
+/**
+ * The activity's [PipHost] (`MainActivity` hands its three members here). Android 12+ enters by itself during the swipe home
+ * (`setAutoEnterEnabled` while playing and [autoEnter]): that is the fix for gesture navigation, where trying in
+ * `onUserLeaveHint` after the gesture fails (the official app's Android 14+ bug). Android 10–11 enters from `onUserLeaveHint`.
+ *
+ * Entering counts as leaving for the app lock ([onLeft]); back to the full screen counts as returning ([onReturned]). Closing
+ * the window stops the activity first, so it is not a return: the activity's own `onStop`/`onStart` count that trip, and the
+ * player pauses on the stop as it always has.
+ */
+internal class ActivityPip(
+    private val activity: ComponentActivity,
+    private val autoEnter: () -> Boolean,
+    private val onLeft: () -> Unit,
+    private val onReturned: () -> Unit,
+) : PipHost {
+    private val mutableInPip = MutableStateFlow(false)
+    override val inPip: StateFlow<Boolean> = mutableInPip.asStateFlow()
+
+    private var current: PipWish? = null
+    private var onPlayPause: (() -> Unit)? = null
+    private var receiver: PipActionReceiver? = null
+
+    init {
+        activity.addOnUserLeaveHintListener { onUserLeaveHint() }
+        activity.addOnPictureInPictureModeChangedListener { onModeChanged(it.isInPictureInPictureMode) }
+    }
+
+    private val supported: Boolean
+        get() = activity.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
+
+    override fun wish(w: PipWish?, onPlayPause: (() -> Unit)?) {
+        current = w
+        this.onPlayPause = onPlayPause
+        if (w != null) register() else unregister()
+        if (!supported) return
+        // Android 10–11 has no auto-enter, so nothing needs withdrawing there; the params are still kept current for the button.
+        if (w == null && Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+        try {
+            activity.setPictureInPictureParams(if (w != null) pipParams(activity, w, w.playing && autoEnter()) else noPipParams())
+        } catch (e: IllegalStateException) {
+            AppLog.w(TAG, "picture-in-picture params refused", e)
+        }
+    }
+
+    override fun enterNow(): Boolean {
+        val w = current ?: return false
+        if (!supported) return false
+        return try {
+            activity.enterPictureInPictureMode(pipParams(activity, w, w.playing && autoEnter()))
+        } catch (e: IllegalStateException) {
+            AppLog.w(TAG, "picture-in-picture refused", e)
+            false
+        }
+    }
+
+    private fun onUserLeaveHint() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) return // auto-enter does it, during the gesture
+        if (current?.playing == true && autoEnter()) enterNow()
+    }
+
+    private fun onModeChanged(inPip: Boolean) {
+        mutableInPip.value = inPip
+        when {
+            inPip -> onLeft()
+            // Back to the full screen. Closing the window stops the activity before this is said: not a return.
+            activity.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) -> onReturned()
+        }
+    }
+
+    private fun register() {
+        if (receiver != null) return
+        val r = PipActionReceiver { onPlayPause?.invoke() }
+        ContextCompat.registerReceiver(activity, r, IntentFilter(PipActionReceiver.ACTION), ContextCompat.RECEIVER_NOT_EXPORTED)
+        receiver = r
+    }
+
+    private fun unregister() {
+        val r = receiver ?: return
+        receiver = null
+        activity.unregisterReceiver(r)
+    }
+}
+
+private const val TAG = "Pip"

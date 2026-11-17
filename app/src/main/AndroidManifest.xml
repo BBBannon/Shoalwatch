@@ -42,9 +42,16 @@
         android:theme="@style/Theme.Shoalwatch"
         android:usesCleartextTraffic="true">
 
+        <!--
+            Picture-in-picture (Milestone 7): entering and leaving the small window, turning the phone and resizing it change the
+            window, not the activity, so playback is not interrupted; Compose redraws for these on its own. Dark mode, text size
+            and language still recreate it.
+        -->
         <activity
             android:name=".ui.MainActivity"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation"
             android:exported="true"
+            android:supportsPictureInPicture="true"
             android:taskAffinity=""
             android:windowSoftInputMode="adjustResize">
             <intent-filter>

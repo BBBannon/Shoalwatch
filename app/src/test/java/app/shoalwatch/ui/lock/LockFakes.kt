@@ -153,3 +153,24 @@ class FakeProfileLocks : app.shoalwatch.security.ProfileProtection {
         }
     }
 }
+
+/** The player's picture-in-picture host as a fake: records every wish (null when withdrawn) and every press of the button. */
+class FakePipHost(private val refuse: Boolean = false) : app.shoalwatch.ui.player.PipHost {
+    val pip = MutableStateFlow(false)
+    override val inPip: StateFlow<Boolean> = pip
+    val wishes = mutableListOf<app.shoalwatch.ui.player.PipWish?>()
+    var onPlayPause: (() -> Unit)? = null
+    var entered = 0
+
+    val last: app.shoalwatch.ui.player.PipWish? get() = wishes.lastOrNull()
+
+    override fun wish(w: app.shoalwatch.ui.player.PipWish?, onPlayPause: (() -> Unit)?) {
+        wishes += w
+        this.onPlayPause = onPlayPause
+    }
+
+    override fun enterNow(): Boolean {
+        entered++
+        return !refuse && last != null
+    }
+}

@@ -30,6 +30,10 @@ internal object PlayerIcons {
     val Quality: ImageVector by lazy {
         icon("Quality", "M19,4H5C3.89,4 3,4.9 3,6v12c0,1.1 0.89,2 2,2h14c1.1,0 2,-0.9 2,-2V6C21,4.9 20.1,4 19,4zM11,15H9.5v-2h-2v2H6V9h1.5v2.5h2V9H11V15zM18,14c0,0.55 -0.45,1 -1,1h-0.75v1.5h-1.5V15H14c-0.55,0 -1,-0.45 -1,-1v-4c0,-0.55 0.45,-1 1,-1h3c0.55,0 1,0.45 1,1V14zM14.5,13.5h2v-3h-2V13.5z")
     }
+    /** Material's "picture_in_picture_alt" (not in the core icon set). */
+    val PictureInPicture: ImageVector by lazy {
+        icon("PictureInPicture", "M19,11h-8v6h8v-6zM23,19L23,4.98C23,3.88 22.1,3 21,3L3,3c-1.1,0 -2,0.88 -2,1.98L1,19c0,1.1 0.9,2 2,2h18c1.1,0 2,-0.9 2,-2zM21,19.02L3,19.02L3,4.97h18v14.05z")
+    }
     val LockOpen: ImageVector by lazy {
         icon("LockOpen", "M12,17c1.1,0 2,-0.9 2,-2s-0.9,-2 -2,-2s-2,0.9 -2,2S10.9,17 12,17zM18,8h-1V6c0,-2.76 -2.24,-5 -5,-5S7,3.24 7,6h1.9c0,-1.71 1.39,-3.1 3.1,-3.1s3.1,1.39 3.1,3.1v2H6c-1.1,0 -2,0.9 -2,2v10c0,1.1 0.9,2 2,2h12c1.1,0 2,-0.9 2,-2V10C20,8.9 19.1,8 18,8zM18,20H6V10h12V20z")
     }

@@ -21,7 +21,7 @@ internal val appearance = SubtitleAppearance(100, SubtitleColour.WHITE, Subtitle
 internal fun ui(playback: PlaybackState = playingEpisode) = PlayerUiState(session = BEN, playback = playback, appearance = appearance)
 
 /** Records every action by name ("seek:600000", "audio:2"...). */
-internal class ActionLog {
+internal class ActionLog(pip: Boolean = false) {
     val calls = mutableListOf<String>()
     val actions = PlayerActions(
         onBack = { calls += "back" }, onTapSurface = { calls += "tap" }, onPlayPause = { calls += "playPause" },
@@ -35,6 +35,7 @@ internal class ActionLog {
         onSignIn = { calls += "signIn" }, onDismissSubtitleNotice = { calls += "dismissNotice" }, onDismissSleepFired = { calls += "dismissSleep" },
         onWatchedDelete = { calls += "watchedDelete" }, onWatchedTogether = { calls += "watchedTogether" },
         onKeepDownload = { calls += "keepDownload" }, onDismissWatchedMessage = { calls += "dismissWatched" },
+        onEnterPip = if (pip) ({ calls += "pip" }) else null,
     )
 }
 

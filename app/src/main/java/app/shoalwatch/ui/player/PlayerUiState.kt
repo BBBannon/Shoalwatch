@@ -81,4 +81,6 @@ class PlayerActions(
     val onWatchedTogether: () -> Unit = {},
     val onKeepDownload: () -> Unit = {},
     val onDismissWatchedMessage: () -> Unit = {},
+    /** The top bar's "Picture-in-picture" button; null where the window cannot do it (no button then). */
+    val onEnterPip: (() -> Unit)? = null,
 )

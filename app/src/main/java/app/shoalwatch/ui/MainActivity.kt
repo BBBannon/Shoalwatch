@@ -15,15 +15,30 @@ import kotlinx.coroutines.launch
 import app.shoalwatch.data.downloads.DownloadNotifications
 import app.shoalwatch.ui.components.LocalArtworkLoader
 import app.shoalwatch.ui.nav.AppRoot
+import app.shoalwatch.ui.player.ActivityPip
+import app.shoalwatch.ui.player.LocalPipHost
+import app.shoalwatch.ui.player.PipHost
+import app.shoalwatch.ui.player.PipWish
+import kotlinx.coroutines.flow.StateFlow
 import app.shoalwatch.ui.theme.ShoalwatchTheme
 
 /**
  * The only activity: edge to edge, with every screen inside [AppRoot]'s navigation. The download notice opens it with
  * `open_tab=downloads`; that exact value is the only one it acts on ([requestedTab]). It tells `LockGate` when the app is left
- * and returned to, and hides the recent-apps preview while `LockGate.hideRecents` says so ([RecentsPrivacy]).
+ * and returned to, and hides the recent-apps preview while `LockGate.hideRecents` says so ([RecentsPrivacy]). It is the player's
+ * [PipHost] ([ActivityPip]): entering picture-in-picture counts as leaving for the lock, back to the full screen as returning.
  */
-class MainActivity : ComponentActivity() {
+class MainActivity : ComponentActivity(), PipHost {
     private val openTab = mutableStateOf<String?>(null)
+    private val pip = ActivityPip(
+        this,
+        autoEnter = { ShoalwatchApp.graph(this).lockParts.pipPrefs.autoEnter.value },
+        onLeft = { ShoalwatchApp.graph(this).lockParts.lockGate.onLeft() },
+        onReturned = { ShoalwatchApp.graph(this).lockParts.lockGate.onReturned() },
+    )
+    override val inPip: StateFlow<Boolean> get() = pip.inPip
+    override fun wish(w: PipWish?, onPlayPause: (() -> Unit)?) = pip.wish(w, onPlayPause)
+    override fun enterNow(): Boolean = pip.enterNow()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // Before anything reads it (Navigation acts on an intent's data as a deep link: Milestone 6 check M9).
@@ -34,7 +49,7 @@ class MainActivity : ComponentActivity() {
         val graph = ShoalwatchApp.graph(this)
         lifecycleScope.launch { graph.lockParts.lockGate.hideRecents.collect { RecentsPrivacy.apply(this@MainActivity, it) } }
         setContent {
-            CompositionLocalProvider(LocalArtworkLoader provides graph.imageLoader) {
+            CompositionLocalProvider(LocalArtworkLoader provides graph.imageLoader, LocalPipHost provides this) {
                 ShoalwatchTheme { AppRoot(graph, openTab.value) { openTab.value = null } }
             }
         }
