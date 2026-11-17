@@ -13,7 +13,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.remember
 import app.shoalwatch.security.LockState
 import app.shoalwatch.ui.shell.Tab
@@ -114,9 +113,9 @@ internal object Routes {
 fun AppRoot(graph: AppGraph, openTab: String? = null, onTabOpened: () -> Unit = {}) {
     val startup = graphViewModel { StartupViewModel(graph.serverCatalog) }
     val gate = graph.lockParts.lockGate
-    // Not paused with the lifecycle: the lock must be current the moment the app is seen again.
-    val lock by gate.state.collectAsState()
-    val openFor by gate.openFor.collectAsState()
+    // Not paused with the lifecycle, and on Main.immediate: the lock must be current the moment the app is seen again (review M2).
+    val lock by gate.state.collectAtOnce()
+    val openFor by gate.openFor.collectAtOnce()
     val active = rememberActive(graph.serverCatalog)
     when (val first = startup.state.collectAsStateWithLifecycle().value) {
         StartupState.Loading -> SplashScreen()

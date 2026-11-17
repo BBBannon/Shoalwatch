@@ -7,6 +7,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,6 +40,7 @@ import app.shoalwatch.ui.lock.LockScreen
 import app.shoalwatch.ui.lock.LockViewModel
 import app.shoalwatch.ui.lock.takesEveryTouch
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -64,6 +66,13 @@ internal fun LockCover(openFor: Judged?, active: Judged?, host: @Composable () -
         if (covered) cover()
     }
 }
+
+/**
+ * The gate's state collected on `Dispatchers.Main.immediate` (review M2): a value the gate sets on the main thread (`onReturned` in
+ * `onStart`) is written to the snapshot before that call returns, so the first frame after a return already has the cover.
+ */
+@Composable
+internal fun <T> StateFlow<T>.collectAtOnce(): State<T> = collectAsState(context = Dispatchers.Main.immediate)
 
 /** The active session as screens see it, wrapped so "not known yet" (null) differs from "nobody" (`Judged(null)`). */
 @Composable
