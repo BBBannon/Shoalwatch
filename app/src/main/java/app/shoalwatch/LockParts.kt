@@ -7,6 +7,7 @@ import app.shoalwatch.data.playback.ProfilePlayback
 import app.shoalwatch.data.servers.ProfileSwitch
 import app.shoalwatch.data.servers.ProfileSwitcher
 import app.shoalwatch.data.servers.ProvedSwitches
+import app.shoalwatch.data.servers.Session
 import app.shoalwatch.security.ClearProof
 import app.shoalwatch.security.DeviceAuth
 import app.shoalwatch.security.ForgotThrottle
@@ -34,6 +35,7 @@ internal class LockParts(graph: AppGraph) {
     val switcher: ProfileSwitcher = ProfileSwitch(
         graph.serverStore::setActive,
         { s -> graph.serverStore.awaitWarmed(); graph.serverStore.cachedToken(s.serverId, s.userId) != null },
+        { graph.serverStore.active()?.let { Session(it.serverId, it.userId) } },
         profileLocks, provedSwitches,
     )
 

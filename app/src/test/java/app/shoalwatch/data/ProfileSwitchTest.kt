@@ -39,11 +39,12 @@ class ProfileSwitchTest : LibraryTestBase() {
     private val activated = mutableListOf<Session>()
     private val usable = mutableSetOf(s1u1, s1u2, s2u1)
     private val proved = ProvedSwitches(clock)
+    private var active: Session? = kid
 
     private fun TestScope.locks() = ProfileLocks(db.profileDao(), hasher, clock, StandardTestDispatcher(testScheduler)) {}
 
     private fun switch(locks: ProfileLocks, setActive: suspend (String, String) -> Unit = { s, u -> activated += Session(s, u) }) =
-        ProfileSwitch(setActive, { it in usable }, locks, proved)
+        ProfileSwitch(setActive, { it in usable }, { active }, locks, proved)
 
     private fun CharArray.isZeroed() = all { it == '\u0000' }
 
@@ -89,6 +90,26 @@ class ProfileSwitchTest : LibraryTestBase() {
         val switch = switch(locks) { s, u -> provedWhenSet = proved.consume(Session(s, u)) }
         assertEquals(SwitchResult.Switched, switch.switchWithPin(S1, U1, "4826".toCharArray()))
         assertTrue(provedWhenSet)
+    }
+
+    @Test fun aSetThatFailsLeavesNoProof() = runTest {
+        val locks = locks()
+        locks.protect(adult, "4826".toCharArray())
+        val switch = switch(locks) { _, _ -> throw IllegalArgumentException("No such account") } // removed after the usable check
+        try {
+            switch.switchWithPin(S1, U1, "4826".toCharArray())
+            fail("the failure is passed on")
+        } catch (_: IllegalArgumentException) {
+        }
+        assertFalse("a leftover proof would excuse a later unproved sign-in", proved.consume(adult))
+    }
+
+    @Test fun aSwitchToTheProfileAlreadyActiveLeavesNoProof() = runTest {
+        val locks = locks()
+        locks.protect(adult, "4826".toCharArray())
+        active = adult // no change follows, so the gate would never use the proof up
+        assertEquals(SwitchResult.Switched, switch(locks).switchWithPin(S1, U1, "4826".toCharArray()))
+        assertFalse(proved.consume(adult))
     }
 
     @Test fun aProofLastsTenSecondsAndOnlyForThatProfile() {
@@ -143,7 +164,7 @@ class ProfileSwitchTest : LibraryTestBase() {
         servers.warmTokens()
         servers.setActive(S1, U2)
         locks.protect(adult, "4826".toCharArray())
-        val switch = ProfileSwitch(servers::setActive, { servers.cachedToken(it.serverId, it.userId) != null }, locks, proved)
+        val switch = ProfileSwitch(servers::setActive, { servers.cachedToken(it.serverId, it.userId) != null }, { servers.active()?.let { Session(it.serverId, it.userId) } }, locks, proved)
         assertEquals(SwitchResult.NeedsPin, switch.switchTo(S1, U1))
         assertEquals(U2, servers.active()?.userId)
         assertEquals(SwitchResult.Switched, switch.switchWithPin(S1, U1, "4826".toCharArray()))

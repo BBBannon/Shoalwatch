@@ -39,6 +39,11 @@ class ProvedSwitches(private val clock: MonotonicClock) {
         at = clock.nowMs()
     }
 
+    /** Drops a proof for [s] that no change will use (the set failed). */
+    @Synchronized fun forget(s: Session) {
+        if (last == s) last = null
+    }
+
     /** True once, within [VALID_MS] of [record] for exactly [s]. */
     @Synchronized fun consume(s: Session): Boolean {
         val fresh = last == s && clock.nowMs() - at <= VALID_MS
@@ -64,6 +69,8 @@ class ProfileProtectedException : IllegalStateException("That profile is protect
 class ProfileSwitch(
     private val setActive: suspend (serverId: String, userId: String) -> Unit,
     private val usable: suspend (Session) -> Boolean,
+    /** The active session now (`ServerStore.active`). */
+    private val active: suspend () -> Session?,
     private val locks: ProfileLocks,
     private val proved: ProvedSwitches,
 ) : ProfileSwitcher {
@@ -82,8 +89,16 @@ class ProfileSwitch(
             !locks.isProtected(s) -> switchTo(serverId, userId)
             else -> when (val check = locks.check(s, pin)) {
                 PinCheck.Correct -> {
-                    proved.record(s)
-                    setActive(serverId, userId)
+                    // Already active: no change follows, so no proof is left lying about (final review M4).
+                    if (active() != s) {
+                        proved.record(s)
+                        try {
+                            setActive(serverId, userId)
+                        } catch (e: Throwable) {
+                            proved.forget(s) // nothing changed: the proof must not excuse a later change (final review M4)
+                            throw e
+                        }
+                    }
                     SwitchResult.Switched
                 }
                 else -> SwitchResult.NotSwitched(check)
