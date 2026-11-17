@@ -1,3 +1,4 @@
+v1.125 — 17/11/2026 — Milestone 5 finished: ticks show straight away, even offline, and reach your server in order with the time you actually watched; finishing a downloaded episode offers one press to mark it watched and delete it; shared tablets follow one clear rule for shared downloads; the next episodes can download by themselves on Wi-Fi; and a new Storage screen shows what is using space.
 v1.124 — 17/11/2026 — The Storage screen and a downloaded series' page are now readable in the dark theme.
 v1.123 — 17/11/2026 — On servers that don't share watch details directly, a later watch on another device is no longer undone, and play counts now go up.
 v1.122 — 17/11/2026 — Changes made just before the phone restarts are now sent by themselves once it is back online, without opening the app.
