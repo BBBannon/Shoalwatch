@@ -2,7 +2,8 @@ package app.shoalwatch.ui
 
 import android.content.Context
 import android.content.Intent
-import androidx.lifecycle.Lifecycle
+import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
+import androidx.test.runner.lifecycle.Stage
 import app.shoalwatch.ui.player.PipActionReceiver
 import app.shoalwatch.ui.player.PipWish
 import app.shoalwatch.ui.player.pipParams
@@ -45,6 +46,7 @@ import java.util.Collections
  * in-process `MockWebServer` and seeding), then into the small window with the player's own params. It checks the position
  * goes on there, that the window's play/pause broadcast (explicit, to this package) pauses (the pause is reported with the
  * position), and that closing the window (the activity stopping) leaves the player paused when the app is opened again.
+ * The clip is 10 s long: 2 s before the window, 2 s in it, then the rest well inside the clip (review I1 of Tasks 9-10).
  */
 @RunWith(AndroidJUnit4::class)
 class PipSmokeTest {
@@ -165,6 +167,16 @@ class PipSmokeTest {
         return shown
     }
 
+    /** The activity's lifecycle stage as the test runner sees it (read on the main thread). */
+    private fun stage(): Stage? {
+        val activity = compose.activity // fetched off the main thread (it goes through the scenario)
+        var found: Stage? = null
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            found = ActivityLifecycleMonitorRegistry.getInstance().getLifecycleStageOf(activity)
+        }
+        return found
+    }
+
     private fun pressPipPlayPause() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         context.sendBroadcast(Intent(PipActionReceiver.ACTION).setPackage(context.packageName))
@@ -190,20 +202,26 @@ class PipSmokeTest {
         // Into the small window, as the system does on the swipe home with the params the player set.
         compose.activityRule.scenario.onActivity { it.enterPictureInPictureMode(pipParams(it, PipWish(320, 180, playing = true, sourceRect = null))) }
         waitFor(timeoutMs = 10_000) { inPip() }
-        Thread.sleep(3_000) // playing on in the small window
+        Thread.sleep(2_000) // playing on in the small window
 
         // The window's own button: an explicit broadcast to this package. The pause is reported with the position reached.
         pressPipPlayPause()
         waitFor(timeoutMs = 10_000) { progress().any { it.first } }
         val pausedAt = progress().first { it.first }.second
-        assertTrue("the position went on in the small window (ticks $pausedAt)", pausedAt >= 40_000_000L)
+        assertTrue("the position went on in the small window (ticks $pausedAt)", pausedAt >= 30_000_000L)
 
         // Play again, then close the window: the activity stops, and the player pauses as it always does when the app is left.
         pressPipPlayPause()
         waitFor(timeoutMs = 10_000) { progress().lastOrNull()?.first == false }
-        compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
+        // Closed as the system closes it: the pinned task goes (a full-screen activity in another task would not cover the window,
+        // so ActivityScenario's own move to CREATED never sees a stop: review I1 of Tasks 9-10).
+        compose.activityRule.scenario.onActivity { it.moveTaskToBack(true) }
+        waitFor(timeoutMs = 10_000) { stage() == Stage.STOPPED }
         waitFor(timeoutMs = 10_000) { progress().lastOrNull()?.first == true }
-        compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+        // Opened again: the same activity brought to the front, as the launcher does.
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        context.startActivity(Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
+        waitFor(timeoutMs = 10_000) { stage() == Stage.RESUMED }
         Thread.sleep(2_000)
         assertEquals("still paused once back", true, progress().last().first)
     }

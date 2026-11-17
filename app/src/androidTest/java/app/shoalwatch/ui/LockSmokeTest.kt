@@ -9,6 +9,7 @@ import android.view.WindowManager
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasAnyChild
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
@@ -40,6 +41,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.ExternalResource
@@ -120,6 +122,8 @@ class LockSmokeTest {
             mock.start()
             runBlocking {
                 graph.tokensWarmed.join()
+                // Seeding protects ben as the first PIN on the phone; with another profile already protected that is refused.
+                assumeTrue("no other protected profile on this device", parts.profileLocks.protectedProfiles.first().isEmpty())
                 previous = graph.serverCatalog.activeSession().first()
                 previousLockAfter = parts.lockPrefs.settings.value.lockAfter
                 captured = true
@@ -132,8 +136,9 @@ class LockSmokeTest {
                 graph.serverStore.upsertAccount(Account(serverId, ben, "ben", tokens.getValue(ben)), makeActive = false)
                 graph.serverStore.upsertAccount(Account(serverId, anna, "anna", tokens.getValue(anna)), makeActive = false)
                 graph.serverStore.upsertAccount(Account(serverId, kid, "kid", tokens.getValue(kid)), makeActive = true)
-                assertTrue("ben protected (the first PIN on this phone)", parts.profileLocks.protect(Session(serverId, ben), pin.toCharArray()))
+                // Before ben is protected: a lock setting needs the household check, which passes while nobody is protected.
                 parts.lockPrefs.setLockAfter(LockAfter.IMMEDIATELY)
+                assertTrue("ben protected (the first PIN on this phone)", parts.profileLocks.protect(Session(serverId, ben), pin.toCharArray()))
             }
         }
 
@@ -142,7 +147,7 @@ class LockSmokeTest {
         /** Each step on its own, so one failing never skips the rest. Safe if nothing was seeded or the mock never started. */
         private fun cleanUp() {
             runCatching { runBlocking { graph.serverStore.removeServer(serverId) } } // the accounts, ben's lock and their settings
-            runCatching { previousLockAfter?.let { parts.lockPrefs.setLockAfter(it) } }
+            runCatching { previousLockAfter?.let { runBlocking { parts.lockPrefs.setLockAfter(it) } } } // after ben's lock has gone
             runCatching {
                 val back = previous
                 if (captured && back != null && back.serverId != serverId) runBlocking { graph.serverStore.setActive(back.serverId, back.userId) }
@@ -163,6 +168,19 @@ class LockSmokeTest {
 
     private fun tap(text: String) {
         val node = compose.onAllNodes(hasText(text).and(SemanticsMatcher.keyIsDefined(SemanticsActions.OnClick))).onFirst()
+        runCatching { node.performScrollTo() }
+        node.performClick()
+    }
+
+    /**
+     * "Add another account" in the "Lock Den" card only (review I2 of Tasks 7-8): another saved server listed first must never be
+     * the one signed in to. The card is the node whose own children include the server's name.
+     */
+    private fun tapAddAccountOnThisServer() {
+        val node = compose.onNode(
+            hasText(string(R.string.server_add_account)).and(SemanticsMatcher.keyIsDefined(SemanticsActions.OnClick))
+                .and(hasAnyAncestor(hasAnyChild(hasText(serverName)))),
+        )
         runCatching { node.performScrollTo() }
         node.performClick()
     }
@@ -218,7 +236,7 @@ class LockSmokeTest {
         openAccountMenu()
         tap(string(R.string.home_manage))
         waitFor { shown(string(R.string.server_add_account)) }
-        tap(string(R.string.server_add_account))
+        tapAddAccountOnThisServer()
         waitFor { shown(string(R.string.qc_use_password)) || compose.onAllNodes(hasText(string(R.string.username_label))).fetchSemanticsNodes().isNotEmpty() }
         if (shown(string(R.string.qc_use_password))) tap(string(R.string.qc_use_password))
         waitFor { compose.onAllNodes(hasSetTextAction()).fetchSemanticsNodes().size >= 2 }
