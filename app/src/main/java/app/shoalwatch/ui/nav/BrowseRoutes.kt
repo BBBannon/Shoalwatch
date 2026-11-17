@@ -78,8 +78,14 @@ internal fun NavHostController.open(destination: Destination) {
 
 @Composable
 internal fun HomeRoute(graph: AppGraph, nav: NavHostController, fresh: Boolean) {
-    val vm = graphViewModel { HomeViewModel(graph.serverCatalog, graph.addressSelector, graph.library, graph.playstate, refreshOnOpen = fresh) }
+    val vm = graphViewModel {
+        HomeViewModel(
+            graph.serverCatalog, graph.addressSelector, graph.library, graph.playstate, refreshOnOpen = fresh,
+            switcher = graph.lockParts.switcher, protection = graph.lockParts.profileLocks.protectedProfiles,
+        )
+    }
     val state by vm.state.collectAsStateWithLifecycle()
+    val prompt by vm.switchPrompt.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val actions = remember(vm, nav) {
         HomeActions(
@@ -94,9 +100,11 @@ internal fun HomeRoute(graph: AppGraph, nav: NavHostController, fresh: Boolean) 
             onRemoveFromResume = vm::removeFromResume,
             onSetPlayed = vm::setPlayed,
             onSetFavourite = vm::setFavourite,
+            onSubmitSwitch = vm::submitSwitch,
+            onDismissSwitch = vm::dismissSwitch,
         )
     }
-    AppShell(Tab.HOME, nav::switchTab, snackbar) { HomeScreen(state, actions, vm.messages, snackbar) }
+    AppShell(Tab.HOME, nav::switchTab, snackbar) { HomeScreen(state, actions, vm.messages, snackbar, prompt, vm.switchPin) }
 }
 
 @Composable
@@ -243,16 +251,20 @@ internal fun StorageRoute(graph: AppGraph, nav: NavHostController) {
 
 @Composable
 internal fun DownloadSettingsRoute(graph: AppGraph, nav: NavHostController) {
-    val vm = graphViewModel { app.shoalwatch.ui.downloads.DownloadSettingsViewModel(graph.serverCatalog, graph.downloads, graph.housekeeping) }
+    val vm = graphViewModel {
+        app.shoalwatch.ui.downloads.DownloadSettingsViewModel(graph.serverCatalog, graph.downloads, graph.housekeeping, graph.lockParts.householdGuard)
+    }
     val state by vm.state.collectAsStateWithLifecycle()
+    val grownUp by vm.grownUpAsk.collectAsStateWithLifecycle()
     androidx.compose.runtime.LaunchedEffect(Unit) { vm.refreshCards() }
     val actions = remember(vm, nav) {
         app.shoalwatch.ui.downloads.DownloadSettingsActions(
             onBack = { nav.popBackStack() }, onMobileData = vm::setMobileData, onStorage = vm::setStorage, onQuality = vm::setDefaultQuality, onSharing = vm::setSharing,
             onAfterFinish = vm::setAfterFinish, onDeleteShared = vm::setDeleteShared, onAutoNext = vm::setAutoNext,
+            onChooseGrownUp = vm::chooseGrownUp, onSubmitGrownUp = vm::submitGrownUp, onDismissGrownUp = vm::dismissGrownUp,
         )
     }
-    app.shoalwatch.ui.downloads.DownloadSettingsScreen(state, actions)
+    app.shoalwatch.ui.downloads.DownloadSettingsScreen(state, actions, grownUp = grownUp, grownUpPin = vm.grownUpPin)
 }
 
 @Composable

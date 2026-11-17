@@ -44,7 +44,9 @@ class HomeViewModelTest {
     private val playstate = FakePlaystate()
     private val online = Connection.Online(address("http://192.168.1.10:8096"), isHome = true)
 
-    private fun vm(refreshOnOpen: Boolean = false) = HomeViewModel(catalog, connections, library, playstate, refreshOnOpen)
+    private val switcher = app.shoalwatch.ui.lock.FakeSwitcher(catalog)
+    private val protection = kotlinx.coroutines.flow.MutableStateFlow<Set<app.shoalwatch.data.servers.Session>>(emptySet())
+    private fun vm(refreshOnOpen: Boolean = false) = HomeViewModel(catalog, connections, library, playstate, refreshOnOpen, switcher, protection)
 
     private fun row(vararg items: app.shoalwatch.data.library.ItemWithUserData, f: Freshness = Freshness.Fresh) = HomeRow(items.toList(), f)
 
@@ -154,8 +156,29 @@ class HomeViewModelTest {
         val v = vm()
         assertEquals(listOf("ben", "amy"), v.state.value.accounts.map { it.userName })
         v.switchAccount(AMY.userId)
-        assertEquals(listOf(SERVER_ID to AMY.userId), catalog.activated)
+        assertEquals("through the switcher", listOf(AMY), switcher.switchToCalls)
+        assertTrue("never the catalog's setActive", catalog.activated.isEmpty())
         assertEquals(AMY, v.state.value.session)
+    }
+
+    @Test fun switchingToAProtectedAccountAsksForItsPinFirst() {
+        protection.value = setOf(AMY)
+        switcher.protected += AMY
+        val v = vm()
+        assertEquals(setOf(AMY.userId), v.state.value.protectedUsers)
+        v.switchAccount(AMY.userId)
+        assertEquals("amy", v.switchPrompt.value?.userName)
+        assertEquals(BEN, v.state.value.session)
+        v.switchPin.edit { append("1111") }
+        v.submitSwitch()
+        assertEquals(app.shoalwatch.security.PinCheck.Wrong(4), v.switchPrompt.value?.answer)
+        assertEquals(BEN, v.state.value.session)
+        v.switchPin.edit { append("4826") }
+        v.submitSwitch()
+        assertNull(v.switchPrompt.value)
+        assertEquals(AMY, v.state.value.session)
+        assertTrue(catalog.activated.isEmpty())
+        assertEquals("", v.switchPin.text.toString())
     }
 
     // --- freshness -> banner ---------------------------------------------------------------------------------
@@ -440,8 +463,9 @@ class HomeViewModelTest {
     @Test fun switchingToAnAccountThatIsGoneIsReported() = kotlinx.coroutines.test.runTest {
         val v = vm()
         v.messages.test {
+            switcher.gone += app.shoalwatch.data.servers.Session(SERVER_ID, "nobody")
             v.switchAccount("nobody")
-            assertEquals(AppError.of(AppError.Kind.UNKNOWN).userMessage, awaitItem())
+            assertEquals(AppError.of(AppError.Kind.NOT_SIGNED_IN).userMessage, awaitItem())
             cancelAndIgnoreRemainingEvents()
         }
     }

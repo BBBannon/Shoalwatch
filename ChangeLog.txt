@@ -1,3 +1,4 @@
+v1.122 — 17/11/2026 — Switching to a protected profile now asks for its PIN, protected profiles are marked "Protected", and household settings (sharing downloads, deleting shared downloads, server settings, removing a server) ask for a grown-up's PIN.
 v1.121 — 17/11/2026 — Added a lock screen: a protected profile asks for its PIN (with "Forgot PIN?" using the server password), the app can ask for the phone's screen lock, and links from other apps can no longer open a page inside Shoalwatch.
 v1.120 — 16/11/2026 — If a firewall blocks the message sent when you stop watching, where you stopped is now kept and sent later instead of being lost.
 v1.119 — 16/11/2026 — After watching part of a download offline and then carrying on online, the app no longer goes back to the old offline spot after it restarts.

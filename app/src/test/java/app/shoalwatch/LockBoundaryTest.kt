@@ -34,6 +34,10 @@ class LockBoundaryTest {
         assertTrue("ClearProof's constructor is private", File(root, "security/ClearProof.kt").readText().contains("class ClearProof private constructor"))
     }
 
+    @Test fun noScreenChangesTheActiveProfileButThroughTheSwitcher() {
+        assertEquals("ui/ calls setActive", emptyList<String>(), filesCalling(Regex("""\.setActive\(""")).filter { it.startsWith("ui/") })
+    }
+
     @Test fun theLockScreenOffersNoQuickConnect() {
         listOf("ui/lock/LockViewModel.kt", "ui/lock/ForgotPinPanel.kt", "ui/lock/LockScreen.kt").forEach {
             val code = File(root, it).readLines().filterNot { l -> l.trim().startsWith("*") || l.trim().startsWith("/") }.joinToString("\n")

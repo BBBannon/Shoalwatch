@@ -28,6 +28,11 @@ import app.shoalwatch.data.downloads.DownloadQuality
 import app.shoalwatch.data.downloads.SharedDelete
 import app.shoalwatch.data.downloads.StorageKind
 import app.shoalwatch.ui.components.AppScreen
+import androidx.compose.foundation.text.input.TextFieldState
+import app.shoalwatch.data.servers.AccountSummary
+import app.shoalwatch.ui.components.ErrorMessage
+import app.shoalwatch.ui.lock.GrownUpAsk
+import app.shoalwatch.ui.lock.GrownUpDialog
 import app.shoalwatch.ui.present.DownloadText
 import app.shoalwatch.ui.present.rememberStrings
 
@@ -41,6 +46,9 @@ data class DownloadSettingsActions(
     val onAfterFinish: (AfterFinish) -> Unit = {},
     val onDeleteShared: (SharedDelete) -> Unit = {},
     val onAutoNext: (Int) -> Unit = {},
+    val onChooseGrownUp: (AccountSummary) -> Unit = {},
+    val onSubmitGrownUp: () -> Unit = {},
+    val onDismissGrownUp: () -> Unit = {},
 )
 
 /**
@@ -51,10 +59,20 @@ data class DownloadSettingsActions(
  * notifications are off. Every row is 48dp or more and says its state; the screen scrolls (`AppScreen`).
  */
 @Composable
-fun DownloadSettingsScreen(state: DownloadSettingsUiState, actions: DownloadSettingsActions, notificationsOn: Boolean = notificationsEnabled()) {
+fun DownloadSettingsScreen(
+    state: DownloadSettingsUiState,
+    actions: DownloadSettingsActions,
+    notificationsOn: Boolean = notificationsEnabled(),
+    grownUp: GrownUpAsk? = null,
+    grownUpPin: TextFieldState? = null,
+) {
     val strings = rememberStrings()
     val context = LocalContext.current
+    if (grownUp != null && grownUpPin != null) {
+        GrownUpDialog(grownUp, grownUpPin, actions.onChooseGrownUp, actions.onSubmitGrownUp, actions.onDismissGrownUp)
+    }
     AppScreen(title = stringResource(R.string.dl_settings_title), onBack = actions.onBack) {
+        if (state.householdRace) ErrorMessage(stringResource(R.string.grownup_race))
         SwitchRow(stringResource(R.string.dl_mobile_data), stringResource(R.string.dl_mobile_data_off), state.settings.mobileData, actions.onMobileData)
         Heading(stringResource(R.string.dl_save_to))
         QualityRow(stringResource(R.string.dl_save_phone), null, state.settings.storage == StorageKind.INTERNAL) { actions.onStorage(StorageKind.INTERNAL, null) }

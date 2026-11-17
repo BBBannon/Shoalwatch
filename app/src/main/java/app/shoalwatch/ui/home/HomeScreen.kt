@@ -65,6 +65,9 @@ import app.shoalwatch.ui.present.detailsDestination
 import app.shoalwatch.ui.present.displayName
 import app.shoalwatch.ui.present.rememberStrings
 import kotlinx.coroutines.flow.Flow
+import androidx.compose.foundation.text.input.TextFieldState
+import app.shoalwatch.ui.lock.SwitchPinDialog
+import app.shoalwatch.ui.lock.SwitchPrompt
 
 /** Everything Home can ask for. The route wires these to the ViewModel and to navigation. */
 class HomeActions(
@@ -81,6 +84,8 @@ class HomeActions(
     val onRemoveFromResume: (itemId: String) -> Unit,
     val onSetPlayed: (itemId: String, played: Boolean) -> Unit,
     val onSetFavourite: (itemId: String, favourite: Boolean) -> Unit,
+    val onSubmitSwitch: () -> Unit = {},
+    val onDismissSwitch: () -> Unit = {},
 )
 
 /**
@@ -90,8 +95,16 @@ class HomeActions(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(state: HomeUiState, actions: HomeActions, messages: Flow<String>, snackbar: SnackbarHostState) {
+fun HomeScreen(
+    state: HomeUiState,
+    actions: HomeActions,
+    messages: Flow<String>,
+    snackbar: SnackbarHostState,
+    switchPrompt: SwitchPrompt? = null,
+    switchPin: TextFieldState? = null,
+) {
     CollectMessages(messages, snackbar, state.session)
+    if (switchPrompt != null && switchPin != null) SwitchPinDialog(switchPrompt, switchPin, actions.onSubmitSwitch, actions.onDismissSwitch)
     when (state.phase) {
         HomePhase.SIGNED_OUT -> Placeholder(actions) {
             NoticeCard(stringResource(R.string.home_signed_out_title), stringResource(R.string.home_signed_out_body), tone = Tone.Info)

@@ -31,6 +31,11 @@ class FakeSwitcher(private val catalog: FakeCatalog? = null) : ProfileSwitcher {
     val pinCalls = mutableListOf<Pair<Session, String>>()
     val pinArrays = mutableListOf<CharArray>()
 
+    /** As the store does (not the catalog's refusing `setActive`, so `FakeCatalog.activated` stays the record of screens' calls). */
+    private fun activate(s: Session) {
+        catalog?.let { c -> c.activeFlow.value = c.accountList.value.first { it.serverId == s.serverId && it.userId == s.userId } }
+    }
+
     override suspend fun switchTo(serverId: String, userId: String): SwitchResult {
         val s = Session(serverId, userId)
         switchToCalls += s
@@ -38,7 +43,7 @@ class FakeSwitcher(private val catalog: FakeCatalog? = null) : ProfileSwitcher {
         return when (s) {
             in gone -> SwitchResult.Gone
             in protected -> SwitchResult.NeedsPin
-            else -> SwitchResult.Switched.also { catalog?.setActive(serverId, userId) }
+            else -> SwitchResult.Switched.also { activate(s) }
         }
     }
 
@@ -50,7 +55,7 @@ class FakeSwitcher(private val catalog: FakeCatalog? = null) : ProfileSwitcher {
         failure?.let { throw it }
         when {
             s in gone -> SwitchResult.Gone
-            String(pin) == rightPin -> SwitchResult.Switched.also { catalog?.setActive(serverId, userId) }
+            String(pin) == rightPin -> SwitchResult.Switched.also { activate(s) }
             else -> SwitchResult.NotSwitched(wrongAnswer)
         }
     } finally {

@@ -22,6 +22,7 @@ import app.shoalwatch.ui.servers.ServerEditActions
 import app.shoalwatch.ui.servers.ServerEditScreen
 import app.shoalwatch.ui.servers.ServerEditViewModel
 import app.shoalwatch.ui.servers.ServersActions
+import app.shoalwatch.ui.servers.ServersPinDialogs
 import app.shoalwatch.ui.servers.ServersScreen
 import app.shoalwatch.ui.servers.ServersViewModel
 import kotlinx.coroutines.launch
@@ -88,8 +89,21 @@ internal fun SignInRoute(graph: AppGraph, nav: NavHostController, serverId: Stri
 
 @Composable
 internal fun ServersRoute(graph: AppGraph, nav: NavHostController) {
-    val vm = graphViewModel { ServersViewModel(graph.serverCatalog, graph.authenticator, sharing = graph.downloads::sharing, rights = graph.adminRights, sync = graph.sync) }
+    val vm = graphViewModel {
+        ServersViewModel(
+            graph.serverCatalog, graph.authenticator, sharing = graph.downloads::sharing, rights = graph.adminRights, sync = graph.sync,
+            switcher = graph.lockParts.switcher, household = graph.lockParts.householdGuard, protection = graph.lockParts.profileLocks.protectedProfiles,
+        )
+    }
     val state by vm.state.collectAsStateWithLifecycle()
+    val prompt by vm.switchPrompt.collectAsStateWithLifecycle()
+    val grownUp by vm.grownUpAsk.collectAsStateWithLifecycle()
+    LaunchedEffect(state.openSettings) {
+        state.openSettings?.let { id ->
+            vm.settingsOpened()
+            nav.navigate(Routes.serverEdit(id))
+        }
+    }
     val actions = remember(vm) {
         ServersActions(
             onBack = { nav.popBackStack() },
@@ -99,14 +113,19 @@ internal fun ServersRoute(graph: AppGraph, nav: NavHostController) {
             onAskRemove = vm::askRemoveServer,
             onAddAccount = { nav.navigate(Routes.signIn(it)) },
             onSignInAgain = { serverId, userName -> nav.navigate(Routes.signIn(serverId, userName)) },
-            onSettings = { nav.navigate(Routes.serverEdit(it)) },
+            onSettings = vm::openSettings,
             onConfirm = vm::confirm,
             onDismissConfirm = vm::dismissConfirm,
             onDismissNotice = vm::dismissNotice,
             onAdmin = { nav.navigate(AdminRoutes.DASHBOARD) { launchSingleTop = true } },
+            onSubmitSwitch = vm::submitSwitch,
+            onDismissSwitch = vm::dismissSwitch,
+            onChooseGrownUp = vm::chooseGrownUp,
+            onSubmitGrownUp = vm::submitGrownUp,
+            onDismissGrownUp = vm::dismissGrownUp,
         )
     }
-    ServersScreen(state, actions)
+    ServersScreen(state, actions, ServersPinDialogs(prompt, vm.switchPin, grownUp, vm.grownUpPin))
 }
 
 @Composable
