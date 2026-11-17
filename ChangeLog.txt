@@ -1,3 +1,4 @@
+v1.143 — 17/11/2026 — A film in the small picture-in-picture window no longer closes when the phone switches to dark mode or its language or text size changes
 v1.142 — 17/11/2026 — Cancelling a PIN in Settings while it is being checked now stays cancelled
 v1.141 — 17/11/2026 — Settings now tells you when a change could not be saved
 v1.140 — 17/11/2026 — On a tablet turned on its side, choosing another season of a show now starts its episode list at the top

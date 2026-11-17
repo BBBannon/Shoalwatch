@@ -46,12 +46,17 @@ internal class ActivityPip(
         get() = activity.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
 
     override fun wish(w: PipWish?, onPlayPause: (() -> Unit)?) {
+        val had = current != null
         current = w
         this.onPlayPause = onPlayPause
         if (w != null) register() else unregister()
         // The player went while in the small window (the last episode ended, playback failed, the lock cover): close the window
         // rather than show the page beneath in it (review M1 of Tasks 9-10). That stops the activity: leaving, as any close is.
-        if (w == null && mutableInPip.value && !activity.isChangingConfigurations) activity.moveTaskToBack(false)
+        // Only a wish this instance held: one recreated in the window withdraws on its first frame, under the lock cover until
+        // the lock state is read, and that must not close it (re-review N1).
+        if (w == null && had && mutableInPip.value && !activity.isChangingConfigurations) {
+            if (!activity.moveTaskToBack(false)) AppLog.w(TAG, "picture-in-picture window not closed: not the task root")
+        }
         if (!supported) return
         // Android 10–11 has no auto-enter, so nothing needs withdrawing there; the params are still kept current for the button.
         if (w == null && sdkInt < Build.VERSION_CODES.S) return

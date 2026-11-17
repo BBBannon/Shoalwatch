@@ -250,6 +250,29 @@ class PictureInPictureTest {
         } finally { controller.pause().stop().destroy() }
     }
 
+    /**
+     * Re-review N1: recreated in the small window (dark mode at sunset, a new language or font size), the new instance's first
+     * frame has the lock cover up, so the player withdraws a wish this instance never made. That is not the player going: the
+     * window stays. A wish made and then withdrawn by this instance still closes it.
+     */
+    @Test fun aRecreationInTheSmallWindowDoesNotCloseIt() {
+        val controller = Robolectric.buildActivity(PipTestActivity::class.java).setup()
+        val activity = controller.get()
+        val old = ActivityPip(activity, { autoEnter }, { recorder })
+        try {
+            old.wish(wish()) {}
+            assertTrue(old.enterNow())
+            val recreated = ActivityPip(activity, { autoEnter }, { recorder }) // a new instance's host, already in the window
+            recreated.onActivityStarted()
+            assertTrue(recreated.inPip.value)
+            recreated.wish(null, null) // the first frame: the cover is up until the lock state is read
+            assertEquals("the window stays", 0, activity.movedBack)
+            recreated.wish(wish()) {}
+            recreated.wish(null, null) // the player really went
+            assertEquals("closed", 1, activity.movedBack)
+        } finally { controller.pause().stop().destroy() }
+    }
+
     /** Review M4 of Tasks 9-10: a device with a narrower aspect range refuses the params with IllegalArgumentException; no crash. */
     @Test fun anAspectTheDeviceRefusesIsNotACrash() {
         val controller = Robolectric.buildActivity(PipTestActivity::class.java).setup()
