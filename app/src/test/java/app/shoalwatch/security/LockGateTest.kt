@@ -22,7 +22,13 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Assert.assertNull
 import org.junit.Test
+import app.shoalwatch.data.servers.Session
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.TestCoroutineScheduler
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.runCurrent
 import java.io.File
 import javax.crypto.KeyGenerator
 
@@ -51,8 +57,8 @@ class LockGateTest : LibraryTestBase() {
     }
 
     private fun TestScope.gate(): LockGate {
-        locks = ProfileLocks(db.profileDao(), hasher, clock, StandardTestDispatcher(testScheduler))
-        household = HouseholdGuard(locks, catalog, clock, backgroundScope)
+        locks = ProfileLocks(db.profileDao(), hasher, clock, StandardTestDispatcher(testScheduler)) {}
+        household = HouseholdGuard(locks, catalog, clock, backgroundScope) { true }
         return LockGate(prefs.settings, locks, catalog, proved, household, { secure }, clock, backgroundScope) { prefs.setAppLock(false) }
     }
 
@@ -142,7 +148,7 @@ class LockGateTest : LibraryTestBase() {
 
     @Test fun anExpectedTripDoesNotCountButTheNextOneDoes() = runTest {
         val gate = openAsAdult()
-        gate.expectReturn(); gate.onLeft(); clock.ms += 600_000; gate.onReturned()
+        gate.expectReturn(); gate.onLeft(); clock.ms += 90_000; gate.onReturned()
         assertEquals(LockState.Open, gate.state.value)
         gate.onLeft(); clock.ms += 600_000; gate.onReturned()
         assertEquals(LockState.Profile(adult, "ann"), gate.state.value)
@@ -314,5 +320,75 @@ class LockGateTest : LibraryTestBase() {
         listOf("System.currentTimeMillis", "Instant.now", "Clock.system", "Date(", "SystemClock").forEach {
             assertFalse("$it in LockGate", it in source)
         }
+    }
+
+    // ---- review I3: the gate decides at once, and nothing is open for a profile it has not judged
+
+    /** A gate whose store reads never answer (its own [ProfileLocks] runs on a dispatcher nobody advances). */
+    private fun TestScope.frozenGate(): LockGate {
+        gate()
+        val frozen = ProfileLocks(db.profileDao(), hasher, clock, StandardTestDispatcher(TestCoroutineScheduler())) {}
+        return LockGate(prefs.settings, frozen, catalog, proved, household, { secure }, clock, backgroundScope) { prefs.setAppLock(false) }
+    }
+
+    @Test fun aChangeToAProtectedProfileLocksAtOnceWithoutReadingTheStore() = runTest {
+        val gate = frozenGate()
+        protectAdult()
+        gate.start()
+        assertEquals(LockState.Open, gate.settled())
+        gate.hideRecents.first { it } // the protected set is known
+        catalog.activeFlow.value = adultA
+        runCurrent()
+        assertEquals(LockState.Profile(adult, "ann"), gate.state.value)
+        assertNull(gate.openFor.value)
+    }
+
+    @Test fun anUnprotectedChangeIsJudgedOpenOnlyOnceTheStoreHasAnswered() = runTest {
+        val gate = frozenGate()
+        protectAdult()
+        gate.start()
+        assertEquals(LockState.Open, gate.settled())
+        assertEquals(Judged(Session(S1, U2)), gate.openFor.value)
+        catalog.activeFlow.value = otherA
+        runCurrent()
+        assertNull("not judged while the store has not answered", gate.openFor.value)
+        assertFalse(gate.isOpenFor(Session(S2, U1)))
+    }
+
+    @Test fun nothingIsOpenUntilTheGateHasJudgedTheFirstProfile() = runTest {
+        val gate = gate()
+        protectAdult()
+        catalog.activeFlow.value = adultA
+        assertNull("before start", gate.openFor.value)
+        gate.start()
+        assertEquals(LockState.Profile(adult, "ann"), gate.settled())
+        assertNull(gate.openFor.value)
+        assertFalse(gate.isOpenFor(adult))
+        assertEquals(PinCheck.Correct, gate.unlockProfile("4826".toCharArray()))
+        assertEquals(Judged(adult), gate.openFor.value)
+        assertTrue(gate.isOpenFor(adult))
+    }
+
+    @Test fun aKidToAdultToKidChangeIsNeverOpenForTheAdultWhateverTheGateSaw() = runTest {
+        val gate = gate()
+        protectAdult()
+        gate.start()
+        assertEquals(LockState.Open, gate.settled())
+        gate.hideRecents.first { it }
+        val seen = mutableListOf<Pair<Session?, Boolean>>()
+        // A screen collecting the active session at once, as every ViewModel does: what it may show is what the gate has opened.
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { catalog.activeSession().collect { seen += it to gate.isOpenFor(it) } }
+        catalog.activeFlow.value = adultA
+        catalog.activeFlow.value = kidA
+        settle()
+        assertTrue("the screen saw the adult", seen.any { it.first == adult })
+        assertTrue("never open for the adult: $seen", seen.none { it.first == adult && it.second })
+        assertEquals(Judged(Session(S1, U2)), gate.openFor.value)
+    }
+
+    @Test fun anExcusedTripStillLocksAfterTwoMinutes() = runTest {
+        val gate = openAsAdult()
+        gate.expectReturn(); gate.onLeft(); clock.ms += LockGate.EXCUSED_CAP_MS; gate.onReturned()
+        assertEquals(LockState.Profile(adult, "ann"), gate.state.value)
     }
 }

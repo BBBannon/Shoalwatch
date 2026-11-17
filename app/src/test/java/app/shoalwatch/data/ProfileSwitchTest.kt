@@ -40,7 +40,7 @@ class ProfileSwitchTest : LibraryTestBase() {
     private val usable = mutableSetOf(s1u1, s1u2, s2u1)
     private val proved = ProvedSwitches(clock)
 
-    private fun TestScope.locks() = ProfileLocks(db.profileDao(), hasher, clock, StandardTestDispatcher(testScheduler))
+    private fun TestScope.locks() = ProfileLocks(db.profileDao(), hasher, clock, StandardTestDispatcher(testScheduler)) {}
 
     private fun switch(locks: ProfileLocks, setActive: suspend (String, String) -> Unit = { s, u -> activated += Session(s, u) }) =
         ProfileSwitch(setActive, { it in usable }, locks, proved)

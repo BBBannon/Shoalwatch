@@ -71,8 +71,8 @@ class HouseholdEnforcementTest : ReleaseTestBase() {
     @Before fun setUpGuard() = runBlocking {
         servers.warmTokens()
         servers.setActive(S1, U2)
-        locks = ProfileLocks(db.profileDao(), PinHasher(SecretBox { key }, iterations = 1_000), clock, Dispatchers.IO)
-        guard = HouseholdGuard(locks, StoreCatalog(servers), clock, guardScope)
+        locks = ProfileLocks(db.profileDao(), PinHasher(SecretBox { key }, iterations = 1_000), clock, Dispatchers.IO) {}
+        guard = HouseholdGuard(locks, StoreCatalog(servers), clock, guardScope) { true }
         catalog = StoreCatalog(servers, { locks.isProtected(it) }, { guard })
         val repository = AuthRepository(authGateway, servers, DeviceIdentity("dev-1", "Pixel", "Shoalwatch", "0.1"), StubConnections { Connection.Online(den, isHome = true) })
         auth = AuthenticatorImpl(repository) { guard }

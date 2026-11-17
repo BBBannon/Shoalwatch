@@ -23,6 +23,10 @@ import app.shoalwatch.data.servers.StoreCatalog
 import app.shoalwatch.data.servers.SwitchResult
 import app.shoalwatch.net.ServerAddress
 import app.shoalwatch.security.HouseholdGuard
+import app.shoalwatch.security.HouseholdLockedException
+import app.shoalwatch.security.PinCheck
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import app.shoalwatch.security.LockGate
 import app.shoalwatch.security.LockPrefs
 import app.shoalwatch.security.LockState
@@ -72,23 +76,26 @@ class SwitchPathsTest {
         store.upsertServer(Server(S1, "Den", "10.10.3", den, null, false, null, null, emptyMap()))
         store.upsertAccount(Account(S1, U1, "ann", "tok-1"), makeActive = false)
         store.upsertAccount(Account(S1, U2, "bob", "tok-2"), makeActive = true)
-        ProfileLocks(db.profileDao(), PinHasher(box, iterations = 1_000), clock, kotlinx.coroutines.Dispatchers.IO).protect(adult, "4826".toCharArray())
+        ProfileLocks(db.profileDao(), PinHasher(box, iterations = 1_000), clock, kotlinx.coroutines.Dispatchers.IO) {}.protect(adult, "4826".toCharArray())
         gateway.auth = { AuthResult(U1, "ann", "tok-new", S1) }
     }
 
     @After fun close() = db.close()
 
-    private class Parts(val gate: LockGate, val catalog: StoreCatalog, val switcher: ProfileSwitch)
+    private class Parts(val gate: LockGate, val catalog: StoreCatalog, val switcher: ProfileSwitch, val household: HouseholdGuard, val locks: ProfileLocks)
 
+    /** Wired as `LockParts` wires them: protecting asks the household check, which asks the gate. */
     private fun TestScope.parts(s: ServerStore = store): Parts {
-        val locks = ProfileLocks(db.profileDao(), PinHasher(box, iterations = 1_000), clock, StandardTestDispatcher(testScheduler))
+        lateinit var gate: LockGate
+        lateinit var household: HouseholdGuard
+        val locks = ProfileLocks(db.profileDao(), PinHasher(box, iterations = 1_000), clock, StandardTestDispatcher(testScheduler)) { household.require() }
         val proved = ProvedSwitches(clock)
         val plain = StoreCatalog(s)
-        val household = HouseholdGuard(locks, plain, clock, backgroundScope)
+        household = HouseholdGuard(locks, plain, clock, backgroundScope) { gate.isOpenFor(it) }
         val prefs = LockPrefs(ApplicationProvider.getApplicationContext<Context>().getSharedPreferences("paths", 0).also { it.edit().clear().commit() })
-        val gate = LockGate(prefs.settings, locks, plain, proved, household, { true }, clock, backgroundScope) { prefs.setAppLock(false) }
+        gate = LockGate(prefs.settings, locks, plain, proved, household, { true }, clock, backgroundScope) { prefs.setAppLock(false) }
         val switcher = ProfileSwitch(s::setActive, { s.cachedToken(it.serverId, it.userId) != null }, locks, proved)
-        return Parts(gate, StoreCatalog(s, { locks.isProtected(it) }, { household }), switcher)
+        return Parts(gate, StoreCatalog(s, { locks.isProtected(it) }, { household }), switcher, household, locks)
     }
 
     private suspend fun Parts.started(): Parts {
@@ -167,5 +174,41 @@ class SwitchPathsTest {
         } catch (_: ProfileProtectedException) {
         }
         assertNull(activeUser())
+    }
+
+    // ---- review I1, I2, I3
+
+    @Test fun aQuickConnectAdultUnderTheLockIsNoGrownUp() = runTest {
+        val p = parts().started()
+        repo.quickConnect(route()).toList()
+        assertEquals(adultLocked, p.gate.state.first { it is LockState.Profile })
+        try {
+            p.household.require()
+            fail("the locked adult allowed household changes")
+        } catch (_: HouseholdLockedException) {
+        }
+        assertTrue("nor may the locked adult be signed out", !p.household.allowsSignOut(adult))
+        assertEquals(PinCheck.Correct, p.gate.unlockProfile("4826".toCharArray()))
+        p.household.require() // once its PIN is typed, it is the grown-up
+    }
+
+    @Test fun aKidCannotProtectThemselvesWhileTheAdultIsProtected() = runTest {
+        val p = parts().started()
+        try {
+            p.locks.protect(Session(S1, U2), "1111".toCharArray())
+            fail("the kid became a grown-up")
+        } catch (_: HouseholdLockedException) {
+        }
+        assertTrue(!p.locks.isProtected(Session(S1, U2)))
+    }
+
+    @Test fun aScreenNeverSeesTheAdultOpenAfterAnUnprovedSignIn() = runTest {
+        val p = parts().started()
+        val seen = mutableListOf<Pair<Session?, Boolean>>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { p.catalog.activeSession().collect { seen += it to p.gate.isOpenFor(it) } }
+        repo.signInWithPassword(route(), "ann", "hunter2".toCharArray())
+        assertEquals(adultLocked, p.gate.state.first { it is LockState.Profile })
+        p.catalog.activeSession().first { it == adult }
+        assertTrue("never open for the adult: $seen", seen.none { it.first == adult && it.second })
     }
 }

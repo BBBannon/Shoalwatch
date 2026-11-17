@@ -43,6 +43,11 @@ class HouseholdGuard(
     private val catalog: ServerCatalog,
     private val clock: MonotonicClock,
     scope: CoroutineScope,
+    /**
+     * True only while the app lock has judged exactly this active session and found it open (`LockGate.isOpenFor`). A protected
+     * profile that is active but locked (a Quick Connect sign-in approved elsewhere, or "Lock after" passed) is no grown-up (review I2).
+     */
+    private val unlocked: (Session?) -> Boolean,
 ) : Household {
     private class Pass(val at: Long, val active: Session?, val grownUp: Session)
 
@@ -86,7 +91,7 @@ class HouseholdGuard(
         val protected = locks.protectedProfiles.first()
         if (protected.isEmpty()) return true
         val active = active()
-        if (active != null && active in protected) return true
+        if (active != null && active in protected && unlocked(active)) return true
         return validPass(active) != null
     }
 
@@ -94,7 +99,7 @@ class HouseholdGuard(
     suspend fun allowsSignOut(target: Session): Boolean {
         if (!locks.isProtected(target)) return true
         val active = active()
-        if (target == active) return true
+        if (target == active && unlocked(active)) return true
         return validPass(active)?.grownUp == target
     }
 

@@ -28,7 +28,7 @@ class ProfileLocksTest : LibraryTestBase() {
     private val a = s1u1
     private val b = s1u2
 
-    private fun TestScope.locks(h: PinHasher = hasher): ProfileLocks = ProfileLocks(db.profileDao(), h, clock, StandardTestDispatcher(testScheduler))
+    private fun TestScope.locks(h: PinHasher = hasher): ProfileLocks = ProfileLocks(db.profileDao(), h, clock, StandardTestDispatcher(testScheduler)) {}
 
     private fun pin(text: String) = text.toCharArray()
 
@@ -115,7 +115,7 @@ class ProfileLocksTest : LibraryTestBase() {
         for (wall in listOf("System.currentTimeMillis", "Instant.now", "java.time.Clock", "Date()", "SystemClock"))
             assertFalse("ProfileLocks reads $wall", text.contains(wall))
         val params = ProfileLocks::class.java.constructors.single().parameterTypes.toList()
-        assertEquals(listOf(app.shoalwatch.data.db.profile.ProfileDao::class.java, PinHasher::class.java, MonotonicClock::class.java, CoroutineDispatcher::class.java), params)
+        assertEquals(listOf(app.shoalwatch.data.db.profile.ProfileDao::class.java, PinHasher::class.java, MonotonicClock::class.java, CoroutineDispatcher::class.java, kotlin.jvm.functions.Function1::class.java), params)
     }
 
     @Test fun changePinWithAWrongOldPinChangesNothing() = runTest {
@@ -201,7 +201,7 @@ class ProfileLocksTest : LibraryTestBase() {
             override suspend fun setFailures(serverId: String, userId: String, failures: Int): Int =
                 if (full) throw android.database.sqlite.SQLiteFullException("database or disk is full") else real.setFailures(serverId, userId, failures)
         }
-        val locks = ProfileLocks(dao, hasher, clock, StandardTestDispatcher(testScheduler))
+        val locks = ProfileLocks(dao, hasher, clock, StandardTestDispatcher(testScheduler)) {}
         listOf("4826", "0000").forEach { text ->
             val p = pin(text)
             try {

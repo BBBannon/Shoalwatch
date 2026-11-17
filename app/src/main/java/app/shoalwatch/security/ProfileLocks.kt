@@ -8,6 +8,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -18,7 +19,11 @@ interface ProfileProtection {
     val protectedProfiles: Flow<Set<Session>>
     fun isProtectedFlow(s: Session): Flow<Boolean>
 
-    /** False (nothing stored) when [s] is already protected or [pin] breaks [PinRules]. Zeroes [pin]. */
+    /**
+     * False (nothing stored) when [s] is already protected or [pin] breaks [PinRules]. Zeroes [pin].
+     * @throws app.shoalwatch.security.HouseholdLockedException when another profile is protected and no grown-up check was passed
+     * (also for [changePin] and [unprotect]).
+     */
     suspend fun protect(s: Session, pin: CharArray): Boolean
 
     /**
@@ -46,6 +51,12 @@ class ProfileLocks(
     private val hasher: PinHasher,
     private val clock: MonotonicClock,
     private val io: CoroutineDispatcher,
+    /**
+     * The household check (`HouseholdGuard.require`), asked before a profile is protected, unprotected or given a new PIN while
+     * ANOTHER protected profile exists, so a child cannot make themselves a grown-up (review I1). The first protection on a
+     * phone needs no check. Throws `HouseholdLockedException` to refuse.
+     */
+    private val grownUp: suspend () -> Unit,
 ) : ProfileProtection {
     private val mutex = Mutex()
     private val anchors = HashMap<Session, Long>() // guarded by mutex
@@ -58,7 +69,7 @@ class ProfileLocks(
     suspend fun isProtected(s: Session): Boolean = withContext(io) { dao.lock(s.serverId, s.userId) != null }
 
     override suspend fun protect(s: Session, pin: CharArray): Boolean = try {
-        PinRules.valid(pin) && mutex.withLock {
+        PinRules.valid(pin) && grownUpIfAnother(s) && mutex.withLock {
             withContext(io) {
                 if (dao.lock(s.serverId, s.userId) != null) {
                     false
@@ -86,6 +97,7 @@ class ProfileLocks(
 
     override suspend fun changePin(s: Session, old: CharArray, new: CharArray): PinCheck = try {
         require(PinRules.valid(new)) { "the new PIN breaks PinRules" }
+        grownUpIfAnother(s)
         mutex.withLock {
             withContext(io) {
                 checkLocked(s, old).also { if (it == PinCheck.Correct) dao.replaceVerifier(s.serverId, s.userId, hasher.seal(new)) }
@@ -97,6 +109,7 @@ class ProfileLocks(
     }
 
     override suspend fun unprotect(s: Session, pin: CharArray): PinCheck = try {
+        grownUpIfAnother(s)
         mutex.withLock {
             withContext(io) {
                 checkLocked(s, pin).also {
@@ -119,6 +132,13 @@ class ProfileLocks(
                 anchors.remove(s)
             }
         }
+    }
+
+    /** Asks [grownUp] when a protected profile other than [s] exists; true when allowed (else [grownUp] has thrown). */
+    private suspend fun grownUpIfAnother(s: Session): Boolean {
+        val others = withContext(io) { dao.observeProtected().first() }.any { Session(it.serverId, it.userId) != s }
+        if (others) grownUp()
+        return true
     }
 
     /** Called holding [mutex], on [io]. */

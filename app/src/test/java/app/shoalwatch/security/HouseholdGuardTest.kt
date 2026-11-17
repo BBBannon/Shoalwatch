@@ -39,8 +39,8 @@ class HouseholdGuardTest : LibraryTestBase() {
     private lateinit var locks: ProfileLocks
 
     private fun TestScope.guard(): HouseholdGuard {
-        locks = ProfileLocks(db.profileDao(), hasher, clock, StandardTestDispatcher(testScheduler))
-        return HouseholdGuard(locks, catalog, clock, backgroundScope).also { runCurrent() }
+        locks = ProfileLocks(db.profileDao(), hasher, clock, StandardTestDispatcher(testScheduler)) {}
+        return HouseholdGuard(locks, catalog, clock, backgroundScope) { true }.also { runCurrent() }
     }
 
     private suspend fun protect(s: app.shoalwatch.data.servers.Session) = assertTrue(locks.protect(s, "4826".toCharArray()))
@@ -147,5 +147,45 @@ class HouseholdGuardTest : LibraryTestBase() {
 
     @Test fun itsToStringIsRedacted() = runTest {
         assertEquals("HouseholdGuard(<redacted>)", guard().toString())
+    }
+
+    // ---- review I1 and I2
+
+    @Test fun aKidCannotProtectThemselvesIntoAGrownUpButTheFirstProtectionIsFree() = runTest {
+        lateinit var g: HouseholdGuard
+        locks = ProfileLocks(db.profileDao(), hasher, clock, StandardTestDispatcher(testScheduler)) { g.require() }
+        g = HouseholdGuard(locks, catalog, clock, backgroundScope) { true }
+        runCurrent()
+        assertTrue("the first protection on a phone needs no check", locks.protect(adult, "4826".toCharArray()))
+        val pin = "1111".toCharArray()
+        try {
+            locks.protect(kid, pin)
+            fail("the kid protected themselves with a grown-up protected")
+        } catch (_: HouseholdLockedException) {
+        }
+        assertTrue(pin.all { it == '\u0000' })
+        assertFalse(locks.isProtected(kid))
+        assertFalse("still no grown-up", g.allows())
+        assertEquals(PinCheck.Correct, g.confirm(adult, "4826".toCharArray()))
+        assertTrue("with the grown-up's PIN it may", locks.protect(kid, "1111".toCharArray()))
+    }
+
+    @Test fun aProtectedProfileThatIsActiveButLockedIsNoGrownUp() = runTest {
+        var open = false
+        locks = ProfileLocks(db.profileDao(), hasher, clock, StandardTestDispatcher(testScheduler)) {}
+        val guard = HouseholdGuard(locks, catalog, clock, backgroundScope) { open }
+        runCurrent()
+        protect(adult)
+        catalog.activeFlow.value = adultA // e.g. a Quick Connect sign-in approved on the family laptop: the gate has it locked
+        assertFalse(guard.allows())
+        assertFalse(guard.allowsSignOut(adult))
+        try {
+            guard.require()
+            fail("a locked adult allowed household changes")
+        } catch (_: HouseholdLockedException) {
+        }
+        open = true // the adult typed the PIN
+        assertTrue(guard.allows())
+        assertTrue(guard.allowsSignOut(adult))
     }
 }
