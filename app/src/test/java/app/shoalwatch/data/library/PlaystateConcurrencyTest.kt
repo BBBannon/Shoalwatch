@@ -194,7 +194,9 @@ class PlaystateConcurrencyTest : PlaystateTestBase() {
         withTimeout(5_000) { playstate.setPlayed(s1u1, id("a"), true) }
         until { gateway.count("resume") == 1 } // the follow-up refresh is now held at the gateway
         withTimeout(5_000) { playstate.setPlayed(s1u1, id("b"), true) }
-        assertTrue("a refresh and a mutation were at the gateway together", gateway.maxRunning >= 2)
+        // A tick returns at once and is sent in the background (Milestone 5), so wait for its call to reach the gateway rather than
+        // asserting the overlap the instant setPlayed returns: under load that raced (failed 2 runs in 3 on 17/11).
+        until { gateway.maxRunning >= 2 } // a refresh and a mutation at the gateway together
         assertEquals(1, gateway.maxMutationsRunning)
         resume.release()
     }
