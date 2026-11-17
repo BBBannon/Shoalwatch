@@ -18,6 +18,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
 import app.shoalwatch.R
+import app.shoalwatch.ui.components.LocalCovered
 
 /**
  * The one-time explanation before Android 13's notification prompt, on the first confirm while notifications are not enabled.
@@ -56,6 +57,7 @@ internal fun NotificationAskDialog(state: NotificationAskState) {
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { _ -> waiting.value?.invoke(); waiting.value = null }
     val then = state.pending.value ?: return
     fun close() { state.pending.value = null }
+    if (LocalCovered.current) return // under the lock cover (review M1)
     AlertDialog(
         onDismissRequest = { close(); then() },
         text = { Text(stringResource(R.string.dl_notify_ask)) },

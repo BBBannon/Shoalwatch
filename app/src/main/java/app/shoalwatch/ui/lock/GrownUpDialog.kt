@@ -41,6 +41,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
+import app.shoalwatch.ui.components.LocalCovered
 
 /**
  * A grown-up's PIN asked for before a household setting. [signOut]: signing out a protected profile that is not active, which
@@ -138,6 +139,7 @@ internal fun GrownUpDialog(ask: GrownUpAsk, pin: TextFieldState, onChoose: (Acco
         )
         return
     }
+    if (LocalCovered.current) return // under the lock cover (review M1)
     AlertDialog(
         onDismissRequest = onDismiss,
         properties = SecureDialog,

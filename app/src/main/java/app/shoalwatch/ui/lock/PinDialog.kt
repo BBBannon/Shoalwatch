@@ -25,6 +25,7 @@ import app.shoalwatch.ui.components.ErrorMessage
 import app.shoalwatch.ui.components.FilterObscuredTouches
 import app.shoalwatch.ui.components.ObscuredTouchHint
 import app.shoalwatch.ui.components.SecureDialog
+import app.shoalwatch.ui.components.LocalCovered
 
 /**
  * A PIN asked for in a dialog (switching into a protected profile, signing one out, "Use another profile" on the lock screen). A
@@ -43,6 +44,7 @@ internal fun PinDialog(
     failed: Boolean = false,
     busy: Boolean = false,
 ) {
+    if (LocalCovered.current) return // under the lock cover (review M1)
     AlertDialog(
         onDismissRequest = onDismiss,
         properties = SecureDialog,

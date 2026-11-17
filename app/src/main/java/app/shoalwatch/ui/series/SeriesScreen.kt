@@ -100,6 +100,7 @@ import app.shoalwatch.ui.present.rememberStrings
 import app.shoalwatch.ui.present.seasonLabel
 import app.shoalwatch.ui.present.seriesFacts
 import kotlinx.coroutines.flow.Flow
+import app.shoalwatch.ui.components.LocalCovered
 
 /** What the series screen can ask for. The route wires these to the ViewModel and to navigation. */
 class SeriesActions(
@@ -306,7 +307,7 @@ private fun SeasonHeader(state: SeriesUiState, actions: SeriesActions) {
         )
         Box {
             IconButton(onClick = { open = true }) { Icon(Icons.Filled.MoreVert, stringResource(R.string.season_menu_cd)) }
-            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            if (!LocalCovered.current) DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
                 DropdownMenuItem(
                     text = { Text(stringResource(if (played) R.string.season_mark_unwatched else R.string.season_mark_watched), style = MaterialTheme.typography.bodyLarge) },
                     onClick = { open = false; actions.onSetSeasonPlayed(season.item.id, !played) },

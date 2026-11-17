@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -31,6 +32,7 @@ import app.shoalwatch.security.DeviceAuth
 import app.shoalwatch.security.Judged
 import app.shoalwatch.security.LockGate
 import app.shoalwatch.security.LockState
+import app.shoalwatch.ui.components.LocalCovered
 import app.shoalwatch.ui.findActivity
 import app.shoalwatch.ui.lock.LockActions
 import app.shoalwatch.ui.lock.LockScreen
@@ -49,13 +51,16 @@ internal val LockState.locked: Boolean get() = this is LockState.App || this is 
  * Covers the app until the gate has judged the active profile (review I3): [covered] is true unless the gate is open for exactly
  * the active session as the screens see it ([active]; null before the first value). While covered, [host] has no semantics
  * (TalkBack announces nothing of it), takes no touch, and is drawn under an opaque [cover] (the lock screen, or a plain blank
- * screen for the moment before the gate has judged a change).
+ * screen for the moment before the gate has judged a change). [LocalCovered] tells the host's dialogs, sheets and menus (separate
+ * windows the cover cannot hide) to compose nothing while covered (review M1).
  */
 @Composable
 internal fun LockCover(openFor: Judged?, active: Judged?, host: @Composable () -> Unit, cover: @Composable () -> Unit) {
     val covered = openFor == null || active == null || openFor != active
     Box(Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxSize().then(if (covered) Modifier.clearAndSetSemantics {} else Modifier)) { host() }
+        Box(Modifier.fillMaxSize().then(if (covered) Modifier.clearAndSetSemantics {} else Modifier)) {
+            CompositionLocalProvider(LocalCovered provides covered) { host() }
+        }
         if (covered) cover()
     }
 }

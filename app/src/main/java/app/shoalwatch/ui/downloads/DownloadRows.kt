@@ -59,6 +59,7 @@ import app.shoalwatch.ui.present.formatDuration
 import app.shoalwatch.ui.present.rememberStrings
 import app.shoalwatch.ui.present.remainingLabel
 import app.shoalwatch.ui.present.wideArtwork
+import app.shoalwatch.ui.components.LocalCovered
 
 /** The lines under a ready copy: "Insert the SD card…" when its card is out, "Downloaded by another profile" for a shared one. */
 internal fun noteLines(strings: Strings, e: OfflineEntry): List<String> = listOfNotNull(
@@ -128,7 +129,7 @@ internal fun DeleteMenu(title: String, onDelete: () -> Unit, modifier: Modifier 
         IconButton(onClick = { open = true }, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
             Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.cd_more_actions, title))
         }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+        if (!LocalCovered.current) DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             DropdownMenuItem(text = { Text(stringResource(label)) }, onClick = { open = false; onDelete() }, modifier = Modifier.heightIn(min = 48.dp))
         }
     }

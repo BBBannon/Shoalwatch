@@ -37,6 +37,7 @@ import app.shoalwatch.data.library.Item
 import app.shoalwatch.ui.components.DownloadIcon
 import app.shoalwatch.ui.present.DownloadText
 import app.shoalwatch.ui.present.rememberStrings
+import app.shoalwatch.ui.components.LocalCovered
 
 /** What a browsing screen's download controls do (the screen's DownloadActions and navigation). */
 data class DownloadControls(
@@ -85,7 +86,7 @@ fun SeriesDownloadMenu(seasonId: String?, seasonLabel: String?, controls: Downlo
         OutlinedButton(onClick = { open = true }, modifier = Modifier.heightIn(min = 48.dp)) {
             Icon(DownloadIcon, null, Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.dl_download))
         }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+        if (!LocalCovered.current) DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             val item = Modifier.heightIn(min = 56.dp)
             if (seasonId != null && seasonLabel != null) {
                 // Specials and a season with no number get their own words (Tasks 13-16 review M-6).
