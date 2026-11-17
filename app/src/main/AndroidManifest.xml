@@ -47,6 +47,18 @@
             </intent-filter>
         </activity>
 
+        <!--
+            Starts the process after a restart so waiting changes and downloads go on (BootReceiver: WorkManager's own
+            reschedule receiver can be left switched off by a reboot). Not exported: only the system's broadcast reaches it.
+        -->
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
         <receiver
             android:name="androidx.profileinstaller.ProfileInstallReceiver"
             tools:node="remove" />
