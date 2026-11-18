@@ -221,6 +221,21 @@ class WatchedPromptLogicTest {
         assertEquals(listOf(WatchedMessage.LEFT_OUT), got)
     }
 
+    /** Review M-3: no name read means neutral words (null name); a check that throws is a plain failure, not silence. */
+    @Test fun aSharerWithNoNameAndACheckThatFailsAreSaidPlainly() = runTest {
+        housekeeping.choices = { _, _ -> ReleaseChoice(true, true, SharedDelete.EVERYONE, 1, false) }
+        housekeeping.protectedSharers = listOf(ann.copy(userName = ""))
+        housekeeping.proveFailure = AppError.of(AppError.Kind.UNKNOWN)
+        val l = logic()
+        finish(l)
+        l.together(); runCurrent()
+        assertNull(l.sharerPin.value?.name)
+        l.pin.edit { replace(0, length, "4826") }
+        l.submitSharerPin(); runCurrent()
+        assertEquals(true, l.sharerPin.value?.failed)
+        assertEquals(false, l.sharerPin.value?.busy)
+    }
+
     @Test fun eachOutcomeGivesItsMessage() = runTest {
         val expected = mapOf(
             ReleaseOutcome.DELETED to WatchedMessage.DELETED,

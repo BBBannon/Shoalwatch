@@ -419,6 +419,8 @@
     <string name="watched_left_out">Marked as watched. A protected profile was left out because its PIN wasn’t entered.</string>
     <string name="together_pin_title">Mark it watched for %1$s too?</string>
     <string name="together_pin_body">%1$s’s profile is protected. Enter %1$s’s PIN to mark it watched for them too, or cancel to leave them out.</string>
+    <string name="together_pin_title_unnamed">Mark it watched for a protected profile too?</string>
+    <string name="together_pin_body_unnamed">Another profile that shares this is protected. Enter its PIN to mark it watched for that profile too, or cancel to leave it out.</string>
     <string name="together_pin_confirm">Mark watched</string>
     <string name="watched_failed">Couldn\'t delete this download. You can delete it in Storage.</string>
     <string name="up_next_untitled">Up next: the next episode</string>

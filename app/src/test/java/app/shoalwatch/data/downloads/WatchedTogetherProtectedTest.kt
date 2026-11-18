@@ -100,6 +100,17 @@ class WatchedTogetherProtectedTest : ReleaseTestBase() {
         assertEquals(TogetherRelease(ReleaseOutcome.DELETED, leftOut = false), locked.releaseTogether(a, e1.id))
     }
 
+    /** Review M-3: a name that cannot be read is empty (the screen then uses neutral words), never a failed press. */
+    @Test fun aNameThatCannotBeReadIsEmpty() = runBlocking {
+        shared(SharedDelete.EVERYONE)
+        val noNames = HousekeepingRepository(
+            releases, db.housekeepingDao(), playstate, ReleasedFiles(paths, playing, appScope), { _, _ -> }, { true }, appScope,
+            volumes = fake.volumes, remove = { _, _ -> error("not used") },
+            sharerLocks = SharerLocks({ it == b }, { _, _ -> PinCheck.Correct }, { error("db") }),
+        )
+        assertEquals(listOf(AccountSummary(b.serverId, b.userId, "")), noNames.protectedSharers(a, e1.id))
+    }
+
     @Test fun anUnprotectedProfileAskedNoPinGivesNone() = runBlocking {
         shared(SharedDelete.ANYONE)
         assertEquals(PinCheck.NotProtected, locked.proveSharer(a, c.userId, e1.id, "4826".toCharArray()))

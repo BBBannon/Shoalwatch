@@ -79,9 +79,10 @@ fun PlayerScreen(
     val ask = state.sharerPin
     if (ask != null && sharerPin != null && !inPip) {
         PinDialog(
-            title = stringResource(R.string.together_pin_title, ask.name), body = stringResource(R.string.together_pin_body, ask.name),
+            title = ask.name?.let { stringResource(R.string.together_pin_title, it) } ?: stringResource(R.string.together_pin_title_unnamed),
+            body = ask.name?.let { stringResource(R.string.together_pin_body, it) } ?: stringResource(R.string.together_pin_body_unnamed),
             pin = sharerPin, answer = ask.answer, confirmLabel = stringResource(R.string.together_pin_confirm),
-            onConfirm = actions.onSubmitSharerPin, onDismiss = actions.onCancelSharerPin, busy = ask.busy, cancelWhileBusy = false,
+            onConfirm = actions.onSubmitSharerPin, onDismiss = actions.onCancelSharerPin, busy = ask.busy, cancelWhileBusy = false, failed = ask.failed,
         )
     }
     Box(Modifier.fillMaxSize().background(Color.Black)) {

@@ -49,8 +49,11 @@ data class WatchedPromptUi(val session: Session, val itemId: String, val film: B
 /** LEFT_OUT: "Watched together" marked the others, but a protected profile's PIN was not given, so it was left out (security review M8 F12). */
 enum class WatchedMessage { DELETED, KEPT_FOR_OTHERS, KEPT_UNTIL_EVERYONE, FAILED, LEFT_OUT }
 
-/** "Watched together" asking a protected sharer's own PIN: its [name], the last [answer] (Wrong / Wait), [busy] while checking. */
-data class SharerPinAsk(val name: String, val answer: PinCheck? = null, val busy: Boolean = false) {
+/**
+ * "Watched together" asking a protected sharer's own PIN: its [name] (null when it could not be read: neutral words), the last
+ * [answer] (Wrong / Wait), [busy] while checking, [failed] when the check itself could not run (review M-3).
+ */
+data class SharerPinAsk(val name: String?, val answer: PinCheck? = null, val busy: Boolean = false, val failed: Boolean = false) {
     override fun toString() = "SharerPinAsk(<redacted>)"
 }
 

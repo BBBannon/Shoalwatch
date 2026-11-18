@@ -136,7 +136,7 @@ internal class WatchedPromptLogic(private val housekeeping: Housekeeping, privat
                 a.queue.removeFirst()
                 askNext()
             } else {
-                _sharerPin.value = ask.copy(answer = check, busy = false)
+                _sharerPin.value = ask.copy(answer = check, busy = false, failed = check == null) // null: the check could not run
             }
         }
     }
@@ -155,7 +155,7 @@ internal class WatchedPromptLogic(private val housekeeping: Housekeeping, privat
         val a = asking ?: return
         val next = a.queue.firstOrNull()
         if (next != null) {
-            _sharerPin.value = SharerPinAsk(next.userName)
+            _sharerPin.value = SharerPinAsk(next.userName.ifBlank { null }) // no name read: neutral words (review M-3)
             return
         }
         _sharerPin.value = null

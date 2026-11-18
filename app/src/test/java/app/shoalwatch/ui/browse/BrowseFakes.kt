@@ -195,6 +195,8 @@ class FakeHousekeeping : app.shoalwatch.data.downloads.Housekeeping {
     var sharerPin = "4826"
     /** What [releaseTogether] says the data layer left out (a proof gone, a protection unreadable). */
     var leftOutByData = false
+    /** Thrown by [proveSharer] (a try that could not be saved). */
+    var proveFailure: Exception? = null
 
     override suspend fun dropProofs(s: Session, itemId: String) { calls += "drop:${who(s)}:$itemId" }
 
@@ -210,6 +212,7 @@ class FakeHousekeeping : app.shoalwatch.data.downloads.Housekeeping {
         pin.fill('0')
         calls += "prove:${who(s)}:$sharerUserId:$itemId:$typed"
         proveGate?.await()
+        proveFailure?.let { throw it }
         return if (typed == sharerPin) app.shoalwatch.security.PinCheck.Correct else app.shoalwatch.security.PinCheck.Wrong(4)
     }
 

@@ -94,7 +94,7 @@ class HousekeepingRepository internal constructor(
     override suspend fun protectedSharers(s: Session, itemId: String): List<AccountSummary> = action {
         val locks = sharerLocks ?: return@action emptyList()
         releases.sharers(s, itemId, signedIn(s)).map { Session(s.serverId, it) }.filter { lockedOrUnknown(locks, it) }
-            .map { AccountSummary(it.serverId, it.userId, locks.name(it).orEmpty()) }
+            .map { AccountSummary(it.serverId, it.userId, nameOf(locks, it)) }
     }
 
     /** Only a protected sharer's PIN is checked; a right one is a proof for this one press ([TogetherProofs]). */
@@ -108,6 +108,16 @@ class HousekeepingRepository internal constructor(
         }
     } finally {
         pin.fill('\u0000')
+    }
+
+    /** A name that cannot be read is empty: the PIN step then uses neutral words (review M-3). */
+    private suspend fun nameOf(locks: SharerLocks, s: Session): String = try {
+        locks.name(s).orEmpty()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        AppLog.w(TAG, "a sharer's name could not be read", e)
+        ""
     }
 
     /** A protection that cannot be read counts as protected: that profile is left out, never marked unasked. */
