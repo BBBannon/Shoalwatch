@@ -1,5 +1,6 @@
 package app.shoalwatch.ui.admin
 
+import app.shoalwatch.data.servers.Session
 import android.content.Context
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.clearText
@@ -84,13 +85,15 @@ class DashboardViewModel(
     connections: ServerConnections,
     private val admin: Admin,
     private val opener: DashboardOpener,
+    /** The full scan has just finished, for this session (Home's lists are then due: round 3). */
+    scanFinished: (Session) -> Unit = {},
     clock: () -> Instant = Instant::now,
 ) : AdminScreenModel(catalog, rights, connections, clock) {
     private val status = MutableStateFlow<ServerStatus?>(null)
     private val sessions = MutableStateFlow<List<WatchSession>>(emptyList())
     private val confirmState = MutableStateFlow<SessionConfirm?>(null)
     private val messageState = MutableStateFlow<MessageTarget?>(null)
-    private val scanAll = ScanAll(admin)
+    private val scanAll = ScanAll(admin, scanFinished)
     /** The signed-in account, for the message header ("Message from ben"); used only while it is the gate's session. */
     private val me = catalog.activeAccount.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
@@ -105,7 +108,7 @@ class DashboardViewModel(
         if (guard.gate.value is AdminGate.Open) {
             status.value = server
             sessions.value = list
-            scanAll.keep(scan)
+            scanAll.keep(session, scan)
         }
         SESSIONS_POLL_MS
     }

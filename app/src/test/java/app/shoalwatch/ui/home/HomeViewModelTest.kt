@@ -62,6 +62,23 @@ class HomeViewModelTest {
 
     // --- who and where -------------------------------------------------------------------------------------------
 
+    // --- round 3: back on screen ----------------------------------------------------------------------------------
+
+    @Test fun backOnScreenHomeAsksItsListsAgainWhereDueAsTheActiveProfile() {
+        val v = vm()
+        show(home())
+        v.onStarted()
+        assertEquals(listOf(BEN), library.dueChecks)
+        assertTrue("never the always-refresh", library.refreshes.isEmpty())
+    }
+
+    @Test fun backOnScreenWithNobodySignedInAsksNothing() {
+        catalog.activeFlow.value = null
+        val v = vm()
+        v.onStarted()
+        assertTrue(library.dueChecks.isEmpty())
+    }
+
     @Test fun nobodySignedInIsTheSignedOutState() {
         catalog.activeFlow.value = null
         val v = vm()

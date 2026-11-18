@@ -21,7 +21,7 @@ import kotlinx.coroutines.flow.asStateFlow
  * poller through [read]; it starts without a confirmation (a scan changes nothing that cannot simply be repeated), through the
  * screen's [AdminWork], so it runs once, as the gate's session, and never while another action runs.
  */
-internal class ScanAll(private val admin: Admin) {
+internal class ScanAll(private val admin: Admin, private val finished: (Session) -> Unit = {}) {
     private val task = MutableStateFlow<ServerTask?>(null)
 
     /** The full scan's task: its state and progress are the full scan's. Null when the server has none, or nothing is loaded. */
@@ -40,9 +40,12 @@ internal class ScanAll(private val admin: Admin) {
         null
     }
 
-    /** What [read] answered, kept only while the gate is open (the caller checks). */
-    fun keep(scan: ServerTask?) {
+    /** What [read] answered for [session], kept only while the gate is open (the caller checks). */
+    fun keep(session: Session, scan: ServerTask?) {
+        val wasRunning = task.value?.state == TaskState.RUNNING
         task.value = scan
+        // Round 3: once the full scan has finished (an unknown answer is not "finished"), Home's lists for this profile are due.
+        if (wasRunning && scan != null && scan.state != TaskState.RUNNING) finished(session)
     }
 
     fun drop() {

@@ -149,6 +149,12 @@ class HomeViewModel(
         connections.refresh()
     }
 
+    /** Home is on screen again (back from another screen, or the app back in front): its lists are asked again where they are due. */
+    fun onStarted() {
+        val s = state.value.session ?: return
+        viewModelScope.launch { actions.attempt(s) { library.refreshHomeIfDue(s) } }
+    }
+
     /** Pull-to-refresh and a banner's Retry: asks for Home again, always (it bypasses the failure cooldown). */
     fun refresh() {
         val s = state.value.session ?: return

@@ -1,5 +1,6 @@
 package app.shoalwatch.ui.admin
 
+import app.shoalwatch.data.servers.Session
 import androidx.lifecycle.viewModelScope
 import app.shoalwatch.R
 import app.shoalwatch.data.admin.Admin
@@ -45,17 +46,19 @@ class LibrariesViewModel(
     rights: AdminRights,
     connections: ServerConnections,
     private val admin: Admin,
+    /** The full scan has just finished, for this session (Home's lists are then due: round 3). */
+    scanFinished: (Session) -> Unit = {},
     clock: () -> Instant = Instant::now,
 ) : AdminScreenModel(catalog, rights, connections, clock) {
     private val libraries = MutableStateFlow<List<LibraryFolder>>(emptyList())
-    private val scanAll = ScanAll(admin)
+    private val scanAll = ScanAll(admin, scanFinished)
 
     private val poll = poller { session ->
         val folders = admin.libraries(session)
         val scan = scanAll.read(session)
         if (guard.gate.value is AdminGate.Open) {
             libraries.value = folders
-            scanAll.keep(scan)
+            scanAll.keep(session, scan)
         }
         if (LibrariesUiState(libraries = folders, fullScan = scan).anyScanning) SCAN_POLL_MS else null
     }
