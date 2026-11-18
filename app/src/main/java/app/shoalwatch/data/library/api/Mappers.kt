@@ -3,6 +3,7 @@ package app.shoalwatch.data.library.api
 import app.shoalwatch.core.Ticks
 import app.shoalwatch.core.displayParagraphs
 import app.shoalwatch.core.displayText
+import app.shoalwatch.core.serverInstant
 import app.shoalwatch.data.api.JsonBodies
 import app.shoalwatch.data.library.Item
 import app.shoalwatch.data.library.ItemFilter
@@ -21,8 +22,6 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import java.time.Instant
-import java.time.OffsetDateTime
-import java.time.format.DateTimeParseException
 
 // DTO -> model. This is the S11 boundary: nothing leaves here unvalidated. See "Library endpoints" in docs/ARCHITECTURE.md.
 
@@ -48,19 +47,8 @@ private fun intIn(value: Long?, range: IntRange): Int? = value?.takeIf { it in r
 
 private fun tag(raw: String?): String? = raw?.takeIf { IMAGE_TAG.matches(it) }
 
-/** Lenient: Jellyfin's seven fractional digits, or an offset; anything else is null, never a crash. */
-private fun instant(raw: String?): Instant? {
-    if (raw.isNullOrBlank() || raw.length > 64) return null
-    return try {
-        Instant.parse(raw)
-    } catch (_: DateTimeParseException) {
-        try {
-            OffsetDateTime.parse(raw).toInstant()
-        } catch (_: DateTimeParseException) {
-            null
-        }
-    }
-}
+/** Lenient in form, strict in range (1800-2200, security review M8 F3): anything else is null, never a crash. */
+private fun instant(raw: String?): Instant? = serverInstant(raw)
 
 internal fun kindOf(type: String?): ItemKind = when (type) {
     "Movie" -> ItemKind.MOVIE
