@@ -481,4 +481,86 @@ class LockGateTest : LibraryTestBase() {
         gate.expectReturn(); gate.onLeft(); clock.ms += LockGate.EXCUSED_CAP_MS; gate.onReturned()
         assertEquals(LockState.Profile(adult, "ann"), gate.state.value)
     }
+
+    // ---- 1.0.1: time away counts only while nothing is playing (picture-in-picture)
+
+    @Test fun aVideoPlayingInTheSmallWindowPastLockAfterDoesNotLock() = runTest {
+        val gate = openAsAdult()
+        gate.setPlaying(true)
+        gate.onLeft(); clock.ms += 3_600_000; gate.onReturned()
+        assertEquals(LockState.Open, gate.state.value)
+    }
+
+    @Test fun pausedInTheSmallWindowForLockAfterLocks() = runTest {
+        val gate = openAsAdult()
+        gate.setPlaying(true)
+        gate.onLeft(); clock.ms += 30_000
+        gate.setPlaying(false); clock.ms += 60_000
+        gate.onReturned()
+        assertEquals(LockState.Profile(adult, "ann"), gate.state.value)
+    }
+
+    @Test fun pausedTimeAddsUpAcrossPlays() = runTest {
+        val gate = openAsAdult()
+        gate.setPlaying(true)
+        gate.onLeft(); clock.ms += 600_000 // play X
+        gate.setPlaying(false); clock.ms += 40_000 // pause Y
+        gate.setPlaying(true); clock.ms += 600_000 // play
+        gate.setPlaying(false); clock.ms += 20_000 // pause Z: Y + Z = Lock after
+        gate.onReturned()
+        assertEquals(LockState.Profile(adult, "ann"), gate.state.value)
+    }
+
+    @Test fun pausedTimeUnderLockAfterAcrossPlaysStaysOpen() = runTest {
+        val gate = openAsAdult()
+        gate.setPlaying(true)
+        gate.onLeft(); clock.ms += 600_000
+        gate.setPlaying(false); clock.ms += 30_000
+        gate.setPlaying(true); clock.ms += 600_000
+        gate.setPlaying(false); clock.ms += 29_000
+        gate.onReturned()
+        assertEquals(LockState.Open, gate.state.value)
+    }
+
+    @Test fun leavingWithNothingPlayingIsTimedAsBefore() = runTest {
+        val gate = openAsAdult()
+        gate.setPlaying(true); gate.setPlaying(false) // played and paused in the full screen: no trip yet
+        gate.onLeft(); clock.ms += 60_000; gate.onReturned()
+        assertEquals(LockState.Profile(adult, "ann"), gate.state.value)
+    }
+
+    @Test fun playbackStoppingMidTripStartsTheClock() = runTest {
+        val gate = openAsAdult()
+        gate.setPlaying(true)
+        gate.onLeft(); clock.ms += 600_000
+        gate.setPlaying(false) // the player released (ended, failed, window closed)
+        clock.ms += 60_000; gate.onReturned()
+        assertEquals(LockState.Profile(adult, "ann"), gate.state.value)
+    }
+
+    @Test fun pausedTimeFromOneTripDoesNotCarryIntoTheNext() = runTest {
+        val gate = openAsAdult()
+        gate.onLeft(); clock.ms += 50_000; gate.onReturned()
+        assertEquals(LockState.Open, gate.state.value)
+        gate.onLeft(); clock.ms += 50_000; gate.onReturned()
+        assertEquals(LockState.Open, gate.state.value)
+    }
+
+    @Test fun straightAwayStillLocksOnAnyLeaveEvenWhilePlaying() = runTest {
+        prefs.setLockAfter(LockAfter.IMMEDIATELY)
+        val gate = openAsAdult()
+        gate.setPlaying(true)
+        gate.onLeft(); clock.ms += 1_000; gate.onReturned()
+        assertEquals(LockState.Profile(adult, "ann"), gate.state.value)
+    }
+
+    @Test fun aSecondLeaveWhilePlayingKeepsThePausedTimeSoFar() = runTest {
+        val gate = openAsAdult()
+        gate.onLeft(); clock.ms += 40_000 // left with nothing playing
+        gate.setPlaying(true); clock.ms += 600_000
+        gate.onLeft() // e.g. the screen off and on in the small window: not a new trip
+        gate.setPlaying(false); clock.ms += 20_000
+        gate.onReturned()
+        assertEquals(LockState.Profile(adult, "ann"), gate.state.value)
+    }
 }

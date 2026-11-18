@@ -181,4 +181,13 @@ class LockBoundaryTest {
         assertTrue("setContent is in onCreate", draw >= 0)
         assertTrue("sanitised( comes before setContent", clean < draw)
     }
+
+    /** 1.0.1: every player the app builds tells `NowPlaying`, and `NowPlaying` tells the lock gate ("Lock after" holds while playing). */
+    @Test fun thePlayersOwnStateReachesTheLockGate() {
+        val graph = File(root, "AppGraph.kt").readText()
+        assertTrue("the factory hands each engine a reporter", graph.contains("ExoPlayerEngine(appContext, lockParts.nowPlaying.reporter())"))
+        assertEquals("one place builds the engine", 1, Regex("""ExoPlayerEngine\(""").findAll(graph).count())
+        val parts = File(root, "LockParts.kt").readText()
+        assertTrue("NowPlaying feeds the gate", parts.contains("NowPlaying { lockGate.setPlaying(it) }"))
+    }
 }

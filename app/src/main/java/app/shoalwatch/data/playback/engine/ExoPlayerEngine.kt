@@ -50,9 +50,11 @@ import okhttp3.Call
  *   [release].
  * - **Subtitles in the stream:** only PGS, VobSub and DVB are parsed ([PictureSubtitles]); text tracks pass through unparsed,
  *   and the text renderer is off unless a picture-subtitle track is selected (text subtitles are the app's own files).
+ * - **Playing:** each change of Media3's `isPlaying` goes to [onPlaying] (the app lock's `NowPlaying`), and [release] says "not
+ *   playing", so "Lock after" holds only while this player really plays.
  */
 @OptIn(UnstableApi::class)
-class ExoPlayerEngine(context: Context) : PlayerEngine {
+class ExoPlayerEngine(context: Context, private val onPlaying: (Boolean) -> Unit = {}) : PlayerEngine {
     private val appContext = context.applicationContext
     private val flow = MutableSharedFlow<EngineEvent>(extraBufferCapacity = 64)
     override val events: Flow<EngineEvent> = flow
@@ -88,7 +90,7 @@ class ExoPlayerEngine(context: Context) : PlayerEngine {
     private var subtitle: String? = null
     private var released = false
 
-    private val listener = object : Player.Listener {
+    internal val listener = object : Player.Listener {
         override fun onPlayerError(error: PlaybackException) = emit(EngineEvent.Failed(MediaItems.failureOf(error)))
 
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
@@ -119,7 +121,10 @@ class ExoPlayerEngine(context: Context) : PlayerEngine {
                     else -> Unit
                 }
             }
-            if (events.contains(Player.EVENT_IS_PLAYING_CHANGED)) emit(EngineEvent.PlayingChanged(player.isPlaying))
+            if (events.contains(Player.EVENT_IS_PLAYING_CHANGED)) {
+                onPlaying(player.isPlaying)
+                emit(EngineEvent.PlayingChanged(player.isPlaying))
+            }
             if (events.contains(Player.EVENT_TRACKS_CHANGED)) applyTracks()
         }
     }
@@ -212,6 +217,7 @@ class ExoPlayerEngine(context: Context) : PlayerEngine {
         surface = null
         player.release()
         current = null
+        onPlaying(false)
     }
 
     /** The Nth audio group and the Nth picture-subtitle group of what the stream has; text off unless a picture track is chosen. */

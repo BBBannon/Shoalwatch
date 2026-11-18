@@ -44,8 +44,10 @@ data class Judged(val session: Session?) {
  * The one lock state for the app (Milestone 7; see "App lock" in docs/ARCHITECTURE.md). The rules:
  * 1. Start, and a return after [LockSettings.lockAfter]: the app lock (when on and the phone is secure) first, then the active
  *    profile's PIN when it is protected, else open.
- * 2. Leaving is timed by [clock] (monotonic) only; [expectReturn] makes the next trip not count (it must start within
- *    [EXPECT_WINDOW_MS] and before [tripDone], and is still capped at max(Lock after, [EXCUSED_CAP_MS])).
+ * 2. Leaving is timed by [clock] (monotonic) only, and only while nothing plays ([setPlaying]: a video playing in the
+ *    picture-in-picture window holds the clock; its paused time adds up across plays within one trip, see [AwayTime]);
+ *    [expectReturn] makes the next trip not count (it must start within [EXPECT_WINDOW_MS] and before [tripDone], and is still
+ *    capped at max(Lock after, [EXCUSED_CAP_MS])).
  * 3. Whenever the active profile changes to a protected one, it is locked unless [ProvedSwitches.consume] says its PIN was just
  *    typed for that switch: this catches every path that makes a profile active (a sign-in, "Sign in again", a restore), not only
  *    the switcher. A change to an unprotected profile, or to nobody, opens a profile lock. The lock is decided at once, from the
@@ -92,7 +94,7 @@ class LockGate(
     private var known = false
     private var active: AccountSummary? = null
     private var protectedSet: Set<Session> = emptySet()
-    private var leftAt: Long? = null
+    private val away = AwayTime()
     private var expectedAt: Long? = null
     private var ignoringTrip = false
     private var excusedAt = 0L
@@ -185,10 +187,13 @@ class LockGate(
         if (expected != null && now - expected <= EXPECT_WINDOW_MS) {
             if (!ignoringTrip) excusedAt = now
             ignoringTrip = true
-        } else if (!ignoringTrip && leftAt == null) {
-            leftAt = now
+        } else if (!ignoringTrip) {
+            away.leave(now)
         }
     }
+
+    /** Our player is playing now, or has stopped playing (paused, ended, failed, released): `NowPlaying`, from Media3's own state. */
+    fun setPlaying(playing: Boolean) = synchronized(lock) { away.setPlaying(playing, clock.nowMs()) }
 
     /** The activity started again, or left picture-in-picture for the full screen. */
     override fun onReturned() = synchronized(lock) {
@@ -199,9 +204,8 @@ class LockGate(
             publish()
             return@synchronized
         }
-        val left = leftAt ?: return@synchronized
-        leftAt = null
-        if (known && clock.nowMs() - left >= settings.value.lockAfter.ms) relock()
+        val awayMs = away.back(clock.nowMs()) ?: return@synchronized
+        if (known && awayMs >= settings.value.lockAfter.ms) relock()
         publish()
     }
 
