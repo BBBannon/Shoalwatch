@@ -35,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.ui.semantics.traversalIndex
 import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.contentDescription
@@ -45,6 +46,7 @@ import app.shoalwatch.core.AppError
 import app.shoalwatch.data.playback.PlaybackState.Phase
 import app.shoalwatch.data.playback.SubtitleChoice
 import app.shoalwatch.data.playback.SubtitleNotice
+import app.shoalwatch.ui.lock.PinDialog
 import app.shoalwatch.ui.present.PlayerText
 import app.shoalwatch.ui.present.rememberStrings
 
@@ -61,6 +63,8 @@ fun PlayerScreen(
     actions: PlayerActions,
     dolbyVisionScreen: Boolean = false,
     inPip: Boolean = false,
+    /** The PIN field for "Watched together"'s protected sharer (security review M8 F12). */
+    sharerPin: TextFieldState? = null,
     video: @Composable (controlsUp: Boolean) -> Unit = {},
 ) {
     val strings = rememberStrings()
@@ -72,6 +76,14 @@ fun PlayerScreen(
     BackHandler(enabled = state.locked) { actions.onTapSurface() }
     ControlsAfterPip(inPip, state.controlsVisible, actions.onTapSurface)
     if (!inPip) Notices(state, actions, snackbar)
+    val ask = state.sharerPin
+    if (ask != null && sharerPin != null && !inPip) {
+        PinDialog(
+            title = stringResource(R.string.together_pin_title, ask.name), body = stringResource(R.string.together_pin_body, ask.name),
+            pin = sharerPin, answer = ask.answer, confirmLabel = stringResource(R.string.together_pin_confirm),
+            onConfirm = actions.onSubmitSharerPin, onDismiss = actions.onCancelSharerPin, busy = ask.busy,
+        )
+    }
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         // Always the first child, so the picture's view is kept as the window changes size.
         video(state.controlsVisible && !inPip)

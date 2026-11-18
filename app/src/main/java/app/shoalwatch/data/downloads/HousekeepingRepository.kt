@@ -9,7 +9,11 @@ import app.shoalwatch.data.db.downloads.VolumeBytesRow
 import app.shoalwatch.data.db.library.toModel
 import app.shoalwatch.data.library.ItemWithUserData
 import app.shoalwatch.data.library.Playstate
+import app.shoalwatch.core.MonotonicClock
+import app.shoalwatch.core.SystemMonotonicClock
+import app.shoalwatch.data.servers.AccountSummary
 import app.shoalwatch.data.servers.JellyfinId
+import app.shoalwatch.security.PinCheck
 import app.shoalwatch.data.servers.Session
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -51,7 +55,12 @@ class HousekeepingRepository internal constructor(
     private val markHere: suspend (Session, String) -> Unit = { _, _ -> },
     /** The household check: "Delete shared downloads" is a household setting (Milestone 7). */
     private val household: HouseholdGuard? = null,
+    /** Profile protection for "Watched together" (security review M8 F12); null: no profile is protected (tests). */
+    private val sharerLocks: SharerLocks? = null,
+    clock: MonotonicClock = SystemMonotonicClock,
 ) : Housekeeping {
+    private val proofs = TogetherProofs(clock)
+
     override fun profileSettings(s: Session): Flow<ProfileSettings> = guarded(ProfileSettings()) {
         dao.observeProfile(s.serverId, s.userId).map { row -> row?.let { ProfileSettings(it.afterFinish, it.autoNextCount) } ?: ProfileSettings() }
     }
@@ -85,6 +94,35 @@ class HousekeepingRepository internal constructor(
         }
     }
 
+    override suspend fun protectedSharers(s: Session, itemId: String): List<AccountSummary> = action {
+        val locks = sharerLocks ?: return@action emptyList()
+        releases.sharers(s, itemId, signedIn(s)).map { Session(s.serverId, it) }.filter { lockedOrUnknown(locks, it) }
+            .map { AccountSummary(it.serverId, it.userId, locks.name(it).orEmpty()) }
+    }
+
+    /** Only a protected sharer's PIN is checked; a right one is a proof for this one press ([TogetherProofs]). */
+    override suspend fun proveSharer(s: Session, sharerUserId: String, itemId: String, pin: CharArray): PinCheck = try {
+        val sharer = Session(s.serverId, sharerUserId)
+        val locks = sharerLocks
+        if (locks == null || !lockedOrUnknown(locks, sharer)) {
+            PinCheck.NotProtected
+        } else {
+            locks.check(sharer, pin).also { if (it == PinCheck.Correct) proofs.record(s, sharer, itemId) }
+        }
+    } finally {
+        pin.fill('\u0000')
+    }
+
+    /** A protection that cannot be read counts as protected: that profile is left out, never marked unasked. */
+    private suspend fun lockedOrUnknown(locks: SharerLocks, s: Session): Boolean = try {
+        locks.isProtected(s)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        AppLog.w(TAG, "a sharer's protection could not be read", e)
+        true
+    }
+
     override suspend fun releaseChoice(s: Session, itemId: String): ReleaseChoice = action { releases.choice(s, itemId, signedIn(s)) }
 
     override suspend fun release(s: Session, itemId: String, together: Boolean): ReleaseOutcome = action {
@@ -95,8 +133,12 @@ class HousekeepingRepository internal constructor(
         if (here) markHere(s, itemId) else playstate.setPlayed(s, itemId, true)
         if (together) {
             for (other in releases.sharers(s, itemId, signedIn(s))) {
+                val sharer = Session(s.serverId, other)
+                // A protected profile's account is written only with its own PIN for this press (security review M8 F12).
+                val locks = sharerLocks
+                if (locks != null && lockedOrUnknown(locks, sharer) && !proofs.consume(s, sharer, itemId)) continue
                 try {
-                    playstate.setPlayed(Session(s.serverId, other), itemId, true) // that profile's OWN outbox, sent as itself
+                    playstate.setPlayed(sharer, itemId, true) // that profile's OWN outbox, sent as itself
                 } catch (e: AppError) {
                     // Skipped, never half-done (Tasks 11-12 review M3): SERVER_NOT_FOUND means it is no longer shown to that profile;
                     // any other failure is logged by kind and the release goes on (EVERYONE then keeps it if that profile has not watched).

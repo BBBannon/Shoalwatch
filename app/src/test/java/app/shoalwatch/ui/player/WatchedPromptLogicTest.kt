@@ -127,6 +127,44 @@ class WatchedPromptLogicTest {
         assertEquals(listOf("release:ben:$e1:false", "release:ben:$e2:true"), housekeeping.calls.filter { it.startsWith("release") })
     }
 
+    // --- security review M8 F12: a protected sharer is marked only after its own PIN, asked here -----------------------
+
+    private val ann = app.shoalwatch.data.servers.AccountSummary(BEN.serverId, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "ann")
+
+    @Test fun togetherAsksAProtectedSharersPinFirstAndAWrongOneIsAskedAgain() = runTest {
+        housekeeping.choices = { _, _ -> ReleaseChoice(true, true, SharedDelete.EVERYONE, 1, false) }
+        housekeeping.protectedSharers = listOf(ann)
+        val l = logic()
+        val got = messages(l)
+        finish(l)
+        l.together(); runCurrent()
+        assertEquals("ann", l.sharerPin.value?.name)
+        assertEquals("nothing released yet", emptyList<String>(), housekeeping.calls.filter { it.startsWith("release") })
+        l.pin.edit { replace(0, length, "1111") }
+        l.submitSharerPin(); runCurrent()
+        assertEquals(app.shoalwatch.security.PinCheck.Wrong(4), l.sharerPin.value?.answer)
+        assertEquals("", l.pin.text.toString())
+        l.pin.edit { replace(0, length, "4826") }
+        l.submitSharerPin(); runCurrent()
+        assertNull(l.sharerPin.value)
+        assertEquals(listOf("prove:ben:${ann.userId}:$e1:1111", "prove:ben:${ann.userId}:$e1:4826", "release:ben:$e1:true"),
+            housekeeping.calls.filter { it.startsWith("prove") || it.startsWith("release") })
+        assertEquals(listOf(WatchedMessage.DELETED), got)
+    }
+
+    @Test fun cancellingTheSharersPinStillMarksTheOthersAndSaysItWasLeftOut() = runTest {
+        housekeeping.choices = { _, _ -> ReleaseChoice(true, true, SharedDelete.EVERYONE, 2, false) }
+        housekeeping.protectedSharers = listOf(ann)
+        val l = logic()
+        val got = messages(l)
+        finish(l)
+        l.together(); runCurrent()
+        l.cancelSharerPin(); runCurrent()
+        assertNull(l.sharerPin.value)
+        assertEquals(listOf("release:ben:$e1:true"), housekeeping.calls.filter { it.startsWith("prove") || it.startsWith("release") })
+        assertEquals(listOf(WatchedMessage.LEFT_OUT), got)
+    }
+
     @Test fun eachOutcomeGivesItsMessage() = runTest {
         val expected = mapOf(
             ReleaseOutcome.DELETED to WatchedMessage.DELETED,

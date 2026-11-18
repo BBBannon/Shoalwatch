@@ -1,6 +1,8 @@
 package app.shoalwatch.data.downloads
 
+import app.shoalwatch.data.servers.AccountSummary
 import app.shoalwatch.data.servers.Session
+import app.shoalwatch.security.PinCheck
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -29,6 +31,18 @@ interface Housekeeping {
      * A download [s] may not see is NOT_YOURS with nothing changed, not even its watched state.
      */
     suspend fun release(s: Session, itemId: String, together: Boolean): ReleaseOutcome
+
+    /**
+     * The protected profiles "Watched together" of [itemId] would mark for [s] (security review M8 F12), with their names for the
+     * PIN step. Each is marked only after [proveSharer] with its own PIN; without one it is left out.
+     */
+    suspend fun protectedSharers(s: Session, itemId: String): List<AccountSummary> = emptyList()
+
+    /** Checks [sharerUserId]'s own PIN (zeroes [pin]); Correct lets [s]'s next "Watched together" of [itemId] mark that profile, once, within a minute. */
+    suspend fun proveSharer(s: Session, sharerUserId: String, itemId: String, pin: CharArray): PinCheck {
+        pin.fill('\u0000')
+        return PinCheck.NotProtected
+    }
 
     /** What uses space, as [s] may see it: its series and films by size, the volumes, and everyone else's downloads as one number. */
     fun storage(s: Session): Flow<StorageView>

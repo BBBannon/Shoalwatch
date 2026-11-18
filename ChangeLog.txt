@@ -1,3 +1,4 @@
+v1.161 — 18/11/2026 — “Watched together” now asks for a protected profile’s PIN before marking it watched for that profile; without the PIN that profile is left out and the others are still marked
 v1.160 — 18/11/2026 — The app is now version 1.0
 v1.159 — 18/11/2026 — A server can no longer send a nonsense running time or an oversized Quick Connect code to the app
 v1.158 — 18/11/2026 — Pictures from a removed server are now cleared the next time the app starts, if any were left behind

@@ -80,6 +80,7 @@ class PlayerViewModel(
         viewModelScope.launch { subtitleSettings.appearance.collect { a -> _state.update { it.copy(appearance = a) } } }
         viewModelScope.launch { catalog.activeSession().collect(::onSession) }
         viewModelScope.launch { watched.prompt.collect { w -> _state.update { it.copy(watched = w) } } }
+        viewModelScope.launch { watched.sharerPin.collect { a -> _state.update { it.copy(sharerPin = a) } } }
         viewModelScope.launch { watched.messages.collect { m -> _state.update { it.copy(watchedMessage = m) } } }
     }
 
@@ -216,6 +217,11 @@ class PlayerViewModel(
     fun watchedDelete() = watched.delete()
     fun watchedTogether() = watched.together()
     fun keepDownload() = watched.keep()
+
+    /** "Watched together"'s PIN for a protected sharer (security review M8 F12): the field, then submit or leave that profile out. */
+    val sharerPin get() = watched.pin
+    fun submitSharerPin() = watched.submitSharerPin()
+    fun cancelSharerPin() = watched.cancelSharerPin()
     fun dismissWatchedMessage() = _state.update { it.copy(watchedMessage = null) }
     fun setAppearance(a: SubtitleAppearance) = subtitleSettings.update(a)
 

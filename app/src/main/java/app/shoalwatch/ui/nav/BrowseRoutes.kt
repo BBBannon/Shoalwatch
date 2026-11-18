@@ -350,10 +350,12 @@ internal fun PlayerRoute(graph: AppGraph, nav: NavHostController, itemId: String
             onWatchedTogether = vm::watchedTogether,
             onKeepDownload = vm::keepDownload,
             onDismissWatchedMessage = vm::dismissWatchedMessage,
+            onSubmitSharerPin = vm::submitSharerPin,
+            onCancelSharerPin = vm::cancelSharerPin,
             onEnterPip = pip?.let { host -> { host.enterNow(); Unit } },
         )
     }
-    PlayerScreen(state, actions, rememberDolbyVisionScreen(), inPip) { controlsUp ->
+    PlayerScreen(state, actions, rememberDolbyVisionScreen(), inPip, sharerPin = vm.sharerPin) { controlsUp ->
         VideoSurface(vm.video, vm.cues, state.appearance, controlsUp)
     }
 }

@@ -416,6 +416,10 @@
     <string name="watched_deleted">Marked as watched. The download is deleted when this closes.</string>
     <string name="watched_kept_for_others">Marked as watched. It stays on this phone for another profile.</string>
     <string name="watched_kept_until_everyone">Marked as watched. It stays on this phone until everyone who shares it has watched it.</string>
+    <string name="watched_left_out">Marked as watched. A protected profile was left out because its PIN wasn’t entered.</string>
+    <string name="together_pin_title">Mark it watched for %1$s too?</string>
+    <string name="together_pin_body">%1$s’s profile is protected. Enter %1$s’s PIN to mark it watched for them too, or cancel to leave them out.</string>
+    <string name="together_pin_confirm">Mark watched</string>
     <string name="watched_failed">Couldn\'t delete this download. You can delete it in Storage.</string>
     <string name="up_next_untitled">Up next: the next episode</string>
     <plurals name="up_next_in">

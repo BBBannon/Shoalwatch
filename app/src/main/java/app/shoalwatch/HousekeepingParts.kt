@@ -5,8 +5,10 @@ import app.shoalwatch.data.db.downloads.ReleaseStore
 import app.shoalwatch.data.downloads.AutoDownloadNext
 import app.shoalwatch.data.downloads.HousekeepingRepository
 import app.shoalwatch.data.downloads.ReleasedFiles
+import app.shoalwatch.data.downloads.SharerLocks
 import app.shoalwatch.data.playback.QualityDefault
 import app.shoalwatch.data.sync.OnlineEvents
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 /** Watch-and-delete's wiring (kept out of [AppGraph], which is near its size limit): see "Watch-and-delete" in docs/ARCHITECTURE.md. */
@@ -38,5 +40,11 @@ internal class HousekeepingParts(graph: AppGraph) {
             graph.localPlaystate.markWatchedHere(s, id)
         },
         household = graph.lockParts.householdGuard,
+        // "Watched together" marks a protected profile only with its own PIN (security review M8 F12).
+        sharerLocks = SharerLocks(
+            isProtected = { graph.lockParts.profileLocks.isProtected(it) },
+            check = { s, pin -> graph.lockParts.profileLocks.check(s, pin) },
+            name = { s -> graph.serverStore.accounts(s.serverId).first().firstOrNull { it.userId == s.userId }?.userName },
+        ),
     )
 }
