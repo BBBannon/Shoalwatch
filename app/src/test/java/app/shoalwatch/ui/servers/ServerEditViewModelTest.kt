@@ -127,6 +127,17 @@ class ServerEditViewModelTest {
         assertNull(vm.state.value.pane)
     }
 
+    /** Review M-9 (sibling of F6): a newly typed address is unverified, so the saved headers are not sent to it; they are kept. */
+    @Test fun aNewAddressIsCheckedWithoutTheCustomHeadersWhichAreKept() {
+        val (catalog, vm) = setup(testServer(home = "https://192.168.1.10:8920", cleartext = false, headers = mapOf("X-Proxy" to secret)))
+        vm.editAddress(AddressSlot.Away)
+        vm.onAddressText("jf.example.org")
+        vm.saveAddress()
+        assertTrue("checked", auth.findCalls.isNotEmpty())
+        assertTrue("no header on any check", auth.findCalls.all { it.second.customHeaders.isEmpty() })
+        assertEquals(mapOf("X-Proxy" to secret), catalog.upserts.single().customHeaders)
+    }
+
     @Test fun anAddressForADifferentServerIsRejectedAndNothingIsSaved() {
         val (catalog, vm) = setup()
         auth.onFind = { text, _ -> serverInfo(text, id = "someone-else") }

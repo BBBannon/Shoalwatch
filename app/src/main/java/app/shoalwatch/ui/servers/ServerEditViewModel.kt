@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -118,6 +119,7 @@ class ServerEditViewModel(
     household: Household?,
 ) : ViewModel() {
     internal val door = HouseholdDoor(household, viewModelScope)
+    private val headerValues = HeaderValues(catalog, serverId, viewModelScope)
     private data class Local(val pane: EditPane? = null, val busy: Boolean = false, val error: String? = null, val addressRequired: Boolean = false)
 
     /** What the address check was started with, so only what the check itself changed is merged into the server. */
@@ -131,8 +133,12 @@ class ServerEditViewModel(
         connections.connection(serverId),
     ) { server, connection -> server to server?.let { connection.toView() } }
 
+    init {
+        viewModelScope.launch { door.state.first { it == Door.Open }; headerValues.refresh() }
+    }
+
     val state: StateFlow<ServerEditUiState> =
-        combine(serverWithConnection, local, checker.state, door.state) { (server, connection), local, check, door ->
+        combine(serverWithConnection, local, checker.state, door.state, headerValues.values) { (server, connection), local, check, door, values ->
             if (door != Door.Open) {
                 ServerEditUiState() // nothing of the server (addresses, header values) until the household check passes
             } else if (server == null) {
@@ -148,7 +154,7 @@ class ServerEditViewModel(
                     certificateChanged = server.pinInvalid || connection?.certificateChanged == true,
                     certificateNeedsReview = server.pinInvalid || connection?.needsCertificateReview == true,
                     hasClientCertificate = server.clientCertAlias != null,
-                    headers = server.customHeaders.entries.sortedBy { it.key.lowercase() }.map { HeaderItem(it.key, it.value) },
+                    headers = server.customHeaders.keys.sortedBy { it.lowercase() }.map { HeaderItem(it, values[it].orEmpty()) },
                     connection = connection,
                     pane = local.pane, addressCheck = check, busy = local.busy, error = local.error,
                     addressRequired = local.addressRequired,
@@ -198,7 +204,8 @@ class ServerEditViewModel(
                 // A new or edited address never inherits the server's consent to plain http: it is warned about again.
                 // The certificate pin and the client-certificate alias ARE carried over on purpose: they belong to the
                 // server, not to one address, and keeping them can only make the check stricter (fail-closed).
-                checkStart = ServerNetDraft(false, server.pinnedSpkiSha256, server.clientCertAlias, server.customHeaders)
+                // No custom header goes to an address not yet checked as this server (review M-9, as the re-trust probe).
+                checkStart = ServerNetDraft(false, server.pinnedSpkiSha256, server.clientCertAlias, customHeaders = emptyMap())
                 checker.start(text, checkStart, server.id)
             }
         }
@@ -342,7 +349,7 @@ class ServerEditViewModel(
     fun editHeader(name: String) {
         if (!door.isOpen) return
         viewModelScope.launch {
-            val value = catalog.server(serverId)?.customHeaders?.get(name) ?: return@launch
+            val value = headerValues.value(name) ?: return@launch
             local.update { it.copy(pane = EditPane.Header(name, name, value, null), error = null) }
         }
     }
@@ -379,6 +386,7 @@ class ServerEditViewModel(
         try {
             val server = catalog.server(serverId) ?: return
             catalog.upsertServer(change(server))
+            headerValues.refresh()
             local.update { it.copy(busy = false, pane = if (closePane) null else it.pane) }
         } catch (e: CancellationException) {
             throw e
