@@ -51,7 +51,7 @@ import org.junit.rules.TemporaryFolder
 
 /**
  * Milestone 9: with no connection the car still lists the downloads and plays them, through the phone's own offline path (the
- * real resolver prefers the saved copy; the server is never asked). A verified copy of episode 1 for Ben, the server offline.
+ * real resolver prefers the saved copy; the server is never asked). A verified copy of episode 1 for the first profile, the server offline.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 internal class CarOfflineTest : PlaybackControllerTestBase() {

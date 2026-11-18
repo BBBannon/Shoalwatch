@@ -1,9 +1,9 @@
 # Milestone 9 — Android Auto parked app
 
-**Goal (Ben, 18/11/2026):** Shoalwatch shows on the car's Android Auto screen as a **parked app** (only while parked; Android Auto
+**Goal (the owner, 18/11/2026):** Shoalwatch shows on the car's Android Auto screen as a **parked app** (only while parked; Android Auto
 itself stops it when the car moves), installed from the normal GitHub APK with no USB trick. Version **1.1.0 (build 3)**.
 
-## What we know (proven in AAFin, Ben's car, 12/11/2026)
+## What we know (proven in AAFin, the test car, 12/11/2026)
 
 - A non-Play app is allowed in a real car only with Android Auto's "Unknown sources" developer setting on AND as a **parked
   (native) app**: an activity with `MAIN` + `android.intent.category.CAR_LAUNCHER`.
@@ -11,7 +11,7 @@ itself stops it when the car moves), installed from the normal GitHub APK with n
   Google flag and a newer head unit). So Shoalwatch shows as a game.
 - AAFin's working parked build has no Car App Library service (it was left out because Android Auto reported "a conflicting driving optimized app"); the reason is unproven. Shoalwatch has none, the same as that working build; a manifest rule keeps it so.
 - **`FLAG_SECURE` windows are blanked on the car display**: the car activity must never set it. DRM is out of scope.
-- The Desktop Head Unit is more lenient than the car; only the car proves it (Ben's device check).
+- The Desktop Head Unit is more lenient than the car; only the car proves it (the owner's device check).
 
 ## Decisions
 
@@ -41,16 +41,16 @@ itself stops it when the car moves), installed from the normal GitHub APK with n
    the car activity (exactly one filter: `MAIN` + `CAR_LAUNCHER`, task affinity `app.shoalwatch.car`) and the job service;
    `appCategory="game"`; no Car App Library or media-browser service, category or meta-data.
 
-8. **Ben to confirm (review M4):** while the car screen shows the app, the phone's "Lock after" does not run (the app counts as
+8. **The owner to confirm (review M4):** while the car screen shows the app, the phone's "Lock after" does not run (the app counts as
    in use). So with the car parked and showing Shoalwatch, the phone opens unlocked for as long as the car shows it. Left as is;
-   a cap (the car holding the clock for at most some hours) is possible if Ben wants one.
+   a cap (the car holding the clock for at most some hours) is possible if the owner wants one.
 9. **Round 2 (review I1, I2, M1-M3):** on the phone's own display the car activity shows only "Open Shoalwatch on your car's screen"
    and never counts as shown (it does not finish, so a wrong display is visible); Android 13+ keeps no recents picture of the car task
    (`setRecentsScreenshotEnabled(false)`, never `FLAG_SECURE`); the car's lists carry the profile they were read for and are drawn
    only for it; `allowEmbedded` is banned on the car activity; a car-app category alone fails the rule.
 
-**Ben to confirm SPEC wording:** S10 says "No exported components except the launcher activity". There are now two exported
-activities (the launcher and the car activity, Ben-approved 18/11/2026). Recorded in ARCHITECTURE; agents do not edit SPEC.md.
+**The owner to confirm the SPEC wording:** S10 says "No exported components except the launcher activity". There are now two exported
+activities (the launcher and the car activity, owner-approved 18/11/2026). Recorded in ARCHITECTURE; agents do not edit SPEC.md.
 
 ## Tasks
 

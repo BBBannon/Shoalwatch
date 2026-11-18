@@ -96,7 +96,7 @@ internal class CarViewModelTest : PlaybackControllerTestBase() {
     @Test fun whatTheCarMayShowFollowsTheLockForExactlyTheActiveProfile() {
         assertEquals(CarAccess.Waiting, CarViewModel.accessOf(BEN, LockState.Checking, null))
         assertEquals(CarAccess.Locked, CarViewModel.accessOf(BEN, LockState.App, null))
-        assertEquals(CarAccess.Locked, CarViewModel.accessOf(BEN, LockState.Profile(BEN, "Ben"), null))
+        assertEquals(CarAccess.Locked, CarViewModel.accessOf(BEN, LockState.Profile(BEN, "first"), null))
         assertEquals("not judged yet", CarAccess.Waiting, CarViewModel.accessOf(BEN, LockState.Open, null))
         assertEquals("judged for another profile", CarAccess.Waiting, CarViewModel.accessOf(AMY, LockState.Open, Judged(BEN)))
         assertEquals(CarAccess.SignIn, CarViewModel.accessOf(null, LockState.Open, Judged(null)))
@@ -104,7 +104,7 @@ internal class CarViewModelTest : PlaybackControllerTestBase() {
     }
 
     @Test fun lockedTheCarShowsTheMessageAndReadsNothingOfTheProfileThenOpensLiveWhenThePhoneUnlocks() = runTest(dispatcher) {
-        lock.value = LockState.Profile(BEN, "Ben"); openFor.value = null
+        lock.value = LockState.Profile(BEN, "first"); openFor.value = null
         library.homeFlow(BEN).value = homeWith(listOf(episode(101)), listOf(episode(102)))
         val vm = vm()
         assertEquals(CarAccess.Locked, vm.access.value)
@@ -150,7 +150,7 @@ internal class CarViewModelTest : PlaybackControllerTestBase() {
         activePlayback.sessionChanged(AMY); active.value = AMY; openFor.value = Judged(AMY); runCurrent()
         assertNull(vm.player.value)
         assertTrue(carEngine.released)
-        assertNull("Amy's lists are not Ben's", vm.lists.value?.resume?.firstOrNull())
+        assertNull("the second profile's lists are not the first's", vm.lists.value?.resume?.firstOrNull())
     }
 
     @Test fun startingOnThePhoneEndsTheCarsPlaybackAndTheCarGoesBackToItsList() = runTest(dispatcher) {
@@ -234,8 +234,8 @@ internal class CarViewModelTest : PlaybackControllerTestBase() {
     }
 
     /**
-     * Review I2: a direct change from Ben (open) to Amy (open) must never pair Amy's access with Ben's lists, even before Amy's
-     * lists have loaded (Amy's Home here never answers).
+     * Review I2: a direct change from one open profile to another must never pair the second's access with the first's lists, even before its
+     * lists have loaded (the second profile's Home here never answers).
      */
     @Test fun aProfileChangeNeverShowsThePreviousProfilesListsUnderTheNewOne() = runTest(dispatcher) {
         library.homeFlow(BEN).value = homeWith(listOf(episode(101)), listOf(episode(102)))
@@ -253,7 +253,7 @@ internal class CarViewModelTest : PlaybackControllerTestBase() {
         active.value = AMY; openFor.value = Judged(AMY); runCurrent()
         assertEquals(CarAccess.Open(AMY), vm.access.value)
         val shown = vm.lists.value
-        assertTrue("Ben's lists are not shown as Amy's", shown == null || shown.session == AMY)
+        assertTrue("the first profile's lists are not shown as the second's", shown == null || shown.session == AMY)
     }
 
     @Test fun losingTheCarScreenPausesAndItNeverPlaysAgainByItself() = runTest(dispatcher) {

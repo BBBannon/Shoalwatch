@@ -246,7 +246,7 @@ abstract class VerifyManifestRuleFixtures : DefaultTask() {
 
 // The one definition of what the release manifest may contain, shared by the real check and the fixture task.
 val releaseLauncherActivity = "app.shoalwatch.ui.MainActivity"
-// Milestone 9: the Android Auto parked app (MAIN + CAR_LAUNCHER only), the one other exported activity (Ben, 18/11/2026).
+// Milestone 9: the Android Auto parked app (MAIN + CAR_LAUNCHER only), the one other exported activity (owner-approved, 18/11/2026).
 val releaseCarActivity = "app.shoalwatch.ui.car.ParkedCarActivity"
 val releaseExpectedPermissions = setOf(
     "android.permission.INTERNET",
