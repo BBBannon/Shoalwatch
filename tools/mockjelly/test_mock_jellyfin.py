@@ -92,6 +92,32 @@ class Served(unittest.TestCase):
         return status, json.loads(raw) if raw else None
 
 
+class QuickConnect(Served):
+    def test_off_by_default(self):
+        self.assertEqual((200, False), self.json("GET", "/QuickConnect/Enabled"))
+        self.assertEqual(401, self.call("POST", "/QuickConnect/Initiate", token=None)[0])
+
+    def test_a_code_is_approved_on_the_second_poll_and_signs_in_once(self):
+        m.CONFIG["quick_connect"] = True
+        try:
+            self.assertEqual((200, True), self.json("GET", "/QuickConnect/Enabled"))
+            started = json.loads(self.call("POST", "/QuickConnect/Initiate", token=None)[2])
+            secret = started["Secret"]
+            self.assertRegex(secret, r"^[0-9a-f]{64}$")
+            self.assertRegex(started["Code"], r"^[0-9]{6}$")
+            self.assertEqual(400, self.call("POST", "/Users/AuthenticateWithQuickConnect", {"Secret": secret}, token=None)[0])
+            polls = [json.loads(self.call("GET", f"/QuickConnect/Connect?secret={secret}", token=None)[2])["Authenticated"] for _ in range(2)]
+            self.assertEqual([False, True], polls)
+            status, _, raw = self.call("POST", "/Users/AuthenticateWithQuickConnect", {"Secret": secret}, token=None)
+            self.assertEqual(200, status)
+            body = json.loads(raw)
+            self.assertEqual((m.USER_ID, m.SERVER_ID), (body["User"]["Id"], body["ServerId"]))
+            self.assertEqual(400, self.call("POST", "/Users/AuthenticateWithQuickConnect", {"Secret": secret}, token=None)[0], "a secret signs in once")
+            self.assertEqual(404, self.call("GET", f"/QuickConnect/Connect?secret={'0' * 64}", token=None)[0])
+        finally:
+            m.CONFIG["quick_connect"] = False
+
+
 class PlaybackInfo(Served):
     def test_needs_a_token(self):
         self.assertEqual(401, self.call("POST", f"/Items/{FILM}/PlaybackInfo", {}, token=None)[0])

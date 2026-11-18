@@ -15,8 +15,16 @@ import okhttp3.OkHttpClient
  *
  * [oneOff] is the other way in: a client built for a single use (revoking a token) that is never stored here, so it
  * can neither take over nor reuse the provider of a live per-account client.
+ *
+ * Connections are only ever closed through [closeLater], never on the caller's thread: closing a TLS connection writes a
+ * close_notify, which Android refuses on the main thread (`NetworkOnMainThreadException`), and [evict] runs from the account
+ * and settings hooks, which can be on the main thread (a Quick Connect sign-in on an https server failed that way, 18/11/2026).
+ * A dropped client is already out of the cache before its close is queued, so nothing new uses it meanwhile.
  */
-class ServerClients(private val factory: HttpClientFactory) {
+class ServerClients(
+    private val factory: HttpClientFactory,
+    private val closeLater: (Runnable) -> Unit = ::closeInBackground,
+) {
     private val clients = object : LinkedHashMap<ServerNetConfig, OkHttpClient>(8, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<ServerNetConfig, OkHttpClient>?) = size > MAX_CLIENTS
     }
@@ -36,7 +44,8 @@ class ServerClients(private val factory: HttpClientFactory) {
         try {
             return block(client)
         } finally {
-            client.connectionPool.evictAll()
+            val pool = client.connectionPool
+            closeLater { pool.evictAll() }
         }
     }
 
@@ -58,10 +67,18 @@ class ServerClients(private val factory: HttpClientFactory) {
             }
             doomed.mapNotNull { clients.remove(it) }
         }
-        dropped.forEach { it.connectionPool.evictAll() }
+        if (dropped.isNotEmpty()) closeLater { dropped.forEach { it.connectionPool.evictAll() } }
     }
 
-    private companion object {
-        const val MAX_CLIENTS = 8
+    companion object {
+        private const val MAX_CLIENTS = 8
+
+        /** One daemon thread, so closes queue in order and never keep the process alive. */
+        private val closer = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+            Thread(r, "shoalwatch-close").apply { isDaemon = true }
+        }
+
+        /** The default [closeLater]: off the caller's thread; a close that fails is of no interest to anyone. */
+        fun closeInBackground(work: Runnable) = closer.execute { runCatching { work.run() } }
     }
 }

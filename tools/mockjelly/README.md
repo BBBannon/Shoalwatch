@@ -35,7 +35,7 @@ python -I tools/mockjelly/mock_jellyfin.py 8096
 | Second user | `anna` / `test-password-2` (id `bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb`; not an administrator; can download; sees everything) |
 | Third user | `kid` / `kid-password` (not an administrator; can download; sees everything except the series Night Shift) |
 | Fourth user | `guest` (disabled; cannot sign in) |
-| Quick Connect | Reported as switched off |
+| Quick Connect | Reported as switched off; with `--quick-connect` it is on: a code is approved on the second poll and signs in as ben, once |
 
 Each sign-in gets a fresh random token. `POST /Sessions/Logout` revokes it, after which its requests get 401. A request's user is its token's user, and each user has watched and favourite state of their own. Restarting the server forgets every token and resets all of it.
 
