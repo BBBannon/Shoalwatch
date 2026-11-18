@@ -111,7 +111,7 @@ object ManifestRules {
     private const val CAR_TASK_AFFINITY = "app.shoalwatch.car"
     private const val MAIN = "android.intent.action.MAIN"
     private const val CAR_LAUNCHER = "android.intent.category.CAR_LAUNCHER"
-    /** A templated (Car App Library) or media app in the package makes Android Auto skip the parked app; none may be declared. */
+    /** No templated (Car App Library) or media app in the package: the same as AAFin's working parked build (reason unproven); none may be declared. */
     private val drivingAppActions = listOf(
         "androidx.car.app.CarAppService", "android.media.browse.MediaBrowserService",
         "androidx.media3.session.MediaSessionService", "androidx.media3.session.MediaLibraryService",
@@ -159,6 +159,8 @@ object ManifestRules {
                 only.children("category").map { it.attr("name") } == listOf(CAR_LAUNCHER) && only.children("data").isEmpty()
             if (!exact) problems += "the car activity must have exactly one intent filter: MAIN with CAR_LAUNCHER"
             if (car.attr("taskAffinity") != CAR_TASK_AFFINITY) problems += "the car activity must set taskAffinity to $CAR_TASK_AFFINITY"
+            // Review M2: without it the platform refuses to start the activity on another app's own (untrusted) virtual display.
+            if (car.attr("allowEmbedded") == "true") problems += "the car activity must not set allowEmbedded (another app could host it on its own display)"
         }
         val carLaunchers = components.filter { c -> c.children("category").any { it.attr("name") == CAR_LAUNCHER } }.map { it.attr("name") }
         if (carLaunchers.any { it != carActivity }) problems += "only the car activity may use CAR_LAUNCHER, found $carLaunchers"
@@ -166,7 +168,7 @@ object ManifestRules {
             c.children("action").any { it.attr("name") in drivingAppActions } ||
                 c.children("category").any { it.attr("name").startsWith("androidx.car.app.category.") }
         }.map { it.attr("name") } + elements("meta-data").map { it.attr("name") }.filter { it in drivingAppMetaData }
-        if (drivingApps.isNotEmpty()) problems += "no Car App Library or media browser service may be declared (Android Auto would skip the parked app), found $drivingApps"
+        if (drivingApps.isNotEmpty()) problems += "no Car App Library or media browser service may be declared (keeps the package a plain parked app, as in AAFin's working build), found $drivingApps"
 
         // Android 14+ refuses a foreground service without its declared type: the download worker's is dataSync, and only that.
         val services = elements("service")
@@ -316,6 +318,8 @@ tasks.register<VerifyManifestRuleFixtures>("verifyManifestRuleFixtures") {
             "bad-car-app-service.xml" to "no Car App Library or media browser service",
             "bad-media-browser-service.xml" to "no Car App Library or media browser service",
             "bad-car-app-metadata.xml" to "no Car App Library or media browser service",
+            "bad-car-app-category.xml" to "no Car App Library or media browser service",
+            "bad-car-allow-embedded.xml" to "must not set allowEmbedded",
         ),
     )
     report.set(layout.buildDirectory.file("reports/release-manifest/fixtures.txt"))

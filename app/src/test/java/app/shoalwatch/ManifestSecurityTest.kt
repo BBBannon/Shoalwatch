@@ -146,6 +146,7 @@ class ManifestSecurityTest {
         assertEquals("true", car.attr("exported"))
         assertEquals("app.shoalwatch.car", car.attr("taskAffinity"))
         assertEquals("singleTask", car.attr("launchMode"))
+        assertEquals("no other app may host it on its own display", null, car.attr("allowEmbedded"))
         val filter = car.children("intent-filter").single()
         assertEquals(listOf("android.intent.action.MAIN"), filter.children("action").map { it.attr("name") })
         assertEquals(listOf("android.intent.category.CAR_LAUNCHER"), filter.children("category").map { it.attr("name") })

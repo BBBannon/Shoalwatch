@@ -32,7 +32,7 @@
 
         appCategory="game" (Milestone 9): Android Auto lets an app from outside Play run on the car screen only as a parked app in an
         allowed category, and games are the one it always allows (video needs a Google flag and a newer head unit). It changes nothing
-        on the phone. There is no Car App Library service: with one, Android Auto would skip the parked app.
+        on the phone. There is no Car App Library service, the same as AAFin's working parked build (the reason is unproven).
     -->
     <application
         android:name=".ShoalwatchApp"
