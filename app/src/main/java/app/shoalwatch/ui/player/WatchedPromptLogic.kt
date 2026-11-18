@@ -6,6 +6,7 @@ import app.shoalwatch.core.AppLog
 import app.shoalwatch.data.downloads.AfterFinish
 import app.shoalwatch.data.downloads.Housekeeping
 import app.shoalwatch.data.downloads.ReleaseOutcome
+import app.shoalwatch.data.downloads.TogetherRelease
 import app.shoalwatch.data.playback.PlayMethod
 import app.shoalwatch.data.playback.PlaybackState
 import app.shoalwatch.data.servers.AccountSummary
@@ -52,6 +53,7 @@ internal class WatchedPromptLogic(private val housekeeping: Housekeeping, privat
         }
         // A PIN asked for one profile's press is never answered for another (the next item of the same profile goes on).
         if (asking != null && state.session != null && state.session != asking?.prompt?.session) {
+            asking?.prompt?.let { p -> scope.launch { runCatching { housekeeping.dropProofs(p.session, p.itemId) } } }
             asking = null
             pin.clearText()
             _sharerPin.value = null
@@ -96,6 +98,7 @@ internal class WatchedPromptLogic(private val housekeeping: Housekeeping, privat
         _prompt.value = null // one press only
         scope.launch {
             val locked = try {
+                housekeeping.dropProofs(p.session, p.itemId) // nothing left from an earlier press (review M-2)
                 housekeeping.protectedSharers(p.session, p.itemId)
             } catch (e: CancellationException) {
                 throw e
@@ -170,13 +173,16 @@ internal class WatchedPromptLogic(private val housekeeping: Housekeeping, privat
     private fun release(p: WatchedPromptUi, together: Boolean, leftOut: Boolean) {
         scope.launch {
             val message = try {
-                val outcome = when (housekeeping.release(p.session, p.itemId, together)) {
+                // "Watched together" also learns whether the data layer left a protected profile out (review M-1).
+                val result = if (together) housekeeping.releaseTogether(p.session, p.itemId) else TogetherRelease(housekeeping.release(p.session, p.itemId, false), false)
+                val missed = leftOut || result.leftOut
+                val outcome = when (result.outcome) {
                     ReleaseOutcome.DELETED -> WatchedMessage.DELETED
                     ReleaseOutcome.KEPT_FOR_OTHERS -> WatchedMessage.KEPT_FOR_OTHERS
                     ReleaseOutcome.KEPT_UNTIL_EVERYONE_WATCHED -> WatchedMessage.KEPT_UNTIL_EVERYONE
                     ReleaseOutcome.NOT_YOURS -> WatchedMessage.FAILED
                 }
-                if (leftOut && outcome != WatchedMessage.FAILED) WatchedMessage.LEFT_OUT else outcome
+                if (missed && outcome != WatchedMessage.FAILED) WatchedMessage.LEFT_OUT else outcome
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

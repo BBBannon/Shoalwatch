@@ -33,6 +33,15 @@ interface Housekeeping {
     suspend fun release(s: Session, itemId: String, together: Boolean): ReleaseOutcome
 
     /**
+     * "Watched together" for [s]: as `release(s, itemId, together = true)`, and [TogetherRelease.leftOut] says whether a protected
+     * sharer was left out (no proof of its PIN for this press, or its protection could not be read).
+     */
+    suspend fun releaseTogether(s: Session, itemId: String): TogetherRelease = TogetherRelease(release(s, itemId, together = true), leftOut = false)
+
+    /** A new "Watched together" press (or one abandoned) of [itemId] by [s]: every PIN proof made for an earlier one goes. */
+    suspend fun dropProofs(s: Session, itemId: String) {}
+
+    /**
      * The protected profiles "Watched together" of [itemId] would mark for [s] (security review M8 F12), with their names for the
      * PIN step. Each is marked only after [proveSharer] with its own PIN; without one it is left out.
      */

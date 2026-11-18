@@ -209,6 +209,18 @@ class WatchedPromptLogicTest {
         assertEquals(0, housekeeping.calls.count { it.startsWith("release") })
     }
 
+    /** Review M-1/M-2: each press starts with no proof left from an earlier one; the data layer's own "left out" reaches the snackbar. */
+    @Test fun aPressDropsOldProofsAndTheDataLayersLeftOutIsSaid() = runTest {
+        housekeeping.choices = { _, _ -> ReleaseChoice(true, true, SharedDelete.EVERYONE, 1, false) }
+        housekeeping.leftOutByData = true
+        val l = logic()
+        val got = messages(l)
+        finish(l)
+        l.together(); runCurrent()
+        assertEquals(listOf("drop:ben:$e1", "release:ben:$e1:true"), housekeeping.calls.filter { it.startsWith("drop") || it.startsWith("release") })
+        assertEquals(listOf(WatchedMessage.LEFT_OUT), got)
+    }
+
     @Test fun eachOutcomeGivesItsMessage() = runTest {
         val expected = mapOf(
             ReleaseOutcome.DELETED to WatchedMessage.DELETED,

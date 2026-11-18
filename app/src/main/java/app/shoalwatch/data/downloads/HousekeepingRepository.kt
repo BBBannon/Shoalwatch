@@ -9,8 +9,6 @@ import app.shoalwatch.data.db.downloads.VolumeBytesRow
 import app.shoalwatch.data.db.library.toModel
 import app.shoalwatch.data.library.ItemWithUserData
 import app.shoalwatch.data.library.Playstate
-import app.shoalwatch.core.MonotonicClock
-import app.shoalwatch.core.SystemMonotonicClock
 import app.shoalwatch.data.servers.AccountSummary
 import app.shoalwatch.data.servers.JellyfinId
 import app.shoalwatch.security.PinCheck
@@ -57,9 +55,8 @@ class HousekeepingRepository internal constructor(
     private val household: HouseholdGuard? = null,
     /** Profile protection for "Watched together" (security review M8 F12); null: no profile is protected (tests). */
     private val sharerLocks: SharerLocks? = null,
-    clock: MonotonicClock = SystemMonotonicClock,
 ) : Housekeeping {
-    private val proofs = TogetherProofs(clock)
+    private val proofs = TogetherProofs()
 
     override fun profileSettings(s: Session): Flow<ProfileSettings> = guarded(ProfileSettings()) {
         dao.observeProfile(s.serverId, s.userId).map { row -> row?.let { ProfileSettings(it.afterFinish, it.autoNextCount) } ?: ProfileSettings() }
@@ -125,9 +122,23 @@ class HousekeepingRepository internal constructor(
 
     override suspend fun releaseChoice(s: Session, itemId: String): ReleaseChoice = action { releases.choice(s, itemId, signedIn(s)) }
 
-    override suspend fun release(s: Session, itemId: String, together: Boolean): ReleaseOutcome = action {
+    override suspend fun release(s: Session, itemId: String, together: Boolean): ReleaseOutcome = releaseWith(s, itemId, together).outcome
+
+    override suspend fun releaseTogether(s: Session, itemId: String): TogetherRelease = releaseWith(s, itemId, together = true)
+
+    override suspend fun dropProofs(s: Session, itemId: String) = proofs.drop(s, itemId)
+
+    /** Every press ends its proofs, used or not (review M-2): a later press can never reuse them. */
+    private suspend fun releaseWith(s: Session, itemId: String, together: Boolean): TogetherRelease = try {
+        releaseOnce(s, itemId, together)
+    } finally {
+        proofs.drop(s, itemId)
+    }
+
+    private suspend fun releaseOnce(s: Session, itemId: String, together: Boolean): TogetherRelease = action {
+        var leftOut = false
         // Nothing changes, not even watched, for a download this profile may not see (the same answer as none at all).
-        if (!releases.choice(s, itemId, signedIn(s)).canRelease) return@action ReleaseOutcome.NOT_YOURS
+        if (!releases.choice(s, itemId, signedIn(s)).canRelease) return@action TogetherRelease(ReleaseOutcome.NOT_YOURS, leftOut = false)
         // In the player, the stop's PLAY carries this watch to the server; a PLAYED tick as well would count it twice (review I1).
         val here = inPlayer(s, itemId)
         if (here) markHere(s, itemId) else playstate.setPlayed(s, itemId, true)
@@ -136,7 +147,10 @@ class HousekeepingRepository internal constructor(
                 val sharer = Session(s.serverId, other)
                 // A protected profile's account is written only with its own PIN for this press (security review M8 F12).
                 val locks = sharerLocks
-                if (locks != null && lockedOrUnknown(locks, sharer) && !proofs.consume(s, sharer, itemId)) continue
+                if (locks != null && lockedOrUnknown(locks, sharer) && !proofs.consume(s, sharer, itemId)) {
+                    leftOut = true
+                    continue
+                }
                 try {
                     playstate.setPlayed(sharer, itemId, true) // that profile's OWN outbox, sent as itself
                 } catch (e: AppError) {
@@ -149,7 +163,7 @@ class HousekeepingRepository internal constructor(
         remember(s, itemId)
         val outcome = apply(releases.release(s, itemId, watchedBy = setOf(s.userId))) // the rule is told directly that [s] watched
         if (!here) onWatched(s, itemId) // in the player, the stop's [onLocalFinished] runs it, once (Tasks 13-14 review M2)
-        outcome
+        TogetherRelease(outcome, leftOut)
     }
 
     override fun storage(s: Session): Flow<StorageView> = guarded(EMPTY_STORAGE) {

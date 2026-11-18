@@ -193,6 +193,13 @@ class FakeHousekeeping : app.shoalwatch.data.downloads.Housekeeping {
     /** "Watched together"'s protected sharers (security review M8 F12) and the PIN each accepts ([sharerPin]); proofs recorded in [calls]. */
     var protectedSharers: List<app.shoalwatch.data.servers.AccountSummary> = emptyList()
     var sharerPin = "4826"
+    /** What [releaseTogether] says the data layer left out (a proof gone, a protection unreadable). */
+    var leftOutByData = false
+
+    override suspend fun dropProofs(s: Session, itemId: String) { calls += "drop:${who(s)}:$itemId" }
+
+    override suspend fun releaseTogether(s: Session, itemId: String) =
+        app.shoalwatch.data.downloads.TogetherRelease(release(s, itemId, together = true), leftOutByData)
     /** Holds every [proveSharer] until completed (the check running on io). */
     var proveGate: CompletableDeferred<Unit>? = null
 
