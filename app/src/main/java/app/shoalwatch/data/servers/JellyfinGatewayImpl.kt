@@ -51,7 +51,8 @@ class JellyfinGatewayImpl(private val clients: ServerClients) : JellyfinGateway 
     override suspend fun quickConnectInitiate(address: ServerAddress, net: ServerNetConfig): QcSession {
         val dto = decode<QuickConnectDto>(send(address, net, "QuickConnect/Initiate", post = emptyBody()), AppError.Kind.SERVER_ERROR)
         return QcSession(
-            secret = dto.secret?.takeIf { it.isNotBlank() } ?: throw AppError.of(AppError.Kind.SERVER_ERROR),
+            // Sent back in every poll's query (security review M8 F10): only what a real secret looks like (Jellyfin's is 64 hex).
+            secret = dto.secret?.takeIf { SECRET.matches(it) } ?: throw AppError.of(AppError.Kind.SERVER_ERROR),
             // Shown on screen and read aloud, so only what a real code looks like gets through.
             code = dto.code?.takeIf { CODE.matches(it) } ?: throw AppError.of(AppError.Kind.SERVER_ERROR),
         )
@@ -165,6 +166,7 @@ class JellyfinGatewayImpl(private val clients: ServerClients) : JellyfinGateway 
         const val DEFAULT_USER_NAME = "Unnamed user"
         const val MAX_VERSION_LENGTH = 40
         val CODE = Regex("[A-Za-z0-9]{4,12}")
+        val SECRET = Regex("[A-Za-z0-9_-]{1,128}")
         val JSON = "application/json".toMediaType()
     }
 }

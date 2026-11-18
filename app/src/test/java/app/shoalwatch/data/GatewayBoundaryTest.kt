@@ -102,6 +102,20 @@ class GatewayBoundaryTest {
 
     // ---- the Quick Connect code is shown on screen, so it is checked here (review F6)
 
+    /** Security review M8 F10: the secret goes back in every poll's query, so it is held to what a real one looks like. */
+    @Test fun aQuickConnectSecretIsUpTo128LettersDigitsDashesOrUnderscores() {
+        fun withSecret(secret: String) = runBlocking {
+            web.enqueue(json("""{"Secret":"$secret","Code":"123456","Authenticated":false}"""))
+            gateway.quickConnectInitiate(address, net)
+        }
+        val real = "0123456789abcdef".repeat(4)
+        assertEquals(real, withSecret(real).secret)
+        assertEquals("sec_1-A", withSecret("sec_1-A").secret)
+        for (bad in listOf("a".repeat(129), "se cret", "sec%2F1", "sec/../1", "s\u00e9c", "sec\n1")) {
+            assertEquals(bad, AppError.Kind.SERVER_ERROR, failure { withSecret(bad) }.kind)
+        }
+    }
+
     private fun initiate(code: String) = runBlocking {
         web.enqueue(json("""{"Secret":"sec-1","Code":"$code","Authenticated":false}"""))
         gateway.quickConnectInitiate(address, net)

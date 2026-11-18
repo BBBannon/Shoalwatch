@@ -1,6 +1,8 @@
 package app.shoalwatch.data.library
 
 import app.shoalwatch.core.AppError
+import app.shoalwatch.data.library.api.toItem
+import app.shoalwatch.data.library.api.toItemDto
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -73,6 +75,17 @@ class LibraryGatewayHostileTest : LibraryGatewayTestBase() {
         assertNull(item.communityRating)
         assertNull(item.childCount)
         assertNull(item.premiereDate)
+    }
+
+    /** Security review M8 F10: an item's runtime is capped at 48 hours, like the playback and admin runtimes. */
+    @Test fun aRuntimeOver48HoursIsUnknown() {
+        fun runtime(ticks: Long) = app.shoalwatch.data.api.JsonBodies.JSON.parseToJsonElement(
+            """{"Id":"ff000000000000000000000000000001","Name":"x","Type":"Movie","RunTimeTicks":$ticks}""",
+        ).toItemDto()!!.toItem()!!.runtimeMs
+        val limit = 48L * 60 * 60 * 1000
+        assertEquals(limit, runtime(limit * 10_000))
+        assertNull(runtime(limit * 10_000 + 1))
+        assertNull(runtime(Long.MAX_VALUE))
     }
 
     @Test fun imageTagsThatAreNotPlainTokensAreNull() {

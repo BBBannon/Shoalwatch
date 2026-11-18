@@ -36,6 +36,8 @@ internal object Limits {
     const val MAX_SEASONS = 1000
     const val PLAY_COUNT_MAX = 100_000
     const val POSITION_TICKS_MAX = Long.MAX_VALUE / 10_000
+    /** 48 hours, as the playback and admin runtimes (security review M8 F10): anything longer is unknown. */
+    val RUNTIME_TICKS_MAX = Ticks.fromMs(48L * 60 * 60 * 1000)
     val LAST_PLAYED_RANGE: ClosedRange<Instant> = Instant.parse("2000-01-01T00:00:00Z")..Instant.parse("2200-01-01T00:00:00Z")
 }
 
@@ -89,7 +91,7 @@ internal fun BaseItemDto.toItem(): Item? {
         indexNumber = intIn(indexNumber, 0..Limits.INDEX_MAX),
         parentIndexNumber = intIn(parentIndexNumber, 0..Limits.INDEX_MAX),
         overview = displayParagraphs(overview, Limits.OVERVIEW).ifEmpty { null },
-        runtimeMs = runTimeTicks?.takeIf { it >= 0 }?.let(Ticks::toMs),
+        runtimeMs = runTimeTicks?.takeIf { it in 0..Limits.RUNTIME_TICKS_MAX }?.let(Ticks::toMs),
         year = intIn(productionYear, 1800..2200),
         premiereDate = instant(premiereDate),
         communityRating = communityRating?.takeIf { it in 0.0..10.0 }?.toFloat(),

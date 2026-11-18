@@ -1,3 +1,4 @@
+v1.159 — 18/11/2026 — A server can no longer send a nonsense running time or an oversized Quick Connect code to the app
 v1.158 — 18/11/2026 — Pictures from a removed server are now cleared the next time the app starts, if any were left behind
 v1.157 — 18/11/2026 — The release safety check now also catches a few more ways an app could quietly gain permissions or share its private data
 v1.156 — 18/11/2026 — When you re-trust a changed server certificate, your saved custom headers are no longer sent until the server is confirmed to be yours
