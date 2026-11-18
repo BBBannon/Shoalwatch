@@ -161,6 +161,38 @@ class ServersAndHomeViewModelTest {
         assertTrue(vm.state.value.confirm is Confirm.SignOut)
     }
 
+    /** Final review M5: removing a server signs its profiles out, so a protected one that is not active is asked for by its own PIN. */
+    @Test fun removingAServerWithAnotherProtectedProfileAsksThatProfilesOwnPin() {
+        val catalog = catalog()
+        val household = app.shoalwatch.ui.lock.FakeHousehold(ask = true, grownUps = listOf(amy, other))
+        val vm = guarded(catalog, household)
+        vm.askRemoveServer("s2") // cat: protected, on s2 and not active
+        val ask = vm.grownUpAsk.value!!
+        assertTrue(ask.signOut)
+        assertEquals(other, ask.chosen)
+        assertNull(vm.state.value.confirm)
+        vm.grownUpPin.edit { append("4826") }
+        vm.submitGrownUp()
+        assertEquals(catS, household.confirms.last().first)
+        assertTrue(vm.state.value.confirm is Confirm.RemoveServer)
+    }
+
+    @Test fun aServerWithTwoOtherProtectedProfilesIsNotRemovedUntilOneIsSignedOut() {
+        val dan = AccountSummary("s1", "u4", "dan")
+        val catalog = FakeCatalog(servers = listOf(testServer("s1"), testServer("s2")), accounts = listOf(ben, amy, dan, other), active = ben)
+        val household = app.shoalwatch.ui.lock.FakeHousehold(ask = true, grownUps = listOf(amy, dan, other))
+        val vm = ServersViewModel(
+            catalog, FakeAuthenticator(catalog), switcher = app.shoalwatch.ui.lock.FakeSwitcher(catalog), household = household,
+            protection = kotlinx.coroutines.flow.MutableStateFlow(setOf(amyS, app.shoalwatch.data.servers.Session("s1", "u4"), catS)),
+        )
+        vm.askRemoveServer("s1")
+        assertNull("no one PIN can cover both", vm.grownUpAsk.value)
+        assertNull(vm.state.value.confirm)
+        assertTrue(vm.state.value.signOutFirst)
+        vm.askSignOut("s1", "u4") // the way on: sign one out with its own PIN
+        assertFalse(vm.state.value.signOutFirst)
+    }
+
     @Test fun signingOutTheActiveOrAnUnprotectedProfileAsksNothing() {
         val catalog = catalog(active = amy)
         val household = app.shoalwatch.ui.lock.FakeHousehold(ask = true, grownUps = listOf(amy, other))

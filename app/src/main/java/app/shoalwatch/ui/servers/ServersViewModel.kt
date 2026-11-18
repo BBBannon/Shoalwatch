@@ -103,6 +103,8 @@ data class ServersUiState(
     val openSettings: String? = null,
     /** The data layer refused a household change (a race with the check): "A grown-up's PIN is needed. Try again." */
     val householdRace: Boolean = false,
+    /** Removing this server would sign out two or more protected profiles that are not active: each must be signed out first, with its own PIN. */
+    val signOutFirst: Boolean = false,
 )
 
 /**
@@ -129,7 +131,7 @@ class ServersViewModel(
 ) : ViewModel() {
     private data class Local(
         val confirm: Confirm? = null, val busy: Boolean = false, val sending: Boolean = false, val error: String? = null, val notice: ServersNotice? = null,
-        val openSettings: String? = null, val householdRace: Boolean = false,
+        val openSettings: String? = null, val householdRace: Boolean = false, val signOutFirst: Boolean = false,
     )
 
     private val local = MutableStateFlow(Local())
@@ -190,6 +192,7 @@ class ServersViewModel(
                 },
                 confirm = local.confirm, busy = local.busy, sending = local.sending, error = local.error, notice = local.notice,
                 adminServerId = adminServerId, openSettings = local.openSettings, householdRace = local.householdRace,
+                signOutFirst = local.signOutFirst,
             )
         }.stateIn(viewModelScope, SharingStarted.Eagerly, ServersUiState())
 
@@ -212,7 +215,7 @@ class ServersViewModel(
     fun dismissGrownUp() { grownUp?.dismiss() }
 
     private fun guard(then: () -> Unit) {
-        local.update { it.copy(householdRace = false) }
+        local.update { it.copy(householdRace = false, signOutFirst = false) }
         grownUp?.guard(then) ?: then()
     }
 
@@ -220,6 +223,7 @@ class ServersViewModel(
     fun askSignOut(serverId: String, userId: String) {
         val server = state.value.servers.firstOrNull { it.id == serverId } ?: return
         val account = server.accounts.firstOrNull { it.userId == userId } ?: return
+        local.update { it.copy(signOutFirst = false) }
         val flow = grownUp
         if (account.isProtected && !account.isActive && flow != null) {
             flow.guardSignOut(AccountSummary(serverId, userId, account.userName)) { askSignOutNow(serverId, userId) }
@@ -240,8 +244,24 @@ class ServersViewModel(
         }
     }
 
-    /** Removing a server is a household setting: a grown-up's PIN first. */
-    fun askRemoveServer(serverId: String) = guard { askRemoveServerNow(serverId) }
+    /**
+     * Removing a server is a household setting, and it signs out every profile on it (final review M5): with one protected profile
+     * on it that is not active, that profile's own PIN first (which is also a grown-up's); with two or more, no one PIN covers them,
+     * so it is refused until all but one are signed out ([ServersUiState.signOutFirst]); else a grown-up's PIN.
+     */
+    fun askRemoveServer(serverId: String) {
+        val server = state.value.servers.firstOrNull { it.id == serverId } ?: return
+        val others = server.accounts.filter { it.isProtected && !it.isActive }
+        val flow = grownUp
+        when {
+            flow == null || others.isEmpty() -> guard { askRemoveServerNow(serverId) }
+            others.size == 1 -> {
+                local.update { it.copy(householdRace = false, signOutFirst = false) }
+                flow.guardSignOut(AccountSummary(serverId, others[0].userId, others[0].userName)) { askRemoveServerNow(serverId) }
+            }
+            else -> local.update { it.copy(householdRace = false, signOutFirst = true, confirm = null) }
+        }
+    }
 
     private fun askRemoveServerNow(serverId: String) {
         val server = state.value.servers.firstOrNull { it.id == serverId } ?: return

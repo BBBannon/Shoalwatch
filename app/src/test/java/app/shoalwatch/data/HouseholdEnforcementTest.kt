@@ -142,6 +142,22 @@ class HouseholdEnforcementTest : ReleaseTestBase() {
         assertFalse(U1 in accountIds())
     }
 
+    /** Final review M5: removing a server signs out every profile on it, so each protected one needs its own PIN, as a sign-out does. */
+    @Test fun removingAServerNeedsTheOwnPinOfEachProtectedProfileOnIt() = runBlocking {
+        val onS2 = s2u1
+        assertTrue(locks.protect(a, "4826".toCharArray()))
+        assertTrue(locks.protect(onS2, "1357".toCharArray()))
+        assertEquals(PinCheck.Correct, guard.confirm(a, "4826".toCharArray())) // another grown-up's PIN
+        refused("removing a server with another's protected profile on it") { auth.removeServer(S2) }
+        assertNotNull(servers.server(S2))
+        assertTrue(locks.isProtected(onS2))
+        assertTrue("no request was sent", authGateway.calls.isEmpty())
+
+        assertEquals(PinCheck.Correct, guard.confirm(onS2, "1357".toCharArray())) // that profile's own PIN
+        auth.removeServer(S2)
+        assertNull(servers.server(S2))
+    }
+
     @Test fun withNoProtectedProfileNothingIsAsked() = runBlocking {
         downloads.setSharing(b, true)
         assertTrue(store.sharing(S1))

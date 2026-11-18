@@ -169,7 +169,10 @@ class StoreCatalog(
     override val readFailed = store.readFailed
 }
 
-/** Removing a server, and signing out a protected profile that is not active, need the household check ([household]). */
+/**
+ * Removing a server, and signing out a protected profile that is not active, need the household check ([household]); removing a
+ * server also needs the own PIN of each protected profile on it that is not the active one (final review M5).
+ */
 class AuthenticatorImpl(
     private val repository: AuthRepository,
     private val household: suspend () -> HouseholdGuard? = { null },
@@ -201,7 +204,7 @@ class AuthenticatorImpl(
 
     /** @throws app.shoalwatch.security.HouseholdLockedException before anything is sent or removed. */
     override suspend fun removeServer(serverId: String): Boolean {
-        household()?.require()
+        household()?.requireRemoveServer(serverId)
         return repository.removeServer(serverId)
     }
 }

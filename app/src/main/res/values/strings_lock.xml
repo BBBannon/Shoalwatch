@@ -56,6 +56,7 @@
     <string name="grownup_race">A grown-up’s PIN is needed. Try again.</string>
     <string name="signout_pin_title">Sign out %1$s?</string>
     <string name="signout_pin_body">%1$s’s profile is protected. Enter its PIN to sign it out.</string>
+    <string name="remove_server_sign_out_first">More than one profile on this server has its own PIN. Sign each of them out first, with its own PIN, then remove the server.</string>
 
     <!-- Settings (Task 7) -->
     <string name="settings_title">Settings</string>

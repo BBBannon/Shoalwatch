@@ -125,6 +125,17 @@ class HouseholdGuard(
         if (!allowsSignOut(target)) throw HouseholdLockedException()
     }
 
+    /**
+     * Removing [serverId] signs out every profile on it, so it is the household check plus, for each protected profile on it,
+     * what signing that profile out needs: its own PIN unless it is the active, open profile (final review M5). With two such
+     * profiles no one pass can cover both, so one of them must be signed out first.
+     * @throws HouseholdLockedException
+     */
+    suspend fun requireRemoveServer(serverId: String) {
+        require()
+        locks.protectedProfiles.first().filter { it.serverId == serverId }.forEach { requireSignOut(it) }
+    }
+
     /** The pass ends now (LockGate calls this when the app locks). */
     fun endPass() {
         pass = null

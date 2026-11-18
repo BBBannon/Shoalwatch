@@ -96,6 +96,7 @@ fun ServersScreen(state: ServersUiState, actions: ServersActions, dialogs: Serve
     ) {
         ErrorMessage(state.error)
         if (state.householdRace) ErrorMessage(stringResource(R.string.grownup_race))
+        if (state.signOutFirst) ErrorMessage(stringResource(R.string.remove_server_sign_out_first))
         state.notice?.let { notice ->
             NoticeCard(
                 title = stringResource(if (notice == ServersNotice.SignedOutHereOnly) R.string.notice_signed_out_title else R.string.notice_removed_title),

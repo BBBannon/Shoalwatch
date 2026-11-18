@@ -1,3 +1,4 @@
+v1.148 — 18/11/2026 — Removing a server now needs the PIN of the protected profile on it, as signing that profile out does; if more than one profile on it has a PIN, sign them out first
 v1.147 — 17/11/2026 — The lock screen is now readable in the dark theme
 v1.146 — 17/11/2026 — Leaving the app just after unlocking it with a fingerprint now locks it again as your "Lock after" setting says, instead of staying open for up to two minutes
 v1.145 — 17/11/2026 — On a tablet turned on its side, a show opened from Continue Watching keeps that episode in view when its season list updates
