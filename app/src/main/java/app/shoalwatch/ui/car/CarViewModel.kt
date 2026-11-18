@@ -85,7 +85,14 @@ class CarViewModel(
     /** True until the activity says it is on a car display: fails closed (review I1). */
     private val onPhoneDisplay = MutableStateFlow(true)
 
-    val access: StateFlow<CarAccess> = combine(activeSession, lockState, openFor, onPhoneDisplay) { s, state, judged, phone -> accessOf(s, state, judged, phone) }
+    /** On the phone's own display at once, without waiting for the profile store's first answer; back on a car, nothing until it answers. */
+    val access: StateFlow<CarAccess> = onPhoneDisplay.flatMapLatest { phone ->
+        if (phone) {
+            flowOf<CarAccess>(CarAccess.PhoneDisplay)
+        } else {
+            flow<CarAccess> { emit(CarAccess.Waiting); emitAll(combine(activeSession, lockState, openFor) { s, state, judged -> accessOf(s, state, judged) }) }
+        }
+    }
         .distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.Eagerly, CarAccess.Waiting)
 
