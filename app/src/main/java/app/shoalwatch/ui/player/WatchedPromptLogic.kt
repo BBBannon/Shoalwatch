@@ -127,6 +127,8 @@ internal class WatchedPromptLogic(private val housekeeping: Housekeeping, privat
             } finally {
                 chars.fill('\u0000')
             }
+            // Dismissed, replaced or another profile meanwhile: this answer is for nobody now (review I-1).
+            if (asking !== a || a.queue.firstOrNull() != sharer) return@launch
             if (check == PinCheck.Correct) {
                 a.queue.removeFirst()
                 askNext()
@@ -136,8 +138,10 @@ internal class WatchedPromptLogic(private val housekeeping: Housekeeping, privat
         }
     }
 
+    /** Ignored while that PIN is being checked (review I-1): the answer decides. */
     fun cancelSharerPin() {
         val a = asking ?: return
+        if (_sharerPin.value?.busy == true) return
         pin.clearText()
         a.queue.removeFirstOrNull()
         a.leftOut = true

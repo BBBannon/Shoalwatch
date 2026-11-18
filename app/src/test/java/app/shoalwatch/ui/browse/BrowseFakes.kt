@@ -193,6 +193,8 @@ class FakeHousekeeping : app.shoalwatch.data.downloads.Housekeeping {
     /** "Watched together"'s protected sharers (security review M8 F12) and the PIN each accepts ([sharerPin]); proofs recorded in [calls]. */
     var protectedSharers: List<app.shoalwatch.data.servers.AccountSummary> = emptyList()
     var sharerPin = "4826"
+    /** Holds every [proveSharer] until completed (the check running on io). */
+    var proveGate: CompletableDeferred<Unit>? = null
 
     override suspend fun protectedSharers(s: Session, itemId: String) = protectedSharers
 
@@ -200,6 +202,7 @@ class FakeHousekeeping : app.shoalwatch.data.downloads.Housekeeping {
         val typed = String(pin)
         pin.fill('0')
         calls += "prove:${who(s)}:$sharerUserId:$itemId:$typed"
+        proveGate?.await()
         return if (typed == sharerPin) app.shoalwatch.security.PinCheck.Correct else app.shoalwatch.security.PinCheck.Wrong(4)
     }
 

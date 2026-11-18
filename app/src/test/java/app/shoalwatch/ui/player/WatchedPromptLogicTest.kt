@@ -165,6 +165,50 @@ class WatchedPromptLogicTest {
         assertEquals(listOf(WatchedMessage.LEFT_OUT), got)
     }
 
+    /** Review I-1: Cancel or Back while a sharer's PIN is being checked is ignored; the late answer then lands on its own ask only. */
+    @Test fun cancelWhileTheSharersPinIsCheckedIsIgnoredAndTheLateAnswerIsSafe() = runTest {
+        housekeeping.choices = { _, _ -> ReleaseChoice(true, true, SharedDelete.EVERYONE, 1, false) }
+        housekeeping.protectedSharers = listOf(ann)
+        for (right in listOf(true, false)) {
+            housekeeping.calls.clear()
+            val gate = CompletableDeferred<Unit>().also { housekeeping.proveGate = it }
+            val l = logic()
+            finish(l)
+            l.together(); runCurrent()
+            l.pin.edit { replace(0, length, if (right) "4826" else "1111") }
+            l.submitSharerPin(); runCurrent()
+            l.cancelSharerPin(); runCurrent()
+            assertEquals("still asking while busy", true, l.sharerPin.value?.busy)
+            gate.complete(Unit); runCurrent()
+            if (right) {
+                assertNull(l.sharerPin.value)
+                assertEquals(1, housekeeping.calls.count { it.startsWith("release") })
+            } else {
+                assertEquals(app.shoalwatch.security.PinCheck.Wrong(4), l.sharerPin.value?.answer)
+                l.cancelSharerPin(); runCurrent()
+                assertNull("the dialog can be closed", l.sharerPin.value)
+                assertEquals(1, housekeeping.calls.count { it.startsWith("release") })
+            }
+        }
+    }
+
+    /** Review I-1: a profile change during the check drops the ask; the old answer never comes back for the new profile. */
+    @Test fun aProfileChangeDuringTheCheckDropsTheAskForGood() = runTest {
+        housekeeping.choices = { _, _ -> ReleaseChoice(true, true, SharedDelete.EVERYONE, 1, false) }
+        housekeeping.protectedSharers = listOf(ann)
+        val gate = CompletableDeferred<Unit>().also { housekeeping.proveGate = it }
+        val l = logic()
+        finish(l)
+        l.together(); runCurrent()
+        l.pin.edit { replace(0, length, "1111") }
+        l.submitSharerPin(); runCurrent()
+        l.onState(local.copy(session = AMY)); runCurrent()
+        assertNull(l.sharerPin.value)
+        gate.complete(Unit); runCurrent()
+        assertNull("not brought back for AMY", l.sharerPin.value)
+        assertEquals(0, housekeeping.calls.count { it.startsWith("release") })
+    }
+
     @Test fun eachOutcomeGivesItsMessage() = runTest {
         val expected = mapOf(
             ReleaseOutcome.DELETED to WatchedMessage.DELETED,

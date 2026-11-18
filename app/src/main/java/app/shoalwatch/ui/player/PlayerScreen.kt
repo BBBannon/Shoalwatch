@@ -81,7 +81,7 @@ fun PlayerScreen(
         PinDialog(
             title = stringResource(R.string.together_pin_title, ask.name), body = stringResource(R.string.together_pin_body, ask.name),
             pin = sharerPin, answer = ask.answer, confirmLabel = stringResource(R.string.together_pin_confirm),
-            onConfirm = actions.onSubmitSharerPin, onDismiss = actions.onCancelSharerPin, busy = ask.busy,
+            onConfirm = actions.onSubmitSharerPin, onDismiss = actions.onCancelSharerPin, busy = ask.busy, cancelWhileBusy = false,
         )
     }
     Box(Modifier.fillMaxSize().background(Color.Black)) {
