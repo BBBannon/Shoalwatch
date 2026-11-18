@@ -183,6 +183,37 @@ class LockGateTest : LibraryTestBase() {
         assertEquals(LockState.Profile(adult, "ann"), gate.state.value)
     }
 
+    // ---- Milestone 9 (review M3): the real gate behind AppFront, the phone and the car screen together
+
+    @Test fun whileTheCarShowsTheAppThePhoneLeavingPastLockAfterDoesNotLock() = runTest {
+        val gate = openAsAdult()
+        val front = AppFront(gate)
+        val phone = front.screen(Screen.PHONE); val car = front.screen(Screen.CAR)
+        phone.onReturned(); car.onReturned()
+        phone.onLeft(); clock.ms += 600_000; phone.onReturned()
+        assertEquals(LockState.Open, gate.state.value)
+    }
+
+    @Test fun theCarComingBackPastLockAfterLocks() = runTest {
+        val gate = openAsAdult()
+        val front = AppFront(gate)
+        val phone = front.screen(Screen.PHONE); val car = front.screen(Screen.CAR)
+        phone.onReturned(); car.onReturned()
+        phone.onLeft(); car.onLeft() // both screens gone: the car moved off, the phone in a pocket
+        clock.ms += 60_000; car.onReturned()
+        assertEquals(LockState.Profile(adult, "ann"), gate.state.value)
+    }
+
+    /** What the car activity does on the phone's own display: it only ever says "left", so it never holds the clock. */
+    @Test fun aCarActivityOnThePhonesDisplayNeverHoldsTheClock() = runTest {
+        val gate = openAsAdult()
+        val front = AppFront(gate)
+        val phone = front.screen(Screen.PHONE); val car = front.screen(Screen.CAR)
+        phone.onReturned(); car.onLeft()
+        phone.onLeft(); car.onLeft(); clock.ms += 60_000; phone.onReturned()
+        assertEquals(LockState.Profile(adult, "ann"), gate.state.value)
+    }
+
     @Test fun immediatelyLocksOnAnyLeave() = runTest {
         prefs.setLockAfter(LockAfter.IMMEDIATELY)
         val gate = openAsAdult()
