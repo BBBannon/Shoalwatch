@@ -54,7 +54,7 @@ class DashboardSessionsTest {
     @Test fun pollsEveryFiveSecondsOnlyWhileVisibleAndOnline() = main.adminTest(models) {
         val vm = vm()
         vm.setVisible(true)
-        assertEquals("status first, then the sessions", listOf("serverStatus", "sessions"), admin.calls)
+        assertEquals("status first, then the sessions, then the full scan", listOf("serverStatus", "sessions", "tasks"), admin.calls)
         advanceTimeBy(10_500)
         assertEquals("loads at 0, 5 and 10 s", 3, loads())
         vm.setVisible(false)

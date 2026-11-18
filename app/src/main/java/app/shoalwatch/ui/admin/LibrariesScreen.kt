@@ -10,8 +10,6 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import app.shoalwatch.R
 import app.shoalwatch.data.admin.LibraryFolder
-import app.shoalwatch.data.admin.TaskState
-import app.shoalwatch.ui.components.PrimaryButton
 
 class LibrariesActions(
     val onBack: () -> Unit,
@@ -29,14 +27,7 @@ fun LibrariesScreen(state: LibrariesUiState, actions: LibrariesActions) {
     AdminScaffold(
         stringResource(R.string.admin_libraries_title), state.frame, actions.onBack, actions.onRefresh, actions.onDismissProblem, actions.onDismissNotice,
     ) {
-        item(key = "scan-all") { PrimaryButton(stringResource(R.string.admin_scan_all), actions.onScanAll, enabled = state.canScanAll) }
-        state.fullScan?.takeIf { it.state == TaskState.RUNNING }?.let { scan ->
-            item(key = "scan-all-progress") {
-                val label = scan.progressPercent?.let { stringResource(R.string.admin_scan_all_running, it.toString()) }
-                    ?: stringResource(R.string.admin_scan_all_running_unknown)
-                AdminProgress(scan.progressPercent, label)
-            }
-        }
+        scanAllItems(state.fullScan, state.canScanAll, actions.onScanAll)
         if (state.libraries.isEmpty() && state.frame.updatedAt != null) {
             item(key = "empty") { Text(stringResource(R.string.admin_libraries_empty), style = MaterialTheme.typography.bodyMedium) }
         }

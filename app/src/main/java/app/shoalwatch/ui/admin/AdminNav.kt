@@ -98,6 +98,7 @@ private fun DashboardRoute(graph: AppGraph, nav: NavHostController) {
             onRefresh = vm::refresh,
             onOpen = nav::openAdmin,
             onOpenDashboard = { vm.openDashboard(context) },
+            onScanAll = vm::scanAll,
             onDismissProblem = vm::dismissProblem,
             onDismissNotice = vm::dismissNotice,
             onMessage = vm::askMessage,

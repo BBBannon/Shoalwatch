@@ -623,7 +623,8 @@ def record_download(path, segs, q, token, headers):
 
 
 # ------------------------------------------------------------------- server
-CONFIG = {"latency": 0.0, "fail_rate": 0.0, "refuse": False, **DOWNLOAD_FLAGS, **PLAYSTATE_FLAGS}
+QC = {}  # Quick Connect secret -> {"code", "polls", "used"}; only with --quick-connect
+CONFIG = {"latency": 0.0, "fail_rate": 0.0, "refuse": False, "quick_connect": False, **DOWNLOAD_FLAGS, **PLAYSTATE_FLAGS}
 TOKENS = set()
 
 
@@ -689,7 +690,31 @@ class Handler(BaseHTTPRequestHandler):
         if method == "GET" and low == "/system/info/public":
             return self.reply(200, {"Id": SERVER_ID, "ServerName": "Test Jellyfin", "Version": "12.4.0", "ProductName": "Mock Jellyfin (test stand-in)"})
         if method == "GET" and low == "/quickconnect/enabled":
-            return self.reply(200, False)
+            return self.reply(200, CONFIG["quick_connect"])
+        if CONFIG["quick_connect"] and method == "POST" and low == "/quickconnect/initiate":
+            secret, code = secrets.token_hex(32), f"{secrets.randbelow(10**6):06d}"
+            QC[secret] = {"code": code, "polls": 0, "used": False}
+            return self.reply(200, {"Authenticated": False, "Secret": secret, "Code": code, "DeviceId": "x", "DeviceName": "x", "AppName": "x", "AppVersion": "1", "DateAdded": "2026-11-18T10:00:00.0000000Z"})
+        if CONFIG["quick_connect"] and method == "GET" and low == "/quickconnect/connect":
+            entry = QC.get(q.get("secret", [""])[0])
+            if entry is None:
+                return self.reply(404)
+            entry["polls"] += 1  # approved on the second poll, as if someone tapped Authorize in Jellyfin web
+            return self.reply(200, {"Authenticated": entry["polls"] >= 2, "Secret": q["secret"][0], "Code": entry["code"], "DateAdded": "2026-11-18T10:00:00.0000000Z"})
+        if CONFIG["quick_connect"] and method == "POST" and low == "/users/authenticatewithquickconnect":
+            try:
+                body = json.loads(raw or b"{}")
+            except ValueError:
+                body = {}
+            entry = QC.get(body.get("Secret", "") if isinstance(body, dict) else "")
+            if entry is None or entry["used"] or entry["polls"] < 2:
+                return self.reply(400)
+            entry["used"] = True  # a secret signs in once, like Jellyfin
+            issued = "mock-" + secrets.token_hex(16)
+            TOKENS.add(issued)
+            mock_admin.issued(issued, USER_ID, self.headers.get("Authorization", ""))
+            user = {"Name": USER_NAME, "ServerId": SERVER_ID, "Id": USER_ID, "HasPassword": True}
+            return self.reply(200, {"User": user, "SessionInfo": {}, "AccessToken": issued, "ServerId": SERVER_ID})
         if method == "POST" and low == "/users/authenticatebyname":
             try:
                 creds = json.loads(raw or b"{}")
@@ -960,9 +985,10 @@ def main():
     sync.add_argument("--clock-skew", type=int, default=0, metavar="SECONDS", help="shift every LastPlayedDate the server writes itself")
     parser.add_argument("--ben-not-admin", action="store_true", help="ben is not an administrator (the Server admin entry must not show)")
     parser.add_argument("--pending-restart", action="store_true", help="System/Info says a restart is needed")
+    parser.add_argument("--quick-connect", action="store_true", help="Quick Connect on: a code is approved on the second poll and signs in as ben, once")
     parser.add_argument("--admin-forbidden", action="store_true", help="admin-only routes answer 403 while /Users/Me still says administrator")
     args = parser.parse_args()
-    CONFIG.update(latency=args.latency_ms / 1000, fail_rate=args.fail_rate, refuse=args.refuse)
+    CONFIG.update(latency=args.latency_ms / 1000, fail_rate=args.fail_rate, refuse=args.refuse, quick_connect=args.quick_connect)
     CONFIG.update({name: getattr(args, name) for name in DOWNLOAD_FLAGS})
     CONFIG.update({name: getattr(args, name) for name in PLAYSTATE_FLAGS})
     mock_admin.CONFIG.update(ben_admin=not args.ben_not_admin, pending_restart=args.pending_restart, admin_forbidden=args.admin_forbidden)

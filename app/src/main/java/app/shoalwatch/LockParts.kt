@@ -2,6 +2,7 @@ package app.shoalwatch
 
 import android.content.Context
 import app.shoalwatch.core.SystemMonotonicClock
+import app.shoalwatch.data.playback.NowPlaying
 import app.shoalwatch.data.playback.PipPrefs
 import app.shoalwatch.data.playback.ProfilePlayback
 import app.shoalwatch.data.servers.ProfileSwitch
@@ -65,4 +66,7 @@ internal class LockParts(graph: AppGraph) {
         lockPrefs.settings, profileLocks, graph.serverCatalog, provedSwitches, householdGuard, deviceAuth::available,
         SystemMonotonicClock, graph.appScope,
     ) { lockPrefs.turnOffAppLock() }
+
+    /** Whether any of our players is playing (Media3's own state, from every engine): "Lock after" holds while one is. */
+    val nowPlaying = NowPlaying { lockGate.setPlaying(it) }
 }

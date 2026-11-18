@@ -78,7 +78,7 @@
     <string name="settings_app_lock">Lock Shoalwatch with this phone’s screen lock</string>
     <string name="settings_app_lock_no_screen_lock">Set a screen lock on this phone first.</string>
     <string name="settings_lock_after">Lock after</string>
-    <string name="settings_lock_after_help">Also how soon a protected profile asks for its PIN again.</string>
+    <string name="settings_lock_after_help">Also how soon a protected profile asks for its PIN again. Time doesn’t count while a video is playing, even in the small window.</string>
     <string name="lock_after_immediately">Straight away</string>
     <string name="lock_after_1">After 1 minute</string>
     <string name="lock_after_5">After 5 minutes</string>

@@ -82,6 +82,36 @@ abstract class DashboardRenderBase : RenderBase() {
 
     private fun scrollToText(text: String) = rule.onAllNodes(hasScrollAction()).onFirst().performScrollToNode(hasText(text))
 
+    // ---- 1.0.1: "Scan all libraries" first, one tap away (the Libraries screen's own button and progress)
+
+    @Test fun scanAllIsTheFirstThingAndStartsTheScan() {
+        var scans = 0
+        val frame = open
+        show { DashboardScreen(DashboardUiState(frame, ServerStatus("Den", "12.4.0", false, false), fullScan = AdminSamples.fullScanIdle), DashboardActions({}, {}, {}, {}, onScanAll = { scans++ })) }
+        val button = rule.onNode(hasText(text(R.string.admin_scan_all)) and hasClickAction())
+        button.assertIsEnabled().assertHeightIsAtLeast(48.dp)
+        val buttonTop = button.fetchSemanticsNode().boundsInRoot.top
+        val cardTop = rule.onAllNodesWithText("Den").onFirst().fetchSemanticsNode().boundsInRoot.top
+        assertTrue("above the server card", buttonTop < cardTop)
+        button.performClick()
+        assertEquals(1, scans)
+    }
+
+    @Test fun whileTheFullScanRunsItIsOffAndShowsItsProgress() {
+        val running = AdminSamples.fullScanIdle.copy(state = app.shoalwatch.data.admin.TaskState.RUNNING, progressPercent = 45)
+        show { DashboardScreen(DashboardUiState(open, ServerStatus("Den", "12.4.0", false, false), fullScan = running), actions) }
+        rule.onNode(hasText(text(R.string.admin_scan_all)) and hasClickAction()).assertIsNotEnabled()
+        assertTrue(tree(), rule.onAllNodes(SemanticsMatcher("live progress") { node ->
+            node.config.getOrNull(SemanticsProperties.LiveRegion) != null &&
+                node.config.getOrNull(SemanticsProperties.Text)?.any { it.text == text(R.string.admin_scan_all_running, "45") } == true
+        }).fetchSemanticsNodes().isNotEmpty())
+    }
+
+    @Test fun scanAllIsOffWhileOffline() {
+        show { DashboardScreen(DashboardUiState(open.copy(gate = AdminGate.Open(Session(S1, U1), online = false)), fullScan = AdminSamples.fullScanIdle), actions) }
+        rule.onNode(hasText(text(R.string.admin_scan_all)) and hasClickAction()).assertIsNotEnabled()
+    }
+
     @Test fun theServerCard() {
         dashboard()
         assertTrue(tree(), headingNamed(text(R.string.admin_title)))

@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceTimeBy
+import app.shoalwatch.data.admin.TaskState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -76,10 +77,10 @@ class DashboardViewModelTest {
         assertTrue(state.status!!.pendingRestart)
         assertEquals(now, state.frame.updatedAt)
         assertFalse(state.frame.loading)
-        assertEquals(listOf("serverStatus", "sessions"), admin.calls)
-        assertEquals(listOf(owner, owner), admin.sessionsSeen)
+        assertEquals(listOf("serverStatus", "sessions", "tasks"), admin.calls)
+        assertEquals(listOf(owner, owner, owner), admin.sessionsSeen)
         advanceTimeBy(SESSIONS_POLL_MS + 1)
-        assertEquals("polled again after five seconds", 4, admin.calls.size)
+        assertEquals("polled again after five seconds", 6, admin.calls.size)
         vm.setVisible(false)
     }
 
@@ -192,4 +193,69 @@ class DashboardViewModelTest {
     @Suppress("UNCHECKED_CAST")
     private fun <T> held(vm: DashboardViewModel, field: String): T =
         (DashboardViewModel::class.java.getDeclaredField(field).apply { isAccessible = true }.get(vm) as MutableStateFlow<T>).value
+
+    // ---- 1.0.1: "Scan all libraries" at the top of Server admin (the same rule as the Libraries screen: `ScanAll`)
+
+    @Test fun scanAllStartsTheSameScanAsTheLibrariesScreen() = main.adminTest(models) {
+        admin.tasks = listOf(AdminSamples.cleanCache, AdminSamples.fullScanIdle)
+        val vm = vm()
+        vm.setVisible(true)
+        assertEquals(AdminSamples.fullScanIdle, vm.state.value.fullScan)
+        assertTrue(vm.state.value.canScanAll)
+        admin.tasks = listOf(AdminSamples.fullScanIdle.copy(state = TaskState.RUNNING, progressPercent = 45))
+        vm.scanAll()
+        assertEquals(listOf(owner), admin.sessionsSeen.filterIndexed { i, _ -> admin.calls[i] == "scanAll" })
+        assertEquals(AdminNotice(R.string.admin_scan_started_all), vm.state.value.frame.notice)
+        assertEquals("reloaded after the scan started", 45, vm.state.value.fullScan?.progressPercent)
+        assertFalse("off while the full scan runs", vm.state.value.canScanAll)
+        vm.scanAll()
+        assertEquals("not asked again while it runs", 1, admin.calls.count { it == "scanAll" })
+        vm.setVisible(false)
+    }
+
+    @Test fun scanAllIsOffOfflineAndAFailureIsShownOnce() = main.adminTest(models) {
+        val vm = vm()
+        vm.setVisible(true)
+        admin.failures["scanAll"] = AppError.of(AppError.Kind.NETWORK)
+        vm.scanAll()
+        advanceTimeBy(60_000)
+        assertEquals(AdminProblem.NETWORK, vm.state.value.frame.problem)
+        assertEquals(1, admin.calls.count { it == "scanAll" })
+        connections.stateFor(S1).value = Connection.Offline()
+        assertFalse(vm.state.value.canScanAll)
+        vm.setVisible(false)
+    }
+
+    @Test fun aFailingTasksPartIsNotALoadProblemOnTheDashboard() = main.adminTest(models) {
+        admin.failures["tasks"] = AppError.of(AppError.Kind.SERVER_ERROR)
+        val vm = vm()
+        vm.setVisible(true)
+        assertNull(vm.state.value.fullScan)
+        assertNull(vm.state.value.frame.loadProblem)
+        assertEquals(admin.status, vm.state.value.status)
+        assertTrue(vm.state.value.canScanAll)
+        vm.setVisible(false)
+    }
+
+    @Test fun aClosedGateDropsTheScanAndSendsNothing() = main.adminTest(models) {
+        admin.tasks = listOf(AdminSamples.fullScanIdle)
+        val vm = vm()
+        vm.setVisible(true)
+        catalog.activeFlow.value = kid
+        assertEquals(AdminGate.Closed, vm.state.value.frame.gate)
+        assertNull(vm.state.value.fullScan)
+        assertFalse(vm.state.value.canScanAll)
+        vm.scanAll()
+        assertEquals(0, admin.calls.count { it == "scanAll" })
+    }
+
+    @Test fun aSignInThatEndsWhileReadingTheScanClosesTheGate() = main.adminTest(models) {
+        admin.failures["tasks"] = AppError.of(AppError.Kind.UNAUTHORISED)
+        val vm = vm()
+        vm.setVisible(true)
+        assertEquals("a lost sign-in while reading the scan still closes the gate", AdminGate.Closed, vm.state.value.frame.gate)
+        assertNull(vm.state.value.status)
+        vm.scanAll()
+        assertEquals(0, admin.calls.count { it == "scanAll" })
+    }
 }

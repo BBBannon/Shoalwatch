@@ -149,4 +149,20 @@ class ExoPlayerEngineTest {
         assertNull(MediaItems.aspectOf(1920, 1080, 0f))
         assertNull(ExoPlayerEngine(context).also { it.release() }.video.aspectRatio.value)
     }
+
+    /** 1.0.1: Media3's own "is playing" reaches the app lock (`NowPlaying`), and a release says "not playing". */
+    @OptIn(UnstableApi::class)
+    @Test fun itReportsMediaThreesIsPlayingAndNotPlayingOnRelease() {
+        val said = mutableListOf<Boolean>()
+        val engine = ExoPlayerEngine(context) { said += it }
+        val events = Player.Events(androidx.media3.common.FlagSet.Builder().add(Player.EVENT_IS_PLAYING_CHANGED).build())
+        fun playerSaying(playing: Boolean) = object : androidx.media3.common.ForwardingPlayer(engine.sessionPlayer) {
+            override fun isPlaying() = playing
+        }
+        engine.listener.onEvents(playerSaying(true), events)
+        engine.listener.onEvents(playerSaying(false), events)
+        engine.listener.onEvents(playerSaying(true), events)
+        engine.release()
+        assertEquals(listOf(true, false, true, false), said)
+    }
 }

@@ -304,8 +304,8 @@ class AppGraph(internal val appContext: Context) {
             appScope.launch { serverCatalog.activeSession().collect(a::sessionChanged) }
         }
     }
-    /** A new Media3 player for one player screen (main thread); see "Player engine" in docs/ARCHITECTURE.md. */
-    val playerEngineFactory: () -> PlayerEngine = { ExoPlayerEngine(appContext) }
+    /** A new Media3 player for one player screen (main thread), telling the app lock when it plays; see "Player engine" in docs/ARCHITECTURE.md. */
+    val playerEngineFactory: () -> PlayerEngine = { ExoPlayerEngine(appContext, lockParts.nowPlaying.reporter()) }
     /**
      * The player's state machine for one screen and one [session] ([scope]: the screen's main scope). Screens get it from here,
      * so they never name the gateway, the resolver or a route.
