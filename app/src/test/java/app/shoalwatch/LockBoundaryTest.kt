@@ -161,7 +161,8 @@ class LockBoundaryTest {
 
     /**
      * Review M5 of Tasks 9-10: `MainActivity` hands its own start and stop to `ActivityPip`'s rule (so a start in the small window
-     * is not a return: review C1) and hands it the lock gate itself, so nothing in the activity can swap leaving and returning.
+     * is not a return: review C1) and hands it the lock gate itself (through the phone's side of `AppFront`, Milestone 9), so nothing
+     * in the activity can swap leaving and returning.
      */
     @Test fun theActivityTellsTheLockOnlyThroughThePictureInPictureRule() {
         val text = File(root, "ui/MainActivity.kt").readText()
@@ -170,7 +171,10 @@ class LockBoundaryTest {
         assertTrue("onStart asks the rule", onStart.contains("pip.onActivityStarted()"))
         assertTrue("onStop asks the rule", onStop.contains("pip.onActivityStopped()"))
         assertTrue("never straight to the gate", !onStart.contains("lockGate") && !onStop.contains("lockGate"))
-        assertTrue("the gate itself", text.contains("trips = { ShoalwatchApp.graph(this).lockParts.lockGate }"))
+        assertTrue("the gate, through the phone's side of AppFront", text.contains("trips = { ShoalwatchApp.graph(this).lockParts.phoneTrips }"))
+        val parts = File(root, "LockParts.kt").readText()
+        assertTrue("AppFront tells the gate itself", parts.contains("AppFront(lockGate)"))
+        assertTrue(parts.contains("val phoneTrips = appFront.screen(Screen.PHONE)") && parts.contains("val carTrips = appFront.screen(Screen.CAR)"))
     }
 
     @Test fun theLaunchIntentIsCleanedBeforeAnythingIsDrawn() {

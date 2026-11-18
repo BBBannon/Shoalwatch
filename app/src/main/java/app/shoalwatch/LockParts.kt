@@ -9,6 +9,7 @@ import app.shoalwatch.data.servers.ProfileSwitch
 import app.shoalwatch.data.servers.ProfileSwitcher
 import app.shoalwatch.data.servers.ProvedSwitches
 import app.shoalwatch.data.servers.Session
+import app.shoalwatch.security.AppFront
 import app.shoalwatch.security.ClearProof
 import app.shoalwatch.security.DeviceAuth
 import app.shoalwatch.security.ForgotThrottle
@@ -18,6 +19,7 @@ import app.shoalwatch.security.LockGate
 import app.shoalwatch.security.LockPrefs
 import app.shoalwatch.security.PinHasher
 import app.shoalwatch.security.ProfileLocks
+import app.shoalwatch.security.Screen
 import kotlinx.coroutines.Dispatchers
 
 /**
@@ -66,6 +68,14 @@ internal class LockParts(graph: AppGraph) {
         lockPrefs.settings, profileLocks, graph.serverCatalog, provedSwitches, householdGuard, deviceAuth::available,
         SystemMonotonicClock, graph.appScope,
     ) { lockPrefs.turnOffAppLock() }
+
+    /**
+     * The phone and the Android Auto car screen (Milestone 9) each tell the gate of leaving and returning through this: the gate
+     * hears "left" only when neither shows the app, and "returned" when the first comes back (see "Android Auto (parked)").
+     */
+    private val appFront = AppFront(lockGate)
+    val phoneTrips = appFront.screen(Screen.PHONE)
+    val carTrips = appFront.screen(Screen.CAR)
 
     /** Whether any of our players is playing (Media3's own state, from every engine): "Lock after" holds while one is. */
     val nowPlaying = NowPlaying { lockGate.setPlaying(it) }
