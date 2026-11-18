@@ -272,6 +272,23 @@ class LibraryRepository(
         refreshTogether(listOf(resumeRecipe(s), nextUpRecipe(s)) + libs.map { latestRecipe(s, it.id) }, s)
     }
 
+    // ---- coming back to Home, and a finished library scan (round 3, 1.1.0)
+
+    override suspend fun refreshHomeIfDue(s: Session) = withContext(io) {
+        localFailuresAsAppError { homeRecipes(s).forEach { cache.ensure(s, it) } }
+    }
+
+    override suspend fun markHomeDue(s: Session) = withContext(io) {
+        localFailuresAsAppError {
+            val keys = homeRecipes(s).map { it.key }
+            writeGate.withLock { lists.expire(s.serverId, s.userId, keys, clock(), HOME_WINDOW.toMillis()) }
+        }
+    }
+
+    /** Every list Home shows: the libraries, Continue Watching, Next Up and each library's latest, as saved now. */
+    private suspend fun homeRecipes(s: Session): List<Recipe> =
+        listOf(viewsRecipe(s), resumeRecipe(s), nextUpRecipe(s)) + views.getViews(s.serverId, s.userId).map { latestRecipe(s, it.toModel().id) }
+
     private suspend fun refreshSeries(s: Session, target: RefreshTarget.Series) {
         refreshTogether(listOf(itemRecipe(s, target.seriesId, SERIES_WINDOW), seasonsRecipe(s, target.seriesId)), s)
         val seasons = lists.getList(s.serverId, s.userId, ListKey.seasons(target.seriesId), MAX_ROWS).map { it.toModel() }

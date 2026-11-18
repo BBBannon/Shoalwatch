@@ -26,8 +26,8 @@ android {
         applicationId = "app.shoalwatch"
         minSdk = 29
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.0.1"
+        versionCode = 3
+        versionName = "1.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -107,9 +107,19 @@ object ManifestRules {
     private const val JOB_SERVICE = "androidx.work.impl.background.systemjob.SystemJobService"
     private const val BIND_JOB_SERVICE = "android.permission.BIND_JOB_SERVICE"
     private const val FOREGROUND_SERVICE = "androidx.work.impl.foreground.SystemForegroundService"
+    /** Milestone 9: the parked app's own task, apart from the launcher's (empty) one. */
+    private const val CAR_TASK_AFFINITY = "app.shoalwatch.car"
+    private const val MAIN = "android.intent.action.MAIN"
+    private const val CAR_LAUNCHER = "android.intent.category.CAR_LAUNCHER"
+    /** No templated (Car App Library) or media app in the package: the same as AAFin's working parked build (reason unproven); none may be declared. */
+    private val drivingAppActions = listOf(
+        "androidx.car.app.CarAppService", "android.media.browse.MediaBrowserService",
+        "androidx.media3.session.MediaSessionService", "androidx.media3.session.MediaLibraryService",
+    )
+    private val drivingAppMetaData = listOf("com.google.android.gms.car.application", "androidx.car.app.minCarApiLevel")
 
     /** Every rule the manifest in [file] breaks (empty = passes). */
-    fun problems(file: File, launcherActivity: String, expectedPermissions: Set<String>): List<String> {
+    fun problems(file: File, launcherActivity: String, carActivity: String, expectedPermissions: Set<String>): List<String> {
         val doc = DocumentBuilderFactory.newInstance().apply { isNamespaceAware = true }.newDocumentBuilder().parse(file).documentElement
         fun elements(tag: String) = doc.getElementsByTagName(tag).let { list -> (0 until list.length).map { list.item(it) as Element } }
         fun Element.attr(name: String) = getAttributeNS(NS, name)
@@ -128,8 +138,8 @@ object ManifestRules {
         val exportedComponents = components.filter { it.attr("exported") == "true" }
         val exported = exportedComponents.map { it.attr("name") }
         val allowedJobService = exportedComponents.filter { it.tagName == "service" && it.attr("name") == JOB_SERVICE && it.attr("permission") == BIND_JOB_SERVICE }
-        if ((exportedComponents - allowedJobService.toSet()).map { it.attr("name") } != listOf(launcherActivity)) {
-            problems += "only $launcherActivity (and $JOB_SERVICE with $BIND_JOB_SERVICE) may be exported, found $exported"
+        if ((exportedComponents - allowedJobService.toSet()).map { it.attr("name") }.sorted() != listOf(launcherActivity, carActivity).sorted()) {
+            problems += "only $launcherActivity, $carActivity (and $JOB_SERVICE with $BIND_JOB_SERVICE) may be exported, found $exported"
         }
 
         // Milestone 1 Q5: an empty task affinity stops another app's activity joining Shoalwatch's task.
@@ -137,6 +147,28 @@ object ManifestRules {
         if (launcher == null || !launcher.hasAttributeNS(NS, "taskAffinity") || launcher.attr("taskAffinity") != "") {
             problems += "the launcher activity must set taskAffinity to empty"
         }
+
+        // Milestone 9, the Android Auto parked app: Android Auto allows one from outside Play only in an allowed category (game).
+        if (application.attr("appCategory") != "game") problems += "android:appCategory must be game (the parked app's allowed category)"
+        fun Element.children(tag: String) = getElementsByTagName(tag).let { list -> (0 until list.length).map { list.item(it) as Element } }
+        val car = elements("activity").singleOrNull { it.attr("name") == carActivity }
+        if (car != null) {
+            val filters = car.children("intent-filter")
+            val only = filters.singleOrNull()
+            val exact = only != null && only.children("action").map { it.attr("name") } == listOf(MAIN) &&
+                only.children("category").map { it.attr("name") } == listOf(CAR_LAUNCHER) && only.children("data").isEmpty()
+            if (!exact) problems += "the car activity must have exactly one intent filter: MAIN with CAR_LAUNCHER"
+            if (car.attr("taskAffinity") != CAR_TASK_AFFINITY) problems += "the car activity must set taskAffinity to $CAR_TASK_AFFINITY"
+            // Review M2: without it the platform refuses to start the activity on another app's own (untrusted) virtual display.
+            if (car.attr("allowEmbedded") == "true") problems += "the car activity must not set allowEmbedded (another app could host it on its own display)"
+        }
+        val carLaunchers = components.filter { c -> c.children("category").any { it.attr("name") == CAR_LAUNCHER } }.map { it.attr("name") }
+        if (carLaunchers.any { it != carActivity }) problems += "only the car activity may use CAR_LAUNCHER, found $carLaunchers"
+        val drivingApps = components.filter { c ->
+            c.children("action").any { it.attr("name") in drivingAppActions } ||
+                c.children("category").any { it.attr("name").startsWith("androidx.car.app.category.") }
+        }.map { it.attr("name") } + elements("meta-data").map { it.attr("name") }.filter { it in drivingAppMetaData }
+        if (drivingApps.isNotEmpty()) problems += "no Car App Library or media browser service may be declared (keeps the package a plain parked app, as in AAFin's working build), found $drivingApps"
 
         // Android 14+ refuses a foreground service without its declared type: the download worker's is dataSync, and only that.
         val services = elements("service")
@@ -164,7 +196,8 @@ object ManifestRules {
 /**
  * S2, S4, S7, S9 and S10 checked on what actually ships: the MERGED release manifest (libraries add components the
  * source manifest never mentions). Fails the build unless backups are off, the app is not debuggable, there is no
- * `networkSecurityConfig`, the launcher activity is the only exported component (besides WorkManager's job service, protected
+ * `networkSecurityConfig`, the launcher activity and the Android Auto car activity (Milestone 9: exactly MAIN + CAR_LAUNCHER, its own
+ * task, `appCategory="game"`, no Car App Library) are the only exported components (besides WorkManager's job service, protected
  * by `BIND_JOB_SERVICE`), every typed foreground service (WorkManager's included) is `dataSync`, the permissions are exactly
  * [expectedPermissions], the only provider is androidx.startup's (not exported), and no initialiser that could
  * contact a third party remains. The rules are in [ManifestRules].
@@ -173,10 +206,11 @@ abstract class VerifyReleaseManifest : DefaultTask() {
     @get:InputFile @get:PathSensitive(PathSensitivity.NONE) abstract val manifest: RegularFileProperty
     @get:Input abstract val expectedPermissions: SetProperty<String>
     @get:Input abstract val launcherActivity: Property<String>
+    @get:Input abstract val carActivity: Property<String>
     @get:OutputFile abstract val report: RegularFileProperty
 
     @TaskAction fun verify() {
-        val problems = ManifestRules.problems(manifest.get().asFile, launcherActivity.get(), expectedPermissions.get())
+        val problems = ManifestRules.problems(manifest.get().asFile, launcherActivity.get(), carActivity.get(), expectedPermissions.get())
         if (problems.isNotEmpty()) throw GradleException("Release manifest check failed:\n - " + problems.joinToString("\n - "))
         report.get().asFile.writeText("Release manifest check passed.\n")
     }
@@ -190,12 +224,13 @@ abstract class VerifyManifestRuleFixtures : DefaultTask() {
     @get:InputDirectory @get:PathSensitive(PathSensitivity.RELATIVE) abstract val fixtures: DirectoryProperty
     @get:Input abstract val expectations: MapProperty<String, String>
     @get:Input abstract val launcherActivity: Property<String>
+    @get:Input abstract val carActivity: Property<String>
     @get:Input abstract val expectedPermissions: SetProperty<String>
     @get:OutputFile abstract val report: RegularFileProperty
 
     @TaskAction fun verify() {
         val dir = fixtures.get().asFile
-        fun check(name: String) = ManifestRules.problems(File(dir, name), launcherActivity.get(), expectedPermissions.get())
+        fun check(name: String) = ManifestRules.problems(File(dir, name), launcherActivity.get(), carActivity.get(), expectedPermissions.get())
         val failures = mutableListOf<String>()
         check("ok.xml").let { if (it.isNotEmpty()) failures += "ok.xml should pass but reported $it" }
         for ((name, expected) in expectations.get()) {
@@ -211,6 +246,8 @@ abstract class VerifyManifestRuleFixtures : DefaultTask() {
 
 // The one definition of what the release manifest may contain, shared by the real check and the fixture task.
 val releaseLauncherActivity = "app.shoalwatch.ui.MainActivity"
+// Milestone 9: the Android Auto parked app (MAIN + CAR_LAUNCHER only), the one other exported activity (owner-approved, 18/11/2026).
+val releaseCarActivity = "app.shoalwatch.ui.car.ParkedCarActivity"
 val releaseExpectedPermissions = setOf(
     "android.permission.INTERNET",
     "android.permission.ACCESS_NETWORK_STATE",
@@ -234,6 +271,7 @@ androidComponents {
             description = "Checks the merged ${variant.name} manifest against the security rules (S2, S4, S7, S9, S10)."
             manifest.set(variant.artifacts.get(SingleArtifact.MERGED_MANIFEST))
             launcherActivity.set(releaseLauncherActivity)
+            carActivity.set(releaseCarActivity)
             expectedPermissions.set(releaseExpectedPermissions)
             report.set(layout.buildDirectory.file("reports/release-manifest/${variant.name}.txt"))
         }
@@ -250,6 +288,7 @@ tasks.register<VerifyManifestRuleFixtures>("verifyManifestRuleFixtures") {
     description = "Proves each release-manifest rule can fail, using fixture manifests."
     fixtures.set(layout.projectDirectory.dir("src/test/manifest-fixtures"))
     launcherActivity.set(releaseLauncherActivity)
+    carActivity.set(releaseCarActivity)
     expectedPermissions.set(releaseExpectedPermissions)
     expectations.set(
         mapOf(
@@ -269,6 +308,18 @@ tasks.register<VerifyManifestRuleFixtures>("verifyManifestRuleFixtures") {
             "bad-sdk23-permission.xml" to "permissions must be exactly",
             "bad-shared-user-id.xml" to "sharedUserId must not be set",
             "bad-test-only.xml" to "testOnly must not be set",
+            // Milestone 9: the Android Auto parked app (see "Android Auto (parked)" in docs/ARCHITECTURE.md).
+            "bad-app-category.xml" to "appCategory must be game",
+            "bad-no-car-activity.xml" to "may be exported",
+            "bad-car-extra-category.xml" to "exactly one intent filter: MAIN with CAR_LAUNCHER",
+            "bad-car-second-filter.xml" to "exactly one intent filter: MAIN with CAR_LAUNCHER",
+            "bad-car-task-affinity.xml" to "taskAffinity to app.shoalwatch.car",
+            "bad-car-launcher-elsewhere.xml" to "only the car activity may use CAR_LAUNCHER",
+            "bad-car-app-service.xml" to "no Car App Library or media browser service",
+            "bad-media-browser-service.xml" to "no Car App Library or media browser service",
+            "bad-car-app-metadata.xml" to "no Car App Library or media browser service",
+            "bad-car-app-category.xml" to "no Car App Library or media browser service",
+            "bad-car-allow-embedded.xml" to "must not set allowEmbedded",
         ),
     )
     report.set(layout.buildDirectory.file("reports/release-manifest/fixtures.txt"))

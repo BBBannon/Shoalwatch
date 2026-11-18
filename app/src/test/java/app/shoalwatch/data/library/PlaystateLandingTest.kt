@@ -1,6 +1,8 @@
 package app.shoalwatch.data.library
 
 import app.shoalwatch.core.AppError
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -28,6 +30,34 @@ class PlaystateLandingTest : PlaystateTestBase() {
         assertEquals(1, gateway.count("resume"))
         assertEquals(1, gateway.count("nextUp"))
         assertEquals("a confirmed change does not ask for the item", 0, gateway.count("item"))
+    }
+
+    /**
+     * Round 3 (a tester reported "marking things as watched doesn't take effect till I reload"): Home, collected all along as its ViewModel does,
+     * shows the server's own Continue Watching and Next Up once the change has reached the server, offline or not; not before.
+     */
+    @Test fun homeCollectedAllAlongShowsTheServersListsOnceAWatchedMarkIsDeliveredEvenAfterBeingOffline() = runBlocking {
+        saveResume(film("a"), film("b"))
+        saveList(ListKey.NEXT_UP, film("n"))
+        val seen = java.util.concurrent.CopyOnWriteArrayList<Home>()
+        val watching = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default).launch { repo.home(s1u1).collect { seen += it } } // not the app scope: settle() waits for that
+        try {
+            settle()
+            gateway.calls.clear()
+            gateway.failOps["setPlayed"] = AppError.Kind.OFFLINE
+            playstate.setPlayed(s1u1, id("a"), true)
+            settle()
+            assertEquals("not asked before the server has the change", 0, gateway.count("resume") + gateway.count("nextUp"))
+            gateway.failOps.clear()
+            gateway.resumeFor = { films("b") }
+            gateway.nextUpFor = { films("m") }
+            sender.kick(s1u1) // the connection is back: the later drain
+            settle()
+            until { seen.last().resume.items.map { it.item.name } == listOf("Film b") && seen.last().nextUp.items.map { it.item.name } == listOf("Film m") }
+            assertEquals("once each", listOf(1, 1), listOf(gateway.count("resume"), gateway.count("nextUp")))
+        } finally {
+            watching.cancelAndJoin() // before the database closes
+        }
     }
 
     @Test fun overrulingAlsoRefreshesTheItemSoTheServersCopyReplacesTheLocalOne() = runBlocking {

@@ -1,5 +1,6 @@
 package app.shoalwatch.ui.admin
 
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -86,9 +87,22 @@ internal fun AdminRouteEffects(vm: AdminScreenModel, gate: AdminGate, nav: NavHo
     LaunchedEffect(gate) { if (gate is AdminGate.Closed) nav.leaveAdmin() }
 }
 
+/** Round 3: a finished full scan makes that profile's Home lists due (Home asks for them when it is back on screen). */
+private fun homeDue(graph: AppGraph): (app.shoalwatch.data.servers.Session) -> Unit = { s ->
+    graph.appScope.launch {
+        try {
+            graph.library.markHomeDue(s)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            app.shoalwatch.core.AppLog.w("Admin", "Marking Home due failed", e)
+        }
+    }
+}
+
 @Composable
 private fun DashboardRoute(graph: AppGraph, nav: NavHostController) {
-    val vm = graphViewModel { DashboardViewModel(graph.serverCatalog, graph.adminRights, graph.addressSelector, graph.admin, graph.browserDashboard) }
+    val vm = graphViewModel { DashboardViewModel(graph.serverCatalog, graph.adminRights, graph.addressSelector, graph.admin, graph.browserDashboard, homeDue(graph)) }
     val state by vm.state.collectAsStateWithLifecycle()
     AdminRouteEffects(vm, state.frame.gate, nav)
     val context = LocalContext.current
@@ -115,7 +129,7 @@ private fun DashboardRoute(graph: AppGraph, nav: NavHostController) {
 
 @Composable
 private fun LibrariesRoute(graph: AppGraph, nav: NavHostController) {
-    val vm = graphViewModel { LibrariesViewModel(graph.serverCatalog, graph.adminRights, graph.addressSelector, graph.admin) }
+    val vm = graphViewModel { LibrariesViewModel(graph.serverCatalog, graph.adminRights, graph.addressSelector, graph.admin, homeDue(graph)) }
     val state by vm.state.collectAsStateWithLifecycle()
     AdminRouteEffects(vm, state.frame.gate, nav)
     val actions = remember(vm, nav) {

@@ -3,7 +3,13 @@
   <uses-permission android:name="android.permission.INTERNET"/>
   <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
   <uses-permission android:name="app.shoalwatch.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"/>
-  <application android:allowBackup="false">
+  <application android:appCategory="game" android:allowBackup="false">
+    <activity android:name="app.shoalwatch.ui.car.ParkedCarActivity" android:exported="true" android:taskAffinity="app.shoalwatch.car">
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN"/>
+        <category android:name="android.intent.category.CAR_LAUNCHER"/>
+      </intent-filter>
+    </activity>
     <activity android:name="app.shoalwatch.ui.MainActivity" android:exported="true"/>
     <provider android:name="androidx.startup.InitializationProvider" android:exported="false"/>
     <meta-data android:name="androidx.emoji2.text.EmojiCompatInitializer" android:value="androidx.startup"/>

@@ -26,14 +26,15 @@ import app.shoalwatch.ui.theme.ShoalwatchTheme
  * The only activity: edge to edge, with every screen inside [AppRoot]'s navigation. The download notice opens it with
  * `open_tab=downloads`; that exact value is the only one it acts on ([requestedTab]). It tells `LockGate` when the app is left
  * and returned to, and hides the recent-apps preview while `LockGate.hideRecents` says so ([RecentsPrivacy]). It is the player's
- * [PipHost] ([ActivityPip]): entering picture-in-picture counts as leaving for the lock, back to the full screen as returning.
+ * [PipHost] ([ActivityPip]): entering picture-in-picture counts as leaving for the lock, back to the full screen as returning. The
+ * Android Auto car screen is a separate activity (`ui/car/ParkedCarActivity`); the two share one "in front" (`AppFront`).
  */
 class MainActivity : ComponentActivity(), PipHost {
     private val openTab = mutableStateOf<String?>(null)
     private val pip = ActivityPip(
         this,
         autoEnter = { ShoalwatchApp.graph(this).lockParts.pipPrefs.autoEnter.value },
-        trips = { ShoalwatchApp.graph(this).lockParts.lockGate }, // the lock gate itself: nothing here can swap leaving and returning
+        trips = { ShoalwatchApp.graph(this).lockParts.phoneTrips }, // the gate, through the phone's side of AppFront: nothing here can swap leaving and returning
     )
     override val inPip: StateFlow<Boolean> get() = pip.inPip
     override fun wish(w: PipWish?, onPlayPause: (() -> Unit)?) = pip.wish(w, onPlayPause)

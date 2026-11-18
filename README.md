@@ -18,6 +18,7 @@ Download whole seasons before a trip and browse them by series → season → ep
 | **Shared downloads** | One copy shared between profiles on the phone, only for titles the server confirms each profile may see |
 | **Profiles** | Several Jellyfin accounts and servers; protect a profile with its own PIN; optional app lock with fingerprint or screen lock |
 | **Server admin** | Who is watching, library scans, scheduled tasks, users, activity, devices, restart — for administrators only |
+| **In the car** | Android Auto, while parked: Continue Watching, Next Up and your downloads (they play with no connection) on the car's screen |
 
 **Not in v1:** music, live TV, books, SyncPlay, Android TV, Chromecast.
 
@@ -28,10 +29,26 @@ Download whole seasons before a trip and browse them by series → season → ep
 - **Sign-ins encrypted on the phone** with a key in the Android Keystore. Passwords are never stored.
 - **HTTPS by default.** Plain http only for a server you allow after a warning. Self-signed servers are pinned on first use; a changed certificate is blocked.
 - **No analytics, crash reporting or third-party services.** The app talks only to your servers.
-- **No backups of app data**, no exported components except the launcher, minimum permissions.
+- **No backups of app data**, no exported components except the launcher and the Android Auto car screen, minimum permissions.
 - **Every milestone** ended with a security check (`docs/security/`), and a full security-team review ran before the first release (summary in `docs/security/milestone-8-check.md`; the detailed report is kept private).
 
 Full requirements: `docs/SPEC.md` §6. Design: `docs/ARCHITECTURE.md`.
+
+---
+
+## In the car (Android Auto, parked only)
+
+Shoalwatch can show on your car's Android Auto screen **while the car is parked**. Android Auto itself stops it when the car moves. It uses the normal APK from GitHub: no USB or computer needed.
+
+1. **Turn on Android Auto's developer settings** on the phone: open Android Auto's settings, tap **Version** 10 times, then **⋮ → Developer settings** and turn on **Unknown sources**.
+2. **Install Shoalwatch** from its APK as usual.
+3. **Add it to the car's launcher:** Android Auto → **Customise launcher**, and tick Shoalwatch. It is listed there only while a car (or a head unit) is connected.
+
+What you get on the car screen: Continue Watching, Next Up and your downloads, and a full-screen player (tap for the controls: List, −10 s, Pause, +30 s). Downloads play with no connection.
+
+- **It shows as a game.** Android Auto lets an app from outside the Play Store run on the car screen only as a parked app in an allowed category, and games are the one it always allows. Nothing else changes.
+- **The phone decides who watches.** The car shows the profile active on the phone. If the app lock or a protected profile's PIN is waiting, the car says "Unlock Shoalwatch on your phone to watch here" and shows nothing until you unlock on the phone. No PIN is typed on the car.
+- **One screen at a time.** Starting a video on the car stops the one on the phone, and the other way round.
 
 ---
 

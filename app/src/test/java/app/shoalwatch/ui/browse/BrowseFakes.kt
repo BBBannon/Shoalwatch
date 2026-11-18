@@ -91,6 +91,11 @@ class FakeLibrary : Library {
         refreshes += s to target
         onRefresh(s, target)
     }
+
+    val dueChecks = mutableListOf<Session>()
+    val markedDue = mutableListOf<Session>()
+    override suspend fun refreshHomeIfDue(s: Session) { dueChecks += s }
+    override suspend fun markHomeDue(s: Session) { markedDue += s }
 }
 
 /** A `Playstate` that records each call, can be held, and can fail with a chosen error. */

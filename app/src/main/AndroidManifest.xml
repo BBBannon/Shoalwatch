@@ -29,10 +29,15 @@
         the verifyReleaseManifest Gradle task): the profile installer's exported receiver and its
         start-up initialiser, and the EmojiCompat initialiser, which can ask Google Play services
         for an emoji font (the app contacts nobody but the user's own servers).
+
+        appCategory="game" (Milestone 9): Android Auto lets an app from outside Play run on the car screen only as a parked app in an
+        allowed category, and games are the one it always allows (video needs a Google flag and a newer head unit). It changes nothing
+        on the phone. There is no Car App Library service, the same as AAFin's working parked build (the reason is unproven).
     -->
     <application
         android:name=".ShoalwatchApp"
         android:allowBackup="false"
+        android:appCategory="game"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:label="@string/app_name"
@@ -57,6 +62,27 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+            The Android Auto parked app (Milestone 9; see "Android Auto (parked)" in docs/ARCHITECTURE.md). Android Auto lists an
+            activity with CAR_LAUNCHER and runs it on the car screen only while parked. Exported for Android Auto with this one filter
+            and nothing else; its own task, apart from the phone's. It reads nothing from its intent, shows nothing of a locked
+            profile, and its window is never secure (Android Auto blanks a FLAG_SECURE window).
+        -->
+        <activity
+            android:name=".ui.car.ParkedCarActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density|keyboard|keyboardHidden|navigation|uiMode"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:launchMode="singleTask"
+            android:resizeableActivity="true"
+            android:taskAffinity="app.shoalwatch.car"
+            android:theme="@style/Theme.Shoalwatch">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.CAR_LAUNCHER" />
             </intent-filter>
         </activity>
 

@@ -6,7 +6,8 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /**
  * A validated Jellyfin base URL: `http` or `https`, lower-case scheme and host, optional base path,
- * no trailing slash, no userinfo, query or fragment.
+ * no trailing slash, no userinfo, query or fragment. An address copied from Jellyfin's web page is accepted: its fragment and
+ * query are dropped, and then a final `/web`, `/web/` or `/web/index.html` (the web client), keeping any base path before it.
  *
  * [authority] is the form used everywhere to decide "is this request going to that server":
  * `host:port`, lower-case, port always explicit (443 for https, 80 for http), IPv6 hosts in brackets.
@@ -32,11 +33,18 @@ class ServerAddress private constructor(url: HttpUrl, val value: String) {
             return "$host:${url.port}"
         }
 
-        /** @throws AppError (`SERVER_NOT_FOUND`) if [input] is not a usable http(s) server address. */
-        fun parse(input: String): ServerAddress {
-            val text = input.trim()
-            if (text.isEmpty() || text.any { it.isWhitespace() || it.isISOControl() }) throw invalid()
-            if ('#' in text || '?' in text) throw invalid()
+        /**
+         * @throws AppError (`SERVER_NOT_FOUND`) if [input] is not a usable http(s) server address. [browserCopy] false (a saved
+         * address read back) applies the rules before round 4: no fragment or query, and every path segment kept as saved.
+         */
+        fun parse(input: String, browserCopy: Boolean = true): ServerAddress {
+            val typed = input.trim()
+            if (typed.isEmpty() || typed.any { it.isWhitespace() || it.isISOControl() }) throw invalid()
+            // Round 4: an address copied from the browser ("…/web/#/home"). A fragment or query is never part of the server's
+            // address (and never sent): everything from the first '#' or '?' goes, so the host is what was typed before it.
+            if (!browserCopy && ('#' in typed || '?' in typed)) throw invalid()
+            val text = typed.substringBefore('#').substringBefore('?')
+            if (text.isEmpty()) throw invalid()
 
             val withScheme = when {
                 "://" in text -> text
@@ -50,9 +58,17 @@ class ServerAddress private constructor(url: HttpUrl, val value: String) {
             if ('@' in withScheme.substringAfter("://").substringBefore('/')) throw invalid()
 
             val builder = HttpUrl.Builder().scheme(parsed.scheme).host(parsed.host).port(parsed.port)
-            parsed.pathSegments.filter { it.isNotEmpty() }.forEach { builder.addPathSegment(it) }
+            val segments = parsed.pathSegments.filter { it.isNotEmpty() }
+            (if (browserCopy) withoutWebClient(segments) else segments).forEach { builder.addPathSegment(it) }
             val clean = builder.build()
             return ServerAddress(clean, clean.toString().trimEnd('/'))
+        }
+
+        /** Jellyfin's web client lives at `<base>/web/` (or `<base>/web/index.html`): the server's address is the base before it. */
+        private fun withoutWebClient(segments: List<String>): List<String> = when {
+            segments.size >= 2 && segments.last().equals("index.html", ignoreCase = true) && segments[segments.size - 2].equals("web", ignoreCase = true) -> segments.dropLast(2)
+            segments.lastOrNull()?.equals("web", ignoreCase = true) == true -> segments.dropLast(1)
+            else -> segments
         }
 
         private fun invalid() = AppError(

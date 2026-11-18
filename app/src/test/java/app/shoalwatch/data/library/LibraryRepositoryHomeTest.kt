@@ -58,6 +58,72 @@ class LibraryRepositoryHomeTest : LibraryRepositoryTestBase() {
         assertEquals(1, gateway.count("resume"))
     }
 
+    // ---- round 3 (1.1.0): Home catches up when it comes back, and after a scan
+
+    private fun homeLoaded() {
+        gateway.viewsFor = { listOf(view("m")) }
+        repo.home(s1u1).await { h -> h.latest.size == 1 && h.resume.freshness == Freshness.Fresh && h.nextUp.freshness == Freshness.Fresh && h.latest.all { it.second.freshness == Freshness.Fresh } }
+        runBlocking { settle() }
+        gateway.calls.clear()
+    }
+
+    private fun homeCalls() = gateway.calls.filter { it.startsWith("resume") || it.startsWith("nextUp") || it.startsWith("latest") || it.startsWith("views") }
+
+    @Test fun comingBackAfterTheWindowAsksForEveryHomeListAgain() = runBlocking {
+        homeLoaded()
+        advance(Duration.ofMinutes(3))
+        repo.refreshHomeIfDue(s1u1)
+        until { homeCalls().size == 4 }
+        settle()
+        assertEquals(listOf("latest", "nextUp", "resume", "views"), homeCalls().map { it.substringBefore(':') }.sorted())
+    }
+
+    @Test fun comingBackWithinTheWindowAsksNothingHoweverOften() = runBlocking {
+        homeLoaded()
+        advance(Duration.ofMinutes(1))
+        repeat(10) { repo.refreshHomeIfDue(s1u1) } // back and forth
+        settle()
+        assertEquals(emptyList<String>(), homeCalls())
+    }
+
+    @Test fun aListThatJustFailedIsNotAskedAgainOnEveryReturn() = runBlocking {
+        homeLoaded()
+        advance(Duration.ofMinutes(3))
+        gateway.failAll = AppError.Kind.OFFLINE
+        repo.refreshHomeIfDue(s1u1); settle()
+        val after = homeCalls().size
+        repeat(5) { repo.refreshHomeIfDue(s1u1) }
+        settle()
+        assertEquals("the 30 s cooldown holds", after, homeCalls().size)
+    }
+
+    @Test fun aFinishedScanMakesHomeDueEvenWithinItsWindowAndOnlyHome() = runBlocking {
+        homeLoaded()
+        library.writePage(s1u1, ListKey.latest(id("other")), 0, films("x"), 1, t0, requestedAtSeq = 0) // not one of Home's lists
+        suspend fun other() = db.listDao().getState(s1u1.serverId, s1u1.userId, ListKey.latest(id("other")))!!.refreshedAt
+        val before = other()
+        advance(Duration.ofSeconds(30))
+        repo.markHomeDue(s1u1)
+        assertEquals("marking asks nothing by itself", emptyList<String>(), homeCalls())
+        assertEquals("a list that is not Home's stays as it was", before, other())
+        repo.refreshHomeIfDue(s1u1)
+        until { homeCalls().size == 4 }
+        settle()
+    }
+
+    /** Round 5 (re-review I1): "due" is just past the window, never so old that eviction deletes Home's saved rows. */
+    @Test fun markingHomeDueNeverLetsEvictionDeleteHomesRows() = runBlocking {
+        seedResume("a")
+        homeLoaded()
+        gateway.failAll = AppError.Kind.OFFLINE // the refresh after the scan fails, or Home is not reopened
+        repo.markHomeDue(s1u1)
+        library.evict(java.time.Instant.ofEpochMilli(now))
+        assertTrue("Home's list state is still there", db.listDao().getState(s1u1.serverId, s1u1.userId, ListKey.RESUME) != null)
+        val state = db.listDao().getState(s1u1.serverId, s1u1.userId, ListKey.RESUME)!!
+        assertTrue("and it counts as due", now - state.refreshedAt >= Duration.ofMinutes(2).toMillis())
+        assertTrue("but only just", now - state.refreshedAt < Duration.ofMinutes(3).toMillis())
+    }
+
     @Test fun limitsAreTwentyFourTwentyFourAndSixteenPerLibrary() {
         gateway.viewsFor = { listOf(view("m"), view("t", LibraryKind.TV)) }
         repo.home(s1u1).await { it.latest.size == 2 && it.latest.all { (_, row) -> row.freshness == Freshness.Fresh } && it.resume.freshness == Freshness.Fresh && it.nextUp.freshness == Freshness.Fresh }

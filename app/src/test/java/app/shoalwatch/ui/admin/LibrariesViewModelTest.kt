@@ -79,6 +79,23 @@ class LibrariesViewModelTest {
         vm.setVisible(false)
     }
 
+    /** Round 3: the full scan going from running to not running tells Home its lists are due, once, as the gate's session. */
+    @Test fun aFinishedFullScanMakesHomeDueOnceAndNotWhileItRuns() = main.adminTest(models) {
+        val finished = mutableListOf<Session>()
+        val vm = models.add(LibrariesViewModel(catalog, rights, connections, admin, finished::add) { AdminSamples.now })
+        vm.setVisible(true)
+        admin.tasks = listOf(fullScanIdle.copy(state = TaskState.RUNNING, progressPercent = 45))
+        vm.scanAll()
+        advanceTimeBy(6_500)
+        assertEquals("not while it runs", emptyList<Session>(), finished)
+        admin.tasks = listOf(fullScanIdle)
+        advanceTimeBy(3_000)
+        assertEquals(listOf(Session(S1, U1)), finished)
+        vm.refresh(); advanceTimeBy(3_000)
+        assertEquals("an idle scan read again is not another finish", 1, finished.size)
+        vm.setVisible(false)
+    }
+
     @Test fun aLibraryScanSendsThatIdOnly() = main.adminTest(models) {
         val vm = vm()
         vm.setVisible(true)

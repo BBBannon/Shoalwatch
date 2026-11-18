@@ -90,9 +90,9 @@ sealed interface RefreshTarget {
  * A malformed id never throws: a flow for it emits one empty result that is `Stale(SERVER_NOT_FOUND)`, and [loadMore] and
  * [refresh] do nothing. A user is shown only items the server has returned to that user on this device, re-confirmed within the last 30 days (or downloaded, or in one of their current lists). An item the server later refuses for that user is hidden from them at once.
  *
- * Guidance for screens: pass the `Session` into every call and restart the flow when the account changes; do not refresh on
- * every resume (collecting already refreshes what is due, and a list that just failed is not retried for 30 seconds; only
- * [refresh] always tries); [Listing.items] can be empty while [Listing.canLoadMore] is true, so load more rather than show
+ * Guidance for screens: pass the `Session` into every call and restart the flow when the account changes; collecting refreshes
+ * what is due only when the flow starts (and a list that just failed is not retried for 30 seconds; only [refresh] always
+ * tries), so a screen that keeps collecting while off screen (Home) asks again on its return with [refreshHomeIfDue]; [Listing.items] can be empty while [Listing.canLoadMore] is true, so load more rather than show
  * "empty", and call [loadMore] again when freshness returns to `Fresh` while the end of the list is still on screen; never
  * read the DAOs or `LibraryStore` from UI code.
  *
@@ -117,4 +117,14 @@ interface Library {
 
     /** Pull-to-refresh: joins a refresh already running for the same list, and returns when it is done (success or not). */
     suspend fun refresh(s: Session, target: RefreshTarget)
+
+    /**
+     * Coming back to Home (round 3, 1.1.0): asks again for each of Home's lists that is older than its window (2 minutes), as a
+     * first collection does; a list within its window, or one that failed in the last 30 s, is not asked (so going back and forth
+     * makes no burst of requests). Does not wait for the refreshes. A failure shows as the lists' freshness.
+     */
+    suspend fun refreshHomeIfDue(s: Session) {}
+
+    /** Something changed on the server that no window can know about (a library scan finished): Home's lists are due now. */
+    suspend fun markHomeDue(s: Session) {}
 }

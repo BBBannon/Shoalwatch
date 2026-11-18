@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import app.shoalwatch.AppGraph
@@ -90,6 +91,11 @@ internal fun HomeRoute(graph: AppGraph, nav: NavHostController, fresh: Boolean) 
             graph.serverCatalog, graph.addressSelector, graph.library, graph.playstate, refreshOnOpen = fresh,
             switcher = graph.lockParts.switcher, protection = graph.lockParts.profileLocks.protectedProfiles,
         )
+    }
+    // Round 3: back on Home (from another screen, or the app back in front), its lists are asked again where they are due.
+    LifecycleStartEffect(vm) {
+        vm.onStarted()
+        onStopOrDispose {}
     }
     val state by vm.state.collectAsStateWithLifecycle()
     val prompt by vm.switchPrompt.collectAsStateWithLifecycle()

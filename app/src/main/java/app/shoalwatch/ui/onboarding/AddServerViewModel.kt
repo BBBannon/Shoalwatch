@@ -142,7 +142,8 @@ class AddServerViewModel(
                 foundDraft = result.draft
                 val saved = catalog.server(info.id) != null
                 val found = FoundServer(info.id, info.name, info.version, info.compatibility, info.address.looksLikeHome(), saved)
-                form.update { it.copy(stage = AddServerStage.Found, found = found, error = null) }
+                // Round 4: the address as it is saved (a browser's "…/web/#/home" is just the server part), so going back shows that.
+                form.update { it.copy(stage = AddServerStage.Found, found = found, error = null, address = info.address.value) }
             }
             AddServerStage.SecondAddress -> save(second = result.info.address, draft = result.draft)
             AddServerStage.Found -> Unit

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="app.shoalwatch">
+  <uses-permission android:name="android.permission.INTERNET"/>
+  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+  <uses-permission android:name="android.permission.WAKE_LOCK"/>
+  <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+  <uses-permission android:name="app.shoalwatch.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"/>
+  <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
+  <application android:appCategory="game" android:allowBackup="false">
+    <activity android:name="app.shoalwatch.ui.car.ParkedCarActivity" android:exported="true" android:taskAffinity="app.shoalwatch.car">
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN"/>
+        <category android:name="android.intent.category.CAR_LAUNCHER"/>
+      </intent-filter>
+    </activity>
+    <activity android:name="app.shoalwatch.ui.MainActivity" android:exported="true" android:taskAffinity=""/>
+    <provider android:name="androidx.startup.InitializationProvider" android:exported="false"/>
+    <service android:name="app.shoalwatch.car.Templates" android:exported="false">
+      <intent-filter>
+        <action android:name="app.shoalwatch.action.NOTHING"/>
+        <category android:name="androidx.car.app.category.POI"/>
+      </intent-filter>
+    </service>
+    <service android:name="androidx.work.impl.background.systemjob.SystemJobService" android:exported="true" android:permission="android.permission.BIND_JOB_SERVICE"/>
+    <service android:name="androidx.work.impl.foreground.SystemForegroundService" android:exported="false" android:foregroundServiceType="dataSync"/>
+    <receiver android:name="androidx.work.impl.utils.ForceStopRunnable$BroadcastReceiver" android:exported="false"/>
+    <receiver android:name="androidx.work.impl.background.systemalarm.RescheduleReceiver" android:enabled="false" android:exported="false"/>
+  </application>
+</manifest>
