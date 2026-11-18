@@ -10,7 +10,7 @@
 
 | | Result |
 |---|---|
-| **Security-team review** (5 static lenses, consolidated) | 26 findings: **0 Critical, 0 High, 2 Medium, 12 Low, 12 Info**; one **High chain** (CH-A). Report: `docs/security/security-team-report-2026-11-18.md` |
+| **Security-team review** (5 static lenses, consolidated) | 26 findings: **0 Critical, 0 High, 2 Medium, 12 Low, 12 Info**; one **High chain** (CH-A). Detailed report kept private (not in this repository) |
 | **Fixed in this milestone** | Both Mediums, the High chain, 9 Lows/Infos, and **SEC-03** (Ben asked for it on 18/11) |
 | **Fix review** | Round 1 review: "ready after fixes" (1 Important, 9 Minor). Round 2 fixed the Important and 7 Minors. Round 2 re-review: see section 4 |
 | **Unit tests** (full gate after round 2) | **4,636**, 0 failures, 1 skipped; `assembleDebug`, `assembleDebugAndroidTest`, `assembleRelease` built; **lint 0 errors** |

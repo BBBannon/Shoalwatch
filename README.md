@@ -29,7 +29,7 @@ Download whole seasons before a trip and browse them by series → season → ep
 - **HTTPS by default.** Plain http only for a server you allow after a warning. Self-signed servers are pinned on first use; a changed certificate is blocked.
 - **No analytics, crash reporting or third-party services.** The app talks only to your servers.
 - **No backups of app data**, no exported components except the launcher, minimum permissions.
-- **Every milestone** ended with a security check (`docs/security/`), and a full security-team review ran before the first release (`docs/security/security-team-report-2026-11-18.md`).
+- **Every milestone** ended with a security check (`docs/security/`), and a full security-team review ran before the first release (summary in `docs/security/milestone-8-check.md`; the detailed report is kept private).
 
 Full requirements: `docs/SPEC.md` §6. Design: `docs/ARCHITECTURE.md`.
 
