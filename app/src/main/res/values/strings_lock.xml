@@ -41,6 +41,7 @@
     <string name="lock_forgot_body">Sign in to %1$s with its server password. This removes the PIN, and you can set a new one in Settings.</string>
     <string name="lock_forgot_submit">Sign in and remove PIN</string>
     <string name="lock_forgot_offline">You’re offline. Connect to %1$s to sign in.</string>
+    <string name="lock_forgot_no_password">Type this profile’s server password. If its account has no password, Forgot PIN can’t remove the PIN: ask a grown-up.</string>
     <string name="lock_forgot_other_account">That’s a different account.</string>
     <string name="lock_read_failed">Shoalwatch couldn’t read its saved locks just now. It will try again in a moment.</string>
     <string name="lock_forgot_wait">That password was not accepted. Try again in %1$s.</string>
