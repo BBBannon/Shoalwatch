@@ -228,6 +228,8 @@ class AppGraph(internal val appContext: Context) {
         appScope.launch(Dispatchers.IO) {
             try {
                 lockParts.forgotThrottle.keepOnly(database.accountDao().getAll().map { Session(it.serverId, it.userId) }.toSet())
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 app.shoalwatch.core.AppLog.w("Lock", "Forgetting Forgot PIN tries failed", e)
             }
