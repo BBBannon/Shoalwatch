@@ -67,7 +67,9 @@ class HomeViewModelTest {
     @Test fun backOnScreenHomeAsksItsListsAgainWhereDueAsTheActiveProfile() {
         val v = vm()
         show(home())
-        v.onStarted()
+        v.onStarted() // the first start: the first collection has just checked the windows
+        assertTrue("not on the first start", library.dueChecks.isEmpty())
+        v.onStarted() // back from another screen
         assertEquals(listOf(BEN), library.dueChecks)
         assertTrue("never the always-refresh", library.refreshes.isEmpty())
     }
@@ -75,7 +77,7 @@ class HomeViewModelTest {
     @Test fun backOnScreenWithNobodySignedInAsksNothing() {
         catalog.activeFlow.value = null
         val v = vm()
-        v.onStarted()
+        v.onStarted(); v.onStarted()
         assertTrue(library.dueChecks.isEmpty())
     }
 
