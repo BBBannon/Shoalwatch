@@ -132,4 +132,12 @@ class ManifestSecurityTest {
         assertEquals(listOf(".ui.MainActivity"), exported)
         assertNotNull(exported.firstOrNull())
     }
+
+    /** Security review M8 F7: no shared user id, no test-only flag, and no permission asked through `uses-permission-sdk-23`. */
+    @Test
+    fun noSharedUserIdTestOnlyOrSdk23Permission() {
+        assertEquals(null, manifest.attr("sharedUserId"))
+        assertEquals(null, application.attr("testOnly"))
+        assertEquals(emptyList<Element>(), elements("uses-permission-sdk-23"))
+    }
 }

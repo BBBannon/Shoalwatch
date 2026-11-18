@@ -118,6 +118,9 @@ object ManifestRules {
         val application = elements("application").single()
         if (application.attr("allowBackup") != "false") problems += "android:allowBackup must be false"
         if (application.attr("debuggable") == "true") problems += "the release build must not be debuggable"
+        // Security review M8 F7: a test-only build installs only with `adb install -t`; a shared user id joins another app's sandbox.
+        if (application.hasAttributeNS(NS, "testOnly")) problems += "android:testOnly must not be set"
+        if (doc.hasAttributeNS(NS, "sharedUserId")) problems += "android:sharedUserId must not be set"
         // S4: user-installed CAs are never trusted, which holds only while the platform default applies.
         if (application.hasAttributeNS(NS, "networkSecurityConfig")) problems += "android:networkSecurityConfig must not be set (user CAs must never be trusted)"
 
@@ -143,7 +146,8 @@ object ManifestRules {
             problems += "foregroundServiceType must be dataSync, on $FOREGROUND_SERVICE and every typed service"
         }
 
-        val permissions = elements("uses-permission").map { it.attr("name") }.toSet()
+        // `uses-permission-sdk-23` asks exactly as `uses-permission` does on every supported Android (minSdk 29).
+        val permissions = (elements("uses-permission") + elements("uses-permission-sdk-23")).map { it.attr("name") }.toSet()
         if (permissions != expectedPermissions) problems += "permissions must be exactly ${expectedPermissions.sorted()}, found ${permissions.sorted()}"
 
         val providers = elements("provider").map { it.attr("name") }
@@ -261,6 +265,10 @@ tasks.register<VerifyManifestRuleFixtures>("verifyManifestRuleFixtures") {
             "bad-diagnostics-receiver.xml" to "may be exported",
             "bad-missing-data-sync.xml" to "foregroundServiceType must be dataSync",
             "bad-task-affinity.xml" to "taskAffinity to empty",
+            // Security review M8 F7: the three blind spots of the first rules.
+            "bad-sdk23-permission.xml" to "permissions must be exactly",
+            "bad-shared-user-id.xml" to "sharedUserId must not be set",
+            "bad-test-only.xml" to "testOnly must not be set",
         ),
     )
     report.set(layout.buildDirectory.file("reports/release-manifest/fixtures.txt"))

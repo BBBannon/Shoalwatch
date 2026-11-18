@@ -1,3 +1,4 @@
+v1.157 — 18/11/2026 — The release safety check now also catches a few more ways an app could quietly gain permissions or share its private data
 v1.156 — 18/11/2026 — When you re-trust a changed server certificate, your saved custom headers are no longer sent until the server is confirmed to be yours
 v1.155 — 18/11/2026 — Signing a profile out or removing a server now also forgets its wrong Forgot PIN tries
 v1.154 — 18/11/2026 — The keyboard no longer learns what you search for, sign-in names, server addresses or custom header values, so they don't pop up as suggestions for others
