@@ -60,7 +60,8 @@ fun CarScreen(access: CarAccess, lists: CarLists?, player: CarPlayer?, actions: 
         when {
             access == CarAccess.SignIn -> Message(stringResource(R.string.car_sign_in))
             access == CarAccess.Locked -> Message(stringResource(R.string.car_unlock))
-            access !is CarAccess.Open || lists == null -> Waiting()
+            access == CarAccess.PhoneDisplay -> Message(stringResource(R.string.car_open_on_car))
+            access !is CarAccess.Open || lists == null || lists.session != access.session -> Waiting() // never another profile's (review I2)
             player != null -> CarPlayerView(player, actions, picture)
             else -> ListsView(lists, actions)
         }

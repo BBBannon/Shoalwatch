@@ -15,6 +15,9 @@ enum class Screen { PHONE, CAR }
 class AppFront(private val gate: AppTrips) {
     private val inFront = mutableSetOf<Screen>()
 
+    /** The screens counted as showing the app now (for tests). */
+    internal fun shown(): Set<Screen> = synchronized(inFront) { inFront.toSet() }
+
     fun screen(s: Screen): AppTrips = object : AppTrips {
         override fun onLeft() = left(s)
         override fun onReturned() = returned(s)

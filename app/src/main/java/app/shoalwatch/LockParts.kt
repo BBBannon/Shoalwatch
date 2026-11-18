@@ -73,7 +73,7 @@ internal class LockParts(graph: AppGraph) {
      * The phone and the Android Auto car screen (Milestone 9) each tell the gate of leaving and returning through this: the gate
      * hears "left" only when neither shows the app, and "returned" when the first comes back (see "Android Auto (parked)").
      */
-    private val appFront = AppFront(lockGate)
+    internal val appFront = AppFront(lockGate)
     val phoneTrips = appFront.screen(Screen.PHONE)
     val carTrips = appFront.screen(Screen.CAR)
 

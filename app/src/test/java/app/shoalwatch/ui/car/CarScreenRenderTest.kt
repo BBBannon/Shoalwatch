@@ -32,7 +32,7 @@ abstract class CarScreenRenderBase : RenderBase() {
     private val episode = ItemWithUserData(item(101, ItemKind.EPISODE, "The Turn", seriesName = "Slow Horses", index = 2, parentIndex = 1), null)
     private val film = ItemWithUserData(item(70, ItemKind.MOVIE, "A Long Film"), null)
     private val open = CarAccess.Open(BEN)
-    private val lists = CarLists(resume = listOf(episode), nextUp = emptyList(), downloads = listOf(film))
+    private val lists = CarLists(BEN, resume = listOf(episode), nextUp = emptyList(), downloads = listOf(film))
     private fun playing(phase: Phase = Phase.PLAYING, controls: Boolean = true, error: AppError.Kind? = null) = CarPlayer(
         PlaybackState.EMPTY.copy(session = BEN, itemId = id(101), title = "The Turn", phase = phase, positionMs = 65_000, durationMs = 3_000_000, error = error),
         controlsVisible = controls,
@@ -46,6 +46,19 @@ abstract class CarScreenRenderBase : RenderBase() {
         assertShown(text(R.string.car_unlock))
         assertNotShown("The Turn")
         assertNotShown(text(R.string.home_continue))
+    }
+
+    @Test fun onThePhonesOwnDisplayItSaysOpenItOnTheCar() {
+        showCar(CarAccess.PhoneDisplay)
+        assertShown(text(R.string.car_open_on_car))
+        assertNotShown("The Turn")
+    }
+
+    /** Review I2: lists read for another profile are never drawn under the open one. */
+    @Test fun listsReadForAnotherProfileAreNotShown() {
+        showCar(CarAccess.Open(app.shoalwatch.ui.browse.AMY), lists.copy(session = BEN))
+        assertNotShown("The Turn")
+        assertNotShown("A Long Film")
     }
 
     @Test fun signedOutTheCarSaysSignInOnThePhone() {
@@ -72,7 +85,7 @@ abstract class CarScreenRenderBase : RenderBase() {
     }
 
     @Test fun withNothingToPlayItSaysSo() {
-        showCar(open, CarLists())
+        showCar(open, CarLists(BEN))
         assertShown(text(R.string.car_nothing))
     }
 

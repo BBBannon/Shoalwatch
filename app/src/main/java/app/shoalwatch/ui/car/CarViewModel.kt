@@ -30,6 +30,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -45,11 +47,14 @@ sealed interface CarAccess {
     data object SignIn : CarAccess
     /** The app lock or a protected profile's PIN is asked on the phone. */
     data object Locked : CarAccess
+    /** The car activity is on the phone's own display (started there, or moved there when Android Auto went): nothing of any profile. */
+    data object PhoneDisplay : CarAccess
     data class Open(val session: Session) : CarAccess { override fun toString() = "Open(<redacted>)" }
 }
 
-/** The car's lists for the open profile. [offline]: the server cannot be reached, so only [downloads] play. */
+/** The car's lists for the open profile [session] (what they were read for). [offline]: the server cannot be reached, so only [downloads] play. */
 data class CarLists(
+    val session: Session? = null,
     val resume: List<ItemWithUserData> = emptyList(),
     val nextUp: List<ItemWithUserData> = emptyList(),
     val downloads: List<ItemWithUserData> = emptyList(),
@@ -77,12 +82,16 @@ class CarViewModel(
     private val controllerFactory: (Session, CoroutineScope) -> PlaybackController,
     private val quality: () -> Quality,
 ) : ViewModel() {
-    val access: StateFlow<CarAccess> = combine(activeSession, lockState, openFor) { s, state, judged -> accessOf(s, state, judged) }
+    /** True until the activity says it is on a car display: fails closed (review I1). */
+    private val onPhoneDisplay = MutableStateFlow(true)
+
+    val access: StateFlow<CarAccess> = combine(activeSession, lockState, openFor, onPhoneDisplay) { s, state, judged, phone -> accessOf(s, state, judged, phone) }
         .distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.Eagerly, CarAccess.Waiting)
 
     val lists: StateFlow<CarLists?> = access.flatMapLatest { a ->
-        if (a is CarAccess.Open) listsFor(a.session) else flowOf(null)
+        // Nothing first: the old profile's lists never stay up under a new one while its own loads (review I2).
+        if (a is CarAccess.Open) flow<CarLists?> { emit(null); emitAll(listsFor(a.session)) } else flowOf(null)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     private val mutablePlayer = MutableStateFlow<CarPlayer?>(null)
@@ -109,6 +118,7 @@ class CarViewModel(
     /** Plays [itemId] for the open profile (a download plays from the phone, with or without a connection). */
     fun play(itemId: String) {
         val s = (access.value as? CarAccess.Open)?.session ?: return
+        if (lists.value?.session != s) return // a row of another profile's lists, still on screen for a moment
         stop()
         val c = controllerFactory(s, viewModelScope)
         controller = c
@@ -127,6 +137,9 @@ class CarViewModel(
         val p = mutablePlayer.value ?: return
         if (p.controlsVisible) { hideJob?.cancel(); mutablePlayer.value = p.copy(controlsVisible = false) } else showControls()
     }
+
+    /** Whether the activity is on the phone's own display (true until the activity says otherwise: fails closed). */
+    fun setOnPhoneDisplay(on: Boolean) { onPhoneDisplay.value = on }
 
     /** Back: stops (the stop is sent) and returns to the list. */
     fun back() = stop()
@@ -182,7 +195,7 @@ class CarViewModel(
     private fun listsFor(s: Session): Flow<CarLists> =
         combine(library.home(s), downloadedFor(s)) { home, saved ->
             val offline = (home.resume.freshness as? Freshness.Stale)?.reason.let { it == AppError.Kind.OFFLINE || it == AppError.Kind.NETWORK }
-            CarLists(home.resume.items.take(ROW_LIMIT), home.nextUp.items.take(ROW_LIMIT), saved, offline)
+            CarLists(s, home.resume.items.take(ROW_LIMIT), home.nextUp.items.take(ROW_LIMIT), saved, offline)
         }
 
     /** Every complete download this profile may play now (its storage is in the phone): films first, then each series' episodes. */
@@ -200,7 +213,8 @@ class CarViewModel(
 
     companion object {
         /** Mirrors `LockCover`: nothing of a profile until the gate is open for exactly the active one. */
-        fun accessOf(active: Session?, state: LockState, judged: Judged?): CarAccess = when {
+        fun accessOf(active: Session?, state: LockState, judged: Judged?, onPhoneDisplay: Boolean = false): CarAccess = when {
+            onPhoneDisplay -> CarAccess.PhoneDisplay
             state == LockState.Checking -> CarAccess.Waiting
             state is LockState.App || state is LockState.Profile -> CarAccess.Locked
             judged == null || judged != Judged(active) -> CarAccess.Waiting

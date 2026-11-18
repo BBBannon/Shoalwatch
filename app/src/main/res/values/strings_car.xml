@@ -2,6 +2,7 @@
 <!-- The Android Auto car screen (Milestone 9): a parked app, shown only while the car is parked. -->
 <resources>
     <string name="car_sign_in">Sign in on your phone first</string>
+    <string name="car_open_on_car">Open Shoalwatch on your car’s screen</string>
     <string name="car_unlock">Unlock Shoalwatch on your phone to watch here</string>
     <string name="car_nothing">Nothing to watch yet. Start something on your phone, or download an episode.</string>
     <string name="car_offline">No connection. Your downloads still play.</string>

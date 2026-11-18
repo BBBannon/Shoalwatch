@@ -74,7 +74,7 @@ internal class CarViewModelTest : PlaybackControllerTestBase() {
                 active, lock, openFor, library, downloads, { s, _ -> controllerFor(s, backgroundScope, carEngine) }, { Quality.MAXIMUM },
             ) as T
         }
-        return ViewModelProvider.create(store, factory)[CarViewModel::class.java].also { runCurrent() }
+        return ViewModelProvider.create(store, factory)[CarViewModel::class.java].also { it.setOnPhoneDisplay(false); runCurrent() }
     }
 
     private fun entry(i: ItemWithUserData, state: DownloadState = DownloadState.COMPLETE, available: Boolean = true) =
@@ -204,6 +204,56 @@ internal class CarViewModelTest : PlaybackControllerTestBase() {
         assertEquals(Phase.PLAYING, vm.player.value?.playback?.phase)
         testScheduler.advanceTimeBy(6_000); runCurrent()
         assertFalse("they hide by themselves while playing", vm.player.value!!.controlsVisible)
+    }
+
+    /** Review I1: on the phone's own display the car activity shows a message only, reads nothing and plays nothing. */
+    @Test fun onThePhonesOwnDisplayItShowsNothingOfAnyProfileAndStopsPlaying() = runTest(dispatcher) {
+        library.homeFlow(BEN).value = homeWith(listOf(episode(101)), emptyList())
+        val vm = vm(); carPlaying(vm)
+        vm.setOnPhoneDisplay(true); runCurrent()
+        assertEquals(CarAccess.PhoneDisplay, vm.access.value)
+        assertNull(vm.lists.value)
+        assertNull(vm.player.value)
+        assertTrue(carEngine.released)
+        vm.play(ep1); runCurrent()
+        assertNull("nothing plays there", vm.player.value)
+        vm.setOnPhoneDisplay(false); runCurrent()
+        assertEquals(CarAccess.Open(BEN), vm.access.value)
+    }
+
+    @Test fun startedOnThePhonesOwnDisplayTheProfilesListsAreNeverRead() = runTest(dispatcher) {
+        val factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T = CarViewModel(
+                active, lock, openFor, library, downloads, { s, _ -> controllerFor(s, backgroundScope, carEngine) }, { Quality.MAXIMUM },
+            ) as T
+        }
+        val vm = ViewModelProvider.create(store, factory)[CarViewModel::class.java]; runCurrent() // never told: fails closed
+        assertEquals(CarAccess.PhoneDisplay, vm.access.value)
+        assertTrue(library.homeCollects.isEmpty())
+    }
+
+    /**
+     * Review I2: a direct change from Ben (open) to Amy (open) must never pair Amy's access with Ben's lists, even before Amy's
+     * lists have loaded (Amy's Home here never answers).
+     */
+    @Test fun aProfileChangeNeverShowsThePreviousProfilesListsUnderTheNewOne() = runTest(dispatcher) {
+        library.homeFlow(BEN).value = homeWith(listOf(episode(101)), listOf(episode(102)))
+        val slowLibrary = object : app.shoalwatch.data.library.Library by library {
+            override fun home(s: Session) = if (s == AMY) kotlinx.coroutines.flow.flow<Home> { kotlinx.coroutines.awaitCancellation() } else library.home(s)
+        }
+        val factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T = CarViewModel(
+                active, lock, openFor, slowLibrary, downloads, { s, _ -> controllerFor(s, backgroundScope, carEngine) }, { Quality.MAXIMUM },
+            ) as T
+        }
+        val vm = ViewModelProvider.create(store, factory)[CarViewModel::class.java].also { it.setOnPhoneDisplay(false) }; runCurrent()
+        assertEquals(listOf(ep1), vm.lists.value?.resume?.map { it.item.id })
+        active.value = AMY; openFor.value = Judged(AMY); runCurrent()
+        assertEquals(CarAccess.Open(AMY), vm.access.value)
+        val shown = vm.lists.value
+        assertTrue("Ben's lists are not shown as Amy's", shown == null || shown.session == AMY)
     }
 
     @Test fun losingTheCarScreenPausesAndItNeverPlaysAgainByItself() = runTest(dispatcher) {

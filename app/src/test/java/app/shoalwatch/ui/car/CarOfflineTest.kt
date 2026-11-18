@@ -88,7 +88,7 @@ internal class CarOfflineTest : PlaybackControllerTestBase() {
                 { s, _ -> controllerFor(s, backgroundScope) }, { Quality.MAXIMUM },
             ) as T
         }
-        return ViewModelProvider.create(store, factory)[CarViewModel::class.java].also { runCurrent() }
+        return ViewModelProvider.create(store, factory)[CarViewModel::class.java].also { it.setOnPhoneDisplay(false); runCurrent() }
     }
 
     @Test fun withNoConnectionTheDownloadIsListedAndPlaysFromThePhone() = runTest(dispatcher) {
