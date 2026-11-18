@@ -94,7 +94,7 @@ Every fix had a failing test first, except where none was possible: F9/M-6 (the 
 - **Header-gated proxies** (e.g. Cloudflare Access): after F6/M-9 the identity check sends no custom headers, so re-trust or an address edit fails behind such a proxy; remove the header, do the step, add it back. Documented in ARCHITECTURE.
 - Every row of the earlier milestones' "Unproven until Ben's real device" lists.
 
-**Accepted, with reasons in the report:** SEC-14, 19, 20, 21, 22, 23, 25. **SEC-22: Ben must back up `C:/Users/Ben/.android-keys/shoalwatch-release.jks` and `keystore.properties` off this PC** — without them the app can never be updated.
+**Accepted, with reasons in the report:** SEC-14, 19, 20, 21, 22, 23, 25. **SEC-22: Ben must back up `the release keystore (kept outside the repo, in the user folder's `.android-keys`)` and `keystore.properties` off this PC** — without them the app can never be updated.
 
 **Carried small points:** `docs/reviews/milestone-3-carried.md`, `milestone-4-carried.md`, and the Milestone 2, 5, 6 and 7 checks' carry lists. None blocks use.
 

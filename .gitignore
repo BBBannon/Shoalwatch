@@ -5,12 +5,19 @@ build/
 *.apk
 *.aab
 releases/
+dist/
 
 # Local machine and secrets — never commit
 local.properties
 keystore.properties
 *.jks
 *.keystore
+*.p12
+*.pfx
+*.pem
+*.key
+.env
+.env.*
 
 # IDE
 .idea/
@@ -24,9 +31,11 @@ tasks/
 __pycache__/
 *.pyc
 
-# Agent scratch
+# Agent scratch and local tool settings
 .superpowers/
+.claude/settings.local.json
 
-# Python
-__pycache__/
-*.pyc
+# Crash and heap dumps
+*.hprof
+hs_err_pid*.log
+replay_pid*.log
