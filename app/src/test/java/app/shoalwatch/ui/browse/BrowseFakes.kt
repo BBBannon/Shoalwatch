@@ -190,6 +190,32 @@ class FakeHousekeeping : app.shoalwatch.data.downloads.Housekeeping {
         return outcome
     }
 
+    /** "Watched together"'s protected sharers (security review M8 F12) and the PIN each accepts ([sharerPin]); proofs recorded in [calls]. */
+    var protectedSharers: List<app.shoalwatch.data.servers.AccountSummary> = emptyList()
+    var sharerPin = "4826"
+    /** What [releaseTogether] says the data layer left out (a proof gone, a protection unreadable). */
+    var leftOutByData = false
+    /** Thrown by [proveSharer] (a try that could not be saved). */
+    var proveFailure: Exception? = null
+
+    override suspend fun dropProofs(s: Session, itemId: String) { calls += "drop:${who(s)}:$itemId" }
+
+    override suspend fun releaseTogether(s: Session, itemId: String) =
+        app.shoalwatch.data.downloads.TogetherRelease(release(s, itemId, together = true), leftOutByData)
+    /** Holds every [proveSharer] until completed (the check running on io). */
+    var proveGate: CompletableDeferred<Unit>? = null
+
+    override suspend fun protectedSharers(s: Session, itemId: String) = protectedSharers
+
+    override suspend fun proveSharer(s: Session, sharerUserId: String, itemId: String, pin: CharArray): app.shoalwatch.security.PinCheck {
+        val typed = String(pin)
+        pin.fill('0')
+        calls += "prove:${who(s)}:$sharerUserId:$itemId:$typed"
+        proveGate?.await()
+        proveFailure?.let { throw it }
+        return if (typed == sharerPin) app.shoalwatch.security.PinCheck.Correct else app.shoalwatch.security.PinCheck.Wrong(4)
+    }
+
     /** Storage: [storages] per session (empty until set); [summary], [deletedWatched] and [deletedSeries] answer the actions. */
     val storages = mutableMapOf<Session, MutableStateFlow<app.shoalwatch.data.downloads.StorageView>>()
     var summary = app.shoalwatch.data.downloads.WatchedSummary(0, 0, 0)

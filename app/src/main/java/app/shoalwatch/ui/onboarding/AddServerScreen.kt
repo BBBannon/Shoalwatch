@@ -35,6 +35,7 @@ import app.shoalwatch.ui.components.PrimaryButton
 import app.shoalwatch.ui.components.SecondaryButton
 import app.shoalwatch.ui.components.rememberSubmit
 import app.shoalwatch.ui.components.ShoalMark
+import app.shoalwatch.ui.components.NoKeyboardLearning
 
 /** Everything the Add server screen can ask for, so the screen itself holds no logic. */
 class AddServerActions(
@@ -146,21 +147,23 @@ internal fun AddressField(
     onGo: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onChange,
-        modifier = modifier.fillMaxWidth(),
-        label = { Text(label) },
-        supportingText = { Text(stringResource(R.string.add_address_example)) },
-        singleLine = true,
-        isError = isError,
-        enabled = enabled,
-        keyboardOptions = KeyboardOptions(
-            capitalization = KeyboardCapitalization.None,
-            autoCorrectEnabled = false,
-            keyboardType = KeyboardType.Uri,
-            imeAction = ImeAction.Go,
-        ),
-        keyboardActions = KeyboardActions(onGo = { onGo() }),
-    )
+    NoKeyboardLearning {
+        OutlinedTextField(
+            value = value,
+            onValueChange = onChange,
+            modifier = modifier.fillMaxWidth(),
+            label = { Text(label) },
+            supportingText = { Text(stringResource(R.string.add_address_example)) },
+            singleLine = true,
+            isError = isError,
+            enabled = enabled,
+            keyboardOptions = KeyboardOptions(
+                capitalization = KeyboardCapitalization.None,
+                autoCorrectEnabled = false,
+                keyboardType = KeyboardType.Uri,
+                imeAction = ImeAction.Go,
+            ),
+            keyboardActions = KeyboardActions(onGo = { onGo() }),
+        )
+    }
 }

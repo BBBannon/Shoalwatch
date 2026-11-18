@@ -40,6 +40,7 @@ import app.shoalwatch.ui.components.ErrorMessage
 import app.shoalwatch.ui.components.Loading
 import app.shoalwatch.ui.components.RevealToggle
 import app.shoalwatch.ui.components.rememberSubmit
+import app.shoalwatch.ui.components.NoKeyboardLearning
 import app.shoalwatch.ui.theme.CodeStyles
 
 private val TotalSeconds = (AuthRepository.TIMEOUT_MS / 1_000).toInt()
@@ -94,44 +95,48 @@ internal fun PasswordPanel(state: SignInUiState, password: TextFieldState, actio
     var revealed by remember { mutableStateOf(false) }
     val submit = rememberSubmit(actions.onSignIn)
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        OutlinedTextField(
-            value = state.username,
-            onValueChange = actions.onUsernameChange,
-            modifier = Modifier.fillMaxWidth().semantics { contentType = ContentType.Username },
-            label = { Text(stringResource(R.string.username_label)) },
-            singleLine = true,
-            enabled = !state.submitting,
-            isError = state.error != null,
-            keyboardOptions = KeyboardOptions(
-                capitalization = KeyboardCapitalization.None,
-                autoCorrectEnabled = false,
-                keyboardType = KeyboardType.Text,
-                imeAction = ImeAction.Next,
-            ),
-        )
-        OutlinedSecureTextField(
-            state = password,
-            modifier = Modifier.fillMaxWidth().semantics {
-                contentType = ContentType.Password
-                // The field exposes its raw text to accessibility services as EditableText even though it is drawn
-                // masked. While hidden, this outer modifier replaces it with bullets of the same length and sets the
-                // Password flag in the same block, so the flagged node is the node carrying the masked text. Once the
-                // user presses Show, the real text is exposed (they asked to see it).
-                if (!revealed) {
-                    password()
-                    editableText = AnnotatedString("•".repeat(password.text.length))
-                }
-            },
-            label = { Text(stringResource(R.string.password_label)) },
-            enabled = !state.submitting,
-            isError = state.error != null,
-            textObfuscationMode = if (revealed) TextObfuscationMode.Visible else TextObfuscationMode.RevealLastTyped,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false, imeAction = ImeAction.Go),
-            onKeyboardAction = KeyboardActionHandler { submit() },
-            trailingIcon = {
-                RevealToggle(revealed, { revealed = !revealed }, stringResource(if (revealed) R.string.password_hide_cd else R.string.password_show_cd))
-            },
-        )
+        NoKeyboardLearning {
+            OutlinedTextField(
+                value = state.username,
+                onValueChange = actions.onUsernameChange,
+                modifier = Modifier.fillMaxWidth().semantics { contentType = ContentType.Username },
+                label = { Text(stringResource(R.string.username_label)) },
+                singleLine = true,
+                enabled = !state.submitting,
+                isError = state.error != null,
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.None,
+                    autoCorrectEnabled = false,
+                    keyboardType = KeyboardType.Text,
+                    imeAction = ImeAction.Next,
+                ),
+            )
+        }
+        NoKeyboardLearning {
+            OutlinedSecureTextField(
+                state = password,
+                modifier = Modifier.fillMaxWidth().semantics {
+                    contentType = ContentType.Password
+                    // The field exposes its raw text to accessibility services as EditableText even though it is drawn
+                    // masked. While hidden, this outer modifier replaces it with bullets of the same length and sets the
+                    // Password flag in the same block, so the flagged node is the node carrying the masked text. Once the
+                    // user presses Show, the real text is exposed (they asked to see it).
+                    if (!revealed) {
+                        password()
+                        editableText = AnnotatedString("•".repeat(password.text.length))
+                    }
+                },
+                label = { Text(stringResource(R.string.password_label)) },
+                enabled = !state.submitting,
+                isError = state.error != null,
+                textObfuscationMode = if (revealed) TextObfuscationMode.Visible else TextObfuscationMode.RevealLastTyped,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false, imeAction = ImeAction.Go),
+                onKeyboardAction = KeyboardActionHandler { submit() },
+                trailingIcon = {
+                    RevealToggle(revealed, { revealed = !revealed }, stringResource(if (revealed) R.string.password_hide_cd else R.string.password_show_cd))
+                },
+            )
+        }
         ErrorMessage(state.error)
     }
 }

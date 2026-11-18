@@ -70,6 +70,7 @@ internal fun ForgotPinPanel(state: LockUiState, password: TextFieldState, onSubm
 @Composable
 private fun forgotErrorText(state: LockUiState, server: String): String? = when {
     state.forgotWait != null -> stringResource(R.string.lock_forgot_wait, waitWords(rememberStrings(), state.forgotWait))
+    state.forgotNoPassword -> stringResource(R.string.lock_forgot_no_password)
     state.forgotOtherAccount -> stringResource(R.string.lock_forgot_other_account)
     state.forgotError == AppError.Kind.OFFLINE -> stringResource(R.string.lock_forgot_offline, server)
     state.forgotError != null -> AppError.of(state.forgotError).userMessage

@@ -9,7 +9,9 @@ import app.shoalwatch.data.db.downloads.VolumeBytesRow
 import app.shoalwatch.data.db.library.toModel
 import app.shoalwatch.data.library.ItemWithUserData
 import app.shoalwatch.data.library.Playstate
+import app.shoalwatch.data.servers.AccountSummary
 import app.shoalwatch.data.servers.JellyfinId
+import app.shoalwatch.security.PinCheck
 import app.shoalwatch.data.servers.Session
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -51,7 +53,11 @@ class HousekeepingRepository internal constructor(
     private val markHere: suspend (Session, String) -> Unit = { _, _ -> },
     /** The household check: "Delete shared downloads" is a household setting (Milestone 7). */
     private val household: HouseholdGuard? = null,
+    /** Profile protection for "Watched together" (security review M8 F12); null: no profile is protected (tests). */
+    private val sharerLocks: SharerLocks? = null,
 ) : Housekeeping {
+    private val proofs = TogetherProofs()
+
     override fun profileSettings(s: Session): Flow<ProfileSettings> = guarded(ProfileSettings()) {
         dao.observeProfile(s.serverId, s.userId).map { row -> row?.let { ProfileSettings(it.afterFinish, it.autoNextCount) } ?: ProfileSettings() }
     }
@@ -85,18 +91,78 @@ class HousekeepingRepository internal constructor(
         }
     }
 
+    override suspend fun protectedSharers(s: Session, itemId: String): List<AccountSummary> = action {
+        val locks = sharerLocks ?: return@action emptyList()
+        releases.sharers(s, itemId, signedIn(s)).map { Session(s.serverId, it) }.filter { lockedOrUnknown(locks, it) }
+            .map { AccountSummary(it.serverId, it.userId, nameOf(locks, it)) }
+    }
+
+    /** Only a protected sharer's PIN is checked; a right one is a proof for this one press ([TogetherProofs]). */
+    override suspend fun proveSharer(s: Session, sharerUserId: String, itemId: String, pin: CharArray): PinCheck = try {
+        val sharer = Session(s.serverId, sharerUserId)
+        val locks = sharerLocks
+        if (locks == null || !lockedOrUnknown(locks, sharer)) {
+            PinCheck.NotProtected
+        } else {
+            locks.check(sharer, pin).also { if (it == PinCheck.Correct) proofs.record(s, sharer, itemId) }
+        }
+    } finally {
+        pin.fill('\u0000')
+    }
+
+    /** A name that cannot be read is empty: the PIN step then uses neutral words (review M-3). */
+    private suspend fun nameOf(locks: SharerLocks, s: Session): String = try {
+        locks.name(s).orEmpty()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        AppLog.w(TAG, "a sharer's name could not be read", e)
+        ""
+    }
+
+    /** A protection that cannot be read counts as protected: that profile is left out, never marked unasked. */
+    private suspend fun lockedOrUnknown(locks: SharerLocks, s: Session): Boolean = try {
+        locks.isProtected(s)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        AppLog.w(TAG, "a sharer's protection could not be read", e)
+        true
+    }
+
     override suspend fun releaseChoice(s: Session, itemId: String): ReleaseChoice = action { releases.choice(s, itemId, signedIn(s)) }
 
-    override suspend fun release(s: Session, itemId: String, together: Boolean): ReleaseOutcome = action {
+    override suspend fun release(s: Session, itemId: String, together: Boolean): ReleaseOutcome = releaseWith(s, itemId, together).outcome
+
+    override suspend fun releaseTogether(s: Session, itemId: String): TogetherRelease = releaseWith(s, itemId, together = true)
+
+    override suspend fun dropProofs(s: Session, itemId: String) = proofs.drop(s, itemId)
+
+    /** Every press ends its proofs, used or not (review M-2): a later press can never reuse them. */
+    private suspend fun releaseWith(s: Session, itemId: String, together: Boolean): TogetherRelease = try {
+        releaseOnce(s, itemId, together)
+    } finally {
+        proofs.drop(s, itemId)
+    }
+
+    private suspend fun releaseOnce(s: Session, itemId: String, together: Boolean): TogetherRelease = action {
+        var leftOut = false
         // Nothing changes, not even watched, for a download this profile may not see (the same answer as none at all).
-        if (!releases.choice(s, itemId, signedIn(s)).canRelease) return@action ReleaseOutcome.NOT_YOURS
+        if (!releases.choice(s, itemId, signedIn(s)).canRelease) return@action TogetherRelease(ReleaseOutcome.NOT_YOURS, leftOut = false)
         // In the player, the stop's PLAY carries this watch to the server; a PLAYED tick as well would count it twice (review I1).
         val here = inPlayer(s, itemId)
         if (here) markHere(s, itemId) else playstate.setPlayed(s, itemId, true)
         if (together) {
             for (other in releases.sharers(s, itemId, signedIn(s))) {
+                val sharer = Session(s.serverId, other)
+                // A protected profile's account is written only with its own PIN for this press (security review M8 F12).
+                val locks = sharerLocks
+                if (locks != null && lockedOrUnknown(locks, sharer) && !proofs.consume(s, sharer, itemId)) {
+                    leftOut = true
+                    continue
+                }
                 try {
-                    playstate.setPlayed(Session(s.serverId, other), itemId, true) // that profile's OWN outbox, sent as itself
+                    playstate.setPlayed(sharer, itemId, true) // that profile's OWN outbox, sent as itself
                 } catch (e: AppError) {
                     // Skipped, never half-done (Tasks 11-12 review M3): SERVER_NOT_FOUND means it is no longer shown to that profile;
                     // any other failure is logged by kind and the release goes on (EVERYONE then keeps it if that profile has not watched).
@@ -107,7 +173,7 @@ class HousekeepingRepository internal constructor(
         remember(s, itemId)
         val outcome = apply(releases.release(s, itemId, watchedBy = setOf(s.userId))) // the rule is told directly that [s] watched
         if (!here) onWatched(s, itemId) // in the player, the stop's [onLocalFinished] runs it, once (Tasks 13-14 review M2)
-        outcome
+        TogetherRelease(outcome, leftOut)
     }
 
     override fun storage(s: Session): Flow<StorageView> = guarded(EMPTY_STORAGE) {

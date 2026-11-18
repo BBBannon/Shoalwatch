@@ -49,6 +49,8 @@ data class LockUiState(
     val forgotError: AppError.Kind? = null,
     /** The password was accepted for another account: nothing was cleared. */
     val forgotOtherAccount: Boolean = false,
+    /** The password field was empty: nothing was sent (security review M8 F1), and no wait was started. */
+    val forgotNoPassword: Boolean = false,
     /** The locked profile's server name, for the "Forgot PIN" words. */
     val lockedServerName: String? = null,
     /** "Forgot PIN" must wait this many seconds before the next try (review M5), or null. */
@@ -80,7 +82,7 @@ class LockViewModel(
     private data class Local(
         val pinAnswer: PinCheck? = null, val pinFailed: Boolean = false, val busy: Boolean = false, val forgot: Boolean = false,
         val forgotError: AppError.Kind? = null, val forgotOtherAccount: Boolean = false, val choosing: OtherProfile? = null,
-        val forgotWait: Int? = null,
+        val forgotWait: Int? = null, val forgotNoPassword: Boolean = false,
     )
 
     private val local = MutableStateFlow(Local())
@@ -110,7 +112,7 @@ class LockViewModel(
             others = all.filter { Session(it.serverId, it.userId) != locked },
             pinAnswer = l.pinAnswer, pinFailed = l.pinFailed, busy = l.busy, forgot = l.forgot, forgotError = l.forgotError,
             forgotOtherAccount = l.forgotOtherAccount, lockedServerName = servers.firstOrNull { it.id == locked?.serverId }?.name,
-            choosing = l.choosing, forgotWait = l.forgotWait, readFailed = failed,
+            choosing = l.choosing, forgotWait = l.forgotWait, forgotNoPassword = l.forgotNoPassword, readFailed = failed,
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, LockUiState())
 
@@ -170,21 +172,28 @@ class LockViewModel(
 
     fun openForgot() {
         password.clearText()
-        local.update { it.copy(forgot = true, forgotError = null, forgotOtherAccount = false, forgotWait = null) }
+        local.update { it.copy(forgot = true, forgotError = null, forgotOtherAccount = false, forgotWait = null, forgotNoPassword = false) }
     }
 
     fun closeForgot() {
         password.clearText()
-        local.update { it.copy(forgot = false, forgotError = null, forgotOtherAccount = false, forgotWait = null) }
+        local.update { it.copy(forgot = false, forgotError = null, forgotOtherAccount = false, forgotWait = null, forgotNoPassword = false) }
     }
 
     /**
      * Quick Connect is not offered here: an approval from another device is not proof the account is yours. While [ForgotThrottle]
-     * says wait, nothing is sent (review M5); a wrong password or another account's starts the next wait.
+     * says wait, nothing is sent (review M5); a wrong password or another account's starts the next wait. An empty (or blank)
+     * field is refused before anything is sent and costs no wait (security review M8 F1): Jellyfin accepts "" for an account
+     * with no password, so it proves nothing.
      */
     fun submitForgot() {
         val locked = gate.state.value as? LockState.Profile ?: return
         if (local.value.busy) return
+        if (password.text.isBlank()) {
+            password.clearText()
+            local.update { it.copy(forgotNoPassword = true, forgotError = null, forgotOtherAccount = false, forgotWait = null) }
+            return
+        }
         val chars = password.text.toPinArray()
         password.clearText()
         val wait = forgotThrottle.waitSeconds(locked.session)
@@ -193,7 +202,7 @@ class LockViewModel(
             local.update { it.copy(forgotWait = wait, forgotError = null, forgotOtherAccount = false) }
             return
         }
-        local.update { it.copy(busy = true, forgotError = null, forgotOtherAccount = false, forgotWait = null) }
+        local.update { it.copy(busy = true, forgotError = null, forgotOtherAccount = false, forgotWait = null, forgotNoPassword = false) }
         viewModelScope.launch {
             try {
                 val route = authenticator.signInRoute(locked.session.serverId)

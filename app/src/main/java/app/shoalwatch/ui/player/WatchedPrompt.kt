@@ -76,4 +76,5 @@ internal fun watchedMessageText(m: WatchedMessage): Int = when (m) {
     WatchedMessage.KEPT_FOR_OTHERS -> R.string.watched_kept_for_others
     WatchedMessage.KEPT_UNTIL_EVERYONE -> R.string.watched_kept_until_everyone
     WatchedMessage.FAILED -> R.string.watched_failed
+    WatchedMessage.LEFT_OUT -> R.string.watched_left_out
 }

@@ -3,6 +3,7 @@ package app.shoalwatch.data.library.api
 import app.shoalwatch.core.Ticks
 import app.shoalwatch.core.displayParagraphs
 import app.shoalwatch.core.displayText
+import app.shoalwatch.core.serverInstant
 import app.shoalwatch.data.api.JsonBodies
 import app.shoalwatch.data.library.Item
 import app.shoalwatch.data.library.ItemFilter
@@ -21,8 +22,6 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import java.time.Instant
-import java.time.OffsetDateTime
-import java.time.format.DateTimeParseException
 
 // DTO -> model. This is the S11 boundary: nothing leaves here unvalidated. See "Library endpoints" in docs/ARCHITECTURE.md.
 
@@ -37,6 +36,8 @@ internal object Limits {
     const val MAX_SEASONS = 1000
     const val PLAY_COUNT_MAX = 100_000
     const val POSITION_TICKS_MAX = Long.MAX_VALUE / 10_000
+    /** 48 hours, as the playback and admin runtimes (security review M8 F10): anything longer is unknown. */
+    val RUNTIME_TICKS_MAX = Ticks.fromMs(48L * 60 * 60 * 1000)
     val LAST_PLAYED_RANGE: ClosedRange<Instant> = Instant.parse("2000-01-01T00:00:00Z")..Instant.parse("2200-01-01T00:00:00Z")
 }
 
@@ -48,19 +49,8 @@ private fun intIn(value: Long?, range: IntRange): Int? = value?.takeIf { it in r
 
 private fun tag(raw: String?): String? = raw?.takeIf { IMAGE_TAG.matches(it) }
 
-/** Lenient: Jellyfin's seven fractional digits, or an offset; anything else is null, never a crash. */
-private fun instant(raw: String?): Instant? {
-    if (raw.isNullOrBlank() || raw.length > 64) return null
-    return try {
-        Instant.parse(raw)
-    } catch (_: DateTimeParseException) {
-        try {
-            OffsetDateTime.parse(raw).toInstant()
-        } catch (_: DateTimeParseException) {
-            null
-        }
-    }
-}
+/** Lenient in form, strict in range (1800-2200, security review M8 F3): anything else is null, never a crash. */
+private fun instant(raw: String?): Instant? = serverInstant(raw)
 
 internal fun kindOf(type: String?): ItemKind = when (type) {
     "Movie" -> ItemKind.MOVIE
@@ -101,7 +91,7 @@ internal fun BaseItemDto.toItem(): Item? {
         indexNumber = intIn(indexNumber, 0..Limits.INDEX_MAX),
         parentIndexNumber = intIn(parentIndexNumber, 0..Limits.INDEX_MAX),
         overview = displayParagraphs(overview, Limits.OVERVIEW).ifEmpty { null },
-        runtimeMs = runTimeTicks?.takeIf { it >= 0 }?.let(Ticks::toMs),
+        runtimeMs = runTimeTicks?.takeIf { it in 0..Limits.RUNTIME_TICKS_MAX }?.let(Ticks::toMs),
         year = intIn(productionYear, 1800..2200),
         premiereDate = instant(premiereDate),
         communityRating = communityRating?.takeIf { it in 0.0..10.0 }?.toFloat(),

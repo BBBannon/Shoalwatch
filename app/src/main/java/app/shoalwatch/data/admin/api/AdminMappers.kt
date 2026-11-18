@@ -2,6 +2,7 @@ package app.shoalwatch.data.admin.api
 
 import app.shoalwatch.core.Ticks
 import app.shoalwatch.core.displayText
+import app.shoalwatch.core.serverInstant
 import app.shoalwatch.data.admin.ActivityEntry
 import app.shoalwatch.data.admin.ActivityPage
 import app.shoalwatch.data.admin.AdminMe
@@ -28,8 +29,6 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.doubleOrNull
 import java.security.MessageDigest
 import java.time.Instant
-import java.time.OffsetDateTime
-import java.time.format.DateTimeParseException
 import kotlin.math.floor
 
 // DTO -> model for every admin answer. This is the S11 boundary: bounded lists and strings, validated ids, display text made
@@ -81,19 +80,8 @@ private fun <T : Any> JsonElement.decodeAs(deserializer: DeserializationStrategy
     null
 }
 
-/** Lenient: Jellyfin's seven fractional digits, or an offset; anything else is null, never a crash. */
-private fun instant(raw: String?): Instant? {
-    if (raw.isNullOrBlank() || raw.length > 64) return null
-    return try {
-        Instant.parse(raw)
-    } catch (_: DateTimeParseException) {
-        try {
-            OffsetDateTime.parse(raw).toInstant()
-        } catch (_: DateTimeParseException) {
-            null
-        }
-    }
-}
+/** Lenient in form, strict in range (1800-2200, security review M8 F3): anything else is null, never a crash. */
+private fun instant(raw: String?): Instant? = serverInstant(raw)
 
 private fun id(raw: String?): String? = JellyfinId.parseOrNull(raw)?.value
 

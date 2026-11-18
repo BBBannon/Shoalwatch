@@ -126,6 +126,22 @@ class HouseholdEnforcementTest : ReleaseTestBase() {
         assertFalse(U2 in accountIds())
     }
 
+    /** Review M-4: header values leave the catalog only through the household check; a save of the hidden copy keeps them. */
+    @Test fun headerValuesNeedTheHouseholdCheckAndAreHiddenEverywhereElse() = runBlocking {
+        val secret = "proxy-token-9f8e7d"
+        servers.upsertServer(servers.server(S1)!!.copy(customHeaders = mapOf("X-Proxy" to secret)))
+        assertTrue(locks.protect(a, "4826".toCharArray()))
+        val shown = catalog.server(S1)!!
+        assertEquals(setOf("X-Proxy"), shown.customHeaders.keys)
+        assertFalse("hidden from server()", secret in shown.customHeaders.values)
+        assertFalse("hidden from observeServer()", secret in catalog.observeServer(S1).first()!!.customHeaders.values)
+        refused("reading header values") { catalog.headerValues(S1) }
+        assertEquals(PinCheck.Correct, guard.confirm(a, "4826".toCharArray()))
+        assertEquals(mapOf("X-Proxy" to secret), catalog.headerValues(S1))
+        catalog.upsertServer(shown.copy(name = "Renamed"))
+        assertEquals("the hidden copy's save keeps the value", mapOf("X-Proxy" to secret), servers.server(S1)!!.customHeaders)
+    }
+
     @Test fun afterAGrownUpsPinEveryChangeIsAllowed() = runBlocking {
         assertTrue(locks.protect(a, "4826".toCharArray()))
         assertEquals(PinCheck.Correct, guard.confirm(a, "4826".toCharArray()))

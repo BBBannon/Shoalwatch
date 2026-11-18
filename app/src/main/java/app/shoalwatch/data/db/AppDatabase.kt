@@ -5,6 +5,7 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.sqlite.db.SupportSQLiteDatabase
 import app.shoalwatch.data.db.downloads.Converters
 import app.shoalwatch.data.db.downloads.DownloadDao
 import app.shoalwatch.data.db.downloads.HousekeepingDao
@@ -83,6 +84,14 @@ abstract class AppDatabase : RoomDatabase() {
         fun open(context: Context): AppDatabase =
             Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, FILE_NAME)
                 .addMigrations(Migration1To2, Migration2To3, Migration3To4, Migration4To5, Migration5To6)
+                .addCallback(SecureDelete)
                 .build()
+
+        /** Deleted rows are overwritten, not just marked free (security review SEC-08 / M-6): set on every open, whatever the build's default. */
+        private object SecureDelete : RoomDatabase.Callback() {
+            override fun onOpen(db: SupportSQLiteDatabase) {
+                db.query("PRAGMA secure_delete = ON").close()
+            }
+        }
     }
 }

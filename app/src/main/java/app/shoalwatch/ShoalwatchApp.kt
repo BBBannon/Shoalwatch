@@ -10,6 +10,7 @@ import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import androidx.work.Configuration
 import app.shoalwatch.data.downloads.ShoalwatchWorkerFactory
+import kotlinx.coroutines.flow.first
 
 /**
  * Also Coil's one source of the image loader: `Artwork` finds it here, so there is exactly one, built by `ArtworkLoader`; and
@@ -29,6 +30,7 @@ class ShoalwatchApp : Application(), SingletonImageLoader.Factory, Configuration
         graph.watchDownloads() // WorkManager itself is reached only once something is queued (see MainActivity.onStart)
         graph.watchSharing() // the sharing re-ask on each session change and each time the server comes back
         graph.downloadHousekeeping.onStart() // requeue what a dead process left, sweep orphans, kick if anything waits
+        graph.artworkEviction.sweep { graph.database.serverDao().observeRows().first().map { it.id }.toSet() } // pictures of removed servers
         graph.startSync() // queue what a dead process left in offline_plays, then send the outbox (and on each reconnection)
         graph.housekeepingParts.autoDownloadNext.start() // waiting "download next episodes" requests, now and on each reconnection
         graph.lockParts.lockGate.start() // the app lock and profile locks: asks at every cold start (see "App lock" in docs/ARCHITECTURE.md)

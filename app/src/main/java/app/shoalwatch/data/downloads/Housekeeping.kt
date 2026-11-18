@@ -1,6 +1,8 @@
 package app.shoalwatch.data.downloads
 
+import app.shoalwatch.data.servers.AccountSummary
 import app.shoalwatch.data.servers.Session
+import app.shoalwatch.security.PinCheck
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -29,6 +31,27 @@ interface Housekeeping {
      * A download [s] may not see is NOT_YOURS with nothing changed, not even its watched state.
      */
     suspend fun release(s: Session, itemId: String, together: Boolean): ReleaseOutcome
+
+    /**
+     * "Watched together" for [s]: as `release(s, itemId, together = true)`, and [TogetherRelease.leftOut] says whether a protected
+     * sharer was left out (no proof of its PIN for this press, or its protection could not be read).
+     */
+    suspend fun releaseTogether(s: Session, itemId: String): TogetherRelease = TogetherRelease(release(s, itemId, together = true), leftOut = false)
+
+    /** A new "Watched together" press (or one abandoned) of [itemId] by [s]: every PIN proof made for an earlier one goes. */
+    suspend fun dropProofs(s: Session, itemId: String) {}
+
+    /**
+     * The protected profiles "Watched together" of [itemId] would mark for [s] (security review M8 F12), with their names for the
+     * PIN step. Each is marked only after [proveSharer] with its own PIN; without one it is left out.
+     */
+    suspend fun protectedSharers(s: Session, itemId: String): List<AccountSummary> = emptyList()
+
+    /** Checks [sharerUserId]'s own PIN (zeroes [pin]); Correct lets [s]'s next "Watched together" of [itemId] mark that profile, once, within a minute. */
+    suspend fun proveSharer(s: Session, sharerUserId: String, itemId: String, pin: CharArray): PinCheck {
+        pin.fill('\u0000')
+        return PinCheck.NotProtected
+    }
 
     /** What uses space, as [s] may see it: its series and films by size, the volumes, and everyone else's downloads as one number. */
     fun storage(s: Session): Flow<StorageView>

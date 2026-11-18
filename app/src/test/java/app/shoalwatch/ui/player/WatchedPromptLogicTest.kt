@@ -127,6 +127,115 @@ class WatchedPromptLogicTest {
         assertEquals(listOf("release:ben:$e1:false", "release:ben:$e2:true"), housekeeping.calls.filter { it.startsWith("release") })
     }
 
+    // --- security review M8 F12: a protected sharer is marked only after its own PIN, asked here -----------------------
+
+    private val ann = app.shoalwatch.data.servers.AccountSummary(BEN.serverId, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "ann")
+
+    @Test fun togetherAsksAProtectedSharersPinFirstAndAWrongOneIsAskedAgain() = runTest {
+        housekeeping.choices = { _, _ -> ReleaseChoice(true, true, SharedDelete.EVERYONE, 1, false) }
+        housekeeping.protectedSharers = listOf(ann)
+        val l = logic()
+        val got = messages(l)
+        finish(l)
+        l.together(); runCurrent()
+        assertEquals("ann", l.sharerPin.value?.name)
+        assertEquals("nothing released yet", emptyList<String>(), housekeeping.calls.filter { it.startsWith("release") })
+        l.pin.edit { replace(0, length, "1111") }
+        l.submitSharerPin(); runCurrent()
+        assertEquals(app.shoalwatch.security.PinCheck.Wrong(4), l.sharerPin.value?.answer)
+        assertEquals("", l.pin.text.toString())
+        l.pin.edit { replace(0, length, "4826") }
+        l.submitSharerPin(); runCurrent()
+        assertNull(l.sharerPin.value)
+        assertEquals(listOf("prove:ben:${ann.userId}:$e1:1111", "prove:ben:${ann.userId}:$e1:4826", "release:ben:$e1:true"),
+            housekeeping.calls.filter { it.startsWith("prove") || it.startsWith("release") })
+        assertEquals(listOf(WatchedMessage.DELETED), got)
+    }
+
+    @Test fun cancellingTheSharersPinStillMarksTheOthersAndSaysItWasLeftOut() = runTest {
+        housekeeping.choices = { _, _ -> ReleaseChoice(true, true, SharedDelete.EVERYONE, 2, false) }
+        housekeeping.protectedSharers = listOf(ann)
+        val l = logic()
+        val got = messages(l)
+        finish(l)
+        l.together(); runCurrent()
+        l.cancelSharerPin(); runCurrent()
+        assertNull(l.sharerPin.value)
+        assertEquals(listOf("release:ben:$e1:true"), housekeeping.calls.filter { it.startsWith("prove") || it.startsWith("release") })
+        assertEquals(listOf(WatchedMessage.LEFT_OUT), got)
+    }
+
+    /** Review I-1: Cancel or Back while a sharer's PIN is being checked is ignored; the late answer then lands on its own ask only. */
+    @Test fun cancelWhileTheSharersPinIsCheckedIsIgnoredAndTheLateAnswerIsSafe() = runTest {
+        housekeeping.choices = { _, _ -> ReleaseChoice(true, true, SharedDelete.EVERYONE, 1, false) }
+        housekeeping.protectedSharers = listOf(ann)
+        for (right in listOf(true, false)) {
+            housekeeping.calls.clear()
+            val gate = CompletableDeferred<Unit>().also { housekeeping.proveGate = it }
+            val l = logic()
+            finish(l)
+            l.together(); runCurrent()
+            l.pin.edit { replace(0, length, if (right) "4826" else "1111") }
+            l.submitSharerPin(); runCurrent()
+            l.cancelSharerPin(); runCurrent()
+            assertEquals("still asking while busy", true, l.sharerPin.value?.busy)
+            gate.complete(Unit); runCurrent()
+            if (right) {
+                assertNull(l.sharerPin.value)
+                assertEquals(1, housekeeping.calls.count { it.startsWith("release") })
+            } else {
+                assertEquals(app.shoalwatch.security.PinCheck.Wrong(4), l.sharerPin.value?.answer)
+                l.cancelSharerPin(); runCurrent()
+                assertNull("the dialog can be closed", l.sharerPin.value)
+                assertEquals(1, housekeeping.calls.count { it.startsWith("release") })
+            }
+        }
+    }
+
+    /** Review I-1: a profile change during the check drops the ask; the old answer never comes back for the new profile. */
+    @Test fun aProfileChangeDuringTheCheckDropsTheAskForGood() = runTest {
+        housekeeping.choices = { _, _ -> ReleaseChoice(true, true, SharedDelete.EVERYONE, 1, false) }
+        housekeeping.protectedSharers = listOf(ann)
+        val gate = CompletableDeferred<Unit>().also { housekeeping.proveGate = it }
+        val l = logic()
+        finish(l)
+        l.together(); runCurrent()
+        l.pin.edit { replace(0, length, "1111") }
+        l.submitSharerPin(); runCurrent()
+        l.onState(local.copy(session = AMY)); runCurrent()
+        assertNull(l.sharerPin.value)
+        gate.complete(Unit); runCurrent()
+        assertNull("not brought back for AMY", l.sharerPin.value)
+        assertEquals(0, housekeeping.calls.count { it.startsWith("release") })
+    }
+
+    /** Review M-1/M-2: each press starts with no proof left from an earlier one; the data layer's own "left out" reaches the snackbar. */
+    @Test fun aPressDropsOldProofsAndTheDataLayersLeftOutIsSaid() = runTest {
+        housekeeping.choices = { _, _ -> ReleaseChoice(true, true, SharedDelete.EVERYONE, 1, false) }
+        housekeeping.leftOutByData = true
+        val l = logic()
+        val got = messages(l)
+        finish(l)
+        l.together(); runCurrent()
+        assertEquals(listOf("drop:ben:$e1", "release:ben:$e1:true"), housekeeping.calls.filter { it.startsWith("drop") || it.startsWith("release") })
+        assertEquals(listOf(WatchedMessage.LEFT_OUT), got)
+    }
+
+    /** Review M-3: no name read means neutral words (null name); a check that throws is a plain failure, not silence. */
+    @Test fun aSharerWithNoNameAndACheckThatFailsAreSaidPlainly() = runTest {
+        housekeeping.choices = { _, _ -> ReleaseChoice(true, true, SharedDelete.EVERYONE, 1, false) }
+        housekeeping.protectedSharers = listOf(ann.copy(userName = ""))
+        housekeeping.proveFailure = AppError.of(AppError.Kind.UNKNOWN)
+        val l = logic()
+        finish(l)
+        l.together(); runCurrent()
+        assertNull(l.sharerPin.value?.name)
+        l.pin.edit { replace(0, length, "4826") }
+        l.submitSharerPin(); runCurrent()
+        assertEquals(true, l.sharerPin.value?.failed)
+        assertEquals(false, l.sharerPin.value?.busy)
+    }
+
     @Test fun eachOutcomeGivesItsMessage() = runTest {
         val expected = mapOf(
             ReleaseOutcome.DELETED to WatchedMessage.DELETED,

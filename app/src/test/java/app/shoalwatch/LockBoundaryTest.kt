@@ -78,6 +78,19 @@ class LockBoundaryTest {
         assertEquals(listOf("LockParts.kt"), filesCalling(Regex("""\.turnOffAppLock\(""")))
     }
 
+    /**
+     * Security review M8 F2: connection settings are a household setting from every way in (the Servers list and each
+     * certificate "Review" button). The check lives in the screen's ViewModel, so the one place that builds it must hand it the
+     * real household guard; nothing else may build one.
+     */
+    @Test fun connectionSettingsAlwaysGetTheHouseholdCheck() {
+        assertEquals(listOf("ui/nav/Routes.kt"), filesCalling(Regex("""(?<!class )(?<![\w.])ServerEditViewModel\(""")))
+        val route = File(root, "ui/nav/Routes.kt").readText().replace("\r\n", "\n").substringAfter("fun ServerEditRoute(").substringBefore("\n}\n")
+        assertTrue("built with the household guard", Regex("""ServerEditViewModel\([^)]*household\s*=\s*graph\.lockParts\.householdGuard""").containsMatchIn(route))
+        assertTrue("the grown-up dialog is shown", route.contains("GrownUpDialog("))
+        assertTrue("a refused check leaves the screen", Regex("""Door\.Shut\)\s*nav\.popBackStack\(\)""").containsMatchIn(route))
+    }
+
     @Test fun noScreenChangesTheActiveProfileButThroughTheSwitcher() {
         assertEquals("ui/ calls setActive", emptyList<String>(), filesCalling(Regex("""\.setActive\(""")).filter { it.startsWith("ui/") })
     }

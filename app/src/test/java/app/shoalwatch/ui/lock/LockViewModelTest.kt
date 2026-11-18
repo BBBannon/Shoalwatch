@@ -263,6 +263,29 @@ class LockViewModelTest : LibraryTestBase() {
         assertTrue(locks.isProtected(adult))
     }
 
+    /** Security review M8 F1: an empty field proves nothing (Jellyfin accepts "" for an account with no password). */
+    @Test fun anEmptyForgotPasswordSendsNothingClearsNothingAndCostsNoWait() = runTest {
+        val vm = vm()
+        auth.onPassword = { id, u -> AccountSummary(id, U1, u) }
+        vm.openForgot()
+        vm.submitForgot()
+        vm.password.setTextAndPlaceCursorAtEnd("   ")
+        vm.submitForgot()
+        settle()
+        assertTrue("nothing sent", auth.passwordCalls.isEmpty())
+        assertTrue(cleared.isEmpty())
+        assertTrue(locks.isProtected(adult))
+        assertTrue(vm.state.value.forgotNoPassword)
+        assertNull(vm.state.value.forgotWait)
+        assertTrue(gate.state.value is LockState.Profile)
+        vm.password.setTextAndPlaceCursorAtEnd("hunter2")
+        vm.submitForgot()
+        settle()
+        assertEquals("no wait was started by the empty tries", 1, auth.passwordCalls.size)
+        assertFalse(vm.state.value.forgotNoPassword)
+        assertEquals(LockState.Open, gate.state.value)
+    }
+
     @Test fun anOfflineForgotTryCostsNoWait() = runTest {
         val vm = vm()
         auth.routeAnswer = { null }

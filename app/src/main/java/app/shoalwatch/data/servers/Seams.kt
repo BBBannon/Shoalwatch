@@ -42,6 +42,9 @@ interface ServerCatalog {
      */
     fun expiredAccounts(serverId: String): Flow<List<AccountSummary>> = flowOf(emptyList())
     suspend fun server(id: String): Server?
+
+    /** The saved custom-header values of [serverId]: the only way they leave the catalog (review M-4). @throws HouseholdLockedException */
+    suspend fun headerValues(serverId: String): Map<String, String>
     fun observeServer(id: String): Flow<Server?>
     suspend fun upsertServer(s: Server)
     suspend fun setActive(serverId: String, userId: String)
@@ -137,6 +140,9 @@ fun interface CertificateProber {
 
 private fun Account.summary() = AccountSummary(serverId, userId, userName)
 
+/** What [StoreCatalog] shows instead of a custom-header value: a control character, which no saved value can hold (`validateCustomHeader`). */
+val HIDDEN_HEADER_VALUE: String = Char(1).toString()
+
 /**
  * [setActive] refuses a protected profile ([isProtected]; only `ProfileSwitch` makes one active, after its PIN), and editing a
  * saved server needs the household check ([household]). The defaults keep tests that need neither unchanged.
@@ -151,12 +157,25 @@ class StoreCatalog(
     override fun activeSession(): Flow<Session?> = store.activeAccount.map { a -> a?.let { Session(it.serverId, it.userId) } }.distinctUntilChanged()
     override fun accounts(serverId: String) = store.accounts(serverId)
     override fun expiredAccounts(serverId: String) = store.accounts(serverId, expired = true)
-    override suspend fun server(id: String) = store.server(id)
-    override fun observeServer(id: String) = store.observeServer(id)
-    override suspend fun upsertServer(s: Server) {
-        if (store.server(s.id) != null) household()?.require()
-        store.upsertServer(s)
+    /** Header values are hidden here ([HIDDEN_HEADER_VALUE], names kept): they come out only through [headerValues] (review M-4). */
+    override suspend fun server(id: String) = store.server(id)?.withHiddenHeaders()
+    override fun observeServer(id: String) = store.observeServer(id).map { it?.withHiddenHeaders() }
+
+    override suspend fun headerValues(serverId: String): Map<String, String> {
+        household()?.require()
+        return store.server(serverId)?.customHeaders.orEmpty()
     }
+
+    /** A hidden value (a server read here and saved back) keeps the saved one; a hidden name with none saved is dropped. */
+    override suspend fun upsertServer(s: Server) {
+        val saved = store.server(s.id)
+        if (saved != null) household()?.require()
+        store.upsertServer(s.copy(customHeaders = s.customHeaders.mapNotNull { (name, value) ->
+            if (value != HIDDEN_HEADER_VALUE) name to value else saved?.customHeaders?.get(name)?.let { name to it }
+        }.toMap()))
+    }
+
+    private fun Server.withHiddenHeaders() = copy(customHeaders = customHeaders.mapValues { HIDDEN_HEADER_VALUE })
 
     /** @throws ProfileProtectedException for a protected profile; nothing is set. */
     override suspend fun setActive(serverId: String, userId: String) {

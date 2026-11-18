@@ -42,6 +42,7 @@ import app.shoalwatch.ui.onboarding.AddressField
 import app.shoalwatch.ui.onboarding.Check
 import app.shoalwatch.ui.onboarding.CheckGate
 import app.shoalwatch.ui.components.LocalCovered
+import app.shoalwatch.ui.components.NoKeyboardLearning
 
 /**
  * Editing one address. Saving runs the same checks as adding a server (including "is this the same
@@ -109,32 +110,36 @@ internal fun HeaderDialog(pane: EditPane.Header, actions: PaneActions) {
             val obscured = FilterObscuredTouches()
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 ObscuredTouchHint(obscured)
-                OutlinedTextField(
-                    value = pane.name,
-                    onValueChange = actions.onHeaderName,
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(stringResource(R.string.header_name_label)) },
-                    singleLine = true,
-                    isError = pane.error != null,
-                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false),
-                )
-                OutlinedTextField(
-                    value = pane.value,
-                    onValueChange = actions.onHeaderValue,
-                    modifier = Modifier.fillMaxWidth().semantics {
-                        // While masked, accessibility services must not read the raw value either.
-                        if (!revealed) {
-                            password()
-                            editableText = AnnotatedString("•".repeat(pane.value.length))
-                        }
-                    },
-                    label = { Text(stringResource(R.string.header_value_label)) },
-                    singleLine = true,
-                    isError = pane.error != null,
-                    visualTransformation = if (revealed) VisualTransformation.None else PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false, keyboardType = KeyboardType.Password),
-                    trailingIcon = { RevealToggle(revealed, { revealed = !revealed }, if (revealed) hide else reveal) },
-                )
+                NoKeyboardLearning {
+                    OutlinedTextField(
+                        value = pane.name,
+                        onValueChange = actions.onHeaderName,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text(stringResource(R.string.header_name_label)) },
+                        singleLine = true,
+                        isError = pane.error != null,
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false),
+                    )
+                }
+                NoKeyboardLearning {
+                    OutlinedTextField(
+                        value = pane.value,
+                        onValueChange = actions.onHeaderValue,
+                        modifier = Modifier.fillMaxWidth().semantics {
+                            // While masked, accessibility services must not read the raw value either.
+                            if (!revealed) {
+                                password()
+                                editableText = AnnotatedString("•".repeat(pane.value.length))
+                            }
+                        },
+                        label = { Text(stringResource(R.string.header_value_label)) },
+                        singleLine = true,
+                        isError = pane.error != null,
+                        visualTransformation = if (revealed) VisualTransformation.None else PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false, keyboardType = KeyboardType.Password),
+                        trailingIcon = { RevealToggle(revealed, { revealed = !revealed }, if (revealed) hide else reveal) },
+                    )
+                }
                 ErrorMessage(pane.error)
             }
         },

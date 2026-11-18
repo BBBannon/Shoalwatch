@@ -83,4 +83,20 @@ class ArtworkEvictionTest : ArtworkTestBase() {
         broken.onServerRemoved(testId("x"))
         runBlocking { broken.evict(testId("x")) }
     }
+
+    /** Security review M8 F8 (Milestone 2 L2): a removed server's folder left by a process that died is deleted at the next start. */
+    @Test fun theStartSweepDeletesTheFoldersOfServersThatNoLongerExist() {
+        put(S1, "art:$S1:keep"); put(S2, "art:$S2:gone")
+        val stray = File(tmp.root, "artwork/not-an-id").apply { mkdirs(); File(this, "x").writeText("x") }
+        runBlocking { eviction().sweep { setOf(S1) }.join() }
+        assertTrue("a server that exists keeps its pictures", has(S1, "art:$S1:keep"))
+        assertFalse("a server that is gone loses its folder", File(tmp.root, "artwork/$S2").exists())
+        assertFalse("anything else in the folder goes too", stray.exists())
+    }
+
+    @Test fun aSweepThatCannotReadTheServersDeletesNothing() {
+        put(S1, "art:$S1:keep")
+        runBlocking { eviction().sweep { throw IllegalStateException("db") }.join() }
+        assertTrue(has(S1, "art:$S1:keep"))
+    }
 }

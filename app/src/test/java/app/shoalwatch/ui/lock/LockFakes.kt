@@ -72,6 +72,8 @@ class FakeHousehold(ask: Boolean = true, grownUps: List<AccountSummary> = emptyL
     var wrongAnswer: PinCheck = PinCheck.Wrong(4)
     var failure: Exception? = null
     val confirms = mutableListOf<Pair<Session, String>>()
+    /** A right PIN was given (a live pass), or the test says so. */
+    var passed = false
 
     override val askNeeded: StateFlow<Boolean> = this.ask
     override val grownUps: Flow<List<AccountSummary>> = grownUpList
@@ -79,10 +81,12 @@ class FakeHousehold(ask: Boolean = true, grownUps: List<AccountSummary> = emptyL
     override suspend fun confirm(grownUp: Session, pin: CharArray): PinCheck = try {
         confirms += grownUp to String(pin)
         failure?.let { throw it }
-        if (String(pin) == rightPin && grownUpList.value.any { Session(it.serverId, it.userId) == grownUp }) PinCheck.Correct else wrongAnswer
+        if (String(pin) == rightPin && grownUpList.value.any { Session(it.serverId, it.userId) == grownUp }) PinCheck.Correct.also { passed = true } else wrongAnswer
     } finally {
         pin.fill('\u0000')
     }
+
+    override suspend fun allows() = !ask.value || passed
 }
 
 /** The phone's screen lock as a fake: answers [outcome] and counts the prompts. */

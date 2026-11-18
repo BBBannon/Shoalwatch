@@ -171,6 +171,7 @@ class FakeCatalog(servers: List<Server> = emptyList(), accounts: List<AccountSum
     override fun accounts(serverId: String): Flow<List<AccountSummary>> = read(emptyList()) { accountList.map { l -> l.filter { it.serverId == serverId } } }
     override fun expiredAccounts(serverId: String): Flow<List<AccountSummary>> = read(emptyList()) { expiredList.map { l -> l.filter { it.serverId == serverId } } }
     override suspend fun server(id: String): Server? = serverList.value.firstOrNull { it.id == id }
+    override suspend fun headerValues(serverId: String): Map<String, String> = server(serverId)?.customHeaders.orEmpty()
 
     override suspend fun upsertServer(s: Server) {
         upsertFailure?.let { throw it }

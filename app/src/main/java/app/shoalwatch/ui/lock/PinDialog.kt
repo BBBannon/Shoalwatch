@@ -45,10 +45,13 @@ internal fun PinDialog(
     failed: Boolean = false,
     busy: Boolean = false,
     note: String? = null,
+    /** False: Cancel and Back do nothing while [busy] (the answer decides; "Watched together", review I-1). */
+    cancelWhileBusy: Boolean = true,
 ) {
+    val cancellable = cancelWhileBusy || !busy
     if (LocalCovered.current) return // under the lock cover (review M1)
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (cancellable) onDismiss() },
         properties = SecureDialog,
         title = { Text(title, Modifier.semantics { heading() }) },
         text = {
@@ -63,7 +66,7 @@ internal fun PinDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.action_cancel)) }
+            TextButton(onClick = onDismiss, enabled = cancellable, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.action_cancel)) }
         },
         confirmButton = {
             TextButton(onClick = onConfirm, enabled = !busy, modifier = Modifier.heightIn(min = 48.dp)) { Text(confirmLabel) }

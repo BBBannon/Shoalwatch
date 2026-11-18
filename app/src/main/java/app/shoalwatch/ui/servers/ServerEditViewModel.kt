@@ -11,6 +11,7 @@ import app.shoalwatch.data.servers.ServerConnections
 import app.shoalwatch.data.servers.ServerNetDraft
 import app.shoalwatch.net.fingerprintForDisplay
 import app.shoalwatch.net.validateCustomHeader
+import app.shoalwatch.security.Household
 import app.shoalwatch.ui.AddressRole
 import app.shoalwatch.ui.CertificateSummary
 import app.shoalwatch.ui.ClientCertChooser
@@ -18,6 +19,8 @@ import app.shoalwatch.ui.ConnectionView
 import app.shoalwatch.ui.onboarding.AddressChecker
 import app.shoalwatch.ui.onboarding.Check
 import app.shoalwatch.ui.toSummary
+import app.shoalwatch.ui.lock.Door
+import app.shoalwatch.ui.lock.HouseholdDoor
 import app.shoalwatch.ui.toView
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -25,6 +28,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -111,7 +115,11 @@ class ServerEditViewModel(
     private val auth: Authenticator,
     private val prober: CertificateProber,
     private val connections: ServerConnections,
+    /** The household check for the whole screen (security review M8 F2); null only in tests. */
+    household: Household?,
 ) : ViewModel() {
+    internal val door = HouseholdDoor(household, viewModelScope)
+    private val headerValues = HeaderValues(catalog, serverId, viewModelScope)
     private data class Local(val pane: EditPane? = null, val busy: Boolean = false, val error: String? = null, val addressRequired: Boolean = false)
 
     /** What the address check was started with, so only what the check itself changed is merged into the server. */
@@ -125,9 +133,15 @@ class ServerEditViewModel(
         connections.connection(serverId),
     ) { server, connection -> server to server?.let { connection.toView() } }
 
+    init {
+        viewModelScope.launch { door.state.first { it == Door.Open }; headerValues.refresh() }
+    }
+
     val state: StateFlow<ServerEditUiState> =
-        combine(serverWithConnection, local, checker.state) { (server, connection), local, check ->
-            if (server == null) {
+        combine(serverWithConnection, local, checker.state, door.state, headerValues.values) { (server, connection), local, check, door, values ->
+            if (door != Door.Open) {
+                ServerEditUiState() // nothing of the server (addresses, header values) until the household check passes
+            } else if (server == null) {
                 ServerEditUiState(loaded = true, missing = true)
             } else {
                 ServerEditUiState(
@@ -140,7 +154,7 @@ class ServerEditViewModel(
                     certificateChanged = server.pinInvalid || connection?.certificateChanged == true,
                     certificateNeedsReview = server.pinInvalid || connection?.needsCertificateReview == true,
                     hasClientCertificate = server.clientCertAlias != null,
-                    headers = server.customHeaders.entries.sortedBy { it.key.lowercase() }.map { HeaderItem(it.key, it.value) },
+                    headers = server.customHeaders.keys.sortedBy { it.lowercase() }.map { HeaderItem(it, values[it].orEmpty()) },
                     connection = connection,
                     pane = local.pane, addressCheck = check, busy = local.busy, error = local.error,
                     addressRequired = local.addressRequired,
@@ -160,6 +174,7 @@ class ServerEditViewModel(
     // --- addresses ----------------------------------------------------------------------------------------------
 
     fun editAddress(slot: AddressSlot) {
+        if (!door.isOpen) return
         viewModelScope.launch {
             val server = catalog.server(serverId) ?: return@launch
             val current = if (slot == AddressSlot.Home) server.homeAddress else server.awayAddress
@@ -189,7 +204,8 @@ class ServerEditViewModel(
                 // A new or edited address never inherits the server's consent to plain http: it is warned about again.
                 // The certificate pin and the client-certificate alias ARE carried over on purpose: they belong to the
                 // server, not to one address, and keeping them can only make the check stricter (fail-closed).
-                checkStart = ServerNetDraft(false, server.pinnedSpkiSha256, server.clientCertAlias, server.customHeaders)
+                // No custom header goes to an address not yet checked as this server (review M-9, as the re-trust probe).
+                checkStart = ServerNetDraft(false, server.pinnedSpkiSha256, server.clientCertAlias, customHeaders = emptyMap())
                 checker.start(text, checkStart, server.id)
             }
         }
@@ -269,6 +285,7 @@ class ServerEditViewModel(
 
     /** Reads the certificate the server presents now and shows it; nothing is trusted until [trustReviewedCertificate]. */
     fun reviewCertificate() {
+        if (!door.isOpen) return
         local.update { it.copy(pane = EditPane.CertificateReview(loading = true, certificate = null, error = null), error = null) }
         viewModelScope.launch {
             val failure = AppError.of(AppError.Kind.TLS_UNTRUSTED).userMessage
@@ -291,7 +308,8 @@ class ServerEditViewModel(
 
     /**
      * Pins the certificate on screen, but only after the address answers, with that new pin, as this same server
-     * (a changed certificate could belong to a different machine now holding the address).
+     * (a changed certificate could belong to a different machine now holding the address). The saved custom headers (proxy
+     * secrets) are not sent to that unverified machine (security review M8 F6), and are kept as they are.
      */
     fun trustReviewedCertificate() {
         val review = local.value.pane as? EditPane.CertificateReview ?: return
@@ -302,7 +320,7 @@ class ServerEditViewModel(
             local.update { it.copy(busy = true) }
             val failure = try {
                 val server = catalog.server(serverId) ?: return@launch
-                val draft = ServerNetDraft(server.allowCleartext, shown.spkiSha256, server.clientCertAlias, server.customHeaders)
+                val draft = ServerNetDraft(server.allowCleartext, shown.spkiSha256, server.clientCertAlias, customHeaders = emptyMap())
                 if (auth.findServer(address.value, draft).id == server.id) null else AppError.of(AppError.Kind.SERVER_MISMATCH).userMessage
             } catch (e: CancellationException) {
                 throw e
@@ -329,8 +347,9 @@ class ServerEditViewModel(
     fun addHeader() = local.update { it.copy(pane = EditPane.Header(null, "", "", null), error = null) }
 
     fun editHeader(name: String) {
+        if (!door.isOpen) return
         viewModelScope.launch {
-            val value = catalog.server(serverId)?.customHeaders?.get(name) ?: return@launch
+            val value = headerValues.value(name) ?: return@launch
             local.update { it.copy(pane = EditPane.Header(name, name, value, null), error = null) }
         }
     }
@@ -367,6 +386,7 @@ class ServerEditViewModel(
         try {
             val server = catalog.server(serverId) ?: return
             catalog.upsertServer(change(server))
+            headerValues.refresh()
             local.update { it.copy(busy = false, pane = if (closePane) null else it.pane) }
         } catch (e: CancellationException) {
             throw e

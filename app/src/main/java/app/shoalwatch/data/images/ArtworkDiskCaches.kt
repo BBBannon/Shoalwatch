@@ -34,6 +34,14 @@ class ArtworkDiskCaches(
         File(directory, serverId).deleteRecursively()
     }
 
+    /** The names of the folders in [directory] now (server ids, or anything an earlier version or a fault left). */
+    fun folderNames(): List<String> = directory.listFiles().orEmpty().map { it.name }
+
+    /** Deletes one folder named by [folderNames]: a server id's cache as [evictServer]; anything else is just deleted. Blocking. */
+    fun deleteFolder(name: String) {
+        if (JellyfinId.parseOrNull(name)?.value == name) evictServer(name) else File(directory, File(name).name).deleteRecursively()
+    }
+
     companion object {
         const val DISK_BYTES = 250L * 1024 * 1024
 

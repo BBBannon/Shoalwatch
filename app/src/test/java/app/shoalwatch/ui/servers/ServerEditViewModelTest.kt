@@ -33,7 +33,58 @@ class ServerEditViewModelTest {
 
     private fun setup(server: app.shoalwatch.data.servers.Server = testServer(home = "https://192.168.1.10:8920", cleartext = false)): Pair<FakeCatalog, ServerEditViewModel> {
         val catalog = FakeCatalog(servers = listOf(server))
-        return catalog to ServerEditViewModel(server.id, catalog, auth, prober, connections)
+        return catalog to ServerEditViewModel(server.id, catalog, auth, prober, connections, household = null)
+    }
+
+    // --- the household check (security review M8 F2: the certificate banner's "Review" opened this screen unchecked) ----
+
+    private val grownUp = app.shoalwatch.data.servers.AccountSummary("srv-1", "u-adult", "ann")
+
+    private fun guarded(household: app.shoalwatch.ui.lock.FakeHousehold): ServerEditViewModel {
+        val catalog = FakeCatalog(servers = listOf(testServer(home = "https://192.168.1.10:8920", cleartext = false, headers = mapOf("X-Proxy" to secret))))
+        return ServerEditViewModel("srv-1", catalog, auth, prober, connections, household)
+    }
+
+    @Test fun withoutAGrownUpNothingIsShownAndAHeaderValueCannotBeOpened() {
+        val household = app.shoalwatch.ui.lock.FakeHousehold(ask = true, grownUps = listOf(grownUp))
+        val vm = guarded(household)
+        assertEquals(app.shoalwatch.ui.lock.Door.Asking, vm.door.state.value)
+        assertNotNull("a grown-up is asked", vm.door.grownUp?.ask?.value)
+        val s = vm.state.value
+        assertFalse(s.loaded)
+        assertTrue(s.headers.isEmpty())
+        assertNull(s.homeAddress)
+        vm.editHeader("X-Proxy")
+        vm.editAddress(AddressSlot.Home)
+        assertNull("no value reaches the screen", vm.state.value.pane)
+    }
+
+    @Test fun aRightGrownUpPinOpensTheSettings() {
+        val household = app.shoalwatch.ui.lock.FakeHousehold(ask = true, grownUps = listOf(grownUp))
+        val vm = guarded(household)
+        val flow = vm.door.grownUp!!
+        flow.pin.edit { replace(0, length, "4826") }
+        flow.submit()
+        assertEquals(app.shoalwatch.ui.lock.Door.Open, vm.door.state.value)
+        assertEquals(listOf(HeaderItem("X-Proxy", secret)), vm.state.value.headers)
+        vm.editHeader("X-Proxy")
+        assertEquals(secret, (vm.state.value.pane as EditPane.Header).value)
+    }
+
+    @Test fun dismissingTheCheckShutsTheScreen() {
+        val vm = guarded(app.shoalwatch.ui.lock.FakeHousehold(ask = true, grownUps = listOf(grownUp)))
+        vm.door.dismiss()
+        assertEquals(app.shoalwatch.ui.lock.Door.Shut, vm.door.state.value)
+        assertTrue(vm.state.value.headers.isEmpty())
+    }
+
+    @Test fun aLivePassOrNoProtectedProfileOpensAtOnce() {
+        val pass = app.shoalwatch.ui.lock.FakeHousehold(ask = true, grownUps = listOf(grownUp)).also { it.passed = true }
+        assertEquals(app.shoalwatch.ui.lock.Door.Open, guarded(pass).door.state.value)
+        val vm = guarded(app.shoalwatch.ui.lock.FakeHousehold(ask = false))
+        assertEquals(app.shoalwatch.ui.lock.Door.Open, vm.door.state.value)
+        assertNull(vm.door.grownUp?.ask?.value)
+        assertEquals(listOf(HeaderItem("X-Proxy", secret)), vm.state.value.headers)
     }
 
     private val secret = "proxy-token-9f8e7d"
@@ -74,6 +125,17 @@ class ServerEditViewModelTest {
         assertEquals(address("https://jf.example.org"), catalog.upserts.single().awayAddress)
         assertEquals(address("https://192.168.1.10:8920"), catalog.upserts.single().homeAddress)
         assertNull(vm.state.value.pane)
+    }
+
+    /** Review M-9 (sibling of F6): a newly typed address is unverified, so the saved headers are not sent to it; they are kept. */
+    @Test fun aNewAddressIsCheckedWithoutTheCustomHeadersWhichAreKept() {
+        val (catalog, vm) = setup(testServer(home = "https://192.168.1.10:8920", cleartext = false, headers = mapOf("X-Proxy" to secret)))
+        vm.editAddress(AddressSlot.Away)
+        vm.onAddressText("jf.example.org")
+        vm.saveAddress()
+        assertTrue("checked", auth.findCalls.isNotEmpty())
+        assertTrue("no header on any check", auth.findCalls.all { it.second.customHeaders.isEmpty() })
+        assertEquals(mapOf("X-Proxy" to secret), catalog.upserts.single().customHeaders)
     }
 
     @Test fun anAddressForADifferentServerIsRejectedAndNothingIsSaved() {
@@ -275,6 +337,16 @@ class ServerEditViewModelTest {
         assertEquals("checked with the new pin", certificate().spkiSha256, draft.pinnedSpkiSha256)
         assertTrue("a different server is never pinned", catalog.upserts.isEmpty())
         assertEquals(AppError.of(AppError.Kind.SERVER_MISMATCH).userMessage, (vm.state.value.pane as EditPane.CertificateReview).error)
+    }
+
+    /** Security review M8 F6: the machine behind a changed certificate is unverified, so the saved headers (proxy secrets) are not sent to it. */
+    @Test fun reTrustingSendsNoCustomHeadersToTheUnverifiedMachineAndKeepsThem() {
+        val (catalog, vm) = setup(testServer(home = "https://192.168.1.10:8920", pin = PIN, headers = mapOf("X-Proxy" to secret)))
+        auth.onFind = { text, _ -> serverInfo(text) }
+        vm.reviewCertificate()
+        vm.trustReviewedCertificate()
+        assertEquals("no header on the identity check", emptyMap<String, String>(), auth.findCalls.single().second.customHeaders)
+        assertEquals("the saved headers are kept", mapOf("X-Proxy" to secret), catalog.upserts.single().customHeaders)
     }
 
     @Test fun reTrustingSavesOnlyOnceTheServerAnswersAsItselfWithTheNewPin() {
