@@ -118,7 +118,7 @@ class ManifestSecurityTest {
     }
 
     @Test
-    fun onlyMainActivityIsExported() {
+    fun onlyMainActivityAndTheCarActivityAreExported() {
         val tags = listOf("activity", "activity-alias", "service", "receiver", "provider")
         val exported = tags.flatMap { tag ->
             val nodes = application.getElementsByTagName(tag)
@@ -129,8 +129,44 @@ class ManifestSecurityTest {
             explicit == "true" || (explicit == null && hasIntentFilter)
         }.map { it.attr("name") }
 
-        assertEquals(listOf(".ui.MainActivity"), exported)
+        assertEquals(listOf(".ui.MainActivity", ".ui.car.ParkedCarActivity"), exported)
         assertNotNull(exported.firstOrNull())
+    }
+
+    private fun Element.children(tag: String): List<Element> =
+        getElementsByTagName(tag).let { nodes -> (0 until nodes.length).map { nodes.item(it) as Element } }
+
+    /**
+     * Milestone 9: Android Auto runs an app from outside Play only as a parked app (MAIN + CAR_LAUNCHER) in an allowed category
+     * (game), and skips it when the package also has a Car App Library service (see "Android Auto (parked)" in docs/ARCHITECTURE.md).
+     */
+    @Test
+    fun theCarActivityIsOnlyACarLauncherInItsOwnTask() {
+        val car = elements("activity").single { it.attr("name") == ".ui.car.ParkedCarActivity" }
+        assertEquals("true", car.attr("exported"))
+        assertEquals("app.shoalwatch.car", car.attr("taskAffinity"))
+        assertEquals("singleTask", car.attr("launchMode"))
+        val filter = car.children("intent-filter").single()
+        assertEquals(listOf("android.intent.action.MAIN"), filter.children("action").map { it.attr("name") })
+        assertEquals(listOf("android.intent.category.CAR_LAUNCHER"), filter.children("category").map { it.attr("name") })
+        assertEquals(emptyList<Element>(), filter.children("data"))
+        val launcher = elements("activity").single { it.attr("name") == ".ui.MainActivity" }
+        assertTrue("the phone's activity is not on the car", launcher.children("category").none { it.attr("name") == "android.intent.category.CAR_LAUNCHER" })
+    }
+
+    @Test
+    fun theAppIsAGameSoAndroidAutoAllowsTheParkedApp() {
+        assertEquals("game", application.attr("appCategory"))
+        val info = ApplicationProvider.getApplicationContext<android.app.Application>().applicationInfo
+        assertEquals(ApplicationInfo.CATEGORY_GAME, info.category)
+    }
+
+    @Test
+    fun noCarAppLibraryOrMediaServiceIsDeclared() {
+        val actions = elements("action").map { it.attr("name") }
+        assertTrue(actions.none { it == "androidx.car.app.CarAppService" || it == "android.media.browse.MediaBrowserService" || it!!.startsWith("androidx.media3.session.") })
+        assertTrue(elements("category").none { it.attr("name")!!.startsWith("androidx.car.app.category.") })
+        assertTrue(elements("meta-data").none { it.attr("name") == "com.google.android.gms.car.application" || it.attr("name") == "androidx.car.app.minCarApiLevel" })
     }
 
     /** Security review M8 F7: no shared user id, no test-only flag, and no permission asked through `uses-permission-sdk-23`. */

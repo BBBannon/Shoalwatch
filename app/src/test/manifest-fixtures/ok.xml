@@ -9,7 +9,13 @@
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
   <uses-permission android:name="app.shoalwatch.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"/>
   <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
-  <application android:allowBackup="false">
+  <application android:appCategory="game" android:allowBackup="false">
+    <activity android:name="app.shoalwatch.ui.car.ParkedCarActivity" android:exported="true" android:taskAffinity="app.shoalwatch.car">
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN"/>
+        <category android:name="android.intent.category.CAR_LAUNCHER"/>
+      </intent-filter>
+    </activity>
     <activity android:name="app.shoalwatch.ui.MainActivity" android:exported="true" android:taskAffinity=""/>
     <provider android:name="androidx.startup.InitializationProvider" android:exported="false"/>
     <service android:name="androidx.work.impl.background.systemjob.SystemJobService" android:exported="true" android:permission="android.permission.BIND_JOB_SERVICE"/>
