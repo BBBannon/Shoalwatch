@@ -1,3 +1,4 @@
+v1.156 — 18/11/2026 — When you re-trust a changed server certificate, your saved custom headers are no longer sent until the server is confirmed to be yours
 v1.155 — 18/11/2026 — Signing a profile out or removing a server now also forgets its wrong Forgot PIN tries
 v1.154 — 18/11/2026 — The keyboard no longer learns what you search for, sign-in names, server addresses or custom header values, so they don't pop up as suggestions for others
 v1.153 — 18/11/2026 — A server sending impossible dates can no longer stop a library list from saving or crash the server admin screens

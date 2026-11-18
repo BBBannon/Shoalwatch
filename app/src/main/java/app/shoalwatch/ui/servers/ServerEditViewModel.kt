@@ -301,7 +301,8 @@ class ServerEditViewModel(
 
     /**
      * Pins the certificate on screen, but only after the address answers, with that new pin, as this same server
-     * (a changed certificate could belong to a different machine now holding the address).
+     * (a changed certificate could belong to a different machine now holding the address). The saved custom headers (proxy
+     * secrets) are not sent to that unverified machine (security review M8 F6), and are kept as they are.
      */
     fun trustReviewedCertificate() {
         val review = local.value.pane as? EditPane.CertificateReview ?: return
@@ -312,7 +313,7 @@ class ServerEditViewModel(
             local.update { it.copy(busy = true) }
             val failure = try {
                 val server = catalog.server(serverId) ?: return@launch
-                val draft = ServerNetDraft(server.allowCleartext, shown.spkiSha256, server.clientCertAlias, server.customHeaders)
+                val draft = ServerNetDraft(server.allowCleartext, shown.spkiSha256, server.clientCertAlias, customHeaders = emptyMap())
                 if (auth.findServer(address.value, draft).id == server.id) null else AppError.of(AppError.Kind.SERVER_MISMATCH).userMessage
             } catch (e: CancellationException) {
                 throw e

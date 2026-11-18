@@ -328,6 +328,16 @@ class ServerEditViewModelTest {
         assertEquals(AppError.of(AppError.Kind.SERVER_MISMATCH).userMessage, (vm.state.value.pane as EditPane.CertificateReview).error)
     }
 
+    /** Security review M8 F6: the machine behind a changed certificate is unverified, so the saved headers (proxy secrets) are not sent to it. */
+    @Test fun reTrustingSendsNoCustomHeadersToTheUnverifiedMachineAndKeepsThem() {
+        val (catalog, vm) = setup(testServer(home = "https://192.168.1.10:8920", pin = PIN, headers = mapOf("X-Proxy" to secret)))
+        auth.onFind = { text, _ -> serverInfo(text) }
+        vm.reviewCertificate()
+        vm.trustReviewedCertificate()
+        assertEquals("no header on the identity check", emptyMap<String, String>(), auth.findCalls.single().second.customHeaders)
+        assertEquals("the saved headers are kept", mapOf("X-Proxy" to secret), catalog.upserts.single().customHeaders)
+    }
+
     @Test fun reTrustingSavesOnlyOnceTheServerAnswersAsItselfWithTheNewPin() {
         val (catalog, vm) = setup(testServer(home = "https://192.168.1.10:8920", pin = PIN))
         auth.onFind = { text, _ -> serverInfo(text) }
