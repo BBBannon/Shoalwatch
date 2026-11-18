@@ -6,14 +6,14 @@ v1.163 — 18/11/2026 — Fixed a crash, or a box that could not be closed, when
 v1.162 — 18/11/2026 — Added a README explaining what the app does, how to build and sign it, and its licence; and the full security-team report from before the first release
 v1.161 — 18/11/2026 — “Watched together” now asks for a protected profile’s PIN before marking it watched for that profile; without the PIN that profile is left out and the others are still marked
 v1.160 — 18/11/2026 — The app is now version 1.0
-v1.159 — 18/11/2026 — A server can no longer send a nonsense running time or an oversized Quick Connect code to the app
+v1.159 — 18/11/2026 — A server can no longer send a nonsense running time or a malformed Quick Connect sign-in key to the app
 v1.158 — 18/11/2026 — Pictures from a removed server are now cleared the next time the app starts, if any were left behind
 v1.157 — 18/11/2026 — The release safety check now also catches a few more ways an app could quietly gain permissions or share its private data
 v1.156 — 18/11/2026 — When you re-trust a changed server certificate, your saved custom headers are no longer sent until the server is confirmed to be yours
 v1.155 — 18/11/2026 — Signing a profile out or removing a server now also forgets its wrong Forgot PIN tries
 v1.154 — 18/11/2026 — The keyboard no longer learns what you search for, sign-in names, server addresses or custom header values, so they don't pop up as suggestions for others
 v1.153 — 18/11/2026 — A server sending impossible dates can no longer stop a library list from saving or crash the server admin screens
-v1.152 — 18/11/2026 — A server's connection settings now always ask for a grown-up's PIN, even when opened from the certificate warning
+v1.152 — 18/11/2026 — A server's connection settings now ask for a grown-up's PIN whenever the Servers list would, even when opened from the certificate warning
 v1.151 — 18/11/2026 — Forgot PIN now refuses an empty password, so a profile whose server account has no password can't have its PIN removed that way
 v1.150 — 18/11/2026 — Milestone 7 finished: protect a profile with a PIN so children can't switch into it or change shared download settings; an optional app lock with your phone's fingerprint or screen lock; keep watching in a small window when you leave the app; series and films in two panes on a tablet; and a setting to stop the next episode playing by itself
 v1.149 — 18/11/2026 — Behind the scenes: the app's automatic checks now have enough memory to run all the way through
