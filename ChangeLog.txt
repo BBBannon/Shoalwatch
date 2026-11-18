@@ -1,3 +1,4 @@
+v1.173 — 18/11/2026 — Quick Connect sign-in confirmed working on a real phone with version 1.0.1; notes written for picking up the rest of the phone test
 v1.172 — 18/11/2026 — Version 1.0.1: the fixes from the first test on a real phone (signing in to a web address, Lock after while watching, Scan all libraries at the top of Server admin)
 v1.171 — 18/11/2026 — Signing in to a server with a web (https) address no longer says “Something went wrong” after it has actually worked; the same fix covers signing out, removing a server and changing its connection settings
 v1.170 — 18/11/2026 — "Scan all libraries" is now at the top of Server admin, one tap away, with its progress shown there too
