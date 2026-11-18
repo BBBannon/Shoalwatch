@@ -30,6 +30,7 @@ import app.shoalwatch.ui.components.FilterObscuredTouches
 import app.shoalwatch.ui.components.ObscuredTouchHint
 import app.shoalwatch.ui.components.SecureDialog
 import app.shoalwatch.ui.components.LocalCovered
+import app.shoalwatch.ui.components.NoKeyboardLearning
 
 // Admin dialogs are windows of their own: each sets the secure flag (SecureDialog) and refuses touches from behind another
 // app's window (FilterObscuredTouches). Cancel is always the dismiss button; the confirm button is in the error colour.
@@ -57,19 +58,21 @@ fun TypedConfirmDialog(
     val matches = typedMatches(typed.text, word)
     AdminDialog(title, confirmLabel, enabled && matches, onConfirm, onDismiss) {
         Text(body, style = MaterialTheme.typography.bodyMedium)
-        OutlinedTextField(
-            state = typed,
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text(stringResource(R.string.admin_type_to_confirm, word)) },
-            supportingText = if (typed.text.isNotEmpty() && !matches) ({ Text(stringResource(R.string.admin_type_exactly)) }) else null,
-            lineLimits = TextFieldLineLimits.SingleLine,
-            keyboardOptions = KeyboardOptions(
-                capitalization = KeyboardCapitalization.None,
-                autoCorrectEnabled = false,
-                keyboardType = KeyboardType.Text,
-                imeAction = ImeAction.Done,
-            ),
-        )
+        NoKeyboardLearning {
+            OutlinedTextField(
+                state = typed,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(stringResource(R.string.admin_type_to_confirm, word)) },
+                supportingText = if (typed.text.isNotEmpty() && !matches) ({ Text(stringResource(R.string.admin_type_exactly)) }) else null,
+                lineLimits = TextFieldLineLimits.SingleLine,
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.None,
+                    autoCorrectEnabled = false,
+                    keyboardType = KeyboardType.Text,
+                    imeAction = ImeAction.Done,
+                ),
+            )
+        }
     }
 }
 
@@ -78,15 +81,17 @@ fun TypedConfirmDialog(
 fun MessageDialog(title: String, body: String, text: TextFieldState, enabled: Boolean, onSend: () -> Unit, onDismiss: () -> Unit) {
     AdminDialog(title, stringResource(R.string.admin_message_send), enabled && text.text.isNotBlank(), onSend, onDismiss) {
         Text(body, style = MaterialTheme.typography.bodyMedium)
-        OutlinedTextField(
-            state = text,
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text(stringResource(R.string.admin_message_label)) },
-            inputTransformation = InputTransformation.maxLength(MESSAGE_MAX),
-            supportingText = { Text(stringResource(R.string.admin_message_counter, text.text.length.toString())) },
-            lineLimits = TextFieldLineLimits.MultiLine(minHeightInLines = 2, maxHeightInLines = 5),
-            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, keyboardType = KeyboardType.Text),
-        )
+        NoKeyboardLearning {
+            OutlinedTextField(
+                state = text,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(stringResource(R.string.admin_message_label)) },
+                inputTransformation = InputTransformation.maxLength(MESSAGE_MAX),
+                supportingText = { Text(stringResource(R.string.admin_message_counter, text.text.length.toString())) },
+                lineLimits = TextFieldLineLimits.MultiLine(minHeightInLines = 2, maxHeightInLines = 5),
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, keyboardType = KeyboardType.Text),
+            )
+        }
     }
 }
 

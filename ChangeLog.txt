@@ -1,3 +1,4 @@
+v1.154 — 18/11/2026 — The keyboard no longer learns what you search for, sign-in names, server addresses or custom header values, so they don't pop up as suggestions for others
 v1.153 — 18/11/2026 — A server sending impossible dates can no longer stop a library list from saving or crash the server admin screens
 v1.152 — 18/11/2026 — A server's connection settings now always ask for a grown-up's PIN, even when opened from the certificate warning
 v1.151 — 18/11/2026 — Forgot PIN now refuses an empty password, so a profile whose server account has no password can't have its PIN removed that way

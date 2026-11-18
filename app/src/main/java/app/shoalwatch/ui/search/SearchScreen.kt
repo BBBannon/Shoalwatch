@@ -69,6 +69,7 @@ import app.shoalwatch.ui.components.SectionHeader
 import app.shoalwatch.ui.components.SignedOutNotice
 import app.shoalwatch.ui.components.Tone
 import app.shoalwatch.ui.components.titleLines
+import app.shoalwatch.ui.components.NoKeyboardLearning
 import app.shoalwatch.ui.present.Destination
 import app.shoalwatch.ui.present.SearchRowUi
 import app.shoalwatch.ui.present.destination
@@ -126,25 +127,27 @@ private fun SearchField(state: SearchUiState, actions: SearchActions) {
             runCatching { focus.requestFocus() }
         }
     }
-    OutlinedTextField(
-        state = text,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = Gutter, vertical = 8.dp).focusRequester(focus),
-        label = { Text(stringResource(R.string.search_hint)) },
-        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-        trailingIcon = {
-            if (text.text.isNotEmpty()) {
-                IconButton(onClick = { text.clearText(); actions.onClear() }) {
-                    Icon(Icons.Filled.Clear, contentDescription = stringResource(R.string.search_clear))
+    NoKeyboardLearning {
+        OutlinedTextField(
+            state = text,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = Gutter, vertical = 8.dp).focusRequester(focus),
+            label = { Text(stringResource(R.string.search_hint)) },
+            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+            trailingIcon = {
+                if (text.text.isNotEmpty()) {
+                    IconButton(onClick = { text.clearText(); actions.onClear() }) {
+                        Icon(Icons.Filled.Clear, contentDescription = stringResource(R.string.search_clear))
+                    }
                 }
-            }
-        },
-        lineLimits = TextFieldLineLimits.SingleLine,
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search, autoCorrectEnabled = false),
-        onKeyboardAction = {
-            keyboard?.hide()
-            focusManager.clearFocus()
-        },
-    )
+            },
+            lineLimits = TextFieldLineLimits.SingleLine,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search, autoCorrectEnabled = false),
+            onKeyboardAction = {
+                keyboard?.hide()
+                focusManager.clearFocus()
+            },
+        )
+    }
 }
 
 @Composable
