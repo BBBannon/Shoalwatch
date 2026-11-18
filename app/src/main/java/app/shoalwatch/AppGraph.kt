@@ -127,12 +127,14 @@ class AppGraph(internal val appContext: Context) {
             activePlayback.end(it)
             addressSelector.forget(it); libraryRepository.forget(it); artworkEviction.onServerRemoved(it)
             downloadHousekeeping.onServerRemoved(it); syncSender.forget(it) // its drains (and any request in flight) stop; its rows cascade
+            forgetGoneForgotTries()
         },
         onAccountGone = { server, user ->
             activePlayback.end(server, user)
             libraryRepository.forget(server, user); artworkEviction.onAccountGone(server)
             downloadHousekeeping.onAccountGone(server, user) // the ownership rule; a 401 keeps the account row, so nothing goes
             syncSender.forget(server, user) // its drain (and any request in flight) stops; removed: its rows cascade; a 401: they wait
+            forgetGoneForgotTries()
         },
         onAccountSignedIn = { server, user -> libraryRepository.forget(server, user); syncScheduler.signedIn(server, user) },
     ) }
@@ -220,6 +222,17 @@ class AppGraph(internal val appContext: Context) {
         SharingRecheck({ s, first -> downloadHousekeeping.reconfirm(s, first) }, ::serverReachable, appScope, SystemMonotonicClock)
     }
     private fun serverReachable(s: Session): Boolean = addressSelector.connection(s.serverId).value is Connection.Online
+
+    /** "Forgot PIN" tries are kept only for profiles that still have an account row (security review M8 F5; a 401 keeps its row). */
+    private fun forgetGoneForgotTries() {
+        appScope.launch(Dispatchers.IO) {
+            try {
+                lockParts.forgotThrottle.keepOnly(database.accountDao().getAll().map { Session(it.serverId, it.userId) }.toSet())
+            } catch (e: Exception) {
+                app.shoalwatch.core.AppLog.w("Lock", "Forgetting Forgot PIN tries failed", e)
+            }
+        }
+    }
     /** What `ShoalwatchWorkerFactory` hands the download worker. */
     internal val downloadWorkerParts: DownloadWorker.Parts by lazy {
         DownloadWorker.Parts(
