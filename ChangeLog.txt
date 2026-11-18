@@ -1,4 +1,7 @@
-v1.183 — 18/11/2026 — Notes updated for the car screen: what Ben is asked to confirm, and the build checks made stricter
+v1.186 — 18/11/2026 — You can now paste your server’s address straight from your browser (for example one ending in /web/#/home); the app keeps just the server part
+v1.185 — 18/11/2026 — The home screen now catches up by itself: after you mark something watched, finish a video, or scan your libraries, and whenever you come back to it
+v1.184 — 18/11/2026 — The car screen’s “Open Shoalwatch on your car’s screen” message now shows at once, even before the phone has finished loading
+v1.183 — 18/11/2026 — Notes updated for the car screen: what the owner is asked to confirm, and the build checks made stricter
 v1.182 — 18/11/2026 — If someone switches profile on the phone while the car screen shows a list, the car never shows the previous profile’s titles, even for a moment
 v1.181 — 18/11/2026 — The car screen shows nothing of any profile if it is ever opened on the phone itself (it says to open it on the car), and the phone’s recent-apps screen keeps no picture of it on Android 13 and later
 v1.180 — 18/11/2026 — The read-me now explains how to put Shoalwatch on the car screen: Android Auto developer settings, Unknown sources, then Customise launcher
