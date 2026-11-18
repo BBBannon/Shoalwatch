@@ -14,7 +14,7 @@ import org.robolectric.annotation.Config
 
 /**
  * Milestone 9: Android Auto blanks a `FLAG_SECURE` window on the car display, so the car activity's window is never secure: not
- * at start (while the phone would still hide recents, until the locks are known), not on the car screen, not after losing and
+ * when created, not on the car screen, not after losing and
  * regaining it. Started with a hostile intent (data and extras), as any app on the phone could, it still starts and shows the car.
  */
 @RunWith(RobolectricTestRunner::class)

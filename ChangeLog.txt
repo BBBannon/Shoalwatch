@@ -1,3 +1,8 @@
+v1.180 — 18/11/2026 — The read-me now explains how to put Shoalwatch on the car screen: Android Auto developer settings, Unknown sources, then Customise launcher
+v1.179 — 18/11/2026 — Version 1.1.0, with Shoalwatch on the car screen
+v1.178 — 18/11/2026 — The car screen shows nothing of a profile until Shoalwatch is unlocked on the phone, and a video playing on the car stops the one on the phone (and the other way round)
+v1.177 — 18/11/2026 — Shoalwatch can now show on the car's Android Auto screen while parked: Continue Watching, Next Up and your downloads (which play with no connection), with big buttons for the car
+v1.176 — 18/11/2026 — Plan written for showing Shoalwatch on the car's Android Auto screen while parked
 v1.175 — 18/11/2026 — The detailed security-team report now stays on this PC and is not published with the code
 v1.174 — 18/11/2026 — Tidied the project for publishing on GitHub: more private files kept out, and no local folder paths in the security notes
 v1.173 — 18/11/2026 — Quick Connect sign-in confirmed working on a real phone with version 1.0.1; notes written for picking up the rest of the phone test

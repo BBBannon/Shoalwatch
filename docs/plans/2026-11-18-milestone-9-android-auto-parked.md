@@ -46,11 +46,11 @@ activities (the launcher and the car activity, Ben-approved 18/11/2026). Recorde
 
 ## Tasks
 
-- [ ] T1 Manifest rules first (red fixtures), then the manifest: `appCategory="game"`, the car activity.
-- [ ] T2 `AppFront` (red tests), wired between `ActivityPip` and `LockGate`.
-- [ ] T3 `CarViewModel`: lock and message states, rows, offline downloads, the player, one playback at a time (red tests).
-- [ ] T4 `ParkedCarActivity` and its Compose screens; render tests at 1280x720 and 800x480; no `FLAG_SECURE` (Robolectric).
-- [ ] T5 Version 1.1.0 (build 3); ARCHITECTURE "Android Auto (parked)"; README feature row and "In the car"; ChangeLog.
+- [x] T1 Manifest rules first (red fixtures), then the manifest: `appCategory="game"`, the car activity.
+- [x] T2 `AppFront` (red tests), wired between `ActivityPip` and `LockGate`.
+- [x] T3 `CarViewModel`: lock and message states, rows, offline downloads, the player, one playback at a time (red tests).
+- [x] T4 `ParkedCarActivity` and its Compose screens; render tests at 1280x720 and 800x480; no `FLAG_SECURE` (Robolectric).
+- [x] T5 Version 1.1.0 (build 3); ARCHITECTURE "Android Auto (parked)"; README feature row and "In the car"; ChangeLog.
 
 ## Tests
 
