@@ -69,6 +69,9 @@ android {
         unitTests.isReturnDefaultValues = true
         // Robolectric needs the app's resources and manifest.
         unitTests.isIncludeAndroidResources = true
+        // ~4,500 Robolectric tests share one test JVM; Gradle's 512 MB default ran out
+        // after ~3,700 of them (OutOfMemoryError, 17/11 and 18/11). 2 GB leaves headroom.
+        unitTests.all { it.maxHeapSize = "2g" }
     }
 
     sourceSets {
