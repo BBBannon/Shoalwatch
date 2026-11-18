@@ -12,7 +12,6 @@ import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import app.shoalwatch.security.LockState
 import app.shoalwatch.ui.FakeCatalog
@@ -24,6 +23,7 @@ import app.shoalwatch.ui.nav.ClearBrowsingOnSessionChange
 import app.shoalwatch.ui.nav.ResetOnLock
 import app.shoalwatch.ui.nav.Routes
 import app.shoalwatch.ui.nav.browsingDestinations
+import app.shoalwatch.ui.nav.rememberNavControllerUnlessLocked
 import app.shoalwatch.ui.testServer
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
@@ -51,14 +51,16 @@ class ResetOnLockTest {
     private val amy = account(AMY, "amy")
     private val catalog = FakeCatalog(listOf(testServer(id = SERVER_ID)), listOf(ben, amy), ben)
     private val locked = LockState.Profile(BEN, "ben")
+    private var startsLocked = false // what the gate says as the app (re)starts
+    private var itemComposed = 0
 
     @androidx.compose.runtime.Composable
     private fun content() {
-        nav = rememberNavController()
+        nav = rememberNavControllerUnlessLocked { startsLocked }
         val state by lock.collectAsState()
         ClearBrowsingOnSessionChange(nav, catalog)
         ResetOnLock(nav, state) { hasServers }
-        NavHost(nav, startDestination = Routes.HOME) {
+        NavHost(nav, startDestination = if (startsLocked) Routes.LOCKED else Routes.HOME) {
             composable(Routes.LOCKED) {}
             composable(Routes.WELCOME) { Text("welcome") }
             composable(Routes.SEARCH) { Text("search") }
@@ -67,7 +69,7 @@ class ResetOnLockTest {
             browsingDestinations(
                 library = { Text("library") },
                 series = { _, _, _ -> recorders["series"] = viewModel(); Text("series") },
-                item = { recorders["item"] = viewModel(); Text("item") },
+                item = { itemComposed++; recorders["item"] = viewModel(); Text("item") },
                 player = { _, _ -> Text("player") },
                 downloadedSeries = { Text("downloaded") },
             )
@@ -135,6 +137,31 @@ class ResetOnLockTest {
         rule.waitForIdle()
         go(Routes.item("z")) // a notification's tab, a stale screen
         assertEquals(listOf(Routes.LOCKED), stack())
+    }
+
+    /** Final review M3: after process death the saved stack is not restored under a locked start, so its top is never composed. */
+    @Test fun aSavedStackIsNotRestoredWhenTheAppStartsLocked() {
+        val restore = StateRestorationTester(rule)
+        restore.setContent { content() }
+        rule.waitForIdle()
+        openTwo()
+        val composed = itemComposed
+        startsLocked = true // the process died with the item on top; the cold start locks
+        restore.emulateSavedInstanceStateRestore()
+        rule.waitForIdle()
+        assertEquals("the item was composed again", composed, itemComposed)
+        // A fresh stack from the locked route (here the gate is open, so ResetOnLock then goes on to a fresh Home).
+        assertEquals(listOf(Routes.HOME), stack())
+    }
+
+    @Test fun aSavedStackIsRestoredWhenTheAppIsOpen() {
+        val restore = StateRestorationTester(rule)
+        restore.setContent { content() }
+        rule.waitForIdle()
+        openTwo()
+        restore.emulateSavedInstanceStateRestore()
+        rule.waitForIdle()
+        assertEquals(listOf(Routes.HOME, Routes.SERIES, Routes.ITEM), stack())
     }
 
     @Test fun aConfigurationChangeWhileLockedKeepsTheLockedRoute() {

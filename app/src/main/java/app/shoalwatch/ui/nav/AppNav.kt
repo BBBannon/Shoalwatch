@@ -30,7 +30,6 @@ import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.navigation.navOptions
 import app.shoalwatch.AppGraph
@@ -151,8 +150,9 @@ private fun AnimatedContentTransitionScope<NavBackStackEntry>.betweenTabs() =
 
 @Composable
 private fun AppNavHost(graph: AppGraph, start: String, openTab: String?, onTabOpened: () -> Unit, lock: LockState) {
-    val nav = rememberNavController()
-    // Locked from the start: nothing of the profile is ever composed beneath the lock.
+    // Locked from the start: nothing of the profile is ever composed beneath the lock, not even a stack restored after process
+    // death (final review M3).
+    val nav = rememberNavControllerUnlessLocked { lock.locked }
     val first = remember { if (lock.locked) Routes.LOCKED else start }
     ResetOnLock(nav, lock) { graph.serverCatalog.servers.first().isNotEmpty() }
     // The download notice's tap: the Downloads tab, over Home as every tab is; kept until the app is open.

@@ -23,7 +23,10 @@ import androidx.compose.ui.semantics.semantics
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.navigation.NavGraph
+import androidx.compose.runtime.saveable.LocalSaveableStateRegistry
+import androidx.compose.runtime.saveable.SaveableStateRegistry
 import androidx.navigation.NavHostController
+import androidx.navigation.compose.rememberNavController
 import app.shoalwatch.AppGraph
 import app.shoalwatch.R
 import app.shoalwatch.data.servers.ServerCatalog
@@ -106,6 +109,29 @@ internal fun ResetOnLock(nav: NavHostController, state: LockState, hasServers: s
                 nav.navigate(target) { popUpTo(nav.graph.id) { inclusive = true } }
             }
         }
+    }
+}
+
+/**
+ * `rememberNavController()`, except that a saved back stack is not restored when [lockedAtStart] says the app is locked as it
+ * starts again (final review M3): after process death the restored top screen (the player, say) would otherwise be composed for a
+ * frame, as the locked profile, under the cover before [ResetOnLock] pops it. The stack is still saved, so a configuration change
+ * while open keeps the user's place.
+ */
+@Composable
+internal fun rememberNavControllerUnlessLocked(lockedAtStart: () -> Boolean): NavHostController {
+    val parent = LocalSaveableStateRegistry.current
+    val registry = remember(parent) { parent?.let { if (lockedAtStart()) NothingRestored(it) else it } }
+    var nav: NavHostController? = null
+    CompositionLocalProvider(LocalSaveableStateRegistry provides registry) { nav = rememberNavController() }
+    return nav!!
+}
+
+/** Saves through [parent] as usual, but hands back nothing it had restored (that saved value is dropped). */
+private class NothingRestored(private val parent: SaveableStateRegistry) : SaveableStateRegistry by parent {
+    override fun consumeRestored(key: String): Any? {
+        parent.consumeRestored(key)
+        return null
     }
 }
 
