@@ -29,6 +29,7 @@ import app.shoalwatch.R
 import app.shoalwatch.ui.components.FilterObscuredTouches
 import app.shoalwatch.ui.components.ObscuredTouchHint
 import app.shoalwatch.ui.components.SecureDialog
+import app.shoalwatch.ui.components.LocalCovered
 
 // Admin dialogs are windows of their own: each sets the secure flag (SecureDialog) and refuses touches from behind another
 // app's window (FilterObscuredTouches). Cancel is always the dismiss button; the confirm button is in the error colour.
@@ -98,6 +99,7 @@ private fun AdminDialog(
     onDismiss: () -> Unit,
     content: @Composable () -> Unit,
 ) {
+    if (LocalCovered.current) return // under the lock cover (review M1)
     AlertDialog(
         onDismissRequest = onDismiss,
         properties = SecureDialog,

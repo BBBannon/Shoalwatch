@@ -69,6 +69,9 @@ android {
         unitTests.isReturnDefaultValues = true
         // Robolectric needs the app's resources and manifest.
         unitTests.isIncludeAndroidResources = true
+        // ~4,500 Robolectric tests share one test JVM; Gradle's 512 MB default ran out
+        // after ~3,700 of them (OutOfMemoryError, 17/11 and 18/11). 2 GB leaves headroom.
+        unitTests.all { it.maxHeapSize = "2g" }
     }
 
     sourceSets {
@@ -124,6 +127,12 @@ object ManifestRules {
         val allowedJobService = exportedComponents.filter { it.tagName == "service" && it.attr("name") == JOB_SERVICE && it.attr("permission") == BIND_JOB_SERVICE }
         if ((exportedComponents - allowedJobService.toSet()).map { it.attr("name") } != listOf(launcherActivity)) {
             problems += "only $launcherActivity (and $JOB_SERVICE with $BIND_JOB_SERVICE) may be exported, found $exported"
+        }
+
+        // Milestone 1 Q5: an empty task affinity stops another app's activity joining Shoalwatch's task.
+        val launcher = elements("activity").singleOrNull { it.attr("name") == launcherActivity }
+        if (launcher == null || !launcher.hasAttributeNS(NS, "taskAffinity") || launcher.attr("taskAffinity") != "") {
+            problems += "the launcher activity must set taskAffinity to empty"
         }
 
         // Android 14+ refuses a foreground service without its declared type: the download worker's is dataSync, and only that.
@@ -210,6 +219,8 @@ val releaseExpectedPermissions = setOf(
     "android.permission.POST_NOTIFICATIONS",
     // Declared (signature level) by androidx.core for receivers registered as not exported.
     "app.shoalwatch.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
+    // Milestone 7: the app lock's phone screen lock prompt (BiometricPrompt).
+    "android.permission.USE_BIOMETRIC",
 )
 
 androidComponents {
@@ -249,6 +260,7 @@ tasks.register<VerifyManifestRuleFixtures>("verifyManifestRuleFixtures") {
             "bad-unprotected-job-service.xml" to "may be exported",
             "bad-diagnostics-receiver.xml" to "may be exported",
             "bad-missing-data-sync.xml" to "foregroundServiceType must be dataSync",
+            "bad-task-affinity.xml" to "taskAffinity to empty",
         ),
     )
     report.set(layout.buildDirectory.file("reports/release-manifest/fixtures.txt"))

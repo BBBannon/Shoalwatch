@@ -26,11 +26,17 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.traversalIndex
+import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -45,13 +51,16 @@ import app.shoalwatch.ui.present.rememberStrings
 /**
  * The player: the picture ([video], given the route's `VideoSurface`; empty in tests and previews), the touch layer, the
  * controls, Up next or the skip button, an error with Try again, the sheets, and the notices (subtitles that could not be read
- * or drawn, the sleep timer pausing) as snackbars. [dolbyVisionScreen]: for the stream-info line only.
+ * or drawn, the sleep timer pausing) as snackbars. [dolbyVisionScreen]: for the stream-info line only. [inPip]: in the
+ * picture-in-picture window only the picture and its subtitles (no controls, gestures, cards, sheets or snackbars; a notice waits
+ * for the full screen); back from it, the controls show once.
  */
 @Composable
 fun PlayerScreen(
     state: PlayerUiState,
     actions: PlayerActions,
     dolbyVisionScreen: Boolean = false,
+    inPip: Boolean = false,
     video: @Composable (controlsUp: Boolean) -> Unit = {},
 ) {
     val strings = rememberStrings()
@@ -61,9 +70,12 @@ fun PlayerScreen(
     val snackbar = remember { SnackbarHostState() }
     // Locked, the system Back (an edge swipe with the bars hidden) does not leave: it shows the lock and its hint instead.
     BackHandler(enabled = state.locked) { actions.onTapSurface() }
-    Notices(state, actions, snackbar)
+    ControlsAfterPip(inPip, state.controlsVisible, actions.onTapSurface)
+    if (!inPip) Notices(state, actions, snackbar)
     Box(Modifier.fillMaxSize().background(Color.Black)) {
-        video(state.controlsVisible)
+        // Always the first child, so the picture's view is kept as the window changes size.
+        video(state.controlsVisible && !inPip)
+        if (inPip) return@Box
         if (p.phase == Phase.FAILED) {
             Failed(p.error ?: AppError.Kind.PLAYBACK_FAILED, actions)
         } else {
@@ -74,7 +86,18 @@ fun PlayerScreen(
         }
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp))
     }
-    if (!state.locked) PlayerSheetHost(state, actions, streamLine, hdrLine)
+    if (!state.locked && !inPip) PlayerSheetHost(state, actions, streamLine, hdrLine)
+}
+
+/** Back from the picture-in-picture window to the full screen: the controls show once (then hide as usual). */
+@Composable
+private fun ControlsAfterPip(inPip: Boolean, controlsVisible: Boolean, show: () -> Unit) {
+    val visible by rememberUpdatedState(controlsVisible)
+    var wasInPip by remember { mutableStateOf(false) }
+    LaunchedEffect(inPip) {
+        if (wasInPip && !inPip && !visible) show()
+        wasInPip = inPip
+    }
 }
 
 @Composable
@@ -86,7 +109,8 @@ private fun BoxScope.Loading() {
 /**
  * Up next, or else the skip button, at the bottom right (above the seek bar while the controls show), with the watch-and-delete
  * card stacked above it; on a short screen (landscape phone) the two cards sit side by side. Each card is limited to the space
- * there is and scrolls inside, so neither leaves the screen or covers the other.
+ * there is and scrolls inside, so neither leaves the screen or covers the other. The corner is one traversal group read before
+ * the controls (`PlayerCornerOrderTest`).
  */
 @Composable
 private fun BoxScope.Corner(state: PlayerUiState, actions: PlayerActions) {
@@ -95,7 +119,8 @@ private fun BoxScope.Corner(state: PlayerUiState, actions: PlayerActions) {
     val segment = p.segmentNow
     val watched = state.watched
     val area = Modifier.matchParentSize().padding(start = 16.dp, top = 16.dp, end = 16.dp, bottom = if (state.controlsVisible) 112.dp else 24.dp)
-    BoxWithConstraints(area) {
+    // Read first by TalkBack (Milestone 7 Task 8): the prompt, then Up next, then the controls, though the top bar is above them.
+    BoxWithConstraints(area.semantics { isTraversalGroup = true; traversalIndex = -1f }) {
         val room = maxHeight
         val fit = Modifier.heightIn(max = room)
         if (watched != null && upNext != null && room < SIDE_BY_SIDE_BELOW) {

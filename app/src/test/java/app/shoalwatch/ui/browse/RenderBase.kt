@@ -75,3 +75,6 @@ abstract class RenderBase {
 const val PHONE = "w360dp-h640dp"
 const val TABLET = "w840dp-h1200dp"
 
+/** A tablet on its side (Milestone 7 Task 10): from 900dp wide the series and film pages are two panes. */
+const val TABLET_LANDSCAPE = "w1200dp-h840dp"
+

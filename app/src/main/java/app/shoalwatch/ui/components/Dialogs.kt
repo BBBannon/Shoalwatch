@@ -12,6 +12,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -29,6 +30,13 @@ import app.shoalwatch.R
 val SecureDialog = DialogProperties(securePolicy = SecureFlagPolicy.SecureOn)
 
 /**
+ * True while the app beneath the lock cover is covered (`LockCover`, Tasks 5-6 review M1). A dialog, sheet or menu is its own window,
+ * which the in-window cover cannot hide, so every one of them composes nothing while this is true: on the frame the cover appears
+ * they are gone, and TalkBack has nothing of them to announce. `CoveredWindowsTest` checks that every file opening one reads this.
+ */
+val LocalCovered = compositionLocalOf { false }
+
+/**
  * A confirmation for something that can't be undone. [confirmLabel] is in the error colour; Cancel is the default. [busyLabel]: the
  * action is under way; the confirm button shows a spinner with these words instead, and neither it, Cancel nor Back does anything
  * more (the action will happen: Tasks 9-10 review M6).
@@ -42,6 +50,7 @@ fun ConfirmDialog(
     busyLabel: String? = null,
     content: @Composable () -> Unit,
 ) {
+    if (LocalCovered.current) return // under the lock cover (review M1)
     AlertDialog(
         onDismissRequest = { if (busyLabel == null) onDismiss() },
         properties = SecureDialog,

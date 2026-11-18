@@ -13,6 +13,15 @@ import app.shoalwatch.data.servers.ServerCatalog
 import app.shoalwatch.data.servers.Session
 import app.shoalwatch.data.sync.Sync
 import app.shoalwatch.data.sync.SyncStatus
+import androidx.compose.foundation.text.input.TextFieldState
+import app.shoalwatch.data.servers.ProfileSwitcher
+import app.shoalwatch.security.Household
+import app.shoalwatch.security.HouseholdLockedException
+import app.shoalwatch.security.retryingReads
+import app.shoalwatch.ui.lock.GrownUpAsk
+import app.shoalwatch.ui.lock.GrownUpFlow
+import app.shoalwatch.ui.lock.SwitchFlow
+import app.shoalwatch.ui.lock.SwitchPrompt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
@@ -39,7 +48,11 @@ import kotlinx.coroutines.launch
  * [sync]: this profile's changes waiting to reach the server (the line under it). [expired]: the server rejected its sign-in; it
  * is listed with "Sign in again" so its waiting changes can still be sent, but it cannot be made active (Tasks 9-10 review I2).
  */
-data class AccountItem(val userId: String, val userName: String, val isActive: Boolean, val sync: SyncStatus = SyncStatus.NONE, val expired: Boolean = false)
+data class AccountItem(
+    val userId: String, val userName: String, val isActive: Boolean, val sync: SyncStatus = SyncStatus.NONE, val expired: Boolean = false,
+    /** Protected by a PIN: shown with a lock and "Protected". */
+    val isProtected: Boolean = false,
+)
 
 /** One profile's changes not yet sent, for the Remove server dialog (a count and the profile's name; never an item). */
 data class ProfileWaiting(val userName: String, val waiting: Int, val expired: Boolean)
@@ -86,6 +99,12 @@ data class ServersUiState(
     val notice: ServersNotice? = null,
     /** The server whose card shows "Server admin": the active account's, only while its server confirms it is an administrator. */
     val adminServerId: String? = null,
+    /** A grown-up's PIN was given for Settings: the route opens Connection settings for this server, once. */
+    val openSettings: String? = null,
+    /** The data layer refused a household change (a race with the check): "A grown-up's PIN is needed. Try again." */
+    val householdRace: Boolean = false,
+    /** Removing this server would sign out two or more protected profiles that are not active: each must be signed out first, with its own PIN. */
+    val signOutFirst: Boolean = false,
 )
 
 /**
@@ -103,12 +122,26 @@ class ServersViewModel(
     private val rights: AdminRights? = null,
     /** Each profile's waiting changes, sent first on sign-out and removal; null shows no line and sends nothing. */
     private val sync: Sync? = null,
+    /** The only way this screen changes the active profile (null: rows switch nothing). */
+    switcher: ProfileSwitcher? = null,
+    /** The grown-up check before Settings, Remove server and signing out another protected profile (null: never asks). */
+    household: Household? = null,
+    /** The protected profiles (the rows' "Protected" marks). */
+    protection: Flow<Set<Session>> = flowOf(emptySet()),
 ) : ViewModel() {
     private data class Local(
         val confirm: Confirm? = null, val busy: Boolean = false, val sending: Boolean = false, val error: String? = null, val notice: ServersNotice? = null,
+        val openSettings: String? = null, val householdRace: Boolean = false, val signOutFirst: Boolean = false,
     )
 
     private val local = MutableStateFlow(Local())
+    private val switching = switcher?.let { SwitchFlow(it, viewModelScope) { e -> local.update { l -> l.copy(error = e.userMessage) } } }
+    private val grownUp = household?.let { GrownUpFlow(it, viewModelScope) }
+
+    val switchPrompt: StateFlow<SwitchPrompt?> = switching?.prompt ?: MutableStateFlow(null)
+    val switchPin: TextFieldState = switching?.pin ?: TextFieldState()
+    val grownUpAsk: StateFlow<GrownUpAsk?> = grownUp?.ask ?: MutableStateFlow(null)
+    val grownUpPin: TextFieldState = grownUp?.pin ?: TextFieldState()
 
     private val rows: Flow<List<Pair<ServerSummary, List<Triple<AccountSummary, Boolean, SyncStatus>>>>> = catalog.servers.flatMapLatest { servers ->
         if (servers.isEmpty()) {
@@ -142,7 +175,7 @@ class ServersViewModel(
     }
 
     val state: StateFlow<ServersUiState> =
-        combine(rows, catalog.activeAccount, local, adminServer) { rows, active, local, adminServerId ->
+        combine(rows, catalog.activeAccount, local, adminServer, protection.retryingReads()) { rows, active, local, adminServerId, protectedSet ->
             ServersUiState(
                 loading = false,
                 servers = rows.map { (server, accounts) ->
@@ -150,23 +183,56 @@ class ServersViewModel(
                         id = server.id, name = server.name, version = server.version,
                         certificateChanged = server.pinInvalid,
                         accounts = accounts.map { (it, expired, synced) ->
-                            AccountItem(it.userId, it.userName, !expired && it.serverId == active?.serverId && it.userId == active.userId, synced, expired)
+                            AccountItem(
+                                it.userId, it.userName, !expired && it.serverId == active?.serverId && it.userId == active.userId, synced, expired,
+                                isProtected = Session(it.serverId, it.userId) in protectedSet,
+                            )
                         },
                     )
                 },
                 confirm = local.confirm, busy = local.busy, sending = local.sending, error = local.error, notice = local.notice,
-                adminServerId = adminServerId,
+                adminServerId = adminServerId, openSettings = local.openSettings, householdRace = local.householdRace,
+                signOutFirst = local.signOutFirst,
             )
         }.stateIn(viewModelScope, SharingStarted.Eagerly, ServersUiState())
 
-    /** Only a usable account: an expired one is signed in again first. */
+    /** Only a usable account (an expired one is signed in again first), through the switcher: a protected one asks its PIN. */
     fun switchTo(serverId: String, userId: String) {
         val account = state.value.servers.firstOrNull { it.id == serverId }?.accounts?.firstOrNull { it.userId == userId } ?: return
-        if (account.expired) return
-        run { catalog.setActive(serverId, userId); null }
+        if (account.expired || account.isActive) return
+        switching?.request(serverId, userId, account.userName)
     }
 
+    fun submitSwitch() { switching?.submit() }
+    fun dismissSwitch() { switching?.dismiss() }
+
+    /** Connection settings are a household setting: a grown-up's PIN first, then the route opens them ([ServersUiState.openSettings]). */
+    fun openSettings(serverId: String) = guard { local.update { it.copy(openSettings = serverId) } }
+    fun settingsOpened() = local.update { it.copy(openSettings = null) }
+
+    fun chooseGrownUp(who: AccountSummary) { grownUp?.choose(who) }
+    fun submitGrownUp() { grownUp?.submit() }
+    fun dismissGrownUp() { grownUp?.dismiss() }
+
+    private fun guard(then: () -> Unit) {
+        local.update { it.copy(householdRace = false, signOutFirst = false) }
+        grownUp?.guard(then) ?: then()
+    }
+
+    /** Signing out a protected profile that is not active asks for that profile's own PIN first; any other asks nothing. */
     fun askSignOut(serverId: String, userId: String) {
+        val server = state.value.servers.firstOrNull { it.id == serverId } ?: return
+        val account = server.accounts.firstOrNull { it.userId == userId } ?: return
+        local.update { it.copy(signOutFirst = false) }
+        val flow = grownUp
+        if (account.isProtected && !account.isActive && flow != null) {
+            flow.guardSignOut(AccountSummary(serverId, userId, account.userName)) { askSignOutNow(serverId, userId) }
+        } else {
+            askSignOutNow(serverId, userId)
+        }
+    }
+
+    private fun askSignOutNow(serverId: String, userId: String) {
         val server = state.value.servers.firstOrNull { it.id == serverId } ?: return
         val account = server.accounts.firstOrNull { it.userId == userId } ?: return
         val ask = Confirm.SignOut(serverId, userId, account.userName, server.name)
@@ -178,7 +244,26 @@ class ServersViewModel(
         }
     }
 
+    /**
+     * Removing a server is a household setting, and it signs out every profile on it (final review M5): with one protected profile
+     * on it that is not active, that profile's own PIN first (which is also a grown-up's); with two or more, no one PIN covers them,
+     * so it is refused until all but one are signed out ([ServersUiState.signOutFirst]); else a grown-up's PIN.
+     */
     fun askRemoveServer(serverId: String) {
+        val server = state.value.servers.firstOrNull { it.id == serverId } ?: return
+        val others = server.accounts.filter { it.isProtected && !it.isActive }
+        val flow = grownUp
+        when {
+            flow == null || others.isEmpty() -> guard { askRemoveServerNow(serverId) }
+            others.size == 1 -> {
+                local.update { it.copy(householdRace = false, signOutFirst = false) }
+                flow.guardSignOut(AccountSummary(serverId, others[0].userId, others[0].userName)) { askRemoveServerNow(serverId) }
+            }
+            else -> local.update { it.copy(householdRace = false, signOutFirst = true, confirm = null) }
+        }
+    }
+
+    private fun askRemoveServerNow(serverId: String) {
         val server = state.value.servers.firstOrNull { it.id == serverId } ?: return
         val ask = Confirm.RemoveServer(serverId, server.name, server.accounts.map { a -> a.userName })
         local.update { it.copy(confirm = ask, error = null, notice = null) }
@@ -253,18 +338,22 @@ class ServersViewModel(
 
     /** Runs [action]; what it returns is shown as the notice. */
     private fun run(action: suspend () -> ServersNotice?) {
-        local.update { it.copy(busy = true, error = null, notice = null) }
+        local.update { it.copy(busy = true, error = null, notice = null, householdRace = false) }
         viewModelScope.launch {
             var notice: ServersNotice? = null
+            var race = false
             val failure = try {
                 notice = action()
                 null
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: HouseholdLockedException) {
+                race = true // refused below the screen: nothing changed
+                null
             } catch (e: Exception) {
                 AppError.from(e).userMessage
             }
-            local.update { it.copy(busy = false, confirm = null, error = failure, notice = notice) }
+            local.update { it.copy(busy = false, confirm = null, error = failure, notice = notice, householdRace = race) }
         }
     }
 }

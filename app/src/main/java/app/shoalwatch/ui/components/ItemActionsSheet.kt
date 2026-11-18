@@ -68,6 +68,7 @@ class SheetActions(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ItemActionsSheet(target: SheetTarget, actions: SheetActions, onDismiss: () -> Unit) {
+    if (LocalCovered.current) return // under the lock cover (review M1)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         // Scrolls: at a large text size, or on a phone held sideways, the last rows would otherwise be out of reach.
         Column(Modifier.verticalScroll(rememberScrollState()).navigationBarsPadding().padding(bottom = 16.dp)) {

@@ -17,7 +17,8 @@ import java.util.WeakHashMap
  * show no secret (a fingerprint on first contact is public information) and are intentionally not protected.
  *
  * Fail-safe: counted per window, the flag is added on every acquire (so it can never be missing while a
- * holder exists) and cleared only when the last holder of that window releases.
+ * holder exists) and cleared only when the last holder of that window releases. On API 29–32 `RecentsPrivacy` (Milestone 7) is
+ * one more holder of the activity's window while the recent-apps preview must be hidden; API 33+ uses the screenshot switch.
  */
 @Composable
 fun SecureWindow() {

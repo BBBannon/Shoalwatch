@@ -22,8 +22,18 @@ import app.shoalwatch.ui.servers.ServerEditActions
 import app.shoalwatch.ui.servers.ServerEditScreen
 import app.shoalwatch.ui.servers.ServerEditViewModel
 import app.shoalwatch.ui.servers.ServersActions
+import app.shoalwatch.ui.servers.ServersPinDialogs
 import app.shoalwatch.ui.servers.ServersScreen
 import app.shoalwatch.ui.servers.ServersViewModel
+import app.shoalwatch.R
+import app.shoalwatch.security.AuthOutcome
+import app.shoalwatch.ui.findActivity
+import app.shoalwatch.ui.settings.SettingsActions
+import app.shoalwatch.ui.settings.SettingsScreen
+import app.shoalwatch.ui.settings.SettingsViewModel
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import kotlinx.coroutines.launch
 
 /*
@@ -88,8 +98,21 @@ internal fun SignInRoute(graph: AppGraph, nav: NavHostController, serverId: Stri
 
 @Composable
 internal fun ServersRoute(graph: AppGraph, nav: NavHostController) {
-    val vm = graphViewModel { ServersViewModel(graph.serverCatalog, graph.authenticator, sharing = graph.downloads::sharing, rights = graph.adminRights, sync = graph.sync) }
+    val vm = graphViewModel {
+        ServersViewModel(
+            graph.serverCatalog, graph.authenticator, sharing = graph.downloads::sharing, rights = graph.adminRights, sync = graph.sync,
+            switcher = graph.lockParts.switcher, household = graph.lockParts.householdGuard, protection = graph.lockParts.profileLocks.protectedProfiles,
+        )
+    }
     val state by vm.state.collectAsStateWithLifecycle()
+    val prompt by vm.switchPrompt.collectAsStateWithLifecycle()
+    val grownUp by vm.grownUpAsk.collectAsStateWithLifecycle()
+    LaunchedEffect(state.openSettings) {
+        state.openSettings?.let { id ->
+            vm.settingsOpened()
+            nav.navigate(Routes.serverEdit(id))
+        }
+    }
     val actions = remember(vm) {
         ServersActions(
             onBack = { nav.popBackStack() },
@@ -99,14 +122,20 @@ internal fun ServersRoute(graph: AppGraph, nav: NavHostController) {
             onAskRemove = vm::askRemoveServer,
             onAddAccount = { nav.navigate(Routes.signIn(it)) },
             onSignInAgain = { serverId, userName -> nav.navigate(Routes.signIn(serverId, userName)) },
-            onSettings = { nav.navigate(Routes.serverEdit(it)) },
+            onSettings = vm::openSettings,
             onConfirm = vm::confirm,
             onDismissConfirm = vm::dismissConfirm,
             onDismissNotice = vm::dismissNotice,
             onAdmin = { nav.navigate(AdminRoutes.DASHBOARD) { launchSingleTop = true } },
+            onSubmitSwitch = vm::submitSwitch,
+            onDismissSwitch = vm::dismissSwitch,
+            onChooseGrownUp = vm::chooseGrownUp,
+            onSubmitGrownUp = vm::submitGrownUp,
+            onDismissGrownUp = vm::dismissGrownUp,
+            onOpenAppSettings = { nav.navigate(Routes.SETTINGS) },
         )
     }
-    ServersScreen(state, actions)
+    ServersScreen(state, actions, ServersPinDialogs(prompt, vm.switchPin, grownUp, vm.grownUpPin))
 }
 
 @Composable
@@ -150,4 +179,62 @@ internal fun ServerEditRoute(graph: AppGraph, nav: NavHostController, serverId: 
         )
     }
     ServerEditScreen(state, actions)
+}
+
+/**
+ * Settings. Turning the app lock on or off asks the phone's own screen lock first (`expectReturn`, so the prompt is not
+ * "leaving"); only its yes goes on to the ViewModel, which then asks a grown-up when one is needed. Not an account route: a
+ * session change pops it.
+ */
+@Composable
+internal fun SettingsRoute(graph: AppGraph, nav: NavHostController) {
+    val parts = graph.lockParts
+    val vm = graphViewModel {
+        SettingsViewModel(
+            graph.serverCatalog, parts.profilePlayback, parts.profileLocks, parts.lockPrefs, parts.householdGuard, parts.deviceAuth::available,
+            parts.lockGate.hideRecents, parts.pipPrefs,
+        )
+    }
+    val state by vm.state.collectAsStateWithLifecycle()
+    val grownUp by vm.grownUp.ask.collectAsStateWithLifecycle()
+    LifecycleResumeEffect(vm) {
+        vm.refreshDevice()
+        onPauseOrDispose {}
+    }
+    val activity = LocalContext.current.findActivity()
+    val scope = rememberCoroutineScope()
+    val title = stringResource(R.string.lock_prompt_title)
+    val subtitle = stringResource(R.string.lock_prompt_subtitle)
+    val actions = remember(vm, nav, activity) {
+        SettingsActions(
+            onBack = { nav.popBackStack() },
+            onAutoplay = vm::setAutoplay,
+            onPipAuto = vm::setPipAuto,
+            onProtect = vm::startProtect,
+            onChangePin = vm::startChangePin,
+            onRemovePin = vm::startRemovePin,
+            onSubmitPin = vm::submitPin,
+            onCancelPin = vm::cancelPin,
+            onAppLock = { on ->
+                if (activity != null) {
+                    scope.launch {
+                        parts.lockGate.expectReturn()
+                        val outcome = try {
+                            parts.deviceAuth.authenticate(activity, title, subtitle)
+                        } finally {
+                            parts.lockGate.tripDone() // the prompt answered: its excuse ends here (final review M1)
+                        }
+                        if (outcome == AuthOutcome.SUCCESS) vm.setAppLock(on)
+                    }
+                }
+            },
+            onLockAfter = vm::setLockAfter,
+            onHideInRecents = vm::setHideInRecents,
+            onDownloadSettings = { nav.navigate(Routes.DOWNLOAD_SETTINGS) },
+            onChooseGrownUp = vm.grownUp::choose,
+            onSubmitGrownUp = vm.grownUp::submit,
+            onDismissGrownUp = vm.grownUp::dismiss,
+        )
+    }
+    SettingsScreen(state, actions, vm.pin, grownUp, vm.grownUp.pin)
 }

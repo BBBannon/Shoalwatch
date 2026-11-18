@@ -28,6 +28,8 @@ data class HomeUiState(
     val userName: String? = null,
     val connection: ConnectionView? = null,
     val accounts: List<AccountSummary> = emptyList(),
+    /** The user ids of [accounts] that are protected by a PIN (the menu marks them "Protected"). */
+    val protectedUsers: Set<String> = emptySet(),
     val views: List<LibraryView> = emptyList(),
     val viewsBanner: BannerKind? = null,
     val resume: RowUi = RowUi(),

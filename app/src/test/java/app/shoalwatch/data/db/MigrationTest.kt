@@ -37,7 +37,7 @@ import java.time.Instant
 import javax.crypto.KeyGenerator
 
 /**
- * Migrations 1 to 2, 2 to 3, 3 to 4 and 4 to 5 against REAL older databases. The v1 database is built from the exported schema
+ * Migrations 1 to 2, 2 to 3, 3 to 4, 4 to 5 and 5 to 6 against REAL older databases. The v1 database is built from the exported schema
  * (`app/schemas/.../1.json`: its `createSql` statements and Room's `setupQueries`), not by Room, so this is what a phone
  * that installed Milestone 1 actually holds. Room then opens it with [Migration1To2]; opening validates the migrated tables
  * against 2.json and throws on any difference.
@@ -114,14 +114,14 @@ class MigrationTest {
     }
 
     private fun openWithMigration(file: String = name): AppDatabase =
-        Room.databaseBuilder(context, AppDatabase::class.java, file).addMigrations(Migration1To2, Migration2To3, Migration3To4, Migration4To5).allowMainThreadQueries().build()
+        Room.databaseBuilder(context, AppDatabase::class.java, file).addMigrations(Migration1To2, Migration2To3, Migration3To4, Migration4To5, Migration5To6).allowMainThreadQueries().build()
             .also { opened += it }
 
     @Test fun aVersion1DatabaseOpensAndKeepsItsServersAndAccountsByteForByte() = runBlocking {
         createVersion1()
         val db = openWithMigration()
         db.openHelper.writableDatabase // forces the migrations and Room's validation against the current schema
-        assertEquals(5, db.openHelper.writableDatabase.version)
+        assertEquals(CURRENT, db.openHelper.writableDatabase.version)
         val server = db.serverDao().get(S1)!!
         assertEquals("Den", server.name)
         assertEquals("https://home.example", server.homeAddress)
@@ -174,8 +174,10 @@ class MigrationTest {
      * Every table and index in `sqlite_master` with its SQL, whitespace normalised (Room's bookkeeping table and, from v5,
      * `sqlite_sequence` for the outbox's AUTOINCREMENT included; SQLite's own automatic indices have no SQL and are left out).
      */
-    private fun schemaOf(db: AppDatabase): List<String> =
-        db.openHelper.writableDatabase.query(
+    private fun schemaOf(db: AppDatabase): List<String> = schemaOf(db.openHelper.writableDatabase)
+
+    private fun schemaOf(db: SupportSQLiteDatabase): List<String> =
+        db.query(
             "SELECT type, name, sql FROM sqlite_master WHERE (name NOT LIKE 'sqlite_%' OR name = 'sqlite_sequence') AND name NOT LIKE 'android_%' ORDER BY type, name",
         ).use { c ->
             buildList { while (c.moveToNext()) add("${c.getString(0)} ${c.getString(1)}: ${(c.getString(2) ?: "").replace(Regex("\\s+"), " ").trim()}") }
@@ -205,7 +207,7 @@ class MigrationTest {
         helper.close()
         assertTrue("every v2 table has a row to keep", before.values.all { it.isNotEmpty() })
         val db = openWithMigration()
-        assertEquals(5, db.openHelper.writableDatabase.version)
+        assertEquals(CURRENT, db.openHelper.writableDatabase.version)
         assertEquals(before, rowsOf(db.openHelper.readableDatabase, V2_TABLES))
     }
 
@@ -260,7 +262,7 @@ class MigrationTest {
         helper.close()
         assertTrue("every v3 table has a row to keep", before.values.all { it.isNotEmpty() })
         val db = openWithMigration()
-        assertEquals(5, db.openHelper.writableDatabase.version)
+        assertEquals(CURRENT, db.openHelper.writableDatabase.version)
         assertEquals(before, rowsOf(db.openHelper.readableDatabase, V3_TABLES))
     }
 
@@ -340,7 +342,7 @@ class MigrationTest {
         helper.close()
         assertTrue("every v4 table has a row to keep", before.values.all { it.isNotEmpty() })
         val db = openWithMigration()
-        assertEquals(5, db.openHelper.writableDatabase.version)
+        assertEquals(CURRENT, db.openHelper.writableDatabase.version)
         val after = rowsOf(db.openHelper.readableDatabase, V4_TABLES)
         assertEquals(before - "download_settings", after - "download_settings")
         assertEquals(listOf("text:$S1|int:1|text:ANYONE"), after["download_settings"])
@@ -413,6 +415,60 @@ class MigrationTest {
         context.deleteDatabase("fresh-test.db")
     }
 
+    // ---- 5 to 6: profile locks and per-profile playback settings (two new tables, nothing else touched)
+
+    /** A real version-5 database: one server, one account (sealed bytes), the active marker, two outbox rows with marks, sync state. */
+    private fun createVersion5() = createVersion(5) { db ->
+        val first = SyncRows.outbox(db, S1, U1, FINISHED)
+        SyncRows.mark(db, first, S1, U1, FINISHED)
+        val second = SyncRows.outbox(db, S1, U1, REWATCHED, kind = "POSITION", occurredAt = 30)
+        SyncRows.mark(db, second, S1, U1, REWATCHED, leftList = "resume")
+        SyncRows.state(db, S1, U1)
+    }
+
+    @Test fun theVersion6SchemaIsExportedAndAddsOnlyTheTwoProfileTables() {
+        val tables = schema(6)["entities"]!!.jsonArray.map { it.jsonObject["tableName"]!!.jsonPrimitive.content }.toSet()
+        assertEquals(V5_TABLES.toSet() + V6_NEW, tables)
+    }
+
+    @Test fun migrate5To6() {
+        createVersion5()
+        val helper = openRaw(5)
+        val before = rowsOf(helper.readableDatabase, V5_TABLES)
+        val schemaBefore = schemaOf(helper.readableDatabase)
+        helper.close()
+        assertTrue("the account and its outbox rows are there to keep", listOf("accounts", "sync_outbox", "sync_marks").all { before[it]!!.isNotEmpty() })
+        val migrated = openWithMigration()
+        assertEquals(CURRENT, migrated.openHelper.writableDatabase.version)
+        assertEquals("every v5 row is untouched", before, rowsOf(migrated.openHelper.readableDatabase, V5_TABLES))
+        assertEquals("both new tables are empty", V6_NEW.associateWith { 0 }, V6_NEW.associateWith { DownloadRows.count(migrated.openHelper.readableDatabase, it) })
+        val after = schemaOf(migrated)
+        assertEquals("no existing table or index was rebuilt or altered", schemaBefore, after.filterNot { line -> V6_NEW.any { line.startsWith("table $it:") } })
+        val fresh = openWithMigration("fresh-test.db")
+        assertEquals("sqlite_master matches Room's v6 schema exactly", schemaOf(fresh), after)
+        context.deleteDatabase("fresh-test.db")
+    }
+
+    @Test fun theProfileTablesCascadeWithTheAccountAfterMigration() {
+        createVersion5()
+        val db = openWithMigration()
+        val raw = db.openHelper.writableDatabase
+        raw.execSQL("INSERT INTO profile_locks (serverId, userId, verifier, failures) VALUES (?, ?, ?, 0)", arrayOf(S1, U1, byteArrayOf(1, 2)))
+        raw.execSQL("INSERT INTO profile_playback (serverId, userId, autoplayNext) VALUES (?, ?, 0)", arrayOf(S1, U1))
+        assertEquals(V6_NEW.associateWith { 1 }, V6_NEW.associateWith { DownloadRows.count(raw, it) })
+        runBlocking { ServerStore(db, box).removeAccount(S1, U1) }
+        assertEquals(V6_NEW.associateWith { 0 }, V6_NEW.associateWith { DownloadRows.count(raw, it) })
+    }
+
+    @Test fun aDatabaseMigratedFromVersion1ThroughAllFiveHasTheFreshV6Schema() {
+        createVersion1()
+        val migrated = openWithMigration()
+        val fresh = openWithMigration("fresh-test.db")
+        assertEquals(schemaOf(fresh), schemaOf(migrated))
+        for (table in V6_NEW) assertTrue("$table is in it", schemaOf(migrated).any { it.startsWith("table $table:") })
+        context.deleteDatabase("fresh-test.db")
+    }
+
     /** Every row of [tables], every column as its stored type and value (blobs in hex), in rowid order. */
     private fun rowsOf(db: SupportSQLiteDatabase, tables: List<String>): Map<String, List<String>> = tables.associateWith { table ->
         db.query("SELECT * FROM `" + table + "` ORDER BY rowid").use { c ->
@@ -433,10 +489,13 @@ class MigrationTest {
     }
 
     private companion object {
+        const val CURRENT = 6
         val SERIES = testId("series")
         val V2_TABLES = listOf("servers", "accounts", "active_account", "items", "user_data", "views", "list_entries", "list_state", "visible_items")
         val V3_TABLES = V2_TABLES + "track_choices"
         val V4_TABLES = V3_TABLES + DownloadRows.TABLES
+        val V5_TABLES = V4_TABLES + SyncRows.TABLES
+        val V6_NEW = listOf("profile_locks", "profile_playback")
         val FINISHED = testId("finished")
         val REWATCHED = testId("rewatched")
         val UNFINISHED = testId("unfinished")

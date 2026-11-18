@@ -23,6 +23,7 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -34,6 +35,8 @@ import app.shoalwatch.R
 import app.shoalwatch.ui.components.ConnectionChip
 import app.shoalwatch.ui.components.Gutter
 import app.shoalwatch.ui.components.titleLines
+import app.shoalwatch.ui.lock.ProtectedBadge
+import app.shoalwatch.ui.components.LocalCovered
 
 /** The shortest the server name is ever squeezed to before the connection chip moves under it. */
 private val MinTitleWidth = 120.dp
@@ -154,7 +157,7 @@ private fun AccountButton(state: HomeUiState, actions: HomeActions) {
         IconButton(onClick = { open = true }, modifier = Modifier.semantics { if (open) stateDescription = menuOpen }) {
             Icon(Icons.Filled.AccountCircle, stringResource(R.string.account_menu_cd))
         }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+        if (!LocalCovered.current) DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             Text(
                 stringResource(R.string.account_switch_title),
                 Modifier.padding(horizontal = 16.dp, vertical = 8.dp).semantics { heading() },
@@ -163,9 +166,13 @@ private fun AccountButton(state: HomeUiState, actions: HomeActions) {
             val current = state.session?.userId
             state.accounts.forEach { account ->
                 val name = if (account.userId == current) stringResource(R.string.account_current, account.userName) else account.userName
+                val isProtected = account.userId in state.protectedUsers
+                val spoken = stringResource(R.string.profile_protected_cd, name)
                 DropdownMenuItem(
                     text = { Text(name, style = MaterialTheme.typography.bodyLarge) },
                     onClick = { open = false; if (account.userId != current) actions.onSwitchAccount(account.userId) },
+                    modifier = if (isProtected) Modifier.semantics { contentDescription = spoken } else Modifier,
+                    trailingIcon = if (isProtected) ({ ProtectedBadge() }) else null,
                 )
             }
             HorizontalDivider()
@@ -176,6 +183,10 @@ private fun AccountButton(state: HomeUiState, actions: HomeActions) {
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.home_manage), style = MaterialTheme.typography.bodyLarge) },
                 onClick = { open = false; actions.onOpenServers() },
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.settings_open), style = MaterialTheme.typography.bodyLarge) },
+                onClick = { open = false; actions.onOpenSettings() },
             )
         }
     }

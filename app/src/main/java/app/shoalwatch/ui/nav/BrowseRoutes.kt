@@ -11,7 +11,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import app.shoalwatch.AppGraph
 import app.shoalwatch.data.playback.PlaybackState
+import android.content.pm.PackageManager
+import androidx.compose.ui.platform.LocalContext
+import app.shoalwatch.ui.components.LocalCovered
 import app.shoalwatch.ui.player.HostLifecycle
+import app.shoalwatch.ui.player.LocalPipHost
+import app.shoalwatch.ui.player.PipEffect
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import app.shoalwatch.ui.player.PlayerActions
 import app.shoalwatch.ui.player.PlayerScreen
 import app.shoalwatch.ui.player.PlayerViewModel
@@ -78,8 +85,14 @@ internal fun NavHostController.open(destination: Destination) {
 
 @Composable
 internal fun HomeRoute(graph: AppGraph, nav: NavHostController, fresh: Boolean) {
-    val vm = graphViewModel { HomeViewModel(graph.serverCatalog, graph.addressSelector, graph.library, graph.playstate, refreshOnOpen = fresh) }
+    val vm = graphViewModel {
+        HomeViewModel(
+            graph.serverCatalog, graph.addressSelector, graph.library, graph.playstate, refreshOnOpen = fresh,
+            switcher = graph.lockParts.switcher, protection = graph.lockParts.profileLocks.protectedProfiles,
+        )
+    }
     val state by vm.state.collectAsStateWithLifecycle()
+    val prompt by vm.switchPrompt.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val actions = remember(vm, nav) {
         HomeActions(
@@ -94,9 +107,12 @@ internal fun HomeRoute(graph: AppGraph, nav: NavHostController, fresh: Boolean) 
             onRemoveFromResume = vm::removeFromResume,
             onSetPlayed = vm::setPlayed,
             onSetFavourite = vm::setFavourite,
+            onSubmitSwitch = vm::submitSwitch,
+            onDismissSwitch = vm::dismissSwitch,
+            onOpenSettings = { nav.navigate(Routes.SETTINGS) },
         )
     }
-    AppShell(Tab.HOME, nav::switchTab, snackbar) { HomeScreen(state, actions, vm.messages, snackbar) }
+    AppShell(Tab.HOME, nav::switchTab, snackbar) { HomeScreen(state, actions, vm.messages, snackbar, prompt, vm.switchPin) }
 }
 
 @Composable
@@ -244,16 +260,20 @@ internal fun StorageRoute(graph: AppGraph, nav: NavHostController) {
 
 @Composable
 internal fun DownloadSettingsRoute(graph: AppGraph, nav: NavHostController) {
-    val vm = graphViewModel { app.shoalwatch.ui.downloads.DownloadSettingsViewModel(graph.serverCatalog, graph.downloads, graph.housekeeping) }
+    val vm = graphViewModel {
+        app.shoalwatch.ui.downloads.DownloadSettingsViewModel(graph.serverCatalog, graph.downloads, graph.housekeeping, graph.lockParts.householdGuard)
+    }
     val state by vm.state.collectAsStateWithLifecycle()
+    val grownUp by vm.grownUpAsk.collectAsStateWithLifecycle()
     androidx.compose.runtime.LaunchedEffect(Unit) { vm.refreshCards() }
     val actions = remember(vm, nav) {
         app.shoalwatch.ui.downloads.DownloadSettingsActions(
             onBack = { nav.popBackStack() }, onMobileData = vm::setMobileData, onStorage = vm::setStorage, onQuality = vm::setDefaultQuality, onSharing = vm::setSharing,
             onAfterFinish = vm::setAfterFinish, onDeleteShared = vm::setDeleteShared, onAutoNext = vm::setAutoNext,
+            onChooseGrownUp = vm::chooseGrownUp, onSubmitGrownUp = vm::submitGrownUp, onDismissGrownUp = vm::dismissGrownUp,
         )
     }
-    app.shoalwatch.ui.downloads.DownloadSettingsScreen(state, actions)
+    app.shoalwatch.ui.downloads.DownloadSettingsScreen(state, actions, grownUp = grownUp, grownUpPin = vm.grownUpPin)
 }
 
 @Composable
@@ -284,7 +304,7 @@ internal fun OfflineSeriesRoute(graph: AppGraph, nav: NavHostController, seriesI
 @Composable
 internal fun PlayerRoute(graph: AppGraph, nav: NavHostController, itemId: String, from: StartFrom) {
     val vm = graphStateViewModel(key = "$itemId|$from") { saved ->
-        PlayerViewModel(itemId, from, saved, graph.serverCatalog, { s, scope -> graph.playbackController(s, scope) { true } }, graph.subtitleSettings, graph.qualityDefault, graph.addressSelector::refreshIfOffline, graph.housekeeping)
+        PlayerViewModel(itemId, from, saved, graph.serverCatalog, { s, scope -> graph.playbackController(s, scope, graph.lockParts.profilePlayback.autoplayReader(s, scope)) }, graph.subtitleSettings, graph.qualityDefault, graph.addressSelector::refreshIfOffline, graph.housekeeping)
     }
     val state by vm.state.collectAsStateWithLifecycle()
     LaunchedEffect(state.leave) { if (state.leave) nav.popBackStack(Routes.PLAYER, inclusive = true) }
@@ -292,7 +312,12 @@ internal fun PlayerRoute(graph: AppGraph, nav: NavHostController, itemId: String
     PlayerWindow(keepOn = playing, locked = state.locked)
     HostLifecycle(onStopped = vm::onHostStopped, onStarted = vm::onHostStarted)
     TouchExploration(vm::setTouchExploration)
-    val actions = remember(vm, nav) {
+    // Picture-in-picture (Milestone 7): wished for while this player shows and nothing covers it; the small window's button plays and pauses.
+    val pip = LocalPipHost.current?.takeIf { LocalContext.current.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE) }
+    val inPip by (pip?.inPip ?: NotInPip).collectAsStateWithLifecycle()
+    val aspect by (vm.video?.aspectRatio ?: NoAspect).collectAsStateWithLifecycle()
+    PipEffect(state, enabled = !LocalCovered.current, onPlayPause = vm::playPause, aspect = aspect)
+    val actions = remember(vm, nav, pip) {
         PlayerActions(
             onBack = { nav.popBackStack(Routes.PLAYER, inclusive = true) },
             onTapSurface = vm::tapSurface,
@@ -325,11 +350,14 @@ internal fun PlayerRoute(graph: AppGraph, nav: NavHostController, itemId: String
             onWatchedTogether = vm::watchedTogether,
             onKeepDownload = vm::keepDownload,
             onDismissWatchedMessage = vm::dismissWatchedMessage,
+            onEnterPip = pip?.let { host -> { host.enterNow(); Unit } },
         )
     }
-    PlayerScreen(state, actions, rememberDolbyVisionScreen()) { controlsUp ->
+    PlayerScreen(state, actions, rememberDolbyVisionScreen(), inPip) { controlsUp ->
         VideoSurface(vm.video, vm.cues, state.appearance, controlsUp)
     }
 }
 
 private const val SKIP_MS = 10_000L
+private val NotInPip: StateFlow<Boolean> = MutableStateFlow(false)
+private val NoAspect: StateFlow<Float?> = MutableStateFlow(null)

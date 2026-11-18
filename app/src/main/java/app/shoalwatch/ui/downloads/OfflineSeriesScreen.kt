@@ -25,7 +25,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import app.shoalwatch.ui.components.DismissOnSessionChange
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -70,11 +70,11 @@ data class OfflineSeriesActions(
 fun OfflineSeriesScreen(state: OfflineSeriesUiState, actions: OfflineSeriesActions, messages: Flow<SessionMessage> = emptyFlow(), snackbar: SnackbarHostState? = null) {
     val strings = rememberStrings()
     if (snackbar != null) {
-        val context = LocalContext.current
+        val resources = LocalResources.current
         val current = rememberUpdatedState(state.session)
         DismissOnSessionChange(snackbar, state.session)
         LaunchedEffect(messages, snackbar) {
-            messages.collect { m -> if (m.session == current.value) snackbar.showSnackbar(m.text ?: context.getString(m.res)) }
+            messages.collect { m -> if (m.session == current.value) snackbar.showSnackbar(m.text ?: resources.getString(m.res)) }
         }
     }
     val series = state.series

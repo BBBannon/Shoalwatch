@@ -26,7 +26,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -54,11 +54,11 @@ fun DownloadsScreen(
     state: DownloadsUiState, actions: DownloadsActions, messages: Flow<SessionMessage>, snackbar: SnackbarHostState,
     onOpenSettings: (() -> Unit)? = null, onOpenStorage: (() -> Unit)? = null,
 ) {
-    val context = LocalContext.current
+    val resources = LocalResources.current
     val current = rememberUpdatedState(state.session)
     DismissOnSessionChange(snackbar, state.session)
     LaunchedEffect(messages, snackbar) {
-        messages.collect { m -> if (m.session == current.value) snackbar.showSnackbar(m.text ?: context.getString(m.res)) }
+        messages.collect { m -> if (m.session == current.value) snackbar.showSnackbar(m.text ?: resources.getString(m.res)) }
     }
     val session = state.session
     // Drawn edge to edge: the title and the settings cog sit below the status bar, as on the other tabs (walkthrough W-2).

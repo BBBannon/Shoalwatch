@@ -44,6 +44,13 @@ import app.shoalwatch.ui.components.NoticeCard
 import app.shoalwatch.ui.components.PrimaryButton
 import app.shoalwatch.ui.components.Tone
 import app.shoalwatch.ui.downloads.SyncStatusLine
+import androidx.compose.foundation.text.input.TextFieldState
+import app.shoalwatch.data.servers.AccountSummary
+import app.shoalwatch.ui.lock.GrownUpAsk
+import app.shoalwatch.ui.lock.GrownUpDialog
+import app.shoalwatch.ui.lock.ProtectedBadge
+import app.shoalwatch.ui.lock.SwitchPinDialog
+import app.shoalwatch.ui.lock.SwitchPrompt
 
 class ServersActions(
     val onBack: () -> Unit,
@@ -59,17 +66,37 @@ class ServersActions(
     val onAdmin: () -> Unit = {},
     /** An expired sign-in: sign in again as that profile (its name filled in). */
     val onSignInAgain: (serverId: String, userName: String) -> Unit = { _, _ -> },
+    val onSubmitSwitch: () -> Unit = {},
+    val onDismissSwitch: () -> Unit = {},
+    val onChooseGrownUp: (AccountSummary) -> Unit = {},
+    val onSubmitGrownUp: () -> Unit = {},
+    val onDismissGrownUp: () -> Unit = {},
+    /** The top bar's "Settings": the app's own Settings screen (Milestone 7), not a server's connection settings. */
+    val onOpenAppSettings: () -> Unit = {},
+)
+
+/** The PIN dialogs the Servers screen can show: a switch into a protected profile, or a grown-up's check. */
+class ServersPinDialogs(
+    val switchPrompt: SwitchPrompt? = null,
+    val switchPin: TextFieldState? = null,
+    val grownUp: GrownUpAsk? = null,
+    val grownUpPin: TextFieldState? = null,
 )
 
 /** Every saved server with its accounts: switch the active one, add, sign out, remove, open connection settings. */
 @Composable
-fun ServersScreen(state: ServersUiState, actions: ServersActions) {
+fun ServersScreen(state: ServersUiState, actions: ServersActions, dialogs: ServersPinDialogs = ServersPinDialogs()) {
     AppScreen(
         title = stringResource(R.string.servers_title),
         onBack = actions.onBack,
+        actions = {
+            TextButton(onClick = actions.onOpenAppSettings, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.settings_open)) }
+        },
         bottomBar = { PrimaryButton(stringResource(R.string.servers_add), actions.onAddServer) },
     ) {
         ErrorMessage(state.error)
+        if (state.householdRace) ErrorMessage(stringResource(R.string.grownup_race))
+        if (state.signOutFirst) ErrorMessage(stringResource(R.string.remove_server_sign_out_first))
         state.notice?.let { notice ->
             NoticeCard(
                 title = stringResource(if (notice == ServersNotice.SignedOutHereOnly) R.string.notice_signed_out_title else R.string.notice_removed_title),
@@ -120,6 +147,12 @@ fun ServersScreen(state: ServersUiState, actions: ServersActions) {
             }
         }
         null -> Unit
+    }
+    if (dialogs.switchPrompt != null && dialogs.switchPin != null) {
+        SwitchPinDialog(dialogs.switchPrompt, dialogs.switchPin, actions.onSubmitSwitch, actions.onDismissSwitch)
+    }
+    if (dialogs.grownUp != null && dialogs.grownUpPin != null) {
+        GrownUpDialog(dialogs.grownUp, dialogs.grownUpPin, actions.onChooseGrownUp, actions.onSubmitGrownUp, actions.onDismissGrownUp)
     }
 }
 
@@ -183,12 +216,15 @@ private fun ExpiredAccountRow(serverId: String, account: AccountItem, actions: S
 @Composable
 private fun AccountRow(serverId: String, account: AccountItem, actions: ServersActions) {
     val signOutLabel = stringResource(R.string.sign_out_cd, account.userName)
-    val useLabel = stringResource(R.string.account_use_cd, account.userName)
+    val useLabel = stringResource(R.string.account_use_cd, if (account.isProtected) stringResource(R.string.profile_protected_cd, account.userName) else account.userName)
+    val activeLabel = stringResource(R.string.profile_protected_cd, account.userName)
     Row(Modifier.fillMaxWidth().heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
         Row(
             Modifier.weight(1f).heightIn(min = 56.dp)
                 .selectable(selected = account.isActive, role = Role.RadioButton, onClick = { actions.onSwitch(serverId, account.userId) })
-                .semantics { if (!account.isActive) contentDescription = useLabel },
+                .semantics {
+                    if (!account.isActive) contentDescription = useLabel else if (account.isProtected) contentDescription = activeLabel
+                },
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -200,6 +236,7 @@ private fun AccountRow(serverId: String, account: AccountItem, actions: ServersA
             Column {
                 Text(account.userName, style = MaterialTheme.typography.bodyLarge)
                 if (account.isActive) Text(stringResource(R.string.account_active), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                if (account.isProtected) ProtectedBadge()
             }
         }
         TextButton(onClick = { actions.onAskSignOut(serverId, account.userId) }, modifier = Modifier.semantics { contentDescription = signOutLabel }) {

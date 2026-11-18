@@ -41,6 +41,7 @@ import app.shoalwatch.ui.components.rememberSubmit
 import app.shoalwatch.ui.onboarding.AddressField
 import app.shoalwatch.ui.onboarding.Check
 import app.shoalwatch.ui.onboarding.CheckGate
+import app.shoalwatch.ui.components.LocalCovered
 
 /**
  * Editing one address. Saving runs the same checks as adding a server (including "is this the same
@@ -94,6 +95,7 @@ internal fun HeaderDialog(pane: EditPane.Header, actions: PaneActions) {
     var revealed by remember { mutableStateOf(false) }
     val reveal = if (pane.name.isBlank()) stringResource(R.string.header_reveal_generic) else stringResource(R.string.header_reveal_cd, pane.name)
     val hide = if (pane.name.isBlank()) stringResource(R.string.header_hide_generic) else stringResource(R.string.header_hide_cd, pane.name)
+    if (LocalCovered.current) return // under the lock cover (review M1)
     AlertDialog(
         onDismissRequest = actions.onDismiss,
         properties = SecureDialog,

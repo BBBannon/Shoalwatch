@@ -44,6 +44,7 @@ import app.shoalwatch.data.downloads.StorageKind
 import app.shoalwatch.ui.present.DownloadText
 import app.shoalwatch.ui.present.Strings
 import app.shoalwatch.ui.present.rememberStrings
+import app.shoalwatch.ui.components.LocalCovered
 
 /** What the sheet does: [onChoose] (quality, "use this every time"), [onConfirm] (after the notification ask), [onDismiss]. */
 data class DownloadSheetActions(val onChoose: (DownloadQuality, Boolean) -> Unit, val onConfirm: () -> Unit, val onDismiss: () -> Unit)
@@ -57,6 +58,7 @@ data class DownloadSheetActions(val onChoose: (DownloadQuality, Boolean) -> Unit
 @Composable
 fun DownloadSheet(state: DownloadSheetState?, actions: DownloadSheetActions, ask: NotificationAskState = rememberNotificationAsk()) {
     if (state == null) return
+    if (LocalCovered.current) return // under the lock cover (review M1)
     ModalBottomSheet(onDismissRequest = actions.onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.verticalScroll(rememberScrollState()).navigationBarsPadding().padding(horizontal = 24.dp).padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             when (state) {

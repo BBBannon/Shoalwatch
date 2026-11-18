@@ -56,7 +56,7 @@ internal class SubtitleLines(bytes: ByteArray, private val cancelled: () -> Bool
         fun kept(c: Char): Boolean = when {
             c == '\t' || c == '\n' || c == '\r' -> true
             c < ' ' || c in '\u007F'..'\u009F' -> false
-            else -> c != ' ' && c != ' ' && c != '﻿'
+            else -> c != '\u2028' && c != '\u2029' && c != '\uFEFF'
         }
     }
 }

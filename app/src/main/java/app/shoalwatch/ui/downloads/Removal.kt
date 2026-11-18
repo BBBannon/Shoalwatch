@@ -16,6 +16,7 @@ import app.shoalwatch.data.downloads.OfflineEntry
 import app.shoalwatch.data.servers.Session
 import app.shoalwatch.ui.present.DownloadText
 import app.shoalwatch.ui.present.rememberStrings
+import app.shoalwatch.ui.components.LocalCovered
 
 /** What a Delete is for: one download (ready, or still in the queue), or the profile's own episodes of a season or a series. */
 enum class RemoveKind { ONE, SEASON, SERIES }
@@ -64,6 +65,7 @@ internal fun RemoveDialog(request: RemoveRequest, onConfirm: () -> Unit, onCance
         size != null -> strings.plural(R.plurals.dl_delete_episodes_confirm, n, size)
         else -> strings.plural(R.plurals.dl_delete_episodes_size_unknown, n)
     }
+    if (LocalCovered.current) return // under the lock cover (review M1)
     AlertDialog(
         onDismissRequest = onCancel,
         text = { Text(text) },

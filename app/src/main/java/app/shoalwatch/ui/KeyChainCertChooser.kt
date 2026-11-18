@@ -32,10 +32,15 @@ fun rememberClientCertChooser(): ClientCertChooser {
             if (activity == null) {
                 null
             } else {
+                val gate = app.shoalwatch.ShoalwatchApp.graph(activity).lockParts.lockGate
                 suspendCancellableCoroutine { continuation ->
+                    gate.expectReturn() // the chooser is not "leaving"
                     KeyChain.choosePrivateKeyAlias(
                         activity,
-                        { alias -> if (continuation.isActive) continuation.resume(alias) },
+                        { alias ->
+                            gate.tripDone() // it answered: its excuse ends here (final review M1)
+                            if (continuation.isActive) continuation.resume(alias)
+                        },
                         null, null, null, -1, null,
                     )
                 }

@@ -14,6 +14,7 @@ import app.shoalwatch.data.servers.ServerCatalog
 import app.shoalwatch.data.servers.ServerConnections
 import app.shoalwatch.data.servers.ServerSummary
 import app.shoalwatch.data.servers.Session
+import app.shoalwatch.security.retryingReads
 import app.shoalwatch.ui.ConnectionView
 import app.shoalwatch.ui.browse.FAILED_LOCALLY
 import app.shoalwatch.ui.browse.ItemActions
@@ -24,7 +25,13 @@ import app.shoalwatch.ui.present.banner
 import app.shoalwatch.ui.toView
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import androidx.compose.foundation.text.input.TextFieldState
+import app.shoalwatch.data.servers.ProfileSwitcher
+import app.shoalwatch.ui.lock.SwitchFlow
+import app.shoalwatch.ui.lock.SwitchPrompt
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -59,12 +66,24 @@ class HomeViewModel(
     private val library: Library,
     playstate: Playstate,
     refreshOnOpen: Boolean = false,
+    /** The only way Home changes the active profile (null: the account menu switches nothing). */
+    switcher: ProfileSwitcher? = null,
+    /** The protected profiles, for the menu's "Protected" marks. */
+    protection: Flow<Set<Session>> = flowOf(emptySet()),
 ) : ViewModel() {
     private val actions = ItemActions(playstate, viewModelScope, connections) { state.value.session }
     private val warmFailed = MutableStateFlow(false)
+    private val switchFailures = MutableSharedFlow<String>(extraBufferCapacity = 4)
+    private val switching = switcher?.let { SwitchFlow(it, viewModelScope) { e -> switchFailures.tryEmit(e.userMessage) } }
 
     /** Failure messages for a snackbar, each once. */
-    val messages: Flow<String> = actions.failures
+    val messages: Flow<String> = merge(actions.failures, switchFailures)
+
+    /** A switch waiting for a protected profile's PIN (the PIN dialog shows while set). */
+    val switchPrompt: StateFlow<SwitchPrompt?> = switching?.prompt ?: MutableStateFlow(null)
+
+    /** The PIN typed in the switch dialog; never in [state]. */
+    val switchPin: TextFieldState = switching?.pin ?: TextFieldState()
 
     private class Shell(
         val session: Session,
@@ -72,6 +91,7 @@ class HomeViewModel(
         val account: AccountSummary,
         val accounts: List<AccountSummary>,
         val connection: ConnectionView,
+        val protectedUsers: Set<String>,
     )
 
     private val shell: Flow<Shell?> =
@@ -82,8 +102,9 @@ class HomeViewModel(
                 flowOf(null)
             } else {
                 val (server, account) = active
-                combine(connections.connection(server.id), catalog.accounts(server.id)) { connection, accounts ->
-                    Shell(Session(account.serverId, account.userId), server, account, accounts, connection.toView())
+                combine(connections.connection(server.id), catalog.accounts(server.id), protection.retryingReads()) { connection, accounts, set ->
+                    val mine = set.filter { it.serverId == server.id }.mapTo(HashSet()) { it.userId }
+                    Shell(Session(account.serverId, account.userId), server, account, accounts, connection.toView(), mine)
                 }
             }
         }
@@ -146,11 +167,19 @@ class HomeViewModel(
         state.value.session?.let { actions.removeFromContinueWatching(it, itemId) }
     }
 
-    /** Makes [userId] (one of [HomeUiState.accounts]) the active account; every screen then restarts as that user. */
+    /**
+     * Makes [userId] (one of [HomeUiState.accounts]) the active account through the switcher; a protected one asks for its PIN
+     * first ([switchPrompt]). Every screen then restarts as that user.
+     */
     fun switchAccount(userId: String) {
         val serverId = state.value.serverId ?: return
-        viewModelScope.launch { actions.attempt(state.value.session) { catalog.setActive(serverId, userId) } }
+        val name = state.value.accounts.firstOrNull { it.userId == userId }?.userName.orEmpty()
+        switching?.request(serverId, userId, name)
     }
+
+    fun submitSwitch() { switching?.submit() }
+
+    fun dismissSwitch() { switching?.dismiss() }
 
     private fun retryWarm() {
         viewModelScope.launch { warmFailed.value = catalog.retryWarmIfFailed() }
@@ -162,6 +191,7 @@ class HomeViewModel(
         val base = HomeUiState(
             phase = HomePhase.LOADING, session = shell.session, serverId = shell.server.id, serverName = shell.server.name,
             userName = shell.account.userName, connection = shell.connection, accounts = shell.accounts, pulling = pull, working = working,
+            protectedUsers = shell.protectedUsers,
         )
         if (home == null) return base
         if (home === failedHome) return base.copy(phase = HomePhase.READY, localFailure = true)

@@ -43,6 +43,7 @@ import app.shoalwatch.ui.present.Strings
 import app.shoalwatch.ui.present.rememberStrings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
+import app.shoalwatch.ui.components.LocalCovered
 
 data class StorageActions(
     val onBack: () -> Unit,
@@ -130,6 +131,7 @@ private fun ConfirmDialog(confirm: StorageConfirm, actions: StorageActions) {
         is StorageConfirm.Series -> StorageText.confirmSeriesTitle(strings, confirm.name) to StorageText.confirmSeriesBody(strings, confirm.bytes)
         is StorageConfirm.Film -> null to StorageText.confirmFilm(strings, confirm.bytes)
     }
+    if (LocalCovered.current) return // under the lock cover (review M1)
     AlertDialog(
         onDismissRequest = actions.onCancel,
         title = title?.let { { Text(it) } },

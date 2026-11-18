@@ -25,6 +25,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import app.shoalwatch.security.HouseholdGuard
+import app.shoalwatch.security.HouseholdLockedException
 
 /**
  * Implements [Downloads] over [DownloadStore] and [OfflineLibraryDao] (see "Downloads seam" in docs/ARCHITECTURE.md). Pins are
@@ -42,6 +44,8 @@ class DownloadRepository internal constructor(
     private val paths: DownloadPaths,
     private val scope: CoroutineScope,
     private val io: CoroutineDispatcher = Dispatchers.IO,
+    /** The household check: sharing is a household setting (Milestone 7). */
+    private val household: HouseholdGuard? = null,
     /** The queue's `forget`: a removed download's remembered conversion goes with it. */
     private val removed: (DownloadKey) -> Unit = {},
 ) : Downloads {
@@ -166,7 +170,11 @@ class DownloadRepository internal constructor(
         return guarded(false) { store.observeSharing(serverId) }
     }
 
-    override suspend fun setSharing(s: Session, on: Boolean) = action { store.setSharing(s.serverId, on) }
+    /** @throws HouseholdLockedException (outside [action], so it reaches the screen as itself); nothing is changed. */
+    override suspend fun setSharing(s: Session, on: Boolean) {
+        household?.require()
+        action { store.setSharing(s.serverId, on) }
+    }
 
     /** Mounted card ids, read once per emission (a copy on a card that is out is shown, but not as available). */
     private fun mounted(): Set<String> = try {

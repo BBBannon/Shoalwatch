@@ -86,12 +86,137 @@ class ServersAndHomeViewModelTest {
         assertTrue("a damaged pin is flagged", state.servers[1].certificateChanged)
     }
 
-    @Test fun switchingAccountCallsThroughAndMovesTheMarker() {
+    @Test fun switchingAccountGoesThroughTheSwitcherAndMovesTheMarker() {
         val catalog = catalog()
-        val vm = ServersViewModel(catalog, auth)
+        val switcher = app.shoalwatch.ui.lock.FakeSwitcher(catalog)
+        val vm = ServersViewModel(catalog, auth, switcher = switcher)
         vm.switchTo("s1", "u2")
-        assertEquals(listOf("s1" to "u2"), catalog.activated)
+        assertEquals(listOf(app.shoalwatch.data.servers.Session("s1", "u2")), switcher.switchToCalls)
+        assertTrue("never the catalog's setActive", catalog.activated.isEmpty())
         assertEquals("amy", vm.state.value.servers[0].accounts.single { it.isActive }.userName)
+    }
+
+    // --- Milestone 7: protected profiles and the grown-up check ------------------------------------------------------
+
+    private val amyS = app.shoalwatch.data.servers.Session("s1", "u2")
+    private val catS = app.shoalwatch.data.servers.Session("s2", "u3")
+
+    private fun guarded(catalog: FakeCatalog, household: app.shoalwatch.ui.lock.FakeHousehold, switcher: app.shoalwatch.ui.lock.FakeSwitcher = app.shoalwatch.ui.lock.FakeSwitcher(catalog)) =
+        ServersViewModel(
+            catalog, FakeAuthenticator(catalog), switcher = switcher, household = household,
+            protection = kotlinx.coroutines.flow.MutableStateFlow(setOf(amyS, catS)),
+        )
+
+    @Test fun aProtectedRowIsMarkedAndAsksItsPinBeforeSwitching() {
+        val catalog = catalog()
+        val switcher = app.shoalwatch.ui.lock.FakeSwitcher(catalog).apply { protected += amyS }
+        val vm = guarded(catalog, app.shoalwatch.ui.lock.FakeHousehold(ask = false), switcher)
+        assertTrue(vm.state.value.servers[0].accounts.single { it.userName == "amy" }.isProtected)
+        assertFalse(vm.state.value.servers[0].accounts.single { it.userName == "ben" }.isProtected)
+        vm.switchTo("s1", "u2")
+        assertEquals("amy", vm.switchPrompt.value?.userName)
+        assertEquals("ben", vm.state.value.servers[0].accounts.single { it.isActive }.userName)
+        vm.switchPin.edit { append("4826") }
+        vm.submitSwitch()
+        assertNull(vm.switchPrompt.value)
+        assertEquals("amy", vm.state.value.servers[0].accounts.single { it.isActive }.userName)
+        assertTrue(catalog.activated.isEmpty())
+    }
+
+    @Test fun settingsRemoveServerAndSigningOutAnotherProtectedProfileRunOnlyAfterARightPin() {
+        val catalog = catalog()
+        val household = app.shoalwatch.ui.lock.FakeHousehold(ask = true, grownUps = listOf(amy, other))
+        val vm = guarded(catalog, household)
+        vm.openSettings("s1")
+        assertEquals(listOf(amy, other), vm.grownUpAsk.value?.grownUps)
+        assertNull("several grown-ups: none chosen yet", vm.grownUpAsk.value?.chosen)
+        vm.chooseGrownUp(other)
+        vm.grownUpPin.edit { append("1111") }
+        vm.submitGrownUp()
+        assertNull(vm.state.value.openSettings)
+        vm.grownUpPin.edit { append("4826") }
+        vm.submitGrownUp()
+        assertEquals("s1", vm.state.value.openSettings)
+        vm.settingsOpened()
+
+        vm.askRemoveServer("s1")
+        assertNull("no confirm before the PIN", vm.state.value.confirm)
+        vm.dismissGrownUp()
+        assertNull(vm.state.value.confirm)
+        vm.askRemoveServer("s1")
+        vm.chooseGrownUp(amy)
+        vm.grownUpPin.edit { append("4826") }
+        vm.submitGrownUp()
+        assertTrue(vm.state.value.confirm is Confirm.RemoveServer)
+        vm.dismissConfirm()
+
+        vm.askSignOut("s1", "u2") // amy: protected and not active, so her own PIN
+        val ask = vm.grownUpAsk.value!!
+        assertTrue(ask.signOut)
+        assertEquals(amy, ask.chosen)
+        assertNull(vm.state.value.confirm)
+        vm.grownUpPin.edit { append("4826") }
+        vm.submitGrownUp()
+        assertEquals(amyS, household.confirms.last().first)
+        assertTrue(vm.state.value.confirm is Confirm.SignOut)
+    }
+
+    /** Final review M5: removing a server signs its profiles out, so a protected one that is not active is asked for by its own PIN. */
+    @Test fun removingAServerWithAnotherProtectedProfileAsksThatProfilesOwnPin() {
+        val catalog = catalog()
+        val household = app.shoalwatch.ui.lock.FakeHousehold(ask = true, grownUps = listOf(amy, other))
+        val vm = guarded(catalog, household)
+        vm.askRemoveServer("s2") // cat: protected, on s2 and not active
+        val ask = vm.grownUpAsk.value!!
+        assertTrue(ask.signOut)
+        assertEquals(other, ask.chosen)
+        assertNull(vm.state.value.confirm)
+        vm.grownUpPin.edit { append("4826") }
+        vm.submitGrownUp()
+        assertEquals(catS, household.confirms.last().first)
+        assertTrue(vm.state.value.confirm is Confirm.RemoveServer)
+    }
+
+    @Test fun aServerWithTwoOtherProtectedProfilesIsNotRemovedUntilOneIsSignedOut() {
+        val dan = AccountSummary("s1", "u4", "dan")
+        val catalog = FakeCatalog(servers = listOf(testServer("s1"), testServer("s2")), accounts = listOf(ben, amy, dan, other), active = ben)
+        val household = app.shoalwatch.ui.lock.FakeHousehold(ask = true, grownUps = listOf(amy, dan, other))
+        val vm = ServersViewModel(
+            catalog, FakeAuthenticator(catalog), switcher = app.shoalwatch.ui.lock.FakeSwitcher(catalog), household = household,
+            protection = kotlinx.coroutines.flow.MutableStateFlow(setOf(amyS, app.shoalwatch.data.servers.Session("s1", "u4"), catS)),
+        )
+        vm.askRemoveServer("s1")
+        assertNull("no one PIN can cover both", vm.grownUpAsk.value)
+        assertNull(vm.state.value.confirm)
+        assertTrue(vm.state.value.signOutFirst)
+        vm.askSignOut("s1", "u4") // the way on: sign one out with its own PIN
+        assertFalse(vm.state.value.signOutFirst)
+    }
+
+    @Test fun signingOutTheActiveOrAnUnprotectedProfileAsksNothing() {
+        val catalog = catalog(active = amy)
+        val household = app.shoalwatch.ui.lock.FakeHousehold(ask = true, grownUps = listOf(amy, other))
+        val vm = guarded(catalog, household)
+        vm.askSignOut("s1", "u2") // amy is active
+        assertNull(vm.grownUpAsk.value)
+        assertTrue(vm.state.value.confirm is Confirm.SignOut)
+        vm.dismissConfirm()
+        vm.askSignOut("s1", "u1") // ben is not protected
+        assertNull(vm.grownUpAsk.value)
+        assertTrue(vm.state.value.confirm is Confirm.SignOut)
+    }
+
+    @Test fun aRefusalFromBelowTheScreenSaysAGrownUpIsNeededAndChangesNothing() {
+        val catalog = catalog()
+        val auth = object : app.shoalwatch.data.servers.Authenticator by FakeAuthenticator(catalog) {
+            override suspend fun removeServer(serverId: String): Boolean = throw app.shoalwatch.security.HouseholdLockedException()
+        }
+        val vm = ServersViewModel(catalog, auth, household = app.shoalwatch.ui.lock.FakeHousehold(ask = false))
+        vm.askRemoveServer("s1")
+        vm.confirm()
+        assertTrue(vm.state.value.householdRace)
+        assertNull(vm.state.value.error)
+        assertEquals(listOf("s1", "s2"), vm.state.value.servers.map { it.id })
     }
 
     @Test fun signingOutNeedsConfirmationThenRevokesAndUpdatesTheList() {

@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- App lock and profile protection (Milestone 7). Every lock word lives here, not in strings.xml. -->
+<resources>
+    <!-- PIN (Task 2) -->
+    <string name="pin_label">PIN</string>
+    <plurals name="pin_wrong">
+        <item quantity="one">That PIN isn’t right. 1 try left before a wait.</item>
+        <item quantity="other">That PIN isn’t right. %1$d tries left before a wait.</item>
+    </plurals>
+    <!-- Wrong(0): the wait has already started with this wrong PIN (Task 5, controller decision). -->
+    <string name="pin_wrong_last">That PIN isn’t right. Too many wrong PINs. Try again in %1$s.</string>
+    <string name="pin_wait">Too many wrong PINs. Try again in %1$s.</string>
+    <string name="pin_unreadable">This PIN can’t be checked on this phone any more. Use Forgot PIN.</string>
+    <string name="pin_rules">Use 4 to 12 digits.</string>
+    <!-- The try could not be saved (a full or damaged phone): nothing was checked. -->
+    <string name="pin_not_saved">The PIN wasn’t checked because this phone couldn’t save the try. Your phone may be out of space. Free up some space and try again.</string>
+    <plurals name="wait_minutes">
+        <item quantity="one">1 minute</item>
+        <item quantity="other">%1$s minutes</item>
+    </plurals>
+    <plurals name="wait_seconds">
+        <item quantity="one">1 second</item>
+        <item quantity="other">%1$s seconds</item>
+    </plurals>
+    <string name="wait_minutes_seconds">%1$s %2$s</string>
+
+    <!-- Lock screen (Task 5) -->
+    <string name="lock_app_title">Shoalwatch is locked</string>
+    <string name="lock_app_body">Unlock with your phone’s screen lock.</string>
+    <string name="lock_unlock">Unlock</string>
+    <string name="lock_prompt_title">Unlock Shoalwatch</string>
+    <string name="lock_prompt_subtitle">Use your fingerprint, face or screen lock</string>
+    <string name="lock_unavailable">Your phone’s screen lock can’t be used right now. Try again.</string>
+    <string name="lock_profile_title">%1$s’s profile is protected</string>
+    <string name="lock_profile_body">Enter the PIN for this profile.</string>
+    <string name="lock_other_heading">Use another profile</string>
+    <string name="lock_other_row">%1$s on %2$s</string>
+    <string name="lock_other_row_protected_cd">%1$s on %2$s, protected</string>
+    <string name="lock_protected">Protected</string>
+    <string name="lock_forgot">Forgot PIN?</string>
+    <string name="lock_forgot_body">Sign in to %1$s with its server password. This removes the PIN, and you can set a new one in Settings.</string>
+    <string name="lock_forgot_submit">Sign in and remove PIN</string>
+    <string name="lock_forgot_offline">You’re offline. Connect to %1$s to sign in.</string>
+    <string name="lock_forgot_other_account">That’s a different account.</string>
+    <string name="lock_read_failed">Shoalwatch couldn’t read its saved locks just now. It will try again in a moment.</string>
+    <string name="lock_forgot_wait">That password was not accepted. Try again in %1$s.</string>
+
+    <!-- Switching and the grown-up check (Task 6) -->
+    <string name="switch_pin_title">Switch to %1$s?</string>
+    <string name="switch_pin_body">%1$s’s profile is protected. Enter its PIN.</string>
+    <string name="switch_pin_confirm">Switch</string>
+    <string name="profile_protected_cd">%1$s, protected</string>
+    <string name="grownup_title">A grown-up’s PIN is needed</string>
+    <string name="grownup_body">This setting changes things for everyone on this phone. Choose a protected profile and enter its PIN.</string>
+    <string name="grownup_confirm">Continue</string>
+    <string name="grownup_race">A grown-up’s PIN is needed. Try again.</string>
+    <string name="signout_pin_title">Sign out %1$s?</string>
+    <string name="signout_pin_body">%1$s’s profile is protected. Enter its PIN to sign it out.</string>
+    <string name="remove_server_sign_out_first">More than one profile on this server has its own PIN. Sign each of them out first, with its own PIN, then remove the server.</string>
+
+    <!-- Settings (Task 7) -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_not_saved">That change wasn’t saved. Try again.</string>
+    <string name="settings_open">Settings</string>
+    <string name="settings_playback">Playback</string>
+    <string name="settings_profile">This profile (%1$s)</string>
+    <string name="settings_protect">Protect this profile with a PIN</string>
+    <string name="settings_protect_help">Anyone using this phone will need the PIN to switch to this profile. Use 4 to 12 digits.</string>
+    <string name="settings_pin_choose">Choose a PIN</string>
+    <string name="settings_pin_repeat">Enter the PIN again</string>
+    <string name="settings_pin_mismatch">Those PINs don’t match. Try again.</string>
+    <string name="settings_pin_current">Enter the current PIN</string>
+    <string name="settings_protected">Protected with a PIN</string>
+    <string name="settings_change_pin">Change PIN</string>
+    <string name="settings_remove_pin">Remove PIN</string>
+    <string name="settings_app_lock_heading">App lock</string>
+    <string name="settings_app_lock">Lock Shoalwatch with this phone’s screen lock</string>
+    <string name="settings_app_lock_no_screen_lock">Set a screen lock on this phone first.</string>
+    <string name="settings_lock_after">Lock after</string>
+    <string name="settings_lock_after_help">Also how soon a protected profile asks for its PIN again.</string>
+    <string name="lock_after_immediately">Straight away</string>
+    <string name="lock_after_1">After 1 minute</string>
+    <string name="lock_after_5">After 5 minutes</string>
+    <string name="lock_after_15">After 15 minutes</string>
+    <string name="settings_privacy">Privacy</string>
+    <string name="settings_hide_recents">Hide Shoalwatch in recent apps</string>
+    <string name="settings_hide_recents_forced">Always hidden while the app lock is on or a profile is protected.</string>
+    <string name="settings_hide_recents_old_android">On this phone this also stops screenshots of Shoalwatch.</string>
+    <string name="settings_downloads">Download settings</string>
+</resources>

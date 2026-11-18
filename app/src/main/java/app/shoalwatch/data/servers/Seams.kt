@@ -4,6 +4,7 @@ import app.shoalwatch.core.AppError
 import app.shoalwatch.data.servers.Session
 import app.shoalwatch.net.CertificateInfo
 import app.shoalwatch.net.ServerAddress
+import app.shoalwatch.security.HouseholdGuard
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.StateFlow
@@ -136,7 +137,15 @@ fun interface CertificateProber {
 
 private fun Account.summary() = AccountSummary(serverId, userId, userName)
 
-class StoreCatalog(private val store: ServerStore) : ServerCatalog {
+/**
+ * [setActive] refuses a protected profile ([isProtected]; only `ProfileSwitch` makes one active, after its PIN), and editing a
+ * saved server needs the household check ([household]). The defaults keep tests that need neither unchanged.
+ */
+class StoreCatalog(
+    private val store: ServerStore,
+    private val isProtected: suspend (Session) -> Boolean = { false },
+    private val household: suspend () -> HouseholdGuard? = { null },
+) : ServerCatalog {
     override val servers = store.summaries
     override val activeAccount = store.activeAccount
     override fun activeSession(): Flow<Session?> = store.activeAccount.map { a -> a?.let { Session(it.serverId, it.userId) } }.distinctUntilChanged()
@@ -144,15 +153,30 @@ class StoreCatalog(private val store: ServerStore) : ServerCatalog {
     override fun expiredAccounts(serverId: String) = store.accounts(serverId, expired = true)
     override suspend fun server(id: String) = store.server(id)
     override fun observeServer(id: String) = store.observeServer(id)
-    override suspend fun upsertServer(s: Server) = store.upsertServer(s)
-    override suspend fun setActive(serverId: String, userId: String) = store.setActive(serverId, userId)
+    override suspend fun upsertServer(s: Server) {
+        if (store.server(s.id) != null) household()?.require()
+        store.upsertServer(s)
+    }
+
+    /** @throws ProfileProtectedException for a protected profile; nothing is set. */
+    override suspend fun setActive(serverId: String, userId: String) {
+        if (isProtected(Session(serverId, userId))) throw ProfileProtectedException()
+        store.setActive(serverId, userId)
+    }
     override suspend fun awaitWarmed() = store.awaitWarmed()
     override suspend fun retryWarmIfFailed() = store.retryWarmIfFailed()
     override suspend fun awaitActive() = store.awaitActive()
     override val readFailed = store.readFailed
 }
 
-class AuthenticatorImpl(private val repository: AuthRepository) : Authenticator {
+/**
+ * Removing a server, and signing out a protected profile that is not active, need the household check ([household]); removing a
+ * server also needs the own PIN of each protected profile on it that is not the active one (final review M5).
+ */
+class AuthenticatorImpl(
+    private val repository: AuthRepository,
+    private val household: suspend () -> HouseholdGuard? = { null },
+) : Authenticator {
     override suspend fun findServer(input: String, draft: ServerNetDraft) = repository.findServer(input, draft)
 
     override suspend fun signInRoute(serverId: String) = repository.signInRoute(serverId)
@@ -172,7 +196,15 @@ class AuthenticatorImpl(private val repository: AuthRepository) : Authenticator 
     override suspend fun signInWithPassword(route: SignInRoute, username: String, password: CharArray) =
         repository.signInWithPassword(route, username, password).summary()
 
-    override suspend fun signOut(serverId: String, userId: String) = repository.signOut(serverId, userId)
+    /** @throws app.shoalwatch.security.HouseholdLockedException before anything is sent or removed. */
+    override suspend fun signOut(serverId: String, userId: String): Boolean {
+        household()?.requireSignOut(Session(serverId, userId))
+        return repository.signOut(serverId, userId)
+    }
 
-    override suspend fun removeServer(serverId: String) = repository.removeServer(serverId)
+    /** @throws app.shoalwatch.security.HouseholdLockedException before anything is sent or removed. */
+    override suspend fun removeServer(serverId: String): Boolean {
+        household()?.requireRemoveServer(serverId)
+        return repository.removeServer(serverId)
+    }
 }

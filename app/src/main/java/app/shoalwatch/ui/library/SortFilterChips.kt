@@ -33,6 +33,7 @@ import app.shoalwatch.R
 import app.shoalwatch.data.library.ItemFilter
 import app.shoalwatch.data.library.Sort
 import app.shoalwatch.data.library.SortBy
+import app.shoalwatch.ui.components.LocalCovered
 
 private fun SortBy.label(): Int = when (this) {
     SortBy.NAME -> R.string.sort_name
@@ -71,7 +72,7 @@ fun SortFilterChips(sort: Sort, filter: ItemFilter, onSort: (Sort) -> Unit, onFi
                 label = { Text(current) },
                 trailingIcon = { Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, modifier = Modifier.size(18.dp)) },
             )
-            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            if (!LocalCovered.current) DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
                 SortBy.entries.forEach { by ->
                     MenuChoice(stringResource(by.label()), selected = by == sort.by) {
                         open = false

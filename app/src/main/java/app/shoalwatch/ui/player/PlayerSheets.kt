@@ -35,6 +35,7 @@ import app.shoalwatch.data.playback.SleepState
 import app.shoalwatch.data.playback.SubtitleChoice
 import app.shoalwatch.ui.present.PlayerText
 import app.shoalwatch.ui.present.rememberStrings
+import app.shoalwatch.ui.components.LocalCovered
 
 /**
  * The player's sheets: one open at a time ([PlayerUiState.sheet]). Every sheet scrolls (large text, a phone held sideways), every
@@ -44,6 +45,7 @@ import app.shoalwatch.ui.present.rememberStrings
 @Composable
 internal fun PlayerSheetHost(state: PlayerUiState, actions: PlayerActions, streamLine: String?, hdrLine: String?) {
     val sheet = state.sheet ?: return
+    if (LocalCovered.current) return // under the lock cover (review M1)
     ModalBottomSheet(onDismissRequest = actions.onCloseSheet, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.verticalScroll(rememberScrollState()).navigationBarsPadding().padding(bottom = 16.dp)) {
             when (sheet) {
