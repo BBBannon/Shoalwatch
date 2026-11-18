@@ -28,6 +28,8 @@ import app.shoalwatch.ui.servers.ServersViewModel
 import app.shoalwatch.R
 import app.shoalwatch.security.AuthOutcome
 import app.shoalwatch.ui.findActivity
+import app.shoalwatch.ui.lock.Door
+import app.shoalwatch.ui.lock.GrownUpDialog
 import app.shoalwatch.ui.settings.SettingsActions
 import app.shoalwatch.ui.settings.SettingsScreen
 import app.shoalwatch.ui.settings.SettingsViewModel
@@ -141,9 +143,14 @@ internal fun ServersRoute(graph: AppGraph, nav: NavHostController) {
 @Composable
 internal fun ServerEditRoute(graph: AppGraph, nav: NavHostController, serverId: String) {
     val vm = graphViewModel(key = serverId) {
-        ServerEditViewModel(serverId, graph.serverCatalog, graph.authenticator, graph.certificateProber, graph.addressSelector)
+        ServerEditViewModel(
+            serverId, graph.serverCatalog, graph.authenticator, graph.certificateProber, graph.addressSelector,
+            household = graph.lockParts.householdGuard,
+        )
     }
     val state by vm.state.collectAsStateWithLifecycle()
+    val door by vm.door.state.collectAsStateWithLifecycle()
+    LaunchedEffect(door) { if (door == Door.Shut) nav.popBackStack() }
     val chooser = rememberClientCertChooser()
     val scope = rememberCoroutineScope()
     LaunchedEffect(state.missing) { if (state.missing) nav.popBackStack() }
@@ -179,6 +186,10 @@ internal fun ServerEditRoute(graph: AppGraph, nav: NavHostController, serverId: 
         )
     }
     ServerEditScreen(state, actions)
+    vm.door.grownUp?.let { flow ->
+        val ask by flow.ask.collectAsStateWithLifecycle()
+        ask?.let { GrownUpDialog(it, flow.pin, flow::choose, flow::submit, vm.door::dismiss) }
+    }
 }
 
 /**

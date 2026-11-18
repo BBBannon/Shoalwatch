@@ -30,6 +30,9 @@ interface Household {
 
     /** Zeroes [pin]. Correct ⇒ household changes are allowed for 60 s, or until the active profile changes or the app locks. */
     suspend fun confirm(grownUp: Session, pin: CharArray): PinCheck
+
+    /** True while household changes are allowed now (no protected profile, the active one is protected and open, or a live pass). */
+    suspend fun allows(): Boolean
 }
 
 class HouseholdLockedException : IllegalStateException("A protected profile's PIN is needed.")
@@ -99,7 +102,7 @@ class HouseholdGuard(
         pin.fill('\u0000')
     }
 
-    suspend fun allows(): Boolean {
+    override suspend fun allows(): Boolean {
         val protected = locks.protectedProfiles.first()
         if (protected.isEmpty()) return true
         val active = active()
