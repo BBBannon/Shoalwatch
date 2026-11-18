@@ -33,7 +33,7 @@ class PlaystateLandingTest : PlaystateTestBase() {
     }
 
     /**
-     * Round 3 (Ben: "marking things as watched doesn't take effect till I reload"): Home, collected all along as its ViewModel does,
+     * Round 3 (a tester reported "marking things as watched doesn't take effect till I reload"): Home, collected all along as its ViewModel does,
      * shows the server's own Continue Watching and Next Up once the change has reached the server, offline or not; not before.
      */
     @Test fun homeCollectedAllAlongShowsTheServersListsOnceAWatchedMarkIsDeliveredEvenAfterBeingOffline() = runBlocking {

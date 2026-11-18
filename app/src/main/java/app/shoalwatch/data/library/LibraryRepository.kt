@@ -281,7 +281,7 @@ class LibraryRepository(
     override suspend fun markHomeDue(s: Session) = withContext(io) {
         localFailuresAsAppError {
             val keys = homeRecipes(s).map { it.key }
-            writeGate.withLock { lists.expire(s.serverId, s.userId, keys) }
+            writeGate.withLock { lists.expire(s.serverId, s.userId, keys, clock(), HOME_WINDOW.toMillis()) }
         }
     }
 

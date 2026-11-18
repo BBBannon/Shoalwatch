@@ -111,6 +111,19 @@ class LibraryRepositoryHomeTest : LibraryRepositoryTestBase() {
         settle()
     }
 
+    /** Round 5 (re-review I1): "due" is just past the window, never so old that eviction deletes Home's saved rows. */
+    @Test fun markingHomeDueNeverLetsEvictionDeleteHomesRows() = runBlocking {
+        seedResume("a")
+        homeLoaded()
+        gateway.failAll = AppError.Kind.OFFLINE // the refresh after the scan fails, or Home is not reopened
+        repo.markHomeDue(s1u1)
+        library.evict(java.time.Instant.ofEpochMilli(now))
+        assertTrue("Home's list state is still there", db.listDao().getState(s1u1.serverId, s1u1.userId, ListKey.RESUME) != null)
+        val state = db.listDao().getState(s1u1.serverId, s1u1.userId, ListKey.RESUME)!!
+        assertTrue("and it counts as due", now - state.refreshedAt >= Duration.ofMinutes(2).toMillis())
+        assertTrue("but only just", now - state.refreshedAt < Duration.ofMinutes(3).toMillis())
+    }
+
     @Test fun limitsAreTwentyFourTwentyFourAndSixteenPerLibrary() {
         gateway.viewsFor = { listOf(view("m"), view("t", LibraryKind.TV)) }
         repo.home(s1u1).await { it.latest.size == 2 && it.latest.all { (_, row) -> row.freshness == Freshness.Fresh } && it.resume.freshness == Freshness.Fresh && it.nextUp.freshness == Freshness.Fresh }
