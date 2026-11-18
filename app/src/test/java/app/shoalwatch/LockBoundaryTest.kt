@@ -37,6 +37,13 @@ class LockBoundaryTest {
         }
     }
 
+    /** Final review nit: the lock screen's own PIN field, "Use another profile" and "Forgot PIN?" ignore touches under another app's window, as the PIN dialogs do. */
+    @Test fun theLockScreenIsBehindTheObscuredTouchFilter() {
+        val text = File(root, "ui/lock/LockScreen.kt").readText().substringAfter("internal fun LockScreen(").substringBefore("state.choosing?.let")
+        assertTrue("FilterObscuredTouches() in LockScreen", text.contains("FilterObscuredTouches()"))
+        assertTrue("its hint is shown", text.contains("ObscuredTouchHint("))
+    }
+
     @Test fun aPinIsClearedOnlyWithTheProofOfAPasswordSignIn() {
         assertEquals(listOf("LockParts.kt"), filesCalling(Regex("""\.clear\(\s*it\s*\)|[Ll]ocks\.clear\(""")))
         assertEquals("the proof is made only by the lock screen", listOf("ui/lock/LockViewModel.kt"), filesCalling(Regex("""ClearProof\.afterPasswordSignIn\(""")))

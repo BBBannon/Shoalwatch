@@ -42,7 +42,9 @@ import androidx.compose.ui.unit.dp
 import app.shoalwatch.R
 import app.shoalwatch.security.LockState
 import app.shoalwatch.ui.components.ErrorMessage
+import app.shoalwatch.ui.components.FilterObscuredTouches
 import app.shoalwatch.ui.components.NoAutofill
+import app.shoalwatch.ui.components.ObscuredTouchHint
 import app.shoalwatch.ui.components.PrimaryButton
 
 class LockActions(
@@ -90,6 +92,8 @@ internal fun LockScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Icon(Icons.Filled.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(48.dp))
+                // As the PIN dialogs: the PIN field and the buttons ignore touches made through another app's window (tapjacking).
+                ObscuredTouchHint(FilterObscuredTouches())
                 if (state.readFailed) ErrorMessage(stringResource(R.string.lock_read_failed))
                 when (val lock = state.lock) {
                     LockState.App -> AppLock(actions, unavailable)
