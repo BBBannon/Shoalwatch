@@ -12,6 +12,7 @@ import app.shoalwatch.data.admin.DashboardOpener
 import app.shoalwatch.data.admin.DashboardResult
 import app.shoalwatch.data.admin.RemoteCommand
 import app.shoalwatch.data.admin.ServerStatus
+import app.shoalwatch.data.admin.ServerTask
 import app.shoalwatch.data.admin.WatchSession
 import app.shoalwatch.data.servers.ServerCatalog
 import app.shoalwatch.data.servers.ServerConnections
@@ -65,12 +66,16 @@ data class DashboardUiState(
     val idle: List<WatchSession> = emptyList(),
     val confirm: SessionConfirm? = null,
     val message: MessageTarget? = null,
+    /** The full scan's task, for "Scan all libraries" at the top ([ScanAll], as on the Libraries screen). */
+    val fullScan: ServerTask? = null,
 ) {
+    val canScanAll: Boolean get() = canScanAll(frame, fullScan)
+
     override fun toString() = "DashboardUiState(<redacted>)"
 }
 
 /**
- * The Server admin dashboard: the server card, who is watching (reloaded every [SESSIONS_POLL_MS] while on screen), Message,
+ * The Server admin dashboard: "Scan all libraries" first ([ScanAll], the Libraries screen's own rule), the server card, who is watching (reloaded every [SESSIONS_POLL_MS] while on screen), Message,
  * Pause and Stop for someone else's session after confirmation, and the links to every admin screen.
  */
 class DashboardViewModel(
@@ -85,6 +90,7 @@ class DashboardViewModel(
     private val sessions = MutableStateFlow<List<WatchSession>>(emptyList())
     private val confirmState = MutableStateFlow<SessionConfirm?>(null)
     private val messageState = MutableStateFlow<MessageTarget?>(null)
+    private val scanAll = ScanAll(admin)
     /** The signed-in account, for the message header ("Message from ben"); used only while it is the gate's session. */
     private val me = catalog.activeAccount.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
@@ -94,24 +100,34 @@ class DashboardViewModel(
     private val poll = poller { session ->
         val server = admin.serverStatus(session)
         val list = admin.sessions(session)
+        val scan = scanAll.read(session)
         // An answer that lands after the gate closed is dropped, not kept in memory.
         if (guard.gate.value is AdminGate.Open) {
             status.value = server
             sessions.value = list
+            scanAll.keep(scan)
         }
         SESSIONS_POLL_MS
     }
 
-    val state: StateFlow<DashboardUiState> = combine(frames, status, sessions, confirmState, messageState) { frame, status, list, confirm, message ->
+    private val dialogs = combine(confirmState, messageState) { confirm, message -> confirm to message }
+
+    val state: StateFlow<DashboardUiState> = combine(frames, status, sessions, dialogs, scanAll.fullScan) { frame, status, list, (confirm, message), scan ->
         if (frame.gate == AdminGate.Closed) {
             DashboardUiState(frame = frame)
         } else {
             val (playing, idle) = list.partition { it.nowPlaying != null }
-            DashboardUiState(frame, status, playing, idle, confirm, message)
+            DashboardUiState(frame, status, playing, idle, confirm, message, scan)
         }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, DashboardUiState())
 
     fun refresh() = poll.kick()
+
+    /** "Scan all libraries": the same request, rule and notice as the Libraries screen's ([ScanAll]). */
+    fun scanAll() = scanAll.start(frames.value, work) {
+        notify(ScanAll.STARTED)
+        poll.kick()
+    }
 
     /**
      * Only [context]'s application is kept, for this call: the job can wait for the address, and must not hold the screen's
@@ -209,6 +225,7 @@ class DashboardViewModel(
     override fun dropLoaded() {
         status.value = null
         sessions.value = emptyList()
+        scanAll.drop()
         confirmState.value = null
         messageState.value = null
         messageText.clearText()

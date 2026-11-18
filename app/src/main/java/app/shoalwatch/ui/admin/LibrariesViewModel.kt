@@ -2,17 +2,13 @@ package app.shoalwatch.ui.admin
 
 import androidx.lifecycle.viewModelScope
 import app.shoalwatch.R
-import app.shoalwatch.core.AppError
 import app.shoalwatch.data.admin.Admin
 import app.shoalwatch.data.admin.AdminRights
-import app.shoalwatch.data.admin.FULL_SCAN_TASK_KEY
 import app.shoalwatch.data.admin.LibraryFolder
 import app.shoalwatch.data.admin.ServerTask
 import app.shoalwatch.data.admin.TaskState
 import app.shoalwatch.data.servers.ServerCatalog
 import app.shoalwatch.data.servers.ServerConnections
-import app.shoalwatch.data.servers.Session
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -31,8 +27,8 @@ data class LibrariesUiState(
 ) {
     val anyScanning: Boolean get() = fullScan?.state == TaskState.RUNNING || libraries.any { it.scanning }
 
-    /** "Scan all libraries" is on unless the full scan is already running (and only when the screen can act). */
-    val canScanAll: Boolean get() = frame.canAct && fullScan?.state != TaskState.RUNNING
+    /** "Scan all libraries" is on unless the full scan is already running (and only when the screen can act): [ScanAll]'s rule. */
+    val canScanAll: Boolean get() = canScanAll(frame, fullScan)
 
     /** A library's Scan is on unless that library is already scanning. */
     fun canScan(library: LibraryFolder): Boolean = frame.canAct && !library.scanning
@@ -52,30 +48,27 @@ class LibrariesViewModel(
     clock: () -> Instant = Instant::now,
 ) : AdminScreenModel(catalog, rights, connections, clock) {
     private val libraries = MutableStateFlow<List<LibraryFolder>>(emptyList())
-    private val fullScan = MutableStateFlow<ServerTask?>(null)
+    private val scanAll = ScanAll(admin)
 
     private val poll = poller { session ->
         val folders = admin.libraries(session)
-        val scan = fullScanTask(session)
+        val scan = scanAll.read(session)
         if (guard.gate.value is AdminGate.Open) {
             libraries.value = folders
-            fullScan.value = scan
+            scanAll.keep(scan)
         }
         if (LibrariesUiState(libraries = folders, fullScan = scan).anyScanning) SCAN_POLL_MS else null
     }
 
-    val state: StateFlow<LibrariesUiState> = combine(frames, libraries, fullScan) { frame, libraries, fullScan ->
+    val state: StateFlow<LibrariesUiState> = combine(frames, libraries, scanAll.fullScan) { frame, libraries, fullScan ->
         if (frame.gate == AdminGate.Closed) LibrariesUiState(frame = frame) else LibrariesUiState(frame, libraries, fullScan)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, LibrariesUiState())
 
     fun refresh() = poll.kick()
 
-    fun scanAll() {
-        if (!state.value.canScanAll) return
-        work.run("scan:all", { s -> admin.scanAll(s) }) {
-            notify(AdminNotice(R.string.admin_scan_started_all))
-            poll.kick()
-        }
+    fun scanAll() = scanAll.start(frames.value, work) {
+        notify(ScanAll.STARTED)
+        poll.kick()
     }
 
     fun scanLibrary(libraryId: String) {
@@ -89,19 +82,6 @@ class LibrariesViewModel(
 
     override fun dropLoaded() {
         libraries.value = emptyList()
-        fullScan.value = null
-    }
-
-    /**
-     * The full scan's task, or null: the tasks part failing is not a load problem (the scan screen works without it), unless the
-     * failure ends the sign-in, which must still close the gate.
-     */
-    private suspend fun fullScanTask(session: Session): ServerTask? = try {
-        admin.tasks(session).firstOrNull { it.key == FULL_SCAN_TASK_KEY }
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: AppError) {
-        if (e.kind == AppError.Kind.UNAUTHORISED || e.kind == AppError.Kind.NOT_SIGNED_IN) throw e
-        null
+        scanAll.drop()
     }
 }

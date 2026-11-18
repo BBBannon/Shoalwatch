@@ -31,6 +31,8 @@ class DashboardActions(
     /** Opens one of the other [AdminRoutes]. */
     val onOpen: (route: String) -> Unit,
     val onOpenDashboard: () -> Unit,
+    /** "Scan all libraries" (first on the screen: it is what admins do most). */
+    val onScanAll: () -> Unit = {},
     val onDismissProblem: () -> Unit = {},
     val onDismissNotice: () -> Unit = {},
     val onMessage: (sessionId: String) -> Unit = {},
@@ -54,7 +56,7 @@ private val Sections = listOf(
 )
 
 /**
- * The Server admin dashboard: the server card (name, version, "Restart needed", shutting down), who is watching (with Message,
+ * The Server admin dashboard: "Scan all libraries" (with the full scan's progress while it runs), the server card (name, version, "Restart needed", shutting down), who is watching (with Message,
  * Pause and Stop), the "Manage" links to every admin screen, and the browser dashboard for everything else. [messageText] is the
  * ViewModel's message being written (never saved).
  */
@@ -65,6 +67,7 @@ fun DashboardScreen(state: DashboardUiState, actions: DashboardActions, messageT
     AdminScaffold(
         stringResource(R.string.admin_title), state.frame, actions.onBack, actions.onRefresh, actions.onDismissProblem, actions.onDismissNotice,
     ) {
+        scanAllItems(state.fullScan, state.canScanAll, actions.onScanAll)
         state.status?.let { status -> item(key = "server") { ServerCard(status) { actions.onOpen(AdminRoutes.POWER) } } }
         watching(state, actions, text, now)
         item(key = "manage") { SectionHeading(stringResource(R.string.admin_manage_heading)) }
