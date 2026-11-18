@@ -57,6 +57,19 @@ class AddServerViewModelTest {
         assertTrue(catalog.upserts.isEmpty())
     }
 
+    /** Round 4 (1.1.0): an address pasted from the browser is checked, shown and saved as just the server part. */
+    @Test fun anAddressPastedFromTheBrowserIsShownAndSavedAsTheServerPartOnly() {
+        auth.onFind = { text, _ -> serverInfo(text) }
+        val vm = vm()
+        vm.type("http://192.168.1.10:8096/web/#/home")
+        assertEquals(AddServerStage.Found, vm.state.value.stage)
+        assertEquals("the cleaned address is what the screen shows", "http://192.168.1.10:8096", vm.state.value.address)
+        assertTrue("it is a home address", vm.state.value.found!!.firstIsHome)
+        vm.confirmFound()
+        vm.skipSecondAddress()
+        assertEquals(address("http://192.168.1.10:8096"), catalog.upserts.single().homeAddress)
+    }
+
     @Test fun allowingHttpRechecksWithCleartextAndSavesOnlyAfterTheUserFinishes() {
         auth.onFind = blockHttp
         val vm = vm()
