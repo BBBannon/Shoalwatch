@@ -382,7 +382,7 @@ class ServerStore(
     }
 
     private fun parseOrNull(value: String): ServerAddress? = try {
-        ServerAddress.parse(value)
+        ServerAddress.parse(value, browserCopy = false) // exactly as saved: never cleaned again (round 5, re-review M4)
     } catch (_: AppError) {
         null
     }

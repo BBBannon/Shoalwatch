@@ -33,12 +33,16 @@ class ServerAddress private constructor(url: HttpUrl, val value: String) {
             return "$host:${url.port}"
         }
 
-        /** @throws AppError (`SERVER_NOT_FOUND`) if [input] is not a usable http(s) server address. */
-        fun parse(input: String): ServerAddress {
+        /**
+         * @throws AppError (`SERVER_NOT_FOUND`) if [input] is not a usable http(s) server address. [browserCopy] false (a saved
+         * address read back) applies the rules before round 4: no fragment or query, and every path segment kept as saved.
+         */
+        fun parse(input: String, browserCopy: Boolean = true): ServerAddress {
             val typed = input.trim()
             if (typed.isEmpty() || typed.any { it.isWhitespace() || it.isISOControl() }) throw invalid()
             // Round 4: an address copied from the browser ("…/web/#/home"). A fragment or query is never part of the server's
             // address (and never sent): everything from the first '#' or '?' goes, so the host is what was typed before it.
+            if (!browserCopy && ('#' in typed || '?' in typed)) throw invalid()
             val text = typed.substringBefore('#').substringBefore('?')
             if (text.isEmpty()) throw invalid()
 
@@ -54,7 +58,8 @@ class ServerAddress private constructor(url: HttpUrl, val value: String) {
             if ('@' in withScheme.substringAfter("://").substringBefore('/')) throw invalid()
 
             val builder = HttpUrl.Builder().scheme(parsed.scheme).host(parsed.host).port(parsed.port)
-            withoutWebClient(parsed.pathSegments.filter { it.isNotEmpty() }).forEach { builder.addPathSegment(it) }
+            val segments = parsed.pathSegments.filter { it.isNotEmpty() }
+            (if (browserCopy) withoutWebClient(segments) else segments).forEach { builder.addPathSegment(it) }
             val clean = builder.build()
             return ServerAddress(clean, clean.toString().trimEnd('/'))
         }

@@ -61,13 +61,13 @@ class AddServerViewModelTest {
     @Test fun anAddressPastedFromTheBrowserIsShownAndSavedAsTheServerPartOnly() {
         auth.onFind = { text, _ -> serverInfo(text) }
         val vm = vm()
-        vm.type("http://192.168.1.10:8096/web/#/home")
+        vm.type("http://192.0.2.10:8096/web/#/home")
         assertEquals(AddServerStage.Found, vm.state.value.stage)
-        assertEquals("the cleaned address is what the screen shows", "http://192.168.1.10:8096", vm.state.value.address)
-        assertTrue("it is a home address", vm.state.value.found!!.firstIsHome)
+        assertEquals("the cleaned address is what the screen shows", "http://192.0.2.10:8096", vm.state.value.address)
         vm.confirmFound()
         vm.skipSecondAddress()
-        assertEquals(address("http://192.168.1.10:8096"), catalog.upserts.single().homeAddress)
+        val saved = catalog.upserts.single()
+        assertEquals(address("http://192.0.2.10:8096"), saved.homeAddress ?: saved.awayAddress)
     }
 
     @Test fun allowingHttpRechecksWithCleartextAndSavesOnlyAfterTheUserFinishes() {

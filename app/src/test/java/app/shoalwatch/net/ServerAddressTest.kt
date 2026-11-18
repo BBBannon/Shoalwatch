@@ -50,8 +50,8 @@ class ServerAddressTest {
     /** Round 4 (1.1.0): an address copied from Jellyfin's web page is accepted; only the server part is kept. */
     @Test fun `an address copied from the browser keeps only the server part`() {
         val cases = mapOf(
-            "http://192.168.1.10:8096/web/#/home" to "http://192.168.1.10:8096",
-            "http://192.168.1.10:8096/web/index.html#!/home.html" to "http://192.168.1.10:8096",
+            "http://192.0.2.10:8096/web/#/home" to "http://192.0.2.10:8096",
+            "http://192.0.2.10:8096/web/index.html#!/home.html" to "http://192.0.2.10:8096",
             "https://example.org/jellyfin/web/index.html#!/home" to "https://example.org/jellyfin",
             "https://example.org/jellyfin/WEB/#/details?id=abc" to "https://example.org/jellyfin",
             "jellyfin.example.org/web/" to "https://jellyfin.example.org",
@@ -65,13 +65,22 @@ class ServerAddressTest {
         for ((input, expected) in cases) assertEquals(input, expected, ServerAddress.parse(input).value)
     }
 
+    /** Round 5 (re-review M4): a saved address is read back exactly as it was saved, never cleaned again (a base path of /web stays). */
+    @Test fun `a stored address is read back without the browser cleaning`() {
+        assertEquals("https://example.org/web", ServerAddress.parse("https://example.org/web", browserCopy = false).value)
+        assertEquals("https://example.org", ServerAddress.parse("https://example.org/web").value)
+        for (bad in listOf("https://host/#frag", "https://host?x")) {
+            try { ServerAddress.parse(bad, browserCopy = false); fail("accepted") } catch (e: AppError) { assertEquals(AppError.Kind.SERVER_NOT_FOUND, e.kind) }
+        }
+    }
+
     /** Round 4: the host is always what was typed before the `#` or `?`, never something after it that looks like a host. */
     @Test fun `a fragment or query can never change the host`() {
-        val a = ServerAddress.parse("http://evil.example#@192.168.1.10")
+        val a = ServerAddress.parse("http://evil.example#@192.0.2.10")
         assertEquals("evil.example", a.host)
-        val b = ServerAddress.parse("http://192.168.1.10?x@evil.example")
-        assertEquals("192.168.1.10", b.host)
-        assertEquals("192.168.1.10:80", b.authority)
+        val b = ServerAddress.parse("http://192.0.2.10?x@evil.example")
+        assertEquals("192.0.2.10", b.host)
+        assertEquals("192.0.2.10:80", b.authority)
         val c = ServerAddress.parse("https://example.org#@evil.example/web")
         assertEquals("example.org", c.host)
         assertEquals("https://example.org", c.value)
