@@ -1,3 +1,4 @@
+v1.150 — 18/11/2026 — Milestone 7 finished: protect a profile with a PIN so children can't switch into it or change shared download settings; an optional app lock with your phone's fingerprint or screen lock; keep watching in a small window when you leave the app; series and films in two panes on a tablet; and a setting to stop the next episode playing by itself
 v1.149 — 18/11/2026 — Behind the scenes: the app's automatic checks now have enough memory to run all the way through
 v1.148 — 18/11/2026 — Removing a server now needs the PIN of the protected profile on it, as signing that profile out does; if more than one profile on it has a PIN, sign them out first
 v1.147 — 17/11/2026 — The lock screen is now readable in the dark theme
