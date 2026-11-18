@@ -1,3 +1,4 @@
+v1.168 — 18/11/2026 — Milestone 8 finished: a full security-team review before the first release, with every serious finding fixed (including "Forgot PIN" with an empty password and the grown-up check on connection settings); "Watched together" now needs a protected profile's PIN; a README; and the first signed release, version 1.0
 v1.167 — 18/11/2026 — When a profile or server is removed, the app now always overwrites its deleted information in its own database file
 v1.166 — 18/11/2026 — Saved custom header values can now only be read after the household check, and they are no longer sent to a new server address before it is confirmed to be yours
 v1.165 — 18/11/2026 — The “Watched together” PIN box now uses plain words when a profile’s name can’t be read, and says so when a PIN couldn’t be checked
