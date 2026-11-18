@@ -1,3 +1,4 @@
+v1.175 — 18/11/2026 — The detailed security-team report now stays on this PC and is not published with the code
 v1.174 — 18/11/2026 — Tidied the project for publishing on GitHub: more private files kept out, and no local folder paths in the security notes
 v1.173 — 18/11/2026 — Quick Connect sign-in confirmed working on a real phone with version 1.0.1; notes written for picking up the rest of the phone test
 v1.172 — 18/11/2026 — Version 1.0.1: the fixes from the first test on a real phone (signing in to a web address, Lock after while watching, Scan all libraries at the top of Server admin)

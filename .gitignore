@@ -39,3 +39,6 @@ __pycache__/
 *.hprof
 hs_err_pid*.log
 replay_pid*.log
+
+# Security-team report: kept on this PC only (Ben, 18/11/2026)
+docs/security/security-team-report-*.md
