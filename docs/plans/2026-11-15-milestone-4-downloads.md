@@ -31,7 +31,7 @@
   - The subtitle route is `GET /Videos/{routeItemId}/{routeMediaSourceId}/Subtitles/{routeIndex}/Stream.{routeFormat}`.
   - `GET /MediaSegments/{itemId}` and `GET /Items/{itemId}/Images/{imageType}` are as Milestones 2–3 use them.
   - **The reference documents no HLS route** (`master.m3u8`, `main.m3u8` and the segment paths are absent) and **no `ActiveEncodings` route**. As in Milestone 3, the app never builds an HLS path and never asks the server to stop a conversion: it fetches only what `TranscodingUrl` and the playlists name, after validation. Decode with `ignoreUnknownKeys`; every field is optional unless the reference marks it required.
-- Package root `app.shoalwatch`; `minSdk 29`, `compileSdk`/`targetSdk 35`. Build with `JAVA_HOME=C:\Users\Ben\Android\jdk17\jdk-17.0.20.1+1`.
+- Package root `app.shoalwatch`; `minSdk 29`, `compileSdk`/`targetSdk 35`. Build with `JAVA_HOME=/path/to/jdk-17`.
   - Verify with `./gradlew.bat clean testDebugUnitTest assembleDebug assembleDebugAndroidTest assembleRelease`.
   - Gradle dependency verification is ON. After the WorkManager dependency is added, run `./gradlew.bat --write-verification-metadata sha256 help testDebugUnitTest assembleDebug assembleDebugAndroidTest assembleRelease`.
   - Review the diff: only `androidx.work` and its declared transitive dependencies may appear (`androidx.startup:startup-runtime` 1.1.1, `androidx.room` 2.7.0 POMs resolved up to the build's 2.8.5, `kotlin-stdlib` 2.1.20 POMs). Commit it.

@@ -57,3 +57,7 @@ replay_pid*.log
 
 # Security-team report: kept on this PC only (Ben, 18/11/2026)
 docs/security/security-team-report-*.md
+
+# Public-safety check: private word list and the check script stay on this PC
+.public-scan-patterns
+tools/check_public.sh

@@ -27,7 +27,7 @@
   - `GET /Items/{itemId}` and `GET /UserViews` are as Milestone 2 uses them (here only to tell "item gone" from "route answers 404").
   - `POST /Sessions/Playing`, `/Progress`, `/Stopped` are unchanged and are **never replayed** by the outbox.
   - **The reference has no "server time" endpoint**, so phone-to-server clock skew cannot be measured; the conflict rule leans to the server inside a two-minute margin (Decisions).
-- Package root `app.shoalwatch`; `minSdk 29`, `compileSdk`/`targetSdk 35`. Build with `JAVA_HOME=C:\Users\Ben\Android\jdk17\jdk-17.0.20.1+1`.
+- Package root `app.shoalwatch`; `minSdk 29`, `compileSdk`/`targetSdk 35`. Build with `JAVA_HOME=/path/to/jdk-17`.
   - Verify with `./gradlew.bat clean testDebugUnitTest assembleDebug assembleDebugAndroidTest assembleRelease`.
   - No dependency is added, so `gradle/verification-metadata.xml` must not change. If it does, stop and find out why.
 - **Security rules that bind every task** (all Milestone 3 and 4 rules still hold):

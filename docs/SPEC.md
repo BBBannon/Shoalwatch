@@ -15,7 +15,7 @@ A native Android client for Jellyfin (films and TV) whose offline library behave
 | Audience | Ben first; built public-ready (GPL-3.0). Repo stays private until Ben says otherwise |
 | Platform | Android phone and tablet only. `minSdk 29`, `compileSdk`/`targetSdk 35` (the only platform installed) |
 | Stack | Kotlin, Jetpack Compose (Material 3), Media3 ExoPlayer, Jellyfin Kotlin SDK, OkHttp, Room, WorkManager, DataStore, Coil. Versions start from AAFin's proven catalogue |
-| Build | Gradle 8.11.1, JDK 17 at `C:\Users\Ben\Android\jdk17`, SDK at `C:\Users\Ben\Android\sdk` |
+| Build | Gradle 8.11.1, JDK 17 at `/path/to/jdk-17`, SDK at `/path/to/android-sdk` |
 | Structure | One `:app` module, strict package boundaries (§5). No DI framework: one `AppGraph` of lazy singletons, as in AAFin |
 | Reuse | Port AAFin's tested pieces (server URL handling, Quick Connect, error model, device profile, playback resolver, progress reporter) by copying and adapting. No shared library between the two apps |
 | Identity | `applicationId` and namespace `app.shoalwatch`. App name **Shoalwatch** (sits alongside Shoalcade) |

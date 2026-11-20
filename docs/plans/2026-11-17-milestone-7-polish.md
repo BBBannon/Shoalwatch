@@ -18,7 +18,7 @@
   - The Milestone 3 plan's "Decisions" (activity-scoped `MediaSession`, no media service, pause when the app is left) and the Milestone 5 plan's Task 12 (the watch-and-delete prompt beside Up next).
   - `TODO.md`: "Protect a profile so a child cannot switch into it", "Add a setting to turn off playing the next episode by itself", the Milestone 7 item, and the Milestone 4 "Ben to confirm" (4): sharing behind the app lock.
 - **Base:** `main` after Milestone 5 merges (code today: the `milestone-5` branch). Every file and class named below exists there unless the task says Create.
-- Package root `app.shoalwatch`; `minSdk 29`, `compileSdk`/`targetSdk 35`. Build with `JAVA_HOME=C:\Users\Ben\Android\jdk17\jdk-17.0.20.1+1`.
+- Package root `app.shoalwatch`; `minSdk 29`, `compileSdk`/`targetSdk 35`. Build with `JAVA_HOME=/path/to/jdk-17`.
   - **Tasks 1–10** verify with `./gradlew.bat clean testDebugUnitTest assembleDebug assembleDebugAndroidTest assembleRelease`; `gradle/verification-metadata.xml` must not change in them (if it does, stop and find out why).
   - **From Task 11** (flavours exist) the gate is `./gradlew.bat clean testStandardDebugUnitTest testCastDebugUnitTest assembleStandardDebug assembleStandardDebugAndroidTest assembleStandardRelease assembleCastDebug assembleCastRelease verifyStandardHasNoPlayServices verifyManifestRuleFixtures`.
 - **Security rules that bind every task** (all Milestone 1–6 rules still hold):

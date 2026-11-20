@@ -12,9 +12,9 @@
 
 - **Read `docs/SPEC.md` first.** Security table S1–S13 applies to every task.
 - `applicationId`/namespace `app.offlinefin`; `minSdk 29`; `compileSdk 35`; `targetSdk 35`. **Do not install SDK platforms or other machine-level packages.**
-- Build with `JAVA_HOME=C:\Users\Ben\Android\jdk17\jdk-17.0.20.1+1`; SDK at `C:\Users\Ben\Android\sdk` (written to `local.properties`, which is git-ignored).
+- Build with `JAVA_HOME=/path/to/jdk-17`; SDK at `/path/to/android-sdk` (written to `local.properties`, which is git-ignored).
 - Start the version catalogue from `..\AAFin\gradle\libs.versions.toml`. Any **new** library version must be checked against Maven metadata for `minCompileSdk <= 35` and Kotlin 2.2.21 compatibility before use; record the check in `docs/ARCHITECTURE.md`.
-- AAFin (`C:\Users\Ben\Documents\benmarksresources\AAFin`, GPL-3.0, same owner) is the reference for ported code. **Read-only: never modify AAFin.**
+- AAFin ([github.com/BBBannon/AAFin](https://github.com/BBBannon/AAFin), GPL-3.0, same owner) is the reference for ported code. **Read-only: never modify AAFin.**
 - **Never** log, print, or put in an exception message: a token, a custom header value, or a URL. User-facing text is UK English.
 - Only `net/HttpClientFactory` may construct an `OkHttpClient`. If the Jellyfin SDK cannot be given our client, call the needed endpoints directly with OkHttp + kotlinx.serialization and use the SDK only for its model types (decide in Task 6, record why).
 - TDD: failing test first, then code. Unit tests: `./gradlew.bat testDebugUnitTest`. Commit after each task with a conventional message ending in the `Co-Authored-By` line from the session.

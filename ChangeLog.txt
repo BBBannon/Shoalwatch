@@ -1,3 +1,4 @@
+v1.192 — 20/11/2026 — Removed this PC’s folder locations from the build notes, and a privacy check now runs automatically before anything is uploaded to GitHub
 v1.191 — 20/11/2026 — The project page now opens with a Shoalwatch logo banner (the three-fish app icon and name), like Shoalcade’s
 v1.190 — 20/11/2026 — The project page now explains in plain words why Shoalwatch is worth using, and points to the sister project Shoalcade; extra safety so private files never get uploaded
 v1.189 — 18/11/2026 — A server address saved before this version is always kept exactly as it was
