@@ -1,3 +1,5 @@
+v1.194 — 20/11/2026 — Planned the six next stages that let Shoalwatch fully replace the Jellyfin app, from editing your library to music, Live TV and casting
+v1.193 — 20/11/2026 — The to-do list now starts with the features still needed before Shoalwatch can fully replace the Jellyfin app
 v1.192 — 20/11/2026 — Removed this PC’s folder locations from the build notes, and a privacy check now runs automatically before anything is uploaded to GitHub
 v1.191 — 20/11/2026 — The project page now opens with a Shoalwatch logo banner (the three-fish app icon and name), like Shoalcade’s
 v1.190 — 20/11/2026 — The project page now explains in plain words why Shoalwatch is worth using, and points to the sister project Shoalcade; extra safety so private files never get uploaded
