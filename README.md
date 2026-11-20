@@ -4,6 +4,26 @@
 
 Download whole seasons before a trip and browse them by series → season → episode, with artwork, details and watched state, with no connection.
 
+> 🎮 **Also from the same maker: [Shoalcade](https://github.com/BBBannon/Shoalcade)** — play the games you own from your own Jellyfin server, on your phone, PC or browser, with safe saves. **[Take a look on GitHub →](https://github.com/BBBannon/Shoalcade)**
+
+> **Not an official Jellyfin project.** Shoalwatch is an independent hobby project, not made or supported by the Jellyfin team — please don't ask them for help with it.
+
+---
+
+## Why Shoalwatch?
+
+**Your films and TV already live on your Jellyfin server. Shoalwatch makes them easy to take anywhere, and safe to hand to the family.**
+
+- ✈️ **Offline looks just like online.** Downloads sit in the same series → season → episode pages, with posters, descriptions and watched ticks. No hunting through a plain list of files.
+- 📥 **Download a whole season or series in one tap.** Pick the original file or a smaller copy to save space. A dropped connection picks up where it left off, and every file is checked before it says "ready".
+- 🔄 **Your progress follows you.** Watch on a plane, and when you're back online your watched marks and where-you-stopped reach the server, in the right order.
+- 🧹 **It tidies up for you.** Finish an episode and it can be marked watched and deleted; the next ones download by themselves on Wi-Fi.
+- 👨‍👩‍👧 **Made for families.** Several profiles on one phone, each with its own PIN if you like. Downloads are shared between profiles, so you only store a film once — but a child's profile only sees what the server says it may.
+- 🔒 **Private by design.** Your sign-in is locked away in the phone's secure storage, no passwords are kept, it uses a secure connection by default, and there are **no adverts, no tracking and no data sent anywhere** except your own server.
+- 🚗 **In the car, when parked.** Continue Watching, Next Up and your downloads on the Android Auto screen — handy for charging stops.
+- 🛠️ **Look after your server from the sofa.** If you run the server, you can see who's watching, scan libraries, restart and more, straight from the phone.
+- 💬 **Subtitles that look right.** Styled subtitles (the fancy coloured kind for anime) are drawn properly on the phone, with no server effort.
+
 ---
 
 ## What it does
@@ -118,9 +138,17 @@ Every dependency is version-pinned and its checksum verified (`gradle/verificati
 | `app/src/main/java/app/shoalwatch/` | `core`, `net`, `security`, `data/*`, `ui/*` (package map in `docs/ARCHITECTURE.md`) |
 | `docs/SPEC.md` | What the app must do |
 | `docs/plans/` | One plan per milestone |
-| `docs/security/` | Security check per milestone, and the security-team report |
+| `docs/security/` | Security check per milestone |
 | `tools/mockjelly/` | Stand-in Jellyfin server for tests |
 | `ChangeLog.txt` | Every change, newest first |
+
+---
+
+## More from the Shoal family
+
+| Project | What it is |
+|---|---|
+| **[Shoalcade](https://github.com/BBBannon/Shoalcade)** | Retro games from your Jellyfin server — a Jellyfin plugin plus Android and Windows apps, playable offline, with saves you can't lose |
 
 ---
 

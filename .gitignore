@@ -6,6 +6,9 @@ build/
 *.aab
 releases/
 dist/
+.cxx/
+.externalNativeBuild/
+captures/
 
 # Local machine and secrets — never commit
 local.properties
@@ -19,9 +22,21 @@ keystore.properties
 .env
 .env.*
 
-# IDE
+# Other secrets and service config — never commit
+secrets.properties
+google-services.json
+*.keystore.properties
+*.credentials
+credentials.json
+
+# IDE and OS clutter
 .idea/
 *.iml
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log
 
 # Private working notes (kept out of a repo that may go public)
 TODO.md
@@ -33,7 +48,7 @@ __pycache__/
 
 # Agent scratch and local tool settings
 .superpowers/
-.claude/settings.local.json
+.claude/
 
 # Crash and heap dumps
 *.hprof

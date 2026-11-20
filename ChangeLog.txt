@@ -1,3 +1,4 @@
+v1.190 — 20/11/2026 — The project page now explains in plain words why Shoalwatch is worth using, and points to the sister project Shoalcade; extra safety so private files never get uploaded
 v1.189 — 18/11/2026 — A server address saved before this version is always kept exactly as it was
 v1.188 — 18/11/2026 — Coming back to the home screen no longer asks the server twice when the app has only just opened, and a library scan is credited only to the profile that watched it run
 v1.187 — 18/11/2026 — After a library scan, the home screen’s saved lists can no longer be tidied away while it waits to catch up, so they stay available with no connection
