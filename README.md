@@ -1,6 +1,18 @@
-# Shoalwatch
+<p align="center">
+  <img src="docs/assets/wordmark.svg" alt="Shoalwatch for Jellyfin" width="480">
+</p>
 
-**An Android phone and tablet app for Jellyfin (films and TV) whose offline library looks and works exactly like the online one.**
+<p align="center"><strong>An Android phone and tablet app for Jellyfin (films and TV) whose offline library looks and works exactly like the online one.</strong></p>
+
+<div align="center">
+
+[![Licence: GPL-3.0](https://img.shields.io/badge/licence-GPL--3.0-blue)](LICENSE)
+![Jellyfin 10.10 to 12.x](https://img.shields.io/badge/Jellyfin-10.10%20to%2012.x-AA5CC3)
+![Android 10+](https://img.shields.io/badge/Android-10%2B-3DDC84?logo=android&logoColor=white)
+![Android Auto (parked)](https://img.shields.io/badge/Android%20Auto-parked-4FD1C5)
+![Not an official Jellyfin project](https://img.shields.io/badge/not%20an%20official-Jellyfin%20project-lightgrey)
+
+</div>
 
 Download whole seasons before a trip and browse them by series → season → episode, with artwork, details and watched state, with no connection.
 
