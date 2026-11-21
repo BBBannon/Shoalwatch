@@ -56,6 +56,7 @@ app.shoalwatch
 │   │                AuthRepository, QuickConnectState, AddressSelector (+ Connection, ServerSettingsSource), Seams,
 │   │                ProfileSwitch (+ ProfileSwitcher, SwitchResult, ProvedSwitches, ProfileProtectedException; see "Profile PINs")
 │   ├── admin/       Admin (the seam), AdminModels, AdminRights (+ AdminAccess), BrowserDashboard; api/ AdminDtos, AdminMappers, UserPolicyEdit, AdminGateway (internal); see "Server admin"
+│   ├── manage/      Manage (the seam), ManageModels, PickedImages; api/ ManageDtos, ManageMappers, ItemEdit, ManageGateway (internal); see "Library management" (Milestone 10)
 │   ├── api/         ServerApi (the one authenticated call path), ApiRequest (+ Session, URL building and path checks), JsonBodies (bounded read + decode, shared with the gateway), CallAwait,
 │   │                MediaRoute (+ GuardedCallFactory: media bytes on the verified address only; see "Media route")
 │   ├── library/     Models (Item, ItemWithUserData, UserData, Page, Sort, ItemFilter, ...); api/ Dtos (internal), Mappers (internal), Ordering, LibraryGateway(+Impl);
@@ -189,9 +190,9 @@ Every signed-in request in the app goes through `data/api/ServerApi`: `get` (dec
 - **Unlike sign-in, ordinary requests do not upgrade to https.** If the verified address is the (consented) plain-http home address, that is where the token goes: using the fast home address at home is the feature. The residual risk is the one already recorded under "Residual risk (plain http)".
 - **Status mapping** (a response is an answer, never retried): one function, `AppError.fromHttpStatus`, shared with the sign-in gateway: 401 `UNAUTHORISED`, 403 `FORBIDDEN`, 404 `SERVER_NOT_FOUND`, any other 3xx `SERVER_NOT_FOUND` (no client follows redirects, so that address is not serving the API), 304 `SERVER_ERROR` (we never send a conditional request, so a 304 is the server misbehaving), every other 4xx and 5xx `SERVER_ERROR`.
 - **Network failure before a response:** the selector is asked to re-probe THIS server only (`refreshIfCurrent(serverId, used)`), and only if the `Connection.Online` the failed attempt used is still its current state (compared by identity: every verification publishes a new instance). So a burst of parallel failures after a network change causes one probe cycle, and a failure from before a newer verification cannot flip it back to `Checking`. The global `refresh()` stays for the UI's manual retry. If the call's `retry` flag is set (default true for GET and `getBytes`, false for POST and DELETE; callers opt in only for idempotent operations), `awaitOnline` is asked again and the call repeated exactly once, to whatever address is verified now (nothing verified: `OFFLINE`); a second failure is `AppError.from`. A guard refusal (`BlockedRequestException`: cleartext, signed out, client certificate, pin) is never retried. A failure while reading the body is mapped (and re-checks) without a retry. **Callers must not wrap `ServerApi` calls in their own retry loops**: retries would multiply (10 s connect and 30 s read timeouts each).
-- **`sendOnce` and `sendIf` (opt-in, admin actions only, Milestone 6).** `post` and `delete` take `sendOnce = false` and `sendIf = { true }` by default, so every existing caller (playback reports included) behaves exactly as before. With `sendOnce` the request body is marked one-shot (a DELETE then carries an empty body, `Content-Length: 0`): OkHttp's `retryOnConnectionFailure` no longer resends it after a kept-alive connection fails once the request was written, and OkHttp never follows a one-shot request up (a 503 with `Retry-After: 0`, a 408). OkHttp still recovers when nothing of the request was written (a failure while connecting, an HTTP/2 connection shut down before the stream). `sendIf` is asked once more just before the call is made, after the wait for a verified address: false sends nothing and fails `FORBIDDEN` (the gateway passes `allows(session)`). Only `AdminGateway` passes either (`AdminBoundaryTest`).
+- **`sendOnce` and `sendIf` (opt-in, admin actions only, Milestone 6).** `post` and `delete` take `sendOnce = false` and `sendIf = { true }` by default, so every existing caller (playback reports included) behaves exactly as before. With `sendOnce` the request body is marked one-shot (a DELETE then carries an empty body, `Content-Length: 0`): OkHttp's `retryOnConnectionFailure` no longer resends it after a kept-alive connection fails once the request was written, and OkHttp never follows a one-shot request up (a 503 with `Retry-After: 0`, a 408). OkHttp still recovers when nothing of the request was written (a failure while connecting, an HTTP/2 connection shut down before the stream). `sendIf` is asked once more just before the call is made, after the wait for a verified address: false sends nothing and fails `FORBIDDEN` (the gateway passes `allows(session)`). Only `AdminGateway` passes either (`AdminBoundaryTest`), and since Milestone 10 `ManageGateway` and `QuickConnectApprover` (`ManageBoundaryTest`). **`postBytes` (Milestone 10):** a POST with a non-JSON body of a given type (the picture upload), always sent once (`sendOnce`) and never retried, with `sendIf` as for `post`.
 - **Bodies** (`JsonBodies`, shared with `JellyfinGatewayImpl`): bounded read on the decoded bytes (one byte past the limit decides; default 4 MiB for `get`), one Json configuration: `ignoreUnknownKeys` only. `coerceInputValues` is deliberately off, so an explicit JSON null for a non-nullable field is a decode failure (fixed `SERVER_ERROR`), never a silent default; DTOs for untrusted responses declare every field nullable with a default. Nothing from a body is ever in a message. `getBytes` hands the caller a source that fails with `SERVER_ERROR` past `maxBytes` (a larger declared length fails before the reader runs); the response is closed when the reader returns or throws and the source must not be kept. The reader's own exceptions, including an IOException such as a failed file write, propagate unchanged and are never treated as a network failure.
-- **Rejected sign-in (401):** a 401 from the verified address of a signed-in call means the server no longer accepts this token. `ServerApi` calls `ServerStore.invalidateToken(serverId, userId)`: the in-memory token is removed (later calls fail at once as `NOT_SIGNED_IN` with zero requests, so the app cannot loop on a dead token), the account leaves `usable` (so `accounts`, `activeAccount`, `active()` and `activeSession()` all drop it, and the UI shows the server as needing sign-in), the server's cached clients are evicted, and `warmTokens` will not load it back, after a restart too: `invalidateToken` also writes `rejected_sign_ins` (`AccountDao.reject`; if that write fails the in-memory set still holds it for this process) and `warmTokens` reads `AccountDao.getAllUsable`, which leaves those accounts out, so no request after a restart carries the dead token (Milestone 2 check I4). The database row is kept (and the profile's outbox rows wait); signing in again (`upsertAccount`) overwrites it, clears the rejection in the same transaction and restores normal operation. The call then fails with `UNAUTHORISED` "Your sign-in has expired. Sign in again." It is skipped when the sign-in was replaced after the request began (`tokenGeneration`), so a late 401 for the old token cannot sign out the new one. A 403 does none of this, and anonymous calls (sign-in, probing) never do. **Known limit:** on a plain-http address an impostor that passed the (public) identity check can answer 401 and so sign the user out locally. That is a denial of service only: no credential is exposed beyond what the plain-http residual risk already covers.
+- **Rejected sign-in (401):** a 401 from the verified address of a signed-in call means the server no longer accepts this token. `ServerApi` calls `ServerStore.invalidateToken(serverId, userId)`: the in-memory token is removed (later calls fail at once as `NOT_SIGNED_IN` with zero requests, so the app cannot loop on a dead token), the account leaves `usable` (so `accounts`, `activeAccount`, `active()` and `activeSession()` all drop it, and the UI shows the server as needing sign-in), the server's cached clients are evicted, and `warmTokens` will not load it back, after a restart too: `invalidateToken` also writes `rejected_sign_ins` (`AccountDao.reject`; if that write fails the in-memory set still holds it for this process) and `warmTokens` reads `AccountDao.getAllUsable`, which leaves those accounts out, so no request after a restart carries the dead token (Milestone 2 check I4). The database row is kept (and the profile's outbox rows wait); signing in again (`upsertAccount`) overwrites it, clears the rejection in the same transaction and restores normal operation. The call then fails with `UNAUTHORISED` "Your sign-in has expired. Sign in again." It is skipped when the sign-in was replaced after the request began (`tokenGeneration`), so a late 401 for the old token cannot sign out the new one. A 403 does none of this, and anonymous calls (sign-in, probing) never do. **One exception, chosen per call (Milestone 10 review):** `ServerApi.delete(verifyUnauthorised = true)`, used only for `DELETE /Items/{id}`, where Jellyfin answers "this user may not delete this item" with 401 (`LibraryController.DeleteItem`: `!item.CanDelete(user)` returns `Unauthorized`). There a 401 is checked with one `GET /Users/Me` before anything else: a 401 to that is the sign-in ending (handled as above); any other answer keeps the sign-in and the call fails `FORBIDDEN` "The server refused to do that." The DELETE is not sent again (`ServerApiVerifyUnauthorisedTest`). **Known limit:** on a plain-http address an impostor that passed the (public) identity check can answer 401 and so sign the user out locally. That is a denial of service only: no credential is exposed beyond what the plain-http residual risk already covers.
 - **Network moved after verification:** `awaitOnline` proves the address answered as this server since the last network change the OS reported, not that the phone has not just moved. Ordinary requests have the same window as sign-in has (see "What `awaitOnline(serverId)` proves"); the ordinary-request token goes to the verified address in that window, and the plain-http residual risk applies.
 - **Deferred (M9):** every request reads the full `Server` (a Keystore decrypt of custom headers) to build its client configuration. A correct cache needs a settings-version signal from the store; not small, so left for the artwork task, which is where parallel loads make it matter.
 
@@ -1172,6 +1173,159 @@ Shoalwatch shows on a car's Android Auto screen as a **parked app**: Android Aut
 - **The lock with two screens (`AppFront`):** `MainActivity` (through `ActivityPip`, as before) and the car each tell `LockGate` of leaving and returning only through their own side of one `AppFront` (`LockParts.phoneTrips`, `carTrips`). The gate hears "left" only when the LAST screen showing Shoalwatch leaves and "returned" only when the FIRST comes back; a repeat counts once. So the "Lock after" clock runs only while neither the phone nor the car shows the app; the car opening after "Lock after" is a return and locks (it then shows "Unlock…"); the phone coming back while the car shows the app is no return (the app never left). The car counts as shown from `onResume` to `onPause` (not a configuration change), so a drive under Android Auto's cover is time away. "Only time while nothing plays counts" applies as before (the car's engine reports to `NowPlaying` too). `AppFrontTest`, `CarBoundaryTest.theCarTellsTheLockOnlyThroughItsSideOfAppFront`.
 - **Never a secure window:** Android Auto blanks a `FLAG_SECURE` window on the car display, so nothing in `ui/car` applies `RecentsPrivacy`, `SecureWindowFlag`, a `SecureDialog` or anything of `ui/lock` (`CarBoundaryTest`), and the window is checked not secure when created, on screen and after losing and regaining it (`ParkedCarActivityTest`, Robolectric; both shown to fail by a deliberate `FLAG_SECURE`). `RecentsPrivacy` therefore does not cover the car task; only the Android 13+ screenshot switch does (above). DRM is out of scope.
 - **Known limits:** whoever is in the car sees what plays on its screen, as on a TV; the car shows only what the phone would show unlocked. While the car shows the app, the phone's "Lock after" does not run (the app is in use): **the owner to confirm** (review M4; a cap is possible). The real `LockGate` behind `AppFront` across both screens is in `LockGateTest` (review M3). The car screen is checked by render tests at 1280x720 and 800x480 dp (`CarScreenRenderTest`); the car itself (and the Desktop Head Unit) is the owner's device check.
+
+## Library management (`data/manage`, `ui/manage`, multi-select in `ui/browse`, Milestone 10)
+
+Plan: `docs/plans/2026-11-20-milestone-10-library-management.md` (its "Decisions made" binds what follows). Roadmap decisions D2, D3 and D7.
+
+```
+data/manage/
+├── Manage.kt           the seam screens use: identify, applyMatch, images, remoteImages, useRemoteImage, uploadImage, deleteImage,
+│                       metadata, saveMetadata, refresh, canDelete, delete (token-free Session in, validated models out)
+├── ManageModels.kt     ImageKind, IdentifyKind, LockableField, RefreshMode, ItemImage, RemoteImage, RemoteImages, IdentifyMatch,
+│                       MetadataForm, MetadataEdit, PreparedImage, ManageLimits (every type prints "<Type>(…)" without content)
+├── PickedImages.kt     a photo-picker picture made ready to upload on the phone (+ PictureRefused)
+└── api/                ManageDtos, ManageMappers, ItemEdit (the full-item round trip), ManageGateway (all internal)
+data/servers/QuickConnectApprover.kt      approving a Quick Connect code shown on another device (+ ApproveOutcome)
+ui/browse/Selection.kt, SelectionChrome.kt, BulkViewModel.kt   multi-select: Selection, BulkAction, BulkItem, BulkHost, BulkViewModel
+ui/browse/ServerDelete.kt                 downloadsUnder, tidyAfterServerDelete (shared by the bar and the hub)
+ui/components/SelectionBar.kt             the bar, the delete-from-server confirmation, BulkNoticesEffect; CardParts: CardSelect, SelectedMark
+ui/manage/              ManageNav (routes, leaveManage, ManageRouteEffects), ManageRouteWiring, Manage/Identify/Images/Edit ViewModel + Screen, ManageParts
+ui/settings/QuickConnectApprove{ViewModel,Screen}.kt
+res/values/strings_manage.xml             every word of this milestone
+```
+
+**Who may do what.** Identify, pictures, details and refresh: only a server-confirmed administrator (`AdminRights.allows`, exactly
+as the admin screens). **Delete from server:** decided by **each item's own `CanDelete` for this user** (`GET /Items/{id}?userId=`,
+which fills every field), read when Delete is pressed (`Manage.canDelete`: only the items it allows are offered; the rest are said,
+"The server won't let you delete 2 of these.") and again just before each DELETE is sent (`false`, missing or not a boolean: nothing
+is sent, "The server doesn't let this profile delete that."). The profile's own policy (`EnableContentDeletion`, or a non-empty
+`EnableContentDeletionFromFolders`) is only a **hint for showing** the action (`allowsDelete`): `AdminAccess` reads it from the same
+`GET /Users/Me` answer and holds it **in its state** (`AdminState.mayDelete`, so a re-check that changes only it is heard), for the
+active profile only, cleared on every change. Being an administrator does not imply it: Jellyfin's `BaseItem.CanDelete(user)` reads
+the policy only, so an administrator without it is not offered Delete (the hub hides it). `known` answers from what is held (or asks
+once), so opening a browsing screen does not ask the server each time. Compare held states with `isAdminFor`, not `==`.
+
+**The gateway** (`ManageGateway`, on `ServerApi`): every call but `canDelete` and `delete` opens with `gated(` (`allows`, else
+`FORBIDDEN`, nothing sent); those two check `allowsDelete` first (else false or `FORBIDDEN`, nothing sent), then the item's own
+`CanDelete`; `delete` is sent with `verifyUnauthorised = true`, so Jellyfin's 401 for a refused delete is never taken as the sign-in
+ending (see "Authenticated requests"). Item ids must already be normalised `JellyfinId`s (else `SERVER_NOT_FOUND`, nothing
+sent). Reads keep `ServerApi`'s one retry; every change is sent once (`retry = false`, `sendOnce`) and only if the same rule still
+holds just before it is written (`sendIf`). `ManageBoundaryTest` enforces each of these by source scan, and that the endpoints are
+named only here.
+
+| Call | Method and path (12.4.0 reference) | Sent | Security requirement | Retry |
+|---|---|---|---|---|
+| `identify` | POST `/Items/RemoteSearch/{Movie\|Series}` | `{"SearchInfo":{"Name","Year"},"ItemId"}` | `DefaultAuthorization` | **never** (a POST) |
+| `applyMatch` | POST `/Items/RemoteSearch/Apply/{itemId}` | `replaceAllImages`; body a typed `RemoteSearchResult` (Name, ProductionYear, PremiereDate, ProviderIds, SearchProviderName) | `RequiresElevation` | **never** |
+| `images` | GET `/Items/{itemId}/Images` | nothing | `DefaultAuthorization` | yes |
+| `remoteImages` | GET `/Items/{itemId}/RemoteImages` | `type`, `startIndex=0`, `limit=100`, `includeAllLanguages` | `DefaultAuthorization` | yes |
+| `useRemoteImage` | POST `/Items/{itemId}/RemoteImages/Download` | `type`, `imageUrl` (a query value only) | `RequiresElevation` | **never** |
+| `uploadImage` | POST `/Items/{itemId}/Images/{type}` | the JPEG as base64 text, `Content-Type: image/jpeg` (`ServerApi.postBytes`) | `RequiresElevation` | **never** |
+| `deleteImage` | DELETE `/Items/{itemId}/Images/{type}/{index}` | nothing | `RequiresElevation` | **never** |
+| `metadata` | GET `/Items/{itemId}/MetadataEditor`, then GET `/Items/{itemId}?userId=` | nothing | `RequiresElevation`; `DefaultAuthorization` | yes |
+| `saveMetadata` | GET `/Items/{itemId}?userId=`, then POST `/Items/{itemId}` | the server's own item with only the form's typed keys replaced | `RequiresElevation` | GET yes; POST **never** |
+| `refresh` | POST `/Items/{itemId}/Refresh` | `metadataRefreshMode`, `imageRefreshMode`, `replaceAllMetadata`, `replaceAllImages`, `regenerateTrickplay=false` | `RequiresElevation` | **never** |
+| `canDelete` | GET `/Items/{itemId}?userId=` (`Id`, `CanDelete` read) | nothing | `DefaultAuthorization` | yes |
+| `delete` | GET `/Items/{itemId}?userId=` (`CanDelete` must be `true`), then DELETE `/Items/{itemId}` | nothing | `DefaultAuthorization`; a refusal is **401** (`!item.CanDelete(user)`), checked with `GET /Users/Me` | GET yes; DELETE **never** |
+| `QuickConnectApprover` | GET `/QuickConnect/Enabled`, then POST `/QuickConnect/Authorize` | `code` (a query value only) | anonymous; `DefaultAuthorization` | GET yes; POST **never** |
+
+**Untrusted input (S11).** Every DTO field is nullable with a default; numbers are `JsonElement` and range-checked, so a wrong type
+costs only that value; lists are capped (matches 100, online pictures 100, the item's pictures 100, rating options 200) and
+de-duplicated; one bad element costs only itself; every display string goes through `displayText` (the overview through
+`displayParagraphs`). **Never declared:** `ImageInfo.Path` (a server file path), `ImageInfo.BlurHash`,
+`RemoteSearchResult.ImageUrl`, `RemoteImageInfo.ThumbnailUrl`. Provider ids are kept only if the key is `[A-Za-z0-9_.-]{1,64}` and
+the value printable ASCII of at most 200 characters (at most 20), because they are sent back on apply. An online picture's `Url` is
+kept (as `RemoteImage.source`, which no screen reads: `ManageBoundaryTest`) only when it is printable http(s) of at most 2,048
+characters, and only to hand back to the server as the `imageUrl` query value.
+
+**The full-item round trip (`ItemEdit`).** `POST /Items/{id}` replaces the whole item, so the body is the server's own item object as
+just read, copied key by key, with only `Name`, `ForcedSortName`, `OriginalTitle`, `Overview`, `ProductionYear`, `PremiereDate`
+(midnight UTC, Jellyfin's own form), `OfficialRating`, `CommunityRating` (one decimal place), `Genres`, `Tags`, `Studios` (as
+`{"Name"}`), `LockedFields` and `LockData` replaced by values this app made from typed, cleaned, bounded fields, and **only those
+whose typed value differs from the form as it was first shown** (`ItemEdit.changedKeys`; the screen keeps that form and sends it with
+the save). So a value the form cannot show exactly (a rating of 6.54 shown as "6.5", an overview the display trimmed, a studio named
+"Lions Gate Films, Inc.") goes back as it came unless it was changed, and saving an untouched form sends nothing at all (not even the
+read). Every other key (known, unknown or future), number literal and null goes back as it came. Nothing is posted when the item's
+`Id` is not the one asked for or it has no `Type`. Text from the server is never pasted back as JSON.
+
+**Third-party pictures (S7).** The phone contacts only the user's servers. `RemoteImages` and identify results name third-party hosts
+(TMDb and others), and Jellyfin 12.4.0 has no server-side proxy for them (no `RemoteSearch/Image`, no `Images/Remote`), so **the phone
+never loads them**: each online picture is listed as words (provider, size, language, rating, votes, in the server's order) and each
+identify match as name, year, provider and the start of its overview beside a letter tile. Choosing one makes the server fetch it; the
+phone then shows the result through the normal artwork path from the user's own server. Coil has no network module, so no screen
+could load such an address even by mistake (see "Artwork").
+
+**Uploading a picture (D3, `PickedImages`).** The system photo picker (`ActivityResultContracts.PickVisualMedia`, images only) gives
+the app one content address it may read; **no storage permission** (S9 unchanged). The bytes are read through the content resolver
+(at most 40 MB, refused beyond), decoded once with `ImageDecoder`, which **applies the photo's EXIF orientation** (BitmapFactory
+did not, so camera photos came out sideways): the header's size (as shown, after turning) is checked first (refused over 16,000 px a
+side or 120 megapixels), then it decodes **straight to** a long side of at most 2,000 px (3,840 for a backdrop; `setTargetSize`, so
+no full-size bitmap and no scaled copy), in software memory, laid on white in place (a post-processor drawing white behind it), and
+re-encoded as JPEG quality 90 (then 80, 70; at most 10 MB), which drops EXIF and location. Running out of memory on the way is refused
+as too large ("That picture is too big"), never a crash. The gateway checks again that it is a
+JPEG and at most 10 MB, then sends it base64 (Jellyfin's `SetItemImage` reads base64 text; the reference's `image/*` binary is not
+what the server does). Refusals are said in plain words ("That picture is too big. Choose a smaller one.").
+
+**After a change.** `AfterChange` removes the item's pictures from Coil's memory cache (`ArtworkEviction.evictItem`: keys
+`art:<serverId>:<itemId>:`) and fetches the item again (`Library.refresh(RefreshTarget.Item)`), so the new image tags make new cache
+keys and the new name and picture show at once. Old disk entries keyed by the old tags cannot be listed and age out. A delete calls
+`Library.forgetDeleted`: the item leaves every list of that profile at once; with "Keep the copy on this phone" its record stays, so
+Downloads still shows and plays it; otherwise the record goes too (as for an item the server refused) and the download is removed.
+**A series or season** takes its downloaded episodes with it (`downloadsUnder`: this profile's episodes of it, as Downloads lists
+them), so the question offers "Keep the copies on this phone" for them too: kept, the episodes and the series or season record stay
+(`OfflineLibraryDao` shows episodes only under a series, and season, record the user has) and only leave the lists; not kept, each
+episode download is removed and every record goes. **Once the server has deleted it, it counts as done:** each phone-side step
+(each download removal, each `forgetDeleted`, the picture eviction) runs on its own (`tidyAfterServerDelete`), so a local failure
+can neither turn the result into a failure nor skip the list update. Other profiles see it go on their next refresh.
+
+**Multi-select.** A long press on a card (library grid, Home rows, search results, a season's episodes, Downloads' films and series)
+starts selecting; while selecting a tap adds or removes; Back or Close clears. `Selection` holds ids only, keyed by session and saved
+across rotation; anything no longer listed is dropped. The card's own dots still open the one-item sheet (and the bar's More does too,
+for one item), so nothing reachable before is lost. Each card says "Selected" or "Not selected" while selecting and has "Select
+<title>" as a custom action. The bar replaces the screen's top bar: Close, "3 selected" (a polite live region), Mark as watched,
+Add to favourites and Download (on Downloads: Delete download) as buttons, the rest under More options; Delete from server only when
+allowed, Manage only for an administrator and one item. `BulkAction` is the list of what the bar can do (Milestone 11 adds playlist
+and collection entries there and one branch in `BulkViewModel.apply`). `BulkViewModel` runs one action at a time as the session on
+screen, one item after another through the existing paths: `Playstate` (saved and queued, so offline works), `Downloads.prepare` and
+`start` at the default quality (Original if none is set; no quality sheet; a plan that does not fit is not started), Downloads' own
+owner-checked delete dialog, and the gateway's `delete` after a confirmation naming the items. One snackbar line sums the result, shown
+only to its own session; a delete asked by one profile is never sent for the next. While another bar action runs, the confirmation's
+Delete is off ("Wait for the last action to finish…") and a confirm does nothing, so a confirmed delete is never silently dropped.
+
+**Management screens.** `ManageViewModel` (the hub), `IdentifyViewModel`, `ImagesViewModel` and `EditViewModel` extend
+`AdminScreenModel`, so they have the admin session rule (the gate closes for good on any profile change, a lost administrator answer,
+or a 401; everything typed or loaded is dropped), one action at a time, load only while visible, and every screen draws through
+`AdminScaffold` (`FLAG_SECURE`), with dialogs from `AdminDialogs` (`AdminFormDialog` is the same secure window with its own controls).
+Routes `manage/{itemId}`, `…/identify`, `…/images`, `…/edit` carry only the item's id; they are not account routes (a session change
+pops them) and `ManageRouteEffects` pops them all when the gate closes. Entry points: "Manage" on the item and series screens for an
+administrator ("Delete from server" there for a profile that may only delete), and Manage in the bar for one item. Under the app lock
+(S8) they are covered like every screen; their dialogs read `LocalCovered`. Edit details checks on the phone that the year is
+1800-2200, the date is year-month-day and the rating 0-10; genres, tags and studios are edited **entry by entry** (each a chip with
+"Remove …", and a field with Add; an entry may contain commas, and one typed but not added counts as one entry), never split on
+commas. A rating left as shown is sent back as the server's own value. Nothing is persisted.
+
+**Quick Connect approval.** Settings → "Approve a sign-in on another device" (with a profile signed in). The screen first says whose
+sign-in the other device will get, and warns: "Only approve a code shown on your own device. Approving signs that device in as you."
+**A PIN-protected profile must type its PIN first** (the secure `PinDialog`, checked by `ProfileLocks.check` with its usual wrong-try
+counting and waits; if whether it is protected cannot be read, the PIN is asked for), because approving signs the other device in as
+that profile: a child cannot approve a code as a protected parent's profile left open. The PIN lives only in its field and one array,
+zeroed after the check. The code must be six letters or digits (spaces and dashes ignored), else nothing is sent; then
+`GET /QuickConnect/Enabled` (Jellyfin answers a switched-off Authorize with 401, which `ServerApi` would take as this phone's sign-in
+ending); then `POST /QuickConnect/Authorize?code=` once, only while the asking profile is still active. The code lives only in the
+screen's field, is cleared after an approval and on any profile change, and is never logged. Answers: approved, wrong code ("That code
+was not found…" for a 404), switched off, refused, offline, signed out, failed.
+
+**Known limits.** A server switched off between the Enabled check and Authorize answers 401 and signs this profile out on the phone
+(a denial of service only). Bulk actions run one item at a time (a long selection takes a while; the bar is off while it runs).
+The Logo and Banner of an item, and second and later backdrops, are listed as text without a picture (the artwork path shows
+poster, backdrop and thumbnail). A bulk download uses the default quality without asking. Whether Delete is offered at all is read
+from the profile's policy; which items may be deleted is each item's own `CanDelete` for this user (so a server that limits deletion
+to some libraries is respected item by item, before anything is sent). Tests: `ManageGatewayTest`, `ItemEdit` cases there, `PickedImagesTest`, `DeleteRightsTest`, `QuickConnectApproverTest`,
+`QuickConnectApproveViewModelTest`, `BulkViewModelTest`, `ManageViewModelsTest`, `ManageRenderTest` (four sizes),
+`LibraryRepositoryForgetDeletedTest`, `ArtworkEvictionTest`, `ServerApiPostBytesTest`, `ServerApiVerifyUnauthorisedTest`,
+`ManageBoundaryTest`; the stand-in's `tools/mockjelly/test_mock_manage.py` (which, like Jellyfin, answers a refused delete with 401
+and gives `CanDelete` on a single item).
 
 ## Version checks
 

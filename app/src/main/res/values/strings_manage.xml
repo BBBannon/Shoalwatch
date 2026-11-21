@@ -1,0 +1,223 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Milestone 10: library management, multi-select and Quick Connect approval. UK English, plain words. -->
+<resources>
+    <!-- Quick Connect approval (Settings) -->
+    <string name="settings_quick_connect_heading">Sign in another device</string>
+    <string name="settings_quick_connect">Approve a sign-in on another device</string>
+    <string name="settings_quick_connect_help">Use the code a TV or laptop shows for Quick Connect.</string>
+    <string name="qc_title">Approve a sign-in</string>
+    <string name="qc_body">The other device will be signed in as %1$s.</string>
+    <string name="qc_how">On the TV or laptop, choose Quick Connect. Type the code it shows here, then choose Approve.</string>
+    <string name="qc_warning">Only approve a code shown on your own device. Approving signs that device in as you.</string>
+    <string name="qc_pin_title">Type your PIN</string>
+    <string name="qc_pin_body">This profile has a PIN. Type it to approve the sign-in as %1$s.</string>
+    <string name="qc_pin_confirm">Approve</string>
+    <string name="qc_code_label">Code (6 letters or numbers)</string>
+    <string name="qc_approve">Approve</string>
+    <string name="qc_approved">Approved. The other device is now signing in.</string>
+    <string name="qc_bad_code">The code is 6 letters or numbers. Check it and try again.</string>
+    <string name="qc_not_found">That code was not found. It may have run out: start Quick Connect again on the other device.</string>
+    <string name="qc_switched_off">Quick Connect is switched off on this server. A server administrator can turn it on in the dashboard.</string>
+    <string name="qc_refused">The server did not allow that.</string>
+    <string name="qc_offline">You\'re offline. Connect to your server and try again.</string>
+    <string name="qc_signed_out">Your sign-in has expired. Sign in again.</string>
+    <string name="qc_failed">Something went wrong. Try again.</string>
+
+    <!-- Multi-select -->
+    <plurals name="select_count">
+        <item quantity="one">%1$d selected</item>
+        <item quantity="other">%1$d selected</item>
+    </plurals>
+    <string name="select_close">Stop selecting</string>
+    <string name="select_more_options">More options</string>
+    <string name="select_item">Select %1$s</string>
+    <string name="select_deselect_item">Deselect %1$s</string>
+    <string name="select_state_on">Selected</string>
+    <string name="select_state_off">Not selected</string>
+    <string name="select_mark_watched">Mark as watched</string>
+    <string name="select_mark_unwatched">Mark as unwatched</string>
+    <string name="select_favourite">Add to favourites</string>
+    <string name="select_unfavourite">Remove from favourites</string>
+    <string name="select_download">Download</string>
+    <string name="select_remove_download">Delete download</string>
+    <string name="select_delete_server">Delete from server</string>
+    <string name="select_manage">Manage</string>
+    <string name="select_more">More actions</string>
+    <plurals name="bulk_marked_watched">
+        <item quantity="one">Marked %1$d as watched.</item>
+        <item quantity="other">Marked %1$d as watched.</item>
+    </plurals>
+    <plurals name="bulk_marked_unwatched">
+        <item quantity="one">Marked %1$d as unwatched.</item>
+        <item quantity="other">Marked %1$d as unwatched.</item>
+    </plurals>
+    <plurals name="bulk_favourited">
+        <item quantity="one">Added %1$d to favourites.</item>
+        <item quantity="other">Added %1$d to favourites.</item>
+    </plurals>
+    <plurals name="bulk_unfavourited">
+        <item quantity="one">Removed %1$d from favourites.</item>
+        <item quantity="other">Removed %1$d from favourites.</item>
+    </plurals>
+    <plurals name="bulk_downloading">
+        <item quantity="one">Downloading %1$d.</item>
+        <item quantity="other">Downloading %1$d.</item>
+    </plurals>
+    <plurals name="bulk_download_removed">
+        <item quantity="one">Deleted %1$d download.</item>
+        <item quantity="other">Deleted %1$d downloads.</item>
+    </plurals>
+    <plurals name="bulk_deleted">
+        <item quantity="one">Deleted %1$d from the server.</item>
+        <item quantity="other">Deleted %1$d from the server.</item>
+    </plurals>
+    <plurals name="bulk_not_done">
+        <item quantity="one">%1$d could not be done.</item>
+        <item quantity="other">%1$d could not be done.</item>
+    </plurals>
+    <string name="bulk_offline">You\'re offline. Try again when you\'re connected.</string>
+    <string name="bulk_refused">The server did not allow that.</string>
+    <string name="bulk_gone">That\'s no longer on the server.</string>
+    <string name="bulk_no_room">Not enough room on this phone, or nothing to download.</string>
+    <string name="bulk_failed">That didn\'t work. Try again.</string>
+    <plurals name="dl_delete_many_confirm">
+        <item quantity="one">Delete %1$s download? It takes up %2$s on this phone.</item>
+        <item quantity="other">Delete these %1$s downloads? They take up %2$s on this phone.</item>
+    </plurals>
+    <plurals name="dl_delete_many_size_unknown">
+        <item quantity="one">Delete %1$s download from this phone?</item>
+        <item quantity="other">Delete these %1$s downloads from this phone?</item>
+    </plurals>
+
+    <!-- Delete from server -->
+    <string name="delete_server_title_one">Delete %1$s from the server?</string>
+    <string name="delete_server_title_few">Delete %1$s from the server?</string>
+    <plurals name="delete_server_title_many">
+        <item quantity="one">Delete %1$s and %2$d more from the server?</item>
+        <item quantity="other">Delete %1$s and %2$d more from the server?</item>
+    </plurals>
+    <string name="delete_server_unnamed">Untitled</string>
+    <string name="delete_server_body">This deletes the files from your server for everyone. It can\'t be undone.</string>
+    <plurals name="delete_server_keep_copy">
+        <item quantity="one">Keep the copy on this phone</item>
+        <item quantity="other">Keep the copies on this phone</item>
+    </plurals>
+    <string name="delete_server_confirm">Delete</string>
+    <string name="delete_server_wait">Wait for the last action to finish, then choose Delete.</string>
+    <plurals name="bulk_delete_not_allowed">
+        <item quantity="one">The server won\'t let you delete %1$d of these. It was left out.</item>
+        <item quantity="other">The server won\'t let you delete %1$d of these. They were left out.</item>
+    </plurals>
+    <string name="manage_delete_not_allowed">The server won\'t let this profile delete this. Nothing was deleted.</string>
+
+    <!-- Manage (administrators) -->
+    <string name="manage_button">Manage</string>
+    <string name="manage_title">Manage</string>
+    <string name="manage_identify">Identify</string>
+    <string name="manage_identify_help">Find the right film or series online and use its details.</string>
+    <string name="manage_images">Pictures</string>
+    <string name="manage_images_help">Change the poster, backdrop, logo, thumbnail or banner.</string>
+    <string name="manage_edit">Edit details</string>
+    <string name="manage_edit_help">Title, overview, year, ratings, genres, tags and studios.</string>
+    <string name="manage_refresh">Refresh details</string>
+    <string name="manage_refresh_help">Ask the server to look again for details and pictures.</string>
+    <string name="manage_delete_help">Deletes the files from your server for everyone.</string>
+    <string name="manage_refresh_title">Refresh details for %1$s?</string>
+    <string name="manage_refresh_scan">Scan for new and updated files</string>
+    <string name="manage_refresh_missing">Search for missing details</string>
+    <string name="manage_refresh_all">Replace all details</string>
+    <string name="manage_refresh_images">Replace existing pictures</string>
+    <string name="manage_refresh_action">Refresh</string>
+    <string name="manage_refresh_started">Refresh started. The server updates the details in the background.</string>
+    <string name="manage_deleted">Deleted from the server.</string>
+    <string name="manage_unnamed">Untitled</string>
+    <string name="manage_not_loaded">This item isn\'t on this phone yet. Go back and open it again.</string>
+
+    <!-- Identify -->
+    <string name="identify_title">Identify</string>
+    <string name="identify_name">Title</string>
+    <string name="identify_year">Year (optional)</string>
+    <string name="identify_search">Search</string>
+    <string name="identify_only_films_series">Identify is for films and series only.</string>
+    <string name="identify_empty">No matches. Try a shorter title, or leave out the year.</string>
+    <string name="identify_from">From %1$s</string>
+    <string name="identify_use">Use this</string>
+    <string name="identify_use_cd">Use %1$s</string>
+    <string name="identify_confirm_title">Use %1$s?</string>
+    <string name="identify_confirm_body">The server will replace this item\'s details with these.</string>
+    <string name="identify_replace_images">Replace all pictures</string>
+    <string name="identify_applied">Details updated. It can take a minute for everything to show.</string>
+    <string name="identify_no_pictures_note">Pictures of matches are not shown: Shoalwatch only talks to your own server.</string>
+
+    <!-- Pictures -->
+    <string name="images_title">Pictures</string>
+    <string name="image_kind_primary">Poster</string>
+    <string name="image_kind_backdrop">Backdrop</string>
+    <string name="image_kind_logo">Logo</string>
+    <string name="image_kind_thumb">Thumbnail</string>
+    <string name="image_kind_banner">Banner</string>
+    <string name="images_current">On the server now</string>
+    <string name="images_none">None yet.</string>
+    <string name="images_size">%1$d × %2$d</string>
+    <string name="images_number">%1$s %2$d</string>
+    <string name="images_remove">Remove</string>
+    <string name="images_remove_cd">Remove %1$s</string>
+    <string name="images_remove_title">Remove this %1$s from the server?</string>
+    <string name="images_remove_body">The server keeps no copy. You can add another afterwards.</string>
+    <string name="images_upload">Upload from this phone</string>
+    <string name="images_upload_help">Choose a picture in your photos. Shoalwatch makes it smaller and sends it to your server.</string>
+    <string name="images_find">Find online</string>
+    <string name="images_online">Online choices</string>
+    <string name="images_online_note">Online pictures are listed in words: Shoalwatch only talks to your own server, which fetches the one you choose.</string>
+    <string name="images_all_languages">Include every language</string>
+    <string name="images_online_none">The server found nothing online for this.</string>
+    <string name="images_rated">rated %1$s</string>
+    <plurals name="images_votes">
+        <item quantity="one">%1$d vote</item>
+        <item quantity="other">%1$d votes</item>
+    </plurals>
+    <string name="images_choice_cd">Use %1$s, choice %2$d</string>
+    <string name="images_saved">Picture saved. It shows once the server has it.</string>
+    <string name="images_removed">Picture removed.</string>
+    <string name="images_uploading">Getting the picture ready…</string>
+    <string name="images_not_picture">That isn\'t a picture Shoalwatch can use. Choose a JPEG, PNG or WebP.</string>
+    <string name="images_too_big">That picture is too big. Choose a smaller one.</string>
+    <string name="images_unreadable">Shoalwatch couldn\'t read that picture. Try another.</string>
+
+    <!-- Edit details -->
+    <string name="meta_edit_title">Edit details</string>
+    <string name="edit_name">Title</string>
+    <string name="edit_sort_name">Sort title (optional)</string>
+    <string name="edit_original_title">Original title (optional)</string>
+    <string name="edit_overview">Overview</string>
+    <string name="edit_year">Year</string>
+    <string name="edit_premiere">Release date (year-month-day)</string>
+    <string name="edit_official_rating">Age rating</string>
+    <string name="edit_rating_choices">Known age ratings: %1$s</string>
+    <string name="edit_community_rating">Community rating (0 to 10)</string>
+    <string name="edit_genres">Genres</string>
+    <string name="edit_tags">Tags</string>
+    <string name="edit_studios">Studios</string>
+    <string name="edit_list_empty">None yet.</string>
+    <string name="edit_list_remove">Remove %1$s</string>
+    <string name="edit_list_add_label">Add one</string>
+    <string name="edit_list_add">Add</string>
+    <string name="edit_list_add_to">Add to %1$s</string>
+    <string name="edit_locks">Keep these as they are when the server refreshes</string>
+    <string name="edit_lock_all">Keep everything as it is (no refresh changes this item)</string>
+    <string name="edit_save">Save</string>
+    <string name="edit_saved">Details saved.</string>
+    <string name="edit_bad_name">The title can\'t be empty.</string>
+    <string name="edit_bad_year">The year must be between 1800 and 2200.</string>
+    <string name="edit_bad_date">Enter the date as year-month-day, for example 2001-02-03.</string>
+    <string name="edit_bad_rating">The rating must be a number from 0 to 10.</string>
+    <string name="lock_field_name">Title</string>
+    <string name="lock_field_overview">Overview</string>
+    <string name="lock_field_genres">Genres</string>
+    <string name="lock_field_tags">Tags</string>
+    <string name="lock_field_studios">Studios</string>
+    <string name="lock_field_official_rating">Age rating</string>
+    <string name="lock_field_cast">Cast</string>
+    <string name="lock_field_locations">Countries</string>
+    <string name="lock_field_runtime">Running time</string>
+</resources>

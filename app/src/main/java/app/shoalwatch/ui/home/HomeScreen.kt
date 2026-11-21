@@ -1,5 +1,15 @@
 package app.shoalwatch.ui.home
 
+import app.shoalwatch.ui.browse.BulkAction
+import app.shoalwatch.ui.browse.BulkHost
+import app.shoalwatch.ui.browse.BulkItem
+import app.shoalwatch.ui.browse.Selection
+import app.shoalwatch.ui.browse.SelectionChrome
+import app.shoalwatch.ui.browse.rememberSelection
+import app.shoalwatch.ui.browse.selectionControls
+import app.shoalwatch.ui.components.SelectionBar
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.remember
 import app.shoalwatch.ui.present.sheetTitle
 import app.shoalwatch.ui.components.PhoneWideCardWidth
 import app.shoalwatch.ui.components.TabletWideCardWidth
@@ -104,8 +114,18 @@ fun HomeScreen(
     snackbar: SnackbarHostState,
     switchPrompt: SwitchPrompt? = null,
     switchPin: TextFieldState? = null,
+    bulk: BulkHost? = null,
 ) {
     CollectMessages(messages, snackbar, state.session)
+    val strings = rememberStrings()
+    val selection = bulk?.let { rememberSelection(state.session) }
+    val sheet = rememberSaveable(state.session) { mutableStateOf<String?>(null) }
+    val fromResume = rememberSaveable(state.session) { mutableStateOf(false) }
+    val listed = remember(state, strings) {
+        (state.resume.items + state.nextUp.items + state.latest.flatMap { it.row.items })
+            .associate { it.item.id to BulkItem(it.item.id, it.item.sheetTitle(strings), it.item.kind, it.item.seriesId) }
+    }
+    if (selection != null && bulk != null) SelectionChrome(selection, bulk, listed, snackbar)
     if (switchPrompt != null && switchPin != null) SwitchPinDialog(switchPrompt, switchPin, actions.onSubmitSwitch, actions.onDismissSwitch)
     when (state.phase) {
         HomePhase.SIGNED_OUT -> Placeholder(actions) {
@@ -117,10 +137,12 @@ fun HomeScreen(
             PrimaryButton(stringResource(R.string.action_retry), actions.onRetryConnection)
         }
         else -> Column(Modifier.fillMaxSize()) {
-            HomeTopBar(state, actions)
+            if (selection != null && bulk != null && selection.active) {
+                SelectionBar(selectionControls(selection, bulk, listed, BulkAction.forBrowsing) { sheet.value = it; fromResume.value = false })
+            } else HomeTopBar(state, actions)
             RefreshLine(state.refreshing && !state.pulling)
             PullToRefreshBox(isRefreshing = state.pulling, onRefresh = actions.onRefresh, modifier = Modifier.fillMaxSize()) {
-                HomeList(state, actions)
+                HomeList(state, actions, selection, sheet, fromResume)
             }
         }
     }
@@ -138,11 +160,11 @@ private fun Placeholder(actions: HomeActions, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun HomeList(state: HomeUiState, actions: HomeActions) {
+private fun HomeList(state: HomeUiState, actions: HomeActions, selection: Selection?, sheet: MutableState<String?>, fromResume: MutableState<Boolean>) {
     val strings = rememberStrings()
     val session = state.session
-    var sheetId by rememberSaveable(session) { mutableStateOf<String?>(null) }
-    var sheetFromResume by rememberSaveable(session) { mutableStateOf(false) }
+    var sheetId by sheet
+    var sheetFromResume by fromResume
     val wide = isWideScreen()
     val banner = BannerActions(actions.onRefresh, { state.serverId?.let(actions.onSignIn) }, { state.serverId?.let(actions.onReview) })
     val skeleton = state.phase == HomePhase.LOADING || state.stillLoading
@@ -194,10 +216,10 @@ private fun HomeList(state: HomeUiState, actions: HomeActions) {
                 }
             }
             if (session != null && !skeleton) {
-                wideRow(R.string.home_continue, "resume", state.resume, session, strings, state, banner, actions, wide, gaps) { id -> sheetId = id; sheetFromResume = true }
-                wideRow(R.string.home_next_up, "next", state.nextUp, session, strings, state, banner, actions, wide, gaps) { id -> sheetId = id; sheetFromResume = false }
+                wideRow(R.string.home_continue, "resume", state.resume, session, strings, state, banner, actions, wide, gaps, selection) { id -> sheetId = id; sheetFromResume = true }
+                wideRow(R.string.home_next_up, "next", state.nextUp, session, strings, state, banner, actions, wide, gaps, selection) { id -> sheetId = id; sheetFromResume = false }
                 state.latest.forEach { latest ->
-                    posterRow(latest.view, latest.row, session, strings, state, banner, actions, wide, gaps) { id -> sheetId = id; sheetFromResume = false }
+                    posterRow(latest.view, latest.row, session, strings, state, banner, actions, wide, gaps, selection) { id -> sheetId = id; sheetFromResume = false }
                 }
                 if (state.views.isNotEmpty()) librariesSection(state, actions, strings, wide, gaps)
             }

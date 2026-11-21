@@ -111,4 +111,74 @@ delete dialog and each manage screen at phone and tablet sizes and font scale 2.
 
 ## Decisions made (during the build)
 
-Filled in at the end of the milestone; see the bottom of this file.
+Made without the owner (he asked for no involvement); each can be changed.
+
+1. **Management screens reuse the admin machinery.** `ui/manage` ViewModels extend `AdminScreenModel` and draw through
+   `AdminScaffold`, so they are `FLAG_SECURE`, close for good on any profile change and drop what they loaded. The cost: the
+   recents preview of these screens is blank, as for the admin screens.
+2. **No pictures of identify matches or online picture choices** (S7): the 12.4.0 reference has no server proxy for them. They are
+   words only. If Ben prefers thumbnails, it needs a server plugin that proxies them, or an S7 exception.
+3. **Upload body is base64**, matching Jellyfin's server code rather than the reference's `image/*` binary. Unproven against a real
+   12.x server until Ben's.
+4. **Delete-only profiles** (policy allows deletion, not an administrator) get "Delete from server" on the item screen and in the
+   bar, and nothing else of management.
+5. **"Keep the copy on this phone" is off by default**: a delete from the server also removes this profile's download unless ticked.
+   Kept, the item stays in Downloads and plays offline; watched marks made to it later cannot reach the server any more (the
+   item is gone there).
+6. **Bulk download skips the quality sheet** and uses the default quality (Original when none is set); an item whose plan does not
+   fit is not started and is counted in "could not be done".
+7. **One action at a time, one item after another.** Simple and safe (each through the same checks); a long selection is slow.
+8. **The bar shows three actions as buttons** (watched, favourite, download or delete download) and the rest under More options, so
+   it fits at twice the text size on a small phone.
+9. **Refresh offers the web dashboard's three choices**; "Search for missing details" is the default, as the web's.
+10. **Quick Connect approval checks `/QuickConnect/Enabled` first**: Jellyfin answers a switched-off Authorize with 401, which this
+    app treats as the sign-in ending. The rare case of a server switched off between the two requests still signs the profile
+    out on the phone (recorded as a known limit).
+11. **Logo, Banner and later backdrops are listed as text** (size, Remove), because the artwork path shows only the poster, backdrop
+    and thumbnail; adding the other kinds to `ArtworkRef` touches the pinned-artwork rules and was left out.
+12. **The stand-in server** gained the routes in `tools/mockjelly/mock_manage.py`; anna may now delete (to test a delete-only
+    profile), and `POST /mock/quickconnect-code` (this machine only) starts a code as a TV would.
+
+### After the code review (21/11/2026)
+
+13. **Each item's own `CanDelete` decides a delete** (review 1a). It is read (`GET /Items/{id}?userId=`, the read the edit form
+    already uses, which fills every field) when Delete is pressed, so only the items the server allows are offered and the rest are
+    named in one line; and again just before each DELETE, so nothing is sent for an item that has since become undeletable.
+    Missing or not a boolean counts as false.
+14. **Being an administrator no longer implies the delete right** (review 1b): Jellyfin's `BaseItem.CanDelete(user)` reads the
+    deletion policy only. The policy (`EnableContentDeletion` or any `EnableContentDeletionFromFolders`) stays as a hint for
+    showing the action; the hub hides Delete without it. This replaces part of decision 4. The policy hint is still required before
+    the per-item read (it can only make the app send less; Jellyfin cannot answer `CanDelete` true without it).
+15. **A 401 on `DELETE /Items/{id}` is checked, not believed** (review 1c): `ServerApi.delete(verifyUnauthorised = true)` asks
+    `GET /Users/Me` once. A 401 there signs out as before; anything else (including the check failing, for example offline) keeps
+    the sign-in and says "The server refused to do that." Choosing "keep the sign-in" when the check cannot be made errs towards
+    not signing a profile out over a refusal; a dead token still fails the next ordinary call.
+16. **Deleting a series or season offers to keep its downloaded episodes** (review 2): the episodes are found as Downloads lists
+    them (`downloads.series`). Kept: the episode, series and season records stay and only leave the lists. Not kept: each episode
+    download is removed and its record goes. Kept episodes also leave the lists (Next Up, Continue Watching), since they are gone
+    from the server.
+17. **A server delete counts as done once the server said yes** (review 3): every phone-side step after it is on its own.
+18. **Uploaded pictures are decoded with `ImageDecoder`** (reviews 4, 5): it turns phone photos upright and decodes straight to the
+    target size; transparency is laid on white by a post-processor in place, so there is one bitmap only. Running out of memory
+    is "too large". Robolectric's native graphics supports `ImageDecoder`, so the EXIF case is tested with a real JPEG.
+19. **Edit details saves only what was changed** (review 6): the form as first shown is kept and sent with the save; the gateway
+    writes only the keys whose typed value differs, and nothing at all (not even the read) for an untouched form. Lists are chips
+    (add and remove), and an entry typed but not added is saved as one entry. A rating left as shown is sent back as the server's
+    exact value.
+20. **A delete confirmed while another bar action runs is not dropped** (review 7): Delete is off in the dialog, with a line saying
+    why, and a confirm then does nothing, so the question stays until it can be sent. (Queueing was simpler to get wrong.)
+21. **The delete hint is part of the held admin state** (review 8): `AdminState.mayDelete`, so a re-check that changes only it is
+    heard. Screens compare states with `isAdminFor`, so a change to the hint alone never closes an admin screen.
+22. **Quick Connect approval warns and, for a PIN-protected profile, asks for the PIN first** (review 9), through the existing
+    `ProfileLocks.check` (wrong tries and waits as everywhere). If whether the profile is protected cannot be read, the PIN is asked.
+23. **The stand-in answers a refused delete with 401**, as Jellyfin does, reads the deletion policy only (no "administrators always"),
+    and gives `CanDelete` on `GET /Items/{id}`.
+
+## Follow-ups (for the to-do list)
+
+- Confirm against Ben's real server: base64 upload, `RemoteSearch/Apply` with a typed body, `POST /Items/{id}` with the full item,
+  `DELETE /Items/{id}` for a delete-only profile, its 401 for an item the profile may not delete (the sign-in must stay), and
+  `CanDelete` on `GET /Items/{id}?userId=` for an administrator with and without the deletion policy.
+- Thumbnails for online choices if a server-side proxy appears (or a Jellyfin plugin).
+- Show Logo and Banner pictures (extend `ArtworkRef` with those kinds).
+- Milestone 11: `ADD_TO_PLAYLIST` / `ADD_TO_COLLECTION` in `BulkAction`.

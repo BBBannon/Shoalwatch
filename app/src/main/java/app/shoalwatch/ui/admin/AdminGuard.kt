@@ -2,7 +2,7 @@ package app.shoalwatch.ui.admin
 
 import app.shoalwatch.core.AppError
 import app.shoalwatch.data.admin.AdminRights
-import app.shoalwatch.data.admin.AdminState
+import app.shoalwatch.data.admin.isAdminFor
 import app.shoalwatch.data.admin.AdminStatus
 import app.shoalwatch.data.servers.Connection
 import app.shoalwatch.data.servers.ServerCatalog
@@ -82,7 +82,7 @@ class AdminGuard(
         }
         val connection = connections.connection(first.serverId)
         gateState.value = AdminGate.Open(first, connection.value is Connection.Online)
-        launch { rights.state.first { it != AdminState(first, AdminStatus.ADMIN) }; close() }
+        launch { rights.state.first { !it.isAdminFor(first) }; close() }
         launch {
             connection.collect { c ->
                 val open = gateState.value as? AdminGate.Open ?: return@collect

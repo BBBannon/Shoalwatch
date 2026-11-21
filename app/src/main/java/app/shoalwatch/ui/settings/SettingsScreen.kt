@@ -32,6 +32,8 @@ class SettingsActions(
     val onChooseGrownUp: (AccountSummary) -> Unit = {},
     val onSubmitGrownUp: () -> Unit = {},
     val onDismissGrownUp: () -> Unit = {},
+    /** Milestone 10: "Approve a sign-in on another device". */
+    val onQuickConnect: () -> Unit = {},
 )
 
 /**
@@ -90,6 +92,11 @@ fun SettingsScreen(
         )
         SettingsHeading(stringResource(R.string.nav_downloads))
         SettingsButton(stringResource(R.string.settings_downloads), actions.onDownloadSettings)
+        if (state.session != null) {
+            SettingsHeading(stringResource(R.string.settings_quick_connect_heading))
+            SettingsButton(stringResource(R.string.settings_quick_connect), actions.onQuickConnect)
+            SettingsHelp(stringResource(R.string.settings_quick_connect_help))
+        }
     }
 }
 

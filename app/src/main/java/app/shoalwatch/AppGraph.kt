@@ -111,6 +111,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -374,4 +375,21 @@ class AppGraph(internal val appContext: Context) {
     }
     /** Opens the server's own web dashboard in the browser, on the verified address, with no sign-in passed. */
     val browserDashboard: DashboardOpener by lazy { BrowserDashboard(addressSelector) }
+
+    // ---- Library management (Milestone 10, data/manage) and Quick Connect approval. Live only, as the admin block above.
+    /** The active profile now, for a check made just before a change is written (`sendIf`). */
+    private val activeNow: kotlinx.coroutines.flow.StateFlow<app.shoalwatch.data.servers.Session?> by lazy {
+        serverCatalog.activeSession().stateIn(appScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, null)
+    }
+    private val manageGateway: app.shoalwatch.data.manage.api.ManageGateway by lazy {
+        app.shoalwatch.data.manage.api.ManageGateway(serverApi, { s -> adminRights.allows(s) }, { s -> adminRights.allowsDelete(s) })
+    }
+    /** What the management screens call: every request gated on [adminRights] (see "Library management" in docs/ARCHITECTURE.md). */
+    val manage: app.shoalwatch.data.manage.Manage get() = manageGateway
+    /** Pictures from the photo picker, read through the content resolver and re-encoded on the phone. */
+    val pickedImages: app.shoalwatch.data.manage.PickedImages by lazy { app.shoalwatch.data.manage.PickedImages(appContext.contentResolver::openInputStream) }
+    /** Approving a Quick Connect code from Settings: only while the asking profile is still the active one. */
+    val quickConnectApprover: app.shoalwatch.data.servers.QuickConnectApprover by lazy {
+        app.shoalwatch.data.servers.QuickConnectApprover(serverApi) { s -> activeNow.value == s }
+    }
 }

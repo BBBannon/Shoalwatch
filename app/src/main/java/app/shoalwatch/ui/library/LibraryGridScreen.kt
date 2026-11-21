@@ -54,6 +54,15 @@ import app.shoalwatch.data.library.ItemKind
 import app.shoalwatch.data.library.ItemWithUserData
 import app.shoalwatch.data.library.Sort
 import app.shoalwatch.ui.browse.isWorking
+import app.shoalwatch.ui.browse.BulkAction
+import app.shoalwatch.ui.browse.BulkHost
+import app.shoalwatch.ui.browse.BulkItem
+import app.shoalwatch.ui.browse.Selection
+import app.shoalwatch.ui.browse.SelectionChrome
+import app.shoalwatch.ui.browse.rememberCardSelect
+import app.shoalwatch.ui.browse.rememberSelection
+import app.shoalwatch.ui.browse.selectionControls
+import app.shoalwatch.ui.components.SelectionBar
 import app.shoalwatch.ui.components.BannerActions
 import app.shoalwatch.ui.components.CollectMessages
 import app.shoalwatch.ui.components.EmptyState
@@ -98,13 +107,22 @@ class LibraryGridActions(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LibraryGridScreen(state: LibraryGridUiState, actions: LibraryGridActions, messages: Flow<String>, snackbar: SnackbarHostState) {
+fun LibraryGridScreen(state: LibraryGridUiState, actions: LibraryGridActions, messages: Flow<String>, snackbar: SnackbarHostState, bulk: BulkHost? = null) {
     CollectMessages(messages, snackbar, state.session)
+    val strings = rememberStrings()
+    val selection = bulk?.let { rememberSelection(state.session) }
+    var sheetId by rememberSaveable(state.session) { mutableStateOf<String?>(null) }
+    val listed = remember(state.items, strings) {
+        state.items.associate { it.item.id to BulkItem(it.item.id, it.item.sheetTitle(strings), it.item.kind, it.item.seriesId) }
+    }
+    if (selection != null && bulk != null) SelectionChrome(selection, bulk, listed, snackbar)
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
-            TopAppBar(
+            if (selection != null && bulk != null && selection.active) {
+                SelectionBar(selectionControls(selection, bulk, listed, BulkAction.forBrowsing) { sheetId = it })
+            } else TopAppBar(
                 // One line with an ellipsis: a fixed-height bar cannot hold two lines at a large text size. The whole name is in the sheet and the item's page.
                 title = { Text(state.title, Modifier.refreshAction(actions.onRefresh).semantics { heading() }, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = { IconButton(onClick = actions.onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.cd_back)) } },
@@ -124,7 +142,7 @@ fun LibraryGridScreen(state: LibraryGridUiState, actions: LibraryGridActions, me
                 else -> {
                     RefreshLine(state.refreshing && !state.pulling)
                     PullToRefreshBox(isRefreshing = state.pulling, onRefresh = actions.onRefresh, modifier = Modifier.fillMaxSize()) {
-                        Grid(state, actions)
+                        Grid(state, actions, selection, sheetId) { sheetId = it }
                     }
                 }
             }
@@ -133,12 +151,11 @@ fun LibraryGridScreen(state: LibraryGridUiState, actions: LibraryGridActions, me
 }
 
 @Composable
-private fun Grid(state: LibraryGridUiState, actions: LibraryGridActions) {
+private fun Grid(state: LibraryGridUiState, actions: LibraryGridActions, selection: Selection?, sheetId: String?, setSheet: (String?) -> Unit) {
     val strings = rememberStrings()
     val session = state.session
     // Another account never starts part way down the last one's list.
     val gridState = key(session) { rememberLazyGridState() }
-    var sheetId by rememberSaveable(session) { mutableStateOf<String?>(null) }
     val loading = stringResource(R.string.cd_loading_content)
     val banner = BannerActions(actions.onRefresh, { session?.let { actions.onSignIn(it.serverId) } }, { session?.let { actions.onReview(it.serverId) } })
 
@@ -181,8 +198,9 @@ private fun Grid(state: LibraryGridUiState, actions: LibraryGridActions) {
             if (session != null) {
                 val card = remember(entry, session, strings) { posterCard(entry, session, strings) }
                 PosterCard(
-                    card, onClick = { actions.onOpen(entry.destination()) }, onMenu = { sheetId = entry.item.id },
+                    card, onClick = { actions.onOpen(entry.destination()) }, onMenu = { setSheet(entry.item.id) },
                     working = state.working.isWorking(entry.item.id),
+                    select = rememberCardSelect(selection, entry.item.id, card.title),
                 )
             }
         }
@@ -224,7 +242,7 @@ private fun Grid(state: LibraryGridUiState, actions: LibraryGridActions) {
                 onGoToSeries = {},
                 onDetails = { actions.onOpen(entry.detailsDestination()) },
             ),
-            onDismiss = { sheetId = null },
+            onDismiss = { setSheet(null) },
         )
     }
 }

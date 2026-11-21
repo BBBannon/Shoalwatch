@@ -96,6 +96,9 @@ class FakeLibrary : Library {
     val markedDue = mutableListOf<Session>()
     override suspend fun refreshHomeIfDue(s: Session) { dueChecks += s }
     override suspend fun markHomeDue(s: Session) { markedDue += s }
+    /** Milestone 10: each forgetDeleted as (session, item, keepRecord). */
+    val forgets = mutableListOf<Triple<Session, String, Boolean>>()
+    override suspend fun forgetDeleted(s: Session, itemId: String, keepRecord: Boolean) { forgets += Triple(s, itemId, keepRecord) }
 }
 
 /** A `Playstate` that records each call, can be held, and can fail with a chosen error. */

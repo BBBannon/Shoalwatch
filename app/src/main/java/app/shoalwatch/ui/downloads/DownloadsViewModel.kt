@@ -132,6 +132,29 @@ class DownloadsViewModel(
         }
     }
 
+    /**
+     * Milestone 10: "Delete download" for the selected films and series: this profile's own copies of each (a series: its own
+     * episodes of it), in one confirmation. Nothing when it owns none of them.
+     */
+    fun askRemoveMany(ids: List<String>) {
+        val s = state.value.session ?: return
+        val lib = state.value.library
+        viewModelScope.launch {
+            val entries = ArrayList<app.shoalwatch.data.downloads.OfflineEntry>()
+            for (id in ids) {
+                val film = lib.films.firstOrNull { it.download.itemId == id } ?: lib.inProgress.firstOrNull { it.download.itemId == id }
+                if (film != null) { entries += film; continue }
+                if (lib.series.any { it.series.item.id == id }) {
+                    val series = try { downloads.series(s, id).first() } catch (e: CancellationException) { throw e } catch (e: Exception) { continue }
+                    entries += series.seasons.flatMap { it.episodes }
+                }
+            }
+            val request = removeOwned(RemoveKind.MANY, entries.distinctBy { it.download.itemId }) ?: return@launch
+            val one = request.itemIds.singleOrNull()
+            if (state.value.session == s) confirm.value = s to if (one != null) request.copy(kind = RemoveKind.ONE) else request
+        }
+    }
+
     fun cancelRemove() { confirm.value = null }
 
     fun confirmRemove() {

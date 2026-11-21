@@ -127,4 +127,11 @@ interface Library {
 
     /** Something changed on the server that no window can know about (a library scan finished): Home's lists are due now. */
     suspend fun markHomeDue(s: Session) {}
+
+    /**
+     * Milestone 10: [s] deleted [itemId] from the server. It leaves every list of [s] at once. With [keepRecord] (a download kept on
+     * this phone) its record stays, so Downloads still shows it; otherwise it is gone for [s] as an item the server refused is.
+     * Other profiles and the shared item row are untouched (their next refresh drops it). A malformed id does nothing.
+     */
+    suspend fun forgetDeleted(s: Session, itemId: String, keepRecord: Boolean) {}
 }

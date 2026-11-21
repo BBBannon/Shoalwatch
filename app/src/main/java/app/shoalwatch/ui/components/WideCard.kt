@@ -36,10 +36,12 @@ fun WideCard(
     modifier: Modifier = Modifier,
     width: Dp = PhoneWideCardWidth,
     working: Boolean = false,
+    select: CardSelect? = null,
 ) {
     Box(modifier.width(width)) {
         Column(
-            Modifier.fillMaxWidth().clip(CardShape).cardAction(card.label, card.menuLabel, onClick, onMenu, if (working) stringResource(R.string.cd_working) else null),
+            Modifier.fillMaxWidth().clip(CardShape).selectedOutline(select?.selected == true, MaterialTheme.colorScheme.primary)
+                .cardAction(card.label, card.menuLabel, onClick, onMenu, if (working) stringResource(R.string.cd_working) else null, select),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             // The bar is drawn inside the picture's rounded corners, along its foot.
@@ -47,6 +49,7 @@ fun WideCard(
                 Artwork(card.artwork, contentDescription = null, aspect = ArtworkAspect.WIDE, title = card.title, modifier = Modifier.fillMaxWidth())
                 if (card.progress != null) ProgressBarThin(card.progress, Modifier.align(Alignment.BottomCenter))
                 when {
+                    select?.selected == true -> SelectedMark(Modifier.align(Alignment.TopStart).padding(8.dp))
                     working -> WorkingBadge(Modifier.align(Alignment.TopStart).padding(8.dp))
                     card.watched -> WatchedBadge(Modifier.align(Alignment.TopStart).padding(8.dp))
                 }

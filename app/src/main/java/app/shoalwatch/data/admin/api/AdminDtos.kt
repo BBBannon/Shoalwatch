@@ -26,6 +26,9 @@ import kotlinx.serialization.json.JsonElement
     @SerialName("IsAdministrator") val isAdministrator: Boolean? = null,
     @SerialName("IsDisabled") val isDisabled: Boolean? = null,
     @SerialName("EnableContentDownloading") val enableContentDownloading: Boolean? = null,
+    /** Milestone 10: who may delete from the server. The folder list is read only for "any at all", so any JSON is tolerated. */
+    @SerialName("EnableContentDeletion") val enableContentDeletion: Boolean? = null,
+    @SerialName("EnableContentDeletionFromFolders") val enableContentDeletionFromFolders: kotlinx.serialization.json.JsonElement? = null,
     @SerialName("EnableAllFolders") val enableAllFolders: Boolean? = null,
     @SerialName("EnabledFolders") val enabledFolders: List<JsonElement>? = null,
 )

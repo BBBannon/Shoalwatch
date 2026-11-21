@@ -18,6 +18,7 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.DeserializationStrategy
+import kotlinx.serialization.json.JsonElement
 import okhttp3.Call
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
@@ -25,10 +26,7 @@ import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
-import okio.Buffer
 import okio.BufferedSource
-import okio.ForwardingSource
-import okio.Source
 import okio.buffer
 import java.io.IOException
 
@@ -48,6 +46,10 @@ import java.io.IOException
  * - 401: the server rejected this sign-in, so `ServerStore.invalidateToken` stops the app looping on a dead token (later calls
  *   fail fast as `NOT_SIGNED_IN` with nothing sent) and this call fails with "Your sign-in has expired. Sign in again." Skipped
  *   if the sign-in was replaced after the request began. Only ever for a 401 from the verified address of this signed-in call.
+ *   Exception, by the caller's choice ([delete]'s `verifyUnauthorised`): an endpoint where Jellyfin also answers a plain refusal
+ *   with 401 (`DELETE /Items/{id}` for an item this user may not delete). There a 401 is checked with one `GET /Users/Me` first: a
+ *   401 to that ends the sign-in as above; any other answer (it still works, or the check could not be made) keeps it, and the
+ *   call fails `FORBIDDEN`, "The server refused to do that." The refused request itself is never sent again.
  * - A network failure before a response arrives asks the selector to re-probe THIS server, and only if the connection the
  *   attempt used is still the current one ([ServerConnections.refreshIfCurrent]): a burst of failures after a network
  *   change causes one probe, and a failure from before a newer verification cannot discard it. With `retry` set (default
@@ -96,6 +98,21 @@ class ServerApi(
     ) {
         val body = jsonBody?.toRequestBody(JSON) ?: ByteArray(0).toRequestBody(null)
         execute(session, "POST", path, query, if (sendOnce) body.sentOnce() else body, retry, sendIf) { }
+    }
+
+    /**
+     * POST with a non-JSON [body] of [contentType] (a picture upload, Milestone 10); the response body is ignored. Always sent once
+     * and never retried (`sendOnce`: OkHttp does not resend it either); [sendIf] as for [post].
+     */
+    suspend fun postBytes(
+        session: Session,
+        path: String,
+        query: List<Pair<String, String>> = emptyList(),
+        body: ByteArray,
+        contentType: String,
+        sendIf: () -> Boolean = ALWAYS,
+    ) {
+        execute(session, "POST", path, query, body.toRequestBody(contentType.toMediaType()).sentOnce(), retry = false, sendIf) { }
     }
 
     /**
@@ -177,7 +194,11 @@ class ServerApi(
         MediaRoute(session, base, guard, online)
     }
 
-    /** DELETE; the response body is ignored. Not retried unless the caller opts in with [retry]; [sendOnce], [sendIf] as for [post]. */
+    /**
+     * DELETE; the response body is ignored. Not retried unless the caller opts in with [retry]; [sendOnce], [sendIf] as for [post].
+     * [verifyUnauthorised]: for an endpoint where the server answers a refusal with 401 (`DELETE /Items/{id}` when the item may not
+     * be deleted by this user), see [execute].
+     */
     suspend fun delete(
         session: Session,
         path: String,
@@ -185,8 +206,9 @@ class ServerApi(
         retry: Boolean = false,
         sendOnce: Boolean = false,
         sendIf: () -> Boolean = ALWAYS,
+        verifyUnauthorised: Boolean = false,
     ) {
-        execute(session, "DELETE", path, query, if (sendOnce) ByteArray(0).toRequestBody(null).sentOnce() else null, retry, sendIf) { }
+        execute(session, "DELETE", path, query, if (sendOnce) ByteArray(0).toRequestBody(null).sentOnce() else null, retry, sendIf, verifyUnauthorised) { }
     }
 
     /**
@@ -246,6 +268,7 @@ class ServerApi(
         body: RequestBody?,
         retry: Boolean,
         sendIf: () -> Boolean = ALWAYS,
+        verifyUnauthorised: Boolean = false,
         handle: (Response) -> T,
     ): T {
         ApiRequest.checkPath(path)
@@ -277,7 +300,8 @@ class ServerApi(
                 try { awaitCancellation() } finally { open.call.cancel() }
             }
             try {
-                open.response.use { response ->
+                return@withContext open.response.use { response ->
+                    if (verifyUnauthorised && response.code == 401) throw Unverified401()
                     checkStatus(session, open, response.code)
                     try {
                         handle(response)
@@ -289,10 +313,27 @@ class ServerApi(
                         throw passThrough.original
                     }
                 }
+            } catch (unverified: Unverified401) {
+                // Closed by `use`; told apart below, after the call is finished with.
             } finally {
                 watchdog.cancel()
             }
+            throw afterRefused401(session)
         }
+    }
+
+    /** A 401 the caller asked to have checked ([execute]'s `verifyUnauthorised`): leaves the response, then [afterRefused401]. */
+    private class Unverified401 : RuntimeException()
+
+    /**
+     * Tells "this sign-in has ended" from "the server refused this one request" with `GET /Users/Me`: a 401 there (which signs the
+     * account out locally, as every 401 does) is returned as it came; anything else keeps the sign-in and says the server refused.
+     */
+    private suspend fun afterRefused401(session: Session): AppError = try {
+        get(session, "/Users/Me", deserializer = JsonElement.serializer(), maxBytes = ME_MAX_BYTES, retry = false)
+        AppError(AppError.Kind.FORBIDDEN, REFUSED_MESSAGE)
+    } catch (e: AppError) {
+        if (e.kind == AppError.Kind.UNAUTHORISED || e.kind == AppError.Kind.NOT_SIGNED_IN) e else AppError(AppError.Kind.FORBIDDEN, REFUSED_MESSAGE)
     }
 
     /**
@@ -340,33 +381,12 @@ class ServerApi(
         throw AppError.fromHttpStatus(code)
     }
 
-    /** Fails with `SERVER_ERROR` on the first byte past [max], asking the server for no more than one byte beyond it. */
-    private class LimitedSource(delegate: Source, private val max: Long) : ForwardingSource(delegate) {
-        private var total = 0L
-
-        /** Set when the connection itself failed while reading, which tells that apart from an IOException of the reader's own. */
-        var networkFailure: IOException? = null
-            private set
-
-        override fun read(sink: Buffer, byteCount: Long): Long {
-            val n = try {
-                super.read(sink, minOf(byteCount, max - total + 1))
-            } catch (e: IOException) {
-                networkFailure = e
-                throw e
-            }
-            if (n > 0) {
-                total += n
-                if (total > max) throw AppError.of(AppError.Kind.SERVER_ERROR)
-            }
-            return n
-        }
-    }
-
     private companion object {
         const val DEFAULT_MAX_BYTES = 4L * 1024 * 1024
         const val MAX_CAUSE_DEPTH = 10
         const val EXPIRED_MESSAGE = "Your sign-in has expired. Sign in again."
+        const val REFUSED_MESSAGE = "The server refused to do that."
+        const val ME_MAX_BYTES = 1024L * 1024
         val JSON = "application/json".toMediaType()
         val ALWAYS: () -> Boolean = { true }
     }

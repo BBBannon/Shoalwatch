@@ -1,5 +1,15 @@
 package app.shoalwatch.ui.downloads
 
+import androidx.compose.runtime.remember
+import app.shoalwatch.ui.browse.BulkAction
+import app.shoalwatch.ui.browse.BulkHost
+import app.shoalwatch.ui.browse.BulkItem
+import app.shoalwatch.ui.browse.Selection
+import app.shoalwatch.ui.browse.SelectionChrome
+import app.shoalwatch.ui.browse.rememberSelection
+import app.shoalwatch.ui.browse.selectionControls
+import app.shoalwatch.ui.components.SelectionBar
+import app.shoalwatch.ui.present.sheetTitle
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -53,7 +63,23 @@ import kotlinx.coroutines.flow.Flow
 fun DownloadsScreen(
     state: DownloadsUiState, actions: DownloadsActions, messages: Flow<SessionMessage>, snackbar: SnackbarHostState,
     onOpenSettings: (() -> Unit)? = null, onOpenStorage: (() -> Unit)? = null,
+    bulk: BulkHost? = null,
 ) {
+    val strings = rememberStrings()
+    val selection = bulk?.let { rememberSelection(state.session) }
+    val listed = remember(state.library, strings) {
+        state.library.films.associate { it.item.item.id to BulkItem(it.item.item.id, it.item.item.sheetTitle(strings), it.item.item.kind, it.item.item.seriesId) } +
+            state.library.series.associate { it.series.item.id to BulkItem(it.series.item.id, it.series.item.sheetTitle(strings), it.series.item.kind) }
+    }
+    // Delete download goes through this tab's own dialog and owner rules; everything else through the shared bulk actions.
+    val host = bulk?.let { b ->
+        remember(b, actions) {
+            BulkHost(b.state, b.notices, { items, action ->
+                if (action == BulkAction.REMOVE_DOWNLOAD) actions.onAskRemoveMany(items.map { it.id }) else b.onApply(items, action)
+            }, b.onKeepCopy, b.onConfirmDelete, b.onDismissDelete, b.onManage, canDownload = false)
+        }
+    }
+    if (selection != null && host != null) SelectionChrome(selection, host, listed, snackbar)
     val resources = LocalResources.current
     val current = rememberUpdatedState(state.session)
     DismissOnSessionChange(snackbar, state.session)
@@ -62,8 +88,10 @@ fun DownloadsScreen(
     }
     val session = state.session
     // Drawn edge to edge: the title and the settings cog sit below the status bar, as on the other tabs (walkthrough W-2).
-    Column(Modifier.fillMaxSize().statusBarsPadding()) {
-        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+    Column(Modifier.fillMaxSize().then(if (selection?.active == true) Modifier else Modifier.statusBarsPadding())) {
+        if (selection != null && host != null && selection.active) {
+            SelectionBar(selectionControls(selection, host, listed, BulkAction.forDownloads, onMore = null))
+        } else Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             Text(stringResource(R.string.downloads_title), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f).semantics { heading() })
             if (onOpenStorage != null && session != null) {
                 TextButton(onClick = onOpenStorage, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.storage_action)) }
@@ -84,7 +112,7 @@ fun DownloadsScreen(
                     EmptyState(stringResource(R.string.dl_failed_locally), null, actionLabel = stringResource(R.string.action_retry), onAction = actions.onTryAgain)
                 }
                 state.empty -> item { EmptyState(stringResource(R.string.downloads_title), stringResource(R.string.dl_empty), icon = DownloadIcon) }
-                else -> content(state, session, actions)
+                else -> content(state, session, actions, selection)
             }
             item { Spacer(Modifier.heightIn(min = 24.dp)) }
         }
@@ -92,7 +120,7 @@ fun DownloadsScreen(
     state.confirmRemove?.let { RemoveDialog(it, actions.onConfirmRemove, actions.onCancelRemove) }
 }
 
-private fun LazyListScope.content(state: DownloadsUiState, session: Session, actions: DownloadsActions) {
+private fun LazyListScope.content(state: DownloadsUiState, session: Session, actions: DownloadsActions, selection: Selection?) {
     val lib = state.library
     if (lib.inProgress.isNotEmpty()) {
         item { SectionHeader(stringResource(R.string.dl_section_downloading), Modifier.padding(vertical = 8.dp)) }
@@ -101,11 +129,11 @@ private fun LazyListScope.content(state: DownloadsUiState, session: Session, act
     }
     if (lib.films.isNotEmpty()) {
         item { SectionHeader(stringResource(R.string.dl_section_films), Modifier.padding(vertical = 8.dp)) }
-        item { Grid(lib.films.size) { i, m -> FilmCard(lib.films[i], session, actions, m) } }
+        item { Grid(lib.films.size) { i, m -> FilmCard(lib.films[i], session, actions, m, selection) } }
     }
     if (lib.series.isNotEmpty()) {
         item { SectionHeader(stringResource(R.string.dl_section_tv), Modifier.padding(vertical = 8.dp)) }
-        item { Grid(lib.series.size) { i, m -> SeriesCard(lib.series[i], session, actions, m) } }
+        item { Grid(lib.series.size) { i, m -> SeriesCard(lib.series[i], session, actions, m, selection) } }
     }
 }
 

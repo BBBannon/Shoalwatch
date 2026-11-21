@@ -1,5 +1,15 @@
 package app.shoalwatch.ui.series
 
+import androidx.compose.runtime.CompositionLocalProvider
+import app.shoalwatch.ui.browse.BulkAction
+import app.shoalwatch.ui.browse.BulkHost
+import app.shoalwatch.ui.browse.BulkItem
+import app.shoalwatch.ui.browse.LocalSelection
+import app.shoalwatch.ui.browse.SelectionChrome
+import app.shoalwatch.ui.browse.rememberSelection
+import app.shoalwatch.ui.browse.selectionControls
+import app.shoalwatch.ui.components.SelectionBar
+import app.shoalwatch.ui.present.sheetTitle
 import app.shoalwatch.ui.components.OverlayBackButton
 import app.shoalwatch.ui.components.refreshAction
 import app.shoalwatch.ui.components.PullRefresh
@@ -81,6 +91,8 @@ class SeriesActions(
     val onSetSeasonPlayed: (seasonId: String, played: Boolean) -> Unit,
     val onSetPlayed: (itemId: String, played: Boolean) -> Unit,
     val onSetFavourite: (itemId: String, favourite: Boolean) -> Unit,
+    /** Milestone 10: "Manage" for an administrator (identify, pictures, details, refresh, delete); null hides it. */
+    val onManage: (() -> Unit)? = null,
 )
 
 /**
@@ -91,8 +103,23 @@ class SeriesActions(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SeriesScreen(state: SeriesUiState, actions: SeriesActions, messages: Flow<String>, snackbar: SnackbarHostState, download: DownloadControls? = null) {
+fun SeriesScreen(
+    state: SeriesUiState,
+    actions: SeriesActions,
+    messages: Flow<String>,
+    snackbar: SnackbarHostState,
+    download: DownloadControls? = null,
+    bulk: BulkHost? = null,
+) {
     CollectMessages(messages, snackbar, state.session)
+    val strings = rememberStrings()
+    val selection = bulk?.let { rememberSelection(state.session) }
+    val listed = remember(state.episodes, strings) {
+        state.episodes.associate { it.item.id to BulkItem(it.item.id, it.item.sheetTitle(strings), it.item.kind, it.item.seriesId) }
+    }
+    if (selection != null && bulk != null) SelectionChrome(selection, bulk, listed, snackbar)
+    var moreId by rememberSaveable(state.session) { mutableStateOf<String?>(null) }
+    EpisodeSheet(state, actions, moreId) { moreId = null }
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbar) },
@@ -112,10 +139,15 @@ fun SeriesScreen(state: SeriesUiState, actions: SeriesActions, messages: Flow<St
                 }
                 else -> {
                     val twoPane = isTwoPane()
-                    PullRefresh(isRefreshing = state.pulling, onRefresh = actions.onRefresh, modifier = Modifier.fillMaxSize(), belowStatusBar = true) {
-                        if (twoPane) SeriesTwoPane(state, actions, download) else SeriesContent(state, actions, download)
+                    CompositionLocalProvider(LocalSelection provides selection) {
+                        PullRefresh(isRefreshing = state.pulling, onRefresh = actions.onRefresh, modifier = Modifier.fillMaxSize(), belowStatusBar = true) {
+                            if (twoPane) SeriesTwoPane(state, actions, download) else SeriesContent(state, actions, download)
+                        }
                     }
                     RefreshLine(state.refreshing && !state.pulling, Modifier.statusBarsPadding().align(Alignment.TopCenter))
+                    if (selection != null && bulk != null && selection.active) {
+                        SelectionBar(selectionControls(selection, bulk, listed, BulkAction.forBrowsing) { moreId = it }, Modifier.align(Alignment.TopCenter))
+                    }
                 }
             }
         }

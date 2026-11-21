@@ -68,4 +68,6 @@ data class DownloadsActions(
     val onAskRemoveSeries: (String) -> Unit = {},
     /** "Manage servers and accounts", offered when nobody is signed in. */
     val onOpenServers: () -> Unit = {},
+    /** Milestone 10: "Delete download" for the selected films and series (this profile's own copies, through the delete dialog). */
+    val onAskRemoveMany: (List<String>) -> Unit = {},
 )

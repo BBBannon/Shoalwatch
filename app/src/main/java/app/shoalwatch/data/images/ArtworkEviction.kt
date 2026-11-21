@@ -56,6 +56,20 @@ class ArtworkEviction(
         }
     }
 
+    /**
+     * Milestone 10: an item's pictures changed on the server. Its memory entries (keys starting `art:<serverId>:<itemId>:`) go, so
+     * nothing on screen keeps the old picture. The item's new tags (fetched again by the caller) make new cache keys; disk entries
+     * under the old tags cannot be listed and simply age out. Never throws.
+     */
+    fun evictItem(serverId: String, itemId: String) {
+        try {
+            val prefix = "art:$serverId:$itemId:"
+            memory()?.let { cache -> cache.keys.filter { it.key.startsWith(prefix) }.forEach { cache.remove(it) } }
+        } catch (e: Exception) {
+            AppLog.w(TAG, "artwork item eviction failed", e)
+        }
+    }
+
     /** Removes the server's memory entries (every key starting `art:<serverId>:`) and its disk cache. */
     suspend fun evict(serverId: String) {
         try {

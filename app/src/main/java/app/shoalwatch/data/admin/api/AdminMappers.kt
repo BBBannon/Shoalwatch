@@ -121,7 +121,11 @@ internal fun SystemInfoDto.toStatus() = ServerStatus(
     shuttingDown = isShuttingDown ?: false,
 )
 
-internal fun UserMeDto.toMe() = AdminMe(id(id), policy?.isAdministrator ?: false, policy?.isDisabled ?: false)
+internal fun UserMeDto.toMe() = AdminMe(
+    id(id), policy?.isAdministrator ?: false, policy?.isDisabled ?: false,
+    canDelete = policy?.enableContentDeletion == true ||
+        (policy?.enableContentDeletionFromFolders as? kotlinx.serialization.json.JsonArray)?.isNotEmpty() == true,
+)
 
 // ---- sessions
 

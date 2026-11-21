@@ -19,7 +19,7 @@ import app.shoalwatch.ui.present.rememberStrings
 import app.shoalwatch.ui.components.LocalCovered
 
 /** What a Delete is for: one download (ready, or still in the queue), or the profile's own episodes of a season or a series. */
-enum class RemoveKind { ONE, SEASON, SERIES }
+enum class RemoveKind { ONE, SEASON, SERIES, MANY }
 
 /**
  * A Delete waiting for a yes: [itemIds] (each still removed through the store's owner check) and the bytes it takes up, or null
@@ -62,6 +62,8 @@ internal fun RemoveDialog(request: RemoveRequest, onConfirm: () -> Unit, onCance
     val n = request.itemIds.size
     val text = when {
         request.kind == RemoveKind.ONE -> size?.let { stringResource(R.string.dl_delete_confirm, it) } ?: stringResource(R.string.dl_delete_size_unknown)
+        request.kind == RemoveKind.MANY && size != null -> strings.plural(R.plurals.dl_delete_many_confirm, n, size)
+        request.kind == RemoveKind.MANY -> strings.plural(R.plurals.dl_delete_many_size_unknown, n)
         size != null -> strings.plural(R.plurals.dl_delete_episodes_confirm, n, size)
         else -> strings.plural(R.plurals.dl_delete_episodes_size_unknown, n)
     }

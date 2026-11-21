@@ -100,6 +100,10 @@ class DetailActions(
     val onSetFavourite: (favourite: Boolean) -> Unit,
     /** Opens the player: [StartFrom.RESUME] from the saved position, or from the start. */
     val onPlay: (StartFrom) -> Unit,
+    /** Milestone 10: "Manage" for an administrator; null hides it. */
+    val onManage: (() -> Unit)? = null,
+    /** Milestone 10: "Delete from server" for a profile that may delete but is no administrator (who has it under Manage). */
+    val onDelete: (() -> Unit)? = null,
 )
 
 /**
@@ -256,6 +260,12 @@ internal fun MarkAndFavourite(state: DetailUiState, entry: ItemWithUserData, act
             onClick = { actions.onSetPlayed(!watched) }, modifier = Modifier.weight(1f),
         )
         FavouriteButton(data?.favourite == true, state.working.contains(Work(item.id, ActionKind.FAVOURITE)), { actions.onSetFavourite(data?.favourite != true) })
+    }
+    val manage = actions.onManage
+    val delete = actions.onDelete
+    when {
+        manage != null -> app.shoalwatch.ui.components.SecondaryButton(stringResource(R.string.manage_button), manage, Modifier.fillMaxWidth())
+        delete != null -> app.shoalwatch.ui.components.SecondaryButton(stringResource(R.string.select_delete_server), delete, Modifier.fillMaxWidth())
     }
 }
 

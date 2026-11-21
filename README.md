@@ -50,6 +50,9 @@ Download whole seasons before a trip and browse them by series → season → ep
 | **Shared downloads** | One copy shared between profiles on the phone, only for titles the server confirms each profile may see |
 | **Profiles** | Several Jellyfin accounts and servers; protect a profile with its own PIN; optional app lock with fingerprint or screen lock |
 | **Server admin** | Who is watching, library scans, scheduled tasks, users, activity, devices, restart — for administrators only |
+| **Pick several at once** | Press and hold to select films or episodes, then mark them watched, favourite them, download them or delete them in one go |
+| **Manage the library** | For administrators: identify a film or series again, change its pictures (from online sources or your own photos), edit its details, refresh it or delete it |
+| **Approve a TV** | Type the Quick Connect code a TV or laptop shows to sign it in, from Settings |
 | **In the car** | Android Auto, while parked: Continue Watching, Next Up and your downloads (they play with no connection) on the car's screen |
 
 **Not in v1:** music, live TV, books, SyncPlay, Android TV, Chromecast.

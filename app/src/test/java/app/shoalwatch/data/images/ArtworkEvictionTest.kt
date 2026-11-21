@@ -61,6 +61,16 @@ class ArtworkEvictionTest : ArtworkTestBase() {
         assertEquals("the memory entry went too, so it was fetched again", 2, web.requestCount)
     }
 
+    @Test fun anItemsPicturesLeaveMemoryWhenTheyChangeAndNothingElseDoes() {
+        web.enqueue(image(bitmapBytes(), "image/jpeg"))
+        loaded(ref(), memory = true)
+        put(S1, "art:$S1:other")
+        eviction().evictItem(S1, ref().itemId)
+        assertTrue(loader.memoryCache!!.keys.none { it.key.startsWith("art:$S1:${ref().itemId}:") })
+        assertTrue("the server's cache stays", has(S1, "art:$S1:other"))
+        eviction().evictItem(S1, "anything") // nothing there: no failure
+    }
+
     @Test fun signingOutOneUserKeepsThePicturesWhileAnotherAccountRemains() {
         web.enqueue(image(bitmapBytes(), "image/jpeg"))
         loaded(ref())
