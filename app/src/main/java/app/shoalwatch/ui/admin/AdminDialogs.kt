@@ -95,6 +95,12 @@ fun MessageDialog(title: String, body: String, text: TextFieldState, enabled: Bo
     }
 }
 
+/** A confirmation with its own controls (Milestone 10: the refresh choices, "Replace all pictures"); the same secure window. */
+@Composable
+fun AdminFormDialog(title: String, confirmLabel: String, enabled: Boolean, onConfirm: () -> Unit, onDismiss: () -> Unit, content: @Composable () -> Unit) {
+    AdminDialog(title, confirmLabel, enabled, onConfirm, onDismiss, content)
+}
+
 @Composable
 private fun AdminDialog(
     title: String,

@@ -38,6 +38,7 @@ import app.shoalwatch.data.playback.StartFrom
 import app.shoalwatch.data.servers.ServerCatalog
 import app.shoalwatch.data.servers.Session
 import app.shoalwatch.ui.admin.adminDestinations
+import app.shoalwatch.ui.manage.manageDestinations
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.first
@@ -79,6 +80,8 @@ internal object Routes {
     const val DOWNLOAD_SETTINGS = "download_settings"
     /** Settings (Milestone 7): not an account route, so a session change pops it. */
     const val SETTINGS = "settings"
+    /** Approve a Quick Connect code (Milestone 10): not an account route. */
+    const val QUICK_CONNECT = "settings/quick_connect"
     const val STORAGE = "downloads/storage"
 
     fun home(fresh: Boolean = false) = "home?$ARG_FRESH=$fresh"
@@ -195,8 +198,10 @@ private fun AppNavHost(graph: AppGraph, start: String, openTab: String?, onTabOp
         composable(Routes.SERVERS) { ServersRoute(graph, nav) }
         composable(Routes.DOWNLOAD_SETTINGS) { DownloadSettingsRoute(graph, nav) }
         composable(Routes.SETTINGS) { SettingsRoute(graph, nav) }
+        composable(Routes.QUICK_CONNECT) { QuickConnectRoute(graph, nav) }
         composable(Routes.SERVER_EDIT, serverArg) { ServerEditRoute(graph, nav, it.arguments?.getString(Routes.ARG_SERVER).orEmpty()) }
         adminDestinations(graph, nav)
+        manageDestinations(graph, nav)
     }
 }
 

@@ -147,6 +147,11 @@ class LibraryRepository(
         else cache.rows(s, childrenRecipe(s, parentId, shape, sort, filter), MAX_ROWS)
             .map { Listing(it.rows, it.state?.total, it.freshness, canLoadMore(it.state)) }
 
+    override suspend fun forgetDeleted(s: Session, itemId: String, keepRecord: Boolean) = withContext(io) {
+        if (JellyfinId.parseOrNull(itemId)?.value != itemId) return@withContext
+        localFailuresAsAppError { if (keepRecord) cache.leaveLists(s, itemId) else cache.revoke(s, itemId) }
+    }
+
     /**
      * Ids reach the seam from navigation arguments and saved state, so a malformed one is data, not a programming error: it
      * reads as "not on the server" (flows) or does nothing (suspend functions), and no request or write is made.

@@ -1,5 +1,7 @@
 package app.shoalwatch.ui.series
 
+import app.shoalwatch.ui.browse.LocalSelection
+import app.shoalwatch.ui.browse.rememberCardSelect
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -107,6 +109,9 @@ internal fun SeriesActionsRow(state: SeriesUiState, actions: SeriesActions, down
         )
         FavouriteButton(state.seriesFavourite, state.working.contains(Work(id, ActionKind.FAVOURITE)), { actions.onSetSeriesFavourite(!state.seriesFavourite) })
     }
+    actions.onManage?.let { manage ->
+        Box(Modifier.padding(horizontal = Gutter)) { app.shoalwatch.ui.components.SecondaryButton(stringResource(R.string.manage_button), manage, Modifier.fillMaxWidth()) }
+    }
     if (download != null) {
         val season = state.selectedSeason
         Box(Modifier.padding(horizontal = Gutter)) { SeriesDownloadMenu(season?.item?.id, season?.item?.let { it.indexNumber?.toString().orEmpty() }, download) }
@@ -183,6 +188,7 @@ internal fun LazyListScope.episodes(
             EpisodeRow(
                 row, onClick = { actions.onOpen(Destination.Detail(entry.item.id)) }, onMenu = { onMenu(entry.item.id) },
                 highlighted = entry.item.id == state.highlightEpisodeId, working = state.working.isWorking(entry.item.id), modifier = Modifier.weight(1f),
+                select = rememberCardSelect(LocalSelection.current, entry.item.id, row.title),
             )
             if (download != null) EpisodeDownloadControl(entry.item, download)
         }

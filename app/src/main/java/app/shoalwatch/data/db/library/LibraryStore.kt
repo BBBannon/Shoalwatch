@@ -160,6 +160,14 @@ class LibraryStore(
         lists.keysContaining(s.serverId, s.userId, itemId).forEach { removeEntry(s, it, itemId) }
     }
 
+    /**
+     * Milestone 10: the item was deleted from the server but its download is kept on this phone. It leaves each of this user's
+     * lists (later entries move up, counts drop) in one transaction; the `visible_items` record stays, so Downloads still shows it.
+     */
+    suspend fun leaveLists(s: Session, itemId: String) = db.withTransaction {
+        lists.keysContaining(s.serverId, s.userId, itemId).forEach { removeEntry(s, it, itemId) }
+    }
+
     /** Marks this user's row for the item as holding a local change the server has not confirmed. False if there is no row (set the value first). */
     suspend fun markPending(s: Session, itemId: String, now: Instant): Boolean = items.markPending(s.serverId, s.userId, itemId, now.toEpochMilli()) > 0
 

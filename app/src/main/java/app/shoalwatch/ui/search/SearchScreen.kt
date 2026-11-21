@@ -1,5 +1,24 @@
 package app.shoalwatch.ui.search
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.stateDescription
+import app.shoalwatch.ui.browse.BulkAction
+import app.shoalwatch.ui.browse.BulkHost
+import app.shoalwatch.ui.browse.BulkItem
+import app.shoalwatch.ui.browse.Selection
+import app.shoalwatch.ui.browse.SelectionChrome
+import app.shoalwatch.ui.browse.rememberCardSelect
+import app.shoalwatch.ui.browse.rememberSelection
+import app.shoalwatch.ui.browse.selectionControls
+import app.shoalwatch.ui.components.SelectedMark
+import app.shoalwatch.ui.components.SelectionBar
+import app.shoalwatch.ui.present.sheetTitle
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.foundation.layout.height
 import app.shoalwatch.ui.components.SkeletonBlock
@@ -91,18 +110,27 @@ class SearchActions(
  * nothing found, couldn't search). Offline it says it is searching what is saved. Nothing typed is kept anywhere.
  */
 @Composable
-fun SearchScreen(state: SearchUiState, actions: SearchActions) {
-    Column(Modifier.fillMaxSize().statusBarsPadding()) {
+fun SearchScreen(state: SearchUiState, actions: SearchActions, bulk: BulkHost? = null, snackbar: SnackbarHostState? = null) {
+    val strings = rememberStrings()
+    val selection = bulk?.let { rememberSelection(state.session) }
+    val listed = remember(state.films, state.series, state.episodes, strings) {
+        (state.films + state.series + state.episodes).associate { it.item.id to BulkItem(it.item.id, it.item.sheetTitle(strings), it.item.kind, it.item.seriesId) }
+    }
+    if (selection != null && bulk != null && snackbar != null) SelectionChrome(selection, bulk, listed, snackbar)
+    Column(Modifier.fillMaxSize().then(if (selection?.active == true) Modifier else Modifier.statusBarsPadding())) {
         if (state.phase == SearchPhase.SIGNED_OUT) {
             SignedOutNotice(actions.onOpenServers)
             return@Column
         }
+        if (selection != null && bulk != null && selection.active) {
+            SelectionBar(selectionControls(selection, bulk, listed, BulkAction.forBrowsing, onMore = null))
+        }
         ReadableBox {
             // The keyboard's inset (less what the bottom bar already takes) is applied here, so results are never under the keyboard.
             Column(Modifier.fillMaxSize().imePadding()) {
-                SearchField(state, actions)
+                if (selection?.active != true) SearchField(state, actions)
                 RefreshLine(state.phase == SearchPhase.SEARCHING)
-                Results(state, actions)
+                Results(state, actions, selection)
             }
         }
     }
@@ -151,7 +179,7 @@ private fun SearchField(state: SearchUiState, actions: SearchActions) {
 }
 
 @Composable
-private fun Results(state: SearchUiState, actions: SearchActions) {
+private fun Results(state: SearchUiState, actions: SearchActions, selection: Selection?) {
     when (state.phase) {
         SearchPhase.IDLE -> ScrollingColumn {
             EmptyState(stringResource(R.string.nav_search), stringResource(R.string.search_prompt), icon = Icons.Filled.Search)
@@ -163,7 +191,7 @@ private fun Results(state: SearchUiState, actions: SearchActions) {
         SearchPhase.ERROR -> ScrollingColumn {
             EmptyState(stringResource(R.string.error_title), state.error, actionLabel = stringResource(R.string.action_retry), onAction = actions.onRetry)
         }
-        else -> ResultList(state, actions)
+        else -> ResultList(state, actions, selection)
     }
 }
 
@@ -188,7 +216,7 @@ private fun Searching() {
 }
 
 @Composable
-private fun ResultList(state: SearchUiState, actions: SearchActions) {
+private fun ResultList(state: SearchUiState, actions: SearchActions, selection: Selection?) {
     val strings = rememberStrings()
     val session = state.session ?: return
     val count = state.films.size + state.series.size + state.episodes.size
@@ -211,9 +239,9 @@ private fun ResultList(state: SearchUiState, actions: SearchActions) {
                 )
             }
         }
-        group(R.string.search_heading_films, "films", state.films) { entry -> ResultRow(searchRow(entry, session, strings), entry, false, actions) }
-        group(R.string.search_heading_series, "series", state.series) { entry -> ResultRow(searchRow(entry, session, strings), entry, false, actions) }
-        group(R.string.search_heading_episodes, "episodes", state.episodes) { entry -> ResultRow(searchRow(entry, session, strings), entry, true, actions) }
+        group(R.string.search_heading_films, "films", state.films) { entry -> ResultRow(searchRow(entry, session, strings), entry, false, actions, selection) }
+        group(R.string.search_heading_series, "series", state.series) { entry -> ResultRow(searchRow(entry, session, strings), entry, false, actions, selection) }
+        group(R.string.search_heading_episodes, "episodes", state.episodes) { entry -> ResultRow(searchRow(entry, session, strings), entry, true, actions, selection) }
     }
 }
 
@@ -228,16 +256,36 @@ private fun LazyListScope.group(
     items(entries.distinctBy { it.item.id }, key = { "$key-${it.item.id}" }) { row(it) }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ResultRow(row: SearchRowUi, entry: ItemWithUserData, wide: Boolean, actions: SearchActions) {
+private fun ResultRow(row: SearchRowUi, entry: ItemWithUserData, wide: Boolean, actions: SearchActions, selection: Selection?) {
+    val select = rememberCardSelect(selection, entry.item.id, row.title)
+    val open = { actions.onOpen(entry.destination()) }
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 64.dp).clickable(role = Role.Button) { actions.onOpen(entry.destination()) }
-            .padding(horizontal = Gutter, vertical = 6.dp).semantics(mergeDescendants = true) { contentDescription = row.label },
+        Modifier.fillMaxWidth().heightIn(min = 64.dp)
+            .then(if (select?.selected == true) Modifier.background(MaterialTheme.colorScheme.secondaryContainer) else Modifier)
+            .combinedClickable(
+                role = Role.Button,
+                onClick = if (select?.selecting == true) select.onToggle else open,
+                onLongClick = select?.onToggle,
+                onLongClickLabel = select?.selectLabel,
+            )
+            .padding(horizontal = Gutter, vertical = 6.dp).semantics(mergeDescendants = true) {
+                contentDescription = row.label
+                if (select != null && select.selecting) {
+                    selected = select.selected
+                    stateDescription = select.stateWords
+                }
+                if (select != null) customActions = listOf(CustomAccessibilityAction(select.selectLabel) { select.onToggle(); true })
+            },
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (wide) Artwork(row.artwork, null, aspect = ArtworkAspect.WIDE, title = row.title, modifier = Modifier.width(96.dp))
-        else Artwork(row.artwork, null, aspect = ArtworkAspect.POSTER, title = row.title, modifier = Modifier.width(48.dp))
+        Box {
+            if (wide) Artwork(row.artwork, null, aspect = ArtworkAspect.WIDE, title = row.title, modifier = Modifier.width(96.dp))
+            else Artwork(row.artwork, null, aspect = ArtworkAspect.POSTER, title = row.title, modifier = Modifier.width(48.dp))
+            if (select?.selected == true) SelectedMark(Modifier.align(Alignment.TopStart).padding(2.dp))
+        }
         Column(Modifier.weight(1f)) {
             Text(row.title, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold), maxLines = titleLines(2), overflow = TextOverflow.Ellipsis)
             if (row.subtitle != null) {

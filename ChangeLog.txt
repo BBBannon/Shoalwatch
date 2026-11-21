@@ -1,3 +1,11 @@
+v1.200 — 21/11/2026 — Approving another device’s Quick Connect code now works first time after the app starts, and deleting a film or series from the server takes you back to the list instead of leaving its page stuck loading
+v1.199 — 21/11/2026 — Safer library management: deleting something you are not allowed to delete no longer signs you out, deleting a series asks about its downloaded episodes, photos upload the right way up, saving details only changes what you changed, and approving a TV sign-in warns you and asks for your PIN
+v1.198 — 20/11/2026 — Version 1.2.0: managing your library from the phone
+v1.197 — 20/11/2026 — Sign in a TV or laptop from Settings by typing the Quick Connect code it shows
+v1.196 — 20/11/2026 — Server administrators can put a wrong film or series right from the phone: find it again online, change its pictures (from online choices or your own photos), edit its details, refresh it or delete it from the server
+v1.195 — 20/11/2026 — Press and hold a film, show or episode to pick several at once, then mark them watched, add them to favourites, download them or delete them together
+v1.194 — 20/11/2026 — Planned the six next stages that let Shoalwatch fully replace the Jellyfin app, from editing your library to music, Live TV and casting
+v1.193 — 20/11/2026 — The to-do list now starts with the features still needed before Shoalwatch can fully replace the Jellyfin app
 v1.192 — 20/11/2026 — Removed this PC’s folder locations from the build notes, and a privacy check now runs automatically before anything is uploaded to GitHub
 v1.191 — 20/11/2026 — The project page now opens with a Shoalwatch logo banner (the three-fish app icon and name), like Shoalcade’s
 v1.190 — 20/11/2026 — The project page now explains in plain words why Shoalwatch is worth using, and points to the sister project Shoalcade; extra safety so private files never get uploaded

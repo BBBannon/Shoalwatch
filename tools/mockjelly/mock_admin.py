@@ -28,8 +28,9 @@ def norm(raw):
     return raw.replace("-", "").lower()
 
 
-def policy(admin, downloads, all_folders, folders, disabled=False):
+def policy(admin, downloads, all_folders, folders, disabled=False, deletion=None):
     return {"IsAdministrator": admin, "IsHidden": False, "IsDisabled": disabled, "EnableContentDownloading": downloads,
+            "EnableContentDeletion": admin if deletion is None else deletion, "EnableContentDeletionFromFolders": [],
             "EnableAllFolders": all_folders, "EnabledFolders": folders, "EnableRemoteControlOfOtherUsers": admin,
             "EnableMediaPlayback": True, "MaxActiveSessions": 0, **PROVIDERS, "MockFutureField": 7}
 
@@ -43,7 +44,7 @@ def setup(server_id, ben_id, ben_name, guid, now, libraries, tokens=None, items=
              items=items if items is not None else {}, pending=CONFIG["pending_restart"], issued={})
     S["users"] = {
         ben_id: {"Name": ben_name, "Password": None, "Seen": now, "Policy": policy(CONFIG["ben_admin"], True, True, [])},
-        ANNA_ID: {"Name": "anna", "Password": "test-password-2", "Seen": now - timedelta(hours=1), "Policy": policy(False, True, True, [])},
+        ANNA_ID: {"Name": "anna", "Password": "test-password-2", "Seen": now - timedelta(hours=1), "Policy": policy(False, True, True, [], deletion=True)},
         kid: {"Name": "kid", "Password": "kid-password", "Seen": now - timedelta(minutes=5), "Policy": policy(False, True, True, [])},
         guest: {"Name": "guest", "Password": None, "Seen": None, "Policy": policy(False, True, True, [], disabled=True)},
     }
@@ -150,6 +151,13 @@ def token_user(token):
 def user_named(name):
     """The id of the user with that name, or None."""
     return next((uid for uid, user in S.get("users", {}).items() if user["Name"] == name), None)
+
+
+def may_delete(uid):
+    """Milestone 10: the user's own Policy.EnableContentDeletion, as Jellyfin's BaseItem.CanDelete(user) reads it (an
+    administrator's policy has it on by default here, but being one does not imply it)."""
+    user = S.get("users", {}).get(uid)
+    return bool(user and user["Policy"].get("EnableContentDeletion"))
 
 
 def may_download(uid):

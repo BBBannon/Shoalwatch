@@ -28,6 +28,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # python -I does not add the script folder
 import mock_admin  # noqa: E402
+import mock_manage  # noqa: E402
 
 SERVER_ID = "0123456789abcdef0123456789abcdef"
 USER_ID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -134,12 +135,20 @@ def build_catalogue():
                      "Runtime": 45 * 60 * TICKS, "Overview": f"Episode {ep} of season {sn} of {title}.", "Aspect": 1.778, "Year": 2015 + s * 3 + sn})
     HIDDEN[KID_ID] = {guid("series-2"), *descendants(guid("series-2"))}  # kid never sees Night Shift
     mock_admin.setup(SERVER_ID, USER_ID, USER_NAME, guid, NOW, [(FILMS_ID, "Films", "movies"), (TV_ID, "TV", "tvshows")], tokens=TOKENS, items=ITEMS)
+    setup_manage()
+
+
+def setup_manage():
+    """Milestone 10: the management routes (mock_manage.py) over this catalogue."""
+    mock_manage.setup(ITEMS, guid, norm, mock_admin.may_delete, lambda colour, w, h: png({"Id": f"{colour:06x}"}, w, h))
 
 
 HIDDEN = {}  # user id -> the item ids that user is not allowed to see (404 by id, left out of every list)
 
 
 def visible(item_id, uid=None):
+    if item_id in mock_manage.S.get("deleted", ()):  # deleted from the server (Milestone 10): gone for everyone
+        return False
     return item_id not in HIDDEN.get(uid or current_user(), ())
 
 
@@ -307,6 +316,10 @@ def dto(item):
         out["Genres"] = [item["Genre"]]
     if item["Type"] == "Movie" and "Year" in item:
         out["PremiereDate"] = f"{item['Year']}-06-01T00:00:00.0000000Z"
+    changed = mock_manage.image_tags(item)  # pictures changed through the management routes (Milestone 10)
+    if changed is not None:
+        out["ImageTags"], out["BackdropImageTags"] = changed
+    out.update(item.get("Edited", {}))
     if item["IsFolder"]:
         out["ChildCount"] = len(CHILDREN.get(item["Id"], []))
         out["RecursiveItemCount"] = len(episodes_of(item["Id"])) or len([c for c in descendants(item["Id"]) if ITEMS[c]["Type"] == "Movie"])
@@ -686,7 +699,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(*mock_userdata(method, q, raw)) if method in ("GET", "POST") else self.reply(404)
         if method == "GET" and len(segs) >= 4 and segs[0].lower() == "items" and segs[2].lower() == "images":
             # like Jellyfin, artwork needs no token
-            return self.image(ITEMS[norm(segs[1])], segs[3], q) if norm(segs[1]) in ITEMS else self.reply(404)
+            index = int(segs[4]) if len(segs) > 4 and segs[4].isdigit() else intq(q, "imageindex", 0) or 0
+            found = norm(segs[1]) in ITEMS and norm(segs[1]) not in mock_manage.S.get("deleted", ())
+            return self.image(ITEMS[norm(segs[1])], segs[3], q, index) if found else self.reply(404)
         if method == "GET" and low == "/system/info/public":
             return self.reply(200, {"Id": SERVER_ID, "ServerName": "Test Jellyfin", "Version": "12.4.0", "ProductName": "Mock Jellyfin (test stand-in)"})
         if method == "GET" and low == "/quickconnect/enabled":
@@ -701,6 +716,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(404)
             entry["polls"] += 1  # approved on the second poll, as if someone tapped Authorize in Jellyfin web
             return self.reply(200, {"Authenticated": entry["polls"] >= 2, "Secret": q["secret"][0], "Code": entry["code"], "DateAdded": "2026-11-18T10:00:00.0000000Z"})
+        if method == "POST" and low == "/mock/quickconnect-code":  # test-only, this machine only: a code as if a TV had started Quick Connect
+            if not loopback(self.client_address[0]) or not CONFIG["quick_connect"]:
+                return self.reply(403)
+            secret, code = secrets.token_hex(32), f"{secrets.randbelow(10**6):06d}"
+            QC[secret] = {"code": code, "polls": 0, "used": False, "approved": False}
+            return self.reply(200, {"Code": code, "Secret": secret})
         if CONFIG["quick_connect"] and method == "POST" and low == "/users/authenticatewithquickconnect":
             try:
                 body = json.loads(raw or b"{}")
@@ -749,6 +770,21 @@ class Handler(BaseHTTPRequestHandler):
         if method == "POST" and low == "/sessions/logout":
             TOKENS.discard(token)
             return self.reply(204)
+        if method == "POST" and low == "/quickconnect/authorize":  # Milestone 10: approve a code from the app
+            if not CONFIG["quick_connect"]:
+                return self.reply(401)  # as Jellyfin: "Quick connect is not active on this server"
+            code = q.get("code", [""])[0]
+            entry = next((e for e in QC.values() if e["code"] == code and not e["used"]), None)
+            if entry is None:
+                return self.reply(404)
+            entry["approved"] = True
+            entry["polls"] = max(entry["polls"], 2)
+            mock_manage.record("QuickConnectAuthorize", current_user(), {"code": ["<redacted>"]})
+            return self.reply(200, True)
+        user = mock_admin.S.get("users", {}).get(current_user(), {})
+        admin = bool(user and user["Policy"]["IsAdministrator"] and not mock_admin.CONFIG["admin_forbidden"])
+        if mock_manage.handle(self, method, path, q, raw, current_user(), admin):
+            return
         if mock_admin.handle(self, method, path, q, raw, token):
             return
         if not self.authenticated(method, path, q, raw):
@@ -900,7 +936,8 @@ class Handler(BaseHTTPRequestHandler):
             if low == "/shows/nextup":
                 return self.reply(200, next_up(q))
             if len(segs) == 2 and segs[0] == "items" and item(segs[1]):
-                return self.reply(200, dto(item(segs[1])))
+                # One item: Jellyfin's GetItem fills every field, CanDelete (for this user) among them.
+                return self.reply(200, {**dto(item(segs[1])), "CanDelete": mock_admin.may_delete(current_user())})
             if len(segs) == 3 and segs[0] == "shows" and item(segs[1]) and item(segs[1])["Type"] == "Series":
                 series = item(segs[1])
                 if segs[2] == "seasons":
@@ -938,9 +975,14 @@ class Handler(BaseHTTPRequestHandler):
             return True
         return self.reply(200, answer)
 
-    def image(self, item, kind, q):
+    def image(self, item, kind, q, index=0):
         kind = kind.lower()
-        if not (kind == "primary" and not item.get("NoImage") or kind == "backdrop" and item.get("Backdrop")):
+        changed = mock_manage.image_bytes(item, kind, index)  # Milestone 10: an uploaded or chosen picture, or a removed one
+        if changed == "none":
+            return self.reply(404)
+        if changed is not None:
+            return self.reply(200, raw=changed[0], headers={"Cache-Control": "public, max-age=3600"}, content_type=changed[1])
+        if mock_manage.stored(item["Id"]) is None and not (kind == "primary" and not item.get("NoImage") or kind == "backdrop" and item.get("Backdrop")):
             return self.reply(404)
         aspect = 1.778 if kind == "backdrop" else item["Aspect"]
         width = min(intq(q, "maxwidth") or intq(q, "width") or intq(q, "fillwidth") or 300, 1000)

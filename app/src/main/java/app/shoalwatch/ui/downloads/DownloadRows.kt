@@ -1,5 +1,12 @@
 package app.shoalwatch.ui.downloads
 
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.stateDescription
+import app.shoalwatch.ui.browse.Selection
+import app.shoalwatch.ui.browse.rememberCardSelect
+import app.shoalwatch.ui.components.SelectedMark
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -137,16 +144,20 @@ internal fun DeleteMenu(title: String, onDelete: () -> Unit, modifier: Modifier 
 
 /** A downloaded film in the grid: one element (poster, title, its lines) that opens the detail screen, and the owner's menu. */
 @Composable
-internal fun FilmCard(e: OfflineEntry, session: Session, actions: DownloadsActions, modifier: Modifier = Modifier) {
+internal fun FilmCard(e: OfflineEntry, session: Session, actions: DownloadsActions, modifier: Modifier = Modifier, selection: Selection? = null) {
     val strings = rememberStrings()
     val title = e.item.item.displayName(strings)
     val lines = listOf(DownloadText.status(strings, e.download)) + noteLines(strings, e)
+    val select = rememberCardSelect(selection, e.item.item.id, title)
     Box(modifier) {
         Column(
-            Modifier.fillMaxWidth().semantics(mergeDescendants = true) { role = Role.Button }.clickable { actions.onOpenItem(e.item.item.id) },
+            Modifier.fillMaxWidth().selectable(select) { actions.onOpenItem(e.item.item.id) },
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Artwork(e.item.item.primaryArtwork(session), null, aspect = ArtworkAspect.POSTER, title = title, modifier = Modifier.fillMaxWidth())
+            Box {
+                Artwork(e.item.item.primaryArtwork(session), null, aspect = ArtworkAspect.POSTER, title = title, modifier = Modifier.fillMaxWidth())
+                if (select?.selected == true) SelectedMark(Modifier.align(Alignment.TopStart).padding(8.dp))
+            }
             Text(title, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
             lines.forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
@@ -159,15 +170,19 @@ internal fun FilmCard(e: OfflineEntry, session: Session, actions: DownloadsActio
  * profile's own episodes of it) only for a profile that owns any of it.
  */
 @Composable
-internal fun SeriesCard(s: SeriesSummary, session: Session, actions: DownloadsActions, modifier: Modifier = Modifier) {
+internal fun SeriesCard(s: SeriesSummary, session: Session, actions: DownloadsActions, modifier: Modifier = Modifier, selection: Selection? = null) {
     val strings = rememberStrings()
     val title = s.series.item.displayName(strings)
+    val select = rememberCardSelect(selection, s.series.item.id, title)
     Box(modifier) {
         Column(
-            Modifier.fillMaxWidth().semantics(mergeDescendants = true) { role = Role.Button }.clickable { actions.onOpenSeries(s.series.item.id) },
+            Modifier.fillMaxWidth().selectable(select) { actions.onOpenSeries(s.series.item.id) },
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Artwork(s.series.item.primaryArtwork(session), null, aspect = ArtworkAspect.POSTER, title = title, modifier = Modifier.fillMaxWidth())
+            Box {
+                Artwork(s.series.item.primaryArtwork(session), null, aspect = ArtworkAspect.POSTER, title = title, modifier = Modifier.fillMaxWidth())
+                if (select?.selected == true) SelectedMark(Modifier.align(Alignment.TopStart).padding(8.dp))
+            }
             Text(title, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
             // Every episode watched and deleted: the show stays listed, as its series screen still shows them.
             val summary = if (s.episodeCount == 0) stringResource(R.string.offline_released) else DownloadText.seriesSummary(strings, s.episodeCount, s.bytes)
@@ -245,3 +260,19 @@ internal fun OfflineEpisodeRow(e: OfflineEntry, session: Session, onOpen: (Strin
         if (e.download.ownedByMe) DeleteMenu(title, { onAskRemove(item.id) })
     }
 }
+
+/**
+ * A Downloads card's touch (Milestone 10): a tap opens it, or (while selecting) adds or removes it; a long press selects; "Select"
+ * is a custom action for a screen reader. Without [select] it is the plain tap it always was.
+ */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+private fun Modifier.selectable(select: app.shoalwatch.ui.components.CardSelect?, onOpen: () -> Unit): Modifier =
+    if (select == null) semantics(mergeDescendants = true) { role = Role.Button }.clickable(onClick = onOpen)
+    else this.then(
+        Modifier.combinedClickable(
+            role = Role.Button, onClick = if (select.selecting) select.onToggle else onOpen, onLongClick = select.onToggle, onLongClickLabel = select.selectLabel,
+        ).semantics(mergeDescendants = true) {
+            if (select.selecting) { selected = select.selected; stateDescription = select.stateWords }
+            customActions = listOf(androidx.compose.ui.semantics.CustomAccessibilityAction(select.selectLabel) { select.onToggle(); true })
+        },
+    )

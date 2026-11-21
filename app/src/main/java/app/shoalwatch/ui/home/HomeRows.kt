@@ -1,5 +1,7 @@
 package app.shoalwatch.ui.home
 
+import app.shoalwatch.ui.browse.Selection
+import app.shoalwatch.ui.browse.rememberCardSelect
 import app.shoalwatch.ui.components.PhoneWideCardWidth
 import app.shoalwatch.ui.components.TabletWideCardWidth
 import androidx.compose.foundation.layout.Arrangement
@@ -62,6 +64,7 @@ internal fun LazyListScope.wideRow(
     actions: HomeActions,
     wide: Boolean,
     gaps: RowGaps,
+    selection: Selection? = null,
     onMenu: (itemId: String) -> Unit,
 ) {
     if (row.items.isEmpty() && row.banner == null) return
@@ -76,6 +79,7 @@ internal fun LazyListScope.wideRow(
                     WideCard(
                         card, onClick = { actions.onOpen(entry.destination()) }, onMenu = { onMenu(entry.item.id) },
                         width = if (wide) TabletWideCardWidth else PhoneWideCardWidth, working = state.working.isWorking(entry.item.id),
+                        select = rememberCardSelect(selection, entry.item.id, card.title),
                     )
                 }
             }
@@ -94,6 +98,7 @@ internal fun LazyListScope.posterRow(
     actions: HomeActions,
     wide: Boolean,
     gaps: RowGaps,
+    selection: Selection? = null,
     onMenu: (itemId: String) -> Unit,
 ) {
     if (latest.items.isEmpty() && latest.banner == null) return
@@ -108,6 +113,7 @@ internal fun LazyListScope.posterRow(
                     PosterCard(
                         card, onClick = { actions.onOpen(entry.destination()) }, onMenu = { onMenu(entry.item.id) },
                         width = if (wide) 152.dp else 128.dp, working = state.working.isWorking(entry.item.id),
+                        select = rememberCardSelect(selection, entry.item.id, card.title),
                     )
                 }
             }

@@ -3,6 +3,9 @@ package app.shoalwatch.ui.components
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.border
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.ui.semantics.selected
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -23,18 +26,57 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 
 /**
+ * Selection on a card (Milestone 10). [selecting]: the screen is in selection mode, so a tap adds or removes this card; a long
+ * press always does. [selected] shows the mark. [selectLabel] ("Select The Silent Harbour") and [stateWords] ("Selected" / "Not
+ * selected") are for a screen reader.
+ */
+class CardSelect(
+    val selected: Boolean,
+    val selecting: Boolean,
+    val onToggle: () -> Unit,
+    val selectLabel: String,
+    val stateWords: String,
+)
+
+/**
  * Makes a card one focusable, labelled element: a tap opens it, a long press (or the "more actions" custom action for a screen
  * reader) opens its actions. [state] is spoken after the label ("Working", "Up next for you"). The separate [ItemMenuButton] sits beside it, never inside, so it stays its own control.
+ * With [select] (Milestone 10) a long press selects instead, a tap selects while selecting, and "Select" is a custom action too;
+ * the "more actions" action and the dots button still open the one-item sheet.
  */
 @OptIn(ExperimentalFoundationApi::class)
-fun Modifier.cardAction(label: String, menuLabel: String, onClick: () -> Unit, onMenu: () -> Unit, state: String? = null): Modifier =
+fun Modifier.cardAction(label: String, menuLabel: String, onClick: () -> Unit, onMenu: () -> Unit, state: String? = null, select: CardSelect? = null): Modifier =
     this
-        .combinedClickable(onClick = onClick, onLongClick = onMenu, onLongClickLabel = menuLabel, role = Role.Button)
+        .combinedClickable(
+            onClick = if (select?.selecting == true) select.onToggle else onClick,
+            onLongClick = select?.onToggle ?: onMenu,
+            onLongClickLabel = select?.selectLabel ?: menuLabel,
+            role = Role.Button,
+        )
         .semantics(mergeDescendants = true) {
             contentDescription = label
-            if (state != null) stateDescription = state
-            customActions = listOf(CustomAccessibilityAction(menuLabel) { onMenu(); true })
+            val words = listOfNotNull(state, select?.takeIf { it.selecting }?.stateWords)
+            if (words.isNotEmpty()) stateDescription = words.joinToString(", ")
+            if (select != null && select.selecting) selected = select.selected
+            customActions = listOfNotNull(
+                select?.let { sel -> CustomAccessibilityAction(sel.selectLabel) { sel.onToggle(); true } },
+                CustomAccessibilityAction(menuLabel) { onMenu(); true },
+            )
         }
+
+/** The selected mark on a card: a filled check in the theme's primary colour, top-left. */
+@Composable
+fun SelectedMark(modifier: Modifier = Modifier) {
+    Surface(modifier.size(28.dp), shape = CircleShape, color = MaterialTheme.colorScheme.primary) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(androidx.compose.material.icons.Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(20.dp))
+        }
+    }
+}
+
+/** A selected card's outline. */
+fun Modifier.selectedOutline(selected: Boolean, color: androidx.compose.ui.graphics.Color): Modifier =
+    if (selected) this.border(3.dp, color, CardShape) else this
 
 /**
  * The "more actions" button: a 48dp touch target with a smaller disc behind the dots so it stays readable on top of a picture.

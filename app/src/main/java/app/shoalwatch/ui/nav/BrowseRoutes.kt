@@ -55,6 +55,9 @@ import app.shoalwatch.ui.downloads.OfflineSeriesScreen
 import app.shoalwatch.ui.downloads.OfflineSeriesViewModel
 import app.shoalwatch.data.playback.StartFrom
 import app.shoalwatch.ui.shell.Tab
+import app.shoalwatch.ui.browse.BulkHost
+import app.shoalwatch.ui.present.sheetTitle
+import app.shoalwatch.ui.browse.BulkViewModel
 
 /*
  * The browsing routes: one small composable per route, as in Routes.kt. A tab goes to the same place whichever tab you are
@@ -118,7 +121,8 @@ internal fun HomeRoute(graph: AppGraph, nav: NavHostController, fresh: Boolean) 
             onOpenSettings = { nav.navigate(Routes.SETTINGS) },
         )
     }
-    AppShell(Tab.HOME, nav::switchTab, snackbar) { HomeScreen(state, actions, vm.messages, snackbar, prompt, vm.switchPin) }
+    val bulk = rememberBulkHost(graph, nav)
+    AppShell(Tab.HOME, nav::switchTab, snackbar) { HomeScreen(state, actions, vm.messages, snackbar, prompt, vm.switchPin, bulk) }
 }
 
 @Composable
@@ -144,8 +148,9 @@ internal fun LibraryRoute(graph: AppGraph, nav: NavHostController, viewId: Strin
             onSetFavourite = vm::setFavourite,
         )
     }
-    LibraryGridScreen(state, actions, vm.messages, snackbar)
+    LibraryGridScreen(state, actions, vm.messages, snackbar, rememberBulkHost(graph, nav))
 }
+
 
 @Composable
 internal fun SeriesRoute(graph: AppGraph, nav: NavHostController, seriesId: String, season: String?, episode: String?) {
@@ -155,7 +160,9 @@ internal fun SeriesRoute(graph: AppGraph, nav: NavHostController, seriesId: Stri
     val statuses by vm.downloadStatus.collectAsStateWithLifecycle()
     val state by vm.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
-    val actions = remember(vm, nav) {
+    val bulk = rememberBulkHost(graph, nav)
+    val canManage = bulk.state.canManage
+    val actions = remember(vm, nav, canManage) {
         SeriesActions(
             onBack = { nav.popBackStack() },
             onPickSeason = vm::pickSeason,
@@ -169,13 +176,14 @@ internal fun SeriesRoute(graph: AppGraph, nav: NavHostController, seriesId: Stri
             onSetSeasonPlayed = vm::setSeasonPlayed,
             onSetPlayed = vm::setPlayed,
             onSetFavourite = vm::setFavourite,
+            onManage = if (canManage) ({ nav.navigate(app.shoalwatch.ui.manage.ManageRoutes.hub(seriesId)) { launchSingleTop = true } }) else null,
         )
     }
     val download = DownloadControls(
         statuses, onDownload = vm::downloadEpisode, onRetry = vm::retryDownload, onOpenDownloads = { nav.switchTab(Tab.DOWNLOADS) },
         onSeason = vm::downloadSeason, onSeries = vm::downloadSeries, onUnwatched = vm::downloadUnwatched,
     )
-    SeriesScreen(state, actions, vm.messages, snackbar, download)
+    SeriesScreen(state, actions, vm.messages, snackbar, download, bulk)
     DownloadSheetHost(vm.downloadActions, state.session, { graph.downloadPrefs.notificationAsked }, graph.downloadPrefs::markNotificationAsked)
 }
 
@@ -185,7 +193,14 @@ internal fun DetailRoute(graph: AppGraph, nav: NavHostController, itemId: String
     val statuses by vm.downloadStatus.collectAsStateWithLifecycle()
     val state by vm.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
-    val actions = remember(vm, nav) {
+    val bulk = rememberBulkHost(graph, nav)
+    val strings = app.shoalwatch.ui.present.rememberStrings()
+    val shown = state.item?.item
+    val canManage = bulk.state.canManage
+    val canDelete = bulk.state.canDelete && !canManage && shown != null
+    app.shoalwatch.ui.components.BulkNoticesEffect(bulk.notices, snackbar)
+    bulk.state.deleteAsk?.let { ask -> app.shoalwatch.ui.components.DeleteFromServerDialog(ask, bulk.onKeepCopy, bulk.onConfirmDelete, bulk.onDismissDelete, busy = bulk.state.running) }
+    val actions = remember(vm, nav, canManage, canDelete, shown, strings) {
         DetailActions(
             onBack = { nav.popBackStack() },
             onRefresh = vm::refresh,
@@ -196,6 +211,10 @@ internal fun DetailRoute(graph: AppGraph, nav: NavHostController, itemId: String
             onSetPlayed = vm::setPlayed,
             onSetFavourite = vm::setFavourite,
             onPlay = { from -> nav.navigate(Routes.player(itemId, from)) },
+            onManage = if (canManage) ({ nav.navigate(app.shoalwatch.ui.manage.ManageRoutes.hub(itemId)) { launchSingleTop = true } }) else null,
+            onDelete = if (canDelete && shown != null) ({
+                bulk.onApply(listOf(app.shoalwatch.ui.browse.BulkItem(shown.id, shown.sheetTitle(strings), shown.kind, shown.seriesId)), app.shoalwatch.ui.browse.BulkAction.DELETE_FROM_SERVER)
+            }) else null,
         )
     }
     val film = state.item?.item?.kind == app.shoalwatch.data.library.ItemKind.MOVIE
@@ -220,7 +239,8 @@ internal fun SearchRoute(graph: AppGraph, nav: NavHostController) {
     }
     // Search shows no messages of its own, but the snackbar is the shell's: another tab's message does not outlive the account.
     DismissOnSessionChange(snackbar, state.session)
-    AppShell(Tab.SEARCH, nav::switchTab, snackbar) { SearchScreen(state, actions) }
+    val bulk = rememberBulkHost(graph, nav)
+    AppShell(Tab.SEARCH, nav::switchTab, snackbar) { SearchScreen(state, actions, bulk, snackbar) }
 }
 
 @Composable
@@ -238,10 +258,13 @@ internal fun DownloadsRoute(graph: AppGraph, nav: NavHostController) {
             onAskRemove = vm::askRemove, onConfirmRemove = vm::confirmRemove, onCancelRemove = vm::cancelRemove,
             onPauseAll = vm::pauseAll, onResumeAll = vm::resumeAll, onTryAgain = vm::tryAgain, onAskRemoveSeries = vm::askRemoveSeries,
             onOpenServers = { nav.navigate(Routes.SERVERS) },
+            onAskRemoveMany = vm::askRemoveMany,
         )
     }
+    val bulk = rememberBulkHost(graph, nav, canDownload = false)
     AppShell(Tab.DOWNLOADS, nav::switchTab, snackbar) { DownloadsScreen(
             state, actions, vm.messages, snackbar, onOpenSettings = { nav.navigate(Routes.DOWNLOAD_SETTINGS) }, onOpenStorage = { nav.navigate(Routes.STORAGE) },
+            bulk = bulk,
         )
     }
 }

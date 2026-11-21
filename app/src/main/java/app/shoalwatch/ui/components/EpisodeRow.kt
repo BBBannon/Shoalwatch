@@ -39,6 +39,7 @@ fun EpisodeRow(
     modifier: Modifier = Modifier,
     highlighted: Boolean = false,
     working: Boolean = false,
+    select: CardSelect? = null,
 ) {
     val wide = isWideScreen()
     val thumbWidth = if (wide) 176.dp else 120.dp
@@ -49,12 +50,16 @@ fun EpisodeRow(
     Surface(
         modifier.fillMaxWidth(),
         shape = CardShape,
-        color = if (highlighted) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
-        border = if (highlighted) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+        color = if (highlighted || select?.selected == true) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        border = when {
+            select?.selected == true -> BorderStroke(3.dp, MaterialTheme.colorScheme.primary)
+            highlighted -> BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+            else -> null
+        },
     ) {
         Row(Modifier.padding(start = 8.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.Top) {
             Row(
-                Modifier.weight(1f).clip(CardShape).cardAction(episode.label, episode.menuLabel, onClick, onMenu, spoken),
+                Modifier.weight(1f).clip(CardShape).cardAction(episode.label, episode.menuLabel, onClick, onMenu, spoken, select),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 // The picture's box has a fixed width of its own: the progress bar fills that width and nothing more. Left to fill
@@ -62,6 +67,7 @@ fun EpisodeRow(
                 Box(Modifier.width(thumbWidth).clip(ArtworkShape)) {
                     Artwork(episode.artwork, null, aspect = ArtworkAspect.WIDE, title = episode.title, modifier = Modifier.fillMaxWidth())
                     if (episode.progress != null) ProgressBarThin(episode.progress, Modifier.align(Alignment.BottomCenter))
+                    if (select?.selected == true) SelectedMark(Modifier.align(Alignment.TopStart).padding(4.dp))
                 }
                 Column(Modifier.weight(1f).padding(vertical = 2.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(episode.title, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold), maxLines = titleLines(2), overflow = TextOverflow.Ellipsis)

@@ -224,6 +224,7 @@ internal fun SettingsRoute(graph: AppGraph, nav: NavHostController) {
             onProtect = vm::startProtect,
             onChangePin = vm::startChangePin,
             onRemovePin = vm::startRemovePin,
+            onQuickConnect = { nav.navigate(Routes.QUICK_CONNECT) { launchSingleTop = true } },
             onSubmitPin = vm::submitPin,
             onCancelPin = vm::cancelPin,
             onAppLock = { on ->
@@ -248,4 +249,21 @@ internal fun SettingsRoute(graph: AppGraph, nav: NavHostController) {
         )
     }
     SettingsScreen(state, actions, vm.pin, grownUp, vm.grownUp.pin)
+}
+
+/** Approve a Quick Connect code from another device (Milestone 10). Not an account route: a session change pops it. */
+@Composable
+internal fun QuickConnectRoute(graph: AppGraph, nav: NavHostController) {
+    val vm = graphViewModel {
+        val locks = graph.lockParts.profileLocks
+        app.shoalwatch.ui.settings.QuickConnectApproveViewModel(graph.serverCatalog, graph.quickConnectApprover::approve, locks::isProtected, locks::check)
+    }
+    val state by vm.state.collectAsStateWithLifecycle()
+    val actions = remember(vm, nav) {
+        app.shoalwatch.ui.settings.QuickConnectActions(
+            onBack = { nav.popBackStack() }, onApprove = vm::approve, onOpenServers = { nav.navigate(Routes.SERVERS) },
+            onSubmitPin = vm::submitPin, onCancelPin = vm::cancelPin,
+        )
+    }
+    app.shoalwatch.ui.settings.QuickConnectApproveScreen(state, vm.code, actions, vm.pin)
 }

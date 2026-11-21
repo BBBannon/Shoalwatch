@@ -35,15 +35,18 @@ fun PosterCard(
     modifier: Modifier = Modifier,
     width: Dp? = null,
     working: Boolean = false,
+    select: CardSelect? = null,
 ) {
     Box(if (width != null) modifier.width(width) else modifier.fillMaxWidth()) {
         Column(
-            Modifier.fillMaxWidth().clip(CardShape).cardAction(card.label, card.menuLabel, onClick, onMenu, if (working) stringResource(R.string.cd_working) else null),
+            Modifier.fillMaxWidth().clip(CardShape).selectedOutline(select?.selected == true, MaterialTheme.colorScheme.primary)
+                .cardAction(card.label, card.menuLabel, onClick, onMenu, if (working) stringResource(R.string.cd_working) else null, select),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Box {
                 Artwork(card.artwork, contentDescription = null, aspect = ArtworkAspect.POSTER, title = card.title, modifier = Modifier.fillMaxWidth())
                 when {
+                    select?.selected == true -> SelectedMark(Modifier.align(Alignment.TopStart).padding(8.dp))
                     working -> WorkingBadge(Modifier.align(Alignment.TopStart).padding(8.dp))
                     card.watched -> WatchedBadge(Modifier.align(Alignment.TopStart).padding(8.dp))
                     card.unwatchedCount != null -> UnwatchedBadge(card.unwatchedCount, Modifier.align(Alignment.TopStart).padding(8.dp))

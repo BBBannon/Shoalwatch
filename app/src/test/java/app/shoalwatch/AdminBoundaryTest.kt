@@ -100,7 +100,8 @@ class AdminBoundaryTest {
     )
 
     internal fun adminPathsOutsideTheGateway(files: List<Pair<String, List<String>>>) =
-        hits(files, { !it.endsWith("/data/admin/api/AdminGateway.kt") }) { line -> !isComment(line) && adminPaths.any { it in line } }
+        // Milestone 10: the library management gateway names `/Items/{id}/Refresh` too, under the same rules (ManageBoundaryTest).
+        hits(files, { !it.endsWith("/data/admin/api/AdminGateway.kt") && !it.endsWith("/data/manage/api/ManageGateway.kt") }) { line -> !isComment(line) && adminPaths.any { it in line } }
 
     /**
      * In AdminGateway.kt: every POST/DELETE says `sendOnce = true` and asks `sendIf` (the gate, again, just before writing), and

@@ -4,8 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.shoalwatch.core.AppError
 import app.shoalwatch.data.admin.AdminRights
-import app.shoalwatch.data.admin.AdminState
-import app.shoalwatch.data.admin.AdminStatus
+import app.shoalwatch.data.admin.isAdminFor
 import app.shoalwatch.data.servers.AccountSummary
 import app.shoalwatch.data.servers.Authenticator
 import app.shoalwatch.data.servers.ServerSummary
@@ -166,7 +165,7 @@ class ServersViewModel(
 
     /** The active session's server id while `rights` says exactly (that session, ADMIN); null at once on any switch. */
     private val adminServer: Flow<String?> = if (rights == null) flowOf(null) else catalog.activeSession().flatMapLatest { session ->
-        if (session == null) flowOf(null) else rights.state.map { held -> session.serverId.takeIf { held == AdminState(session, AdminStatus.ADMIN) } }
+        if (session == null) flowOf(null) else rights.state.map { held -> session.serverId.takeIf { held.isAdminFor(session) } }
     }
 
     init {

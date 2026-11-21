@@ -6,6 +6,7 @@ import app.shoalwatch.data.admin.Admin
 import app.shoalwatch.data.admin.AdminRights
 import app.shoalwatch.data.admin.AdminState
 import app.shoalwatch.data.admin.AdminStatus
+import app.shoalwatch.data.admin.isAdminFor
 import app.shoalwatch.data.admin.DashboardOpener
 import app.shoalwatch.data.admin.DashboardResult
 import app.shoalwatch.data.admin.LibraryFolder
@@ -27,6 +28,8 @@ import kotlinx.coroutines.test.runTest
  * (UNKNOWN leaves [state] alone); [held] can be set directly to model a switch (null) or a demotion.
  */
 class FakeAdminRights(var answer: AdminStatus = AdminStatus.ADMIN) : AdminRights {
+    /** The delete right a check records; null: the same as being an administrator. */
+    var mayDelete: Boolean? = null
     val held = MutableStateFlow<AdminState?>(null)
     override val state: StateFlow<AdminState?> = held
     var checks = 0
@@ -36,7 +39,7 @@ class FakeAdminRights(var answer: AdminStatus = AdminStatus.ADMIN) : AdminRights
     override suspend fun check(session: Session): AdminStatus {
         checks++
         val status = checkAnswer(session)
-        if (status != AdminStatus.UNKNOWN) held.value = AdminState(session, status)
+        if (status != AdminStatus.UNKNOWN) held.value = AdminState(session, status, mayDelete ?: (status == AdminStatus.ADMIN))
         return status
     }
 
@@ -45,7 +48,7 @@ class FakeAdminRights(var answer: AdminStatus = AdminStatus.ADMIN) : AdminRights
         if (held.value?.session == session) held.value = AdminState(session, AdminStatus.NOT_ADMIN)
     }
 
-    override fun allows(session: Session): Boolean = held.value == AdminState(session, AdminStatus.ADMIN)
+    override fun allows(session: Session): Boolean = held.value.isAdminFor(session)
 }
 
 /**

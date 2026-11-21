@@ -53,7 +53,7 @@ class PlaystateLandingTest : PlaystateTestBase() {
             gateway.nextUpFor = { films("m") }
             sender.kick(s1u1) // the connection is back: the later drain
             settle()
-            until { seen.last().resume.items.map { it.item.name } == listOf("Film b") && seen.last().nextUp.items.map { it.item.name } == listOf("Film m") }
+            until { seen.lastOrNull()?.let { h -> h.resume.items.map { it.item.name } == listOf("Film b") && h.nextUp.items.map { it.item.name } == listOf("Film m") } == true }
             assertEquals("once each", listOf(1, 1), listOf(gateway.count("resume"), gateway.count("nextUp")))
         } finally {
             watching.cancelAndJoin() // before the database closes

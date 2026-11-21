@@ -48,6 +48,8 @@ fun ConfirmDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
     busyLabel: String? = null,
+    /** False: Confirm is off for now (something else is under way); Cancel still works. */
+    confirmEnabled: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     if (LocalCovered.current) return // under the lock cover (review M1)
@@ -65,7 +67,7 @@ fun ConfirmDialog(
         dismissButton = { TextButton(onClick = onDismiss, enabled = busyLabel == null) { Text(stringResource(R.string.action_cancel)) } },
         confirmButton = {
             TextButton(
-                onClick = onConfirm, enabled = busyLabel == null, modifier = Modifier.heightIn(min = 48.dp),
+                onClick = onConfirm, enabled = busyLabel == null && confirmEnabled, modifier = Modifier.heightIn(min = 48.dp),
                 colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
             ) {
                 if (busyLabel != null) {

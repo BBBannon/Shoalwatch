@@ -147,6 +147,9 @@ internal class ListCache(
     /** The server refused [itemId] for this user: it disappears for them (see `LibraryStore.revokeVisibility`). */
     suspend fun revoke(s: Session, itemId: String) = writeGate.withLock { store.revokeVisibility(s, itemId) }
 
+    /** Milestone 10: [itemId] leaves every list of this user; its record stays (see `LibraryStore.leaveLists`). */
+    suspend fun leaveLists(s: Session, itemId: String) = writeGate.withLock { store.leaveLists(s, itemId) }
+
     suspend fun replaceViews(s: Session, views: List<LibraryView>) = writeGate.withLock { store.replaceViews(s, views) }
 
     /** Records "loaded now" for a key that holds no entries (views, an item): a state row with nothing in it. */
