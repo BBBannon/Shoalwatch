@@ -11,6 +11,7 @@
 ![Android 10+](https://img.shields.io/badge/Android-10%2B-3DDC84?logo=android&logoColor=white)
 ![Android Auto (parked)](https://img.shields.io/badge/Android%20Auto-parked-4FD1C5)
 ![Not an official Jellyfin project](https://img.shields.io/badge/not%20an%20official-Jellyfin%20project-lightgrey)
+[![Download the latest APK](https://img.shields.io/github/v/release/BBBannon/Shoalwatch?label=download%20APK&logo=android&logoColor=white)](https://github.com/BBBannon/Shoalwatch/releases/latest/download/Shoalwatch.apk)
 
 </div>
 
@@ -19,6 +20,16 @@ Download whole seasons before a trip and browse them by series → season → ep
 > 🎮 **Also from the same maker: [Shoalcade](https://github.com/BBBannon/Shoalcade)** — play the games you own from your own Jellyfin server, on your phone, PC or browser, with safe saves. **[Take a look on GitHub →](https://github.com/BBBannon/Shoalcade)**
 
 > **Not an official Jellyfin project.** Shoalwatch is an independent hobby project, not made or supported by the Jellyfin team — please don't ask them for help with it.
+
+---
+
+## Download and install
+
+1. On your Android 10+ phone or tablet, download **[`Shoalwatch.apk`](https://github.com/BBBannon/Shoalwatch/releases/latest/download/Shoalwatch.apk)** (always the newest version). Each [release](https://github.com/BBBannon/Shoalwatch/releases) also has `Shoalwatch-<version>.apk` and its checksum.
+2. Open the file and allow installs from your browser or file manager when asked.
+3. Add your Jellyfin server's address and sign in (password or Quick Connect).
+
+**Updating:** install the new APK over the top. Your sign-ins, settings and downloads are kept.
 
 ---
 
@@ -76,7 +87,7 @@ Full requirements: `docs/SPEC.md` §6. Design: `docs/ARCHITECTURE.md`.
 Shoalwatch can show on your car's Android Auto screen **while the car is parked**. Android Auto itself stops it when the car moves. It uses the normal APK from GitHub: no USB or computer needed.
 
 1. **Turn on Android Auto's developer settings** on the phone: open Android Auto's settings, tap **Version** 10 times, then **⋮ → Developer settings** and turn on **Unknown sources**.
-2. **Install Shoalwatch** from its APK as usual.
+2. **Install Shoalwatch** from its APK as usual ([`Shoalwatch.apk`](https://github.com/BBBannon/Shoalwatch/releases/latest/download/Shoalwatch.apk)).
 3. **Add it to the car's launcher:** Android Auto → **Customise launcher**, and tick Shoalwatch. It is listed there only while a car (or a head unit) is connected.
 
 What you get on the car screen: Continue Watching, Next Up and your downloads, and a full-screen player (tap for the controls: List, −10 s, Pause, +30 s). Downloads play with no connection.
