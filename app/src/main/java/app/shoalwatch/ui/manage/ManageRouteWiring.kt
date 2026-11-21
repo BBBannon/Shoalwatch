@@ -12,6 +12,7 @@ import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
 import app.shoalwatch.AppGraph
 import app.shoalwatch.ui.nav.graphViewModel
+import app.shoalwatch.ui.nav.leaveItemPage
 
 /** The real management destinations, each built from [graph] (see [manageDestinations] for the routes). */
 internal fun NavGraphBuilder.manageDestinations(graph: AppGraph, nav: NavHostController) = manageDestinations(
@@ -30,8 +31,13 @@ private fun ManageHubRoute(graph: AppGraph, nav: NavHostController, itemId: Stri
     }
     val state by vm.state.collectAsStateWithLifecycle()
     ManageRouteEffects(vm, state.frame.gate, nav)
-    // Deleted: the management screens go; the item's own screen beneath says it is no longer available.
-    LaunchedEffect(state.deleted) { if (state.deleted) nav.leaveManage() }
+    // Deleted: the management screens go, then the item's own page beneath (it would only wait for an item that is gone).
+    LaunchedEffect(state.deleted) {
+        if (state.deleted) {
+            nav.leaveManage()
+            nav.leaveItemPage(itemId)
+        }
+    }
     val actions = remember(vm, nav) {
         ManageActions(
             onBack = { nav.popBackStack() },

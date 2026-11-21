@@ -4,6 +4,9 @@ import app.shoalwatch.core.AppError
 import app.shoalwatch.core.AppLog
 import app.shoalwatch.data.api.ServerApi
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.builtins.serializer
 
 /** What approving a Quick Connect code came to. The screen says each in plain words. */
@@ -15,17 +18,23 @@ enum class ApproveOutcome { APPROVED, BAD_CODE, NOT_FOUND, SWITCHED_OFF, REFUSED
  * and polling a code on this phone, stays in `AuthRepository`). Steps: the code must be [CODE_LENGTH] letters or digits (spaces
  * and dashes ignored), else nothing is sent; `GET /QuickConnect/Enabled` (Jellyfin answers a switched-off Authorize with 401,
  * which `ServerApi` would take as this phone's sign-in ending, so a switched-off server is found out first); then
- * `POST /QuickConnect/Authorize?code=` once, never retried, and only if [stillActive] still says [Session] is the active profile
- * just before it is written. The code is never logged.
+ * `POST /QuickConnect/Authorize?code=` once, never retried, and only if [active] still says [Session] is the active profile just
+ * before it is written. Straight after an app start [active] may not have heard the profile yet, so it is waited for (bounded by
+ * [activeWaitMs], as `AdminAccess.check` does) rather than refused. The code is never logged.
  */
-class QuickConnectApprover(private val api: ServerApi, private val stillActive: (Session) -> Boolean) {
+class QuickConnectApprover(
+    private val api: ServerApi,
+    private val active: StateFlow<Session?>,
+    private val activeWaitMs: Long = ACTIVE_WAIT_MS,
+) {
 
     suspend fun approve(s: Session, typed: String): ApproveOutcome {
         val code = normalise(typed) ?: return ApproveOutcome.BAD_CODE
         return try {
             val on = api.get(s, "/QuickConnect/Enabled", deserializer = Boolean.serializer(), maxBytes = 64)
             if (!on) return ApproveOutcome.SWITCHED_OFF
-            api.post(s, "/QuickConnect/Authorize", listOf("code" to code), retry = false, sendOnce = true, sendIf = { stillActive(s) })
+            withTimeoutOrNull(activeWaitMs) { active.first { it == s } } ?: return ApproveOutcome.REFUSED
+            api.post(s, "/QuickConnect/Authorize", listOf("code" to code), retry = false, sendOnce = true, sendIf = { active.value == s })
             ApproveOutcome.APPROVED
         } catch (e: CancellationException) {
             throw e
@@ -43,6 +52,7 @@ class QuickConnectApprover(private val api: ServerApi, private val stillActive: 
 
     companion object {
         const val CODE_LENGTH = 6
+        const val ACTIVE_WAIT_MS = 5_000L
         private val CODE = Regex("[A-Za-z0-9]{$CODE_LENGTH}")
         private const val TAG = "QuickConnect"
 

@@ -2,6 +2,10 @@ package app.shoalwatch.data.api
 
 import app.shoalwatch.data.servers.ApproveOutcome
 import app.shoalwatch.data.servers.QuickConnectApprover
+import app.shoalwatch.data.servers.Session
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
 import org.junit.Assert.assertEquals
@@ -11,8 +15,8 @@ import java.util.concurrent.TimeUnit
 
 /** Approving a Quick Connect code from Settings (Milestone 10), through the real `ServerApi` against MockWebServer. */
 class QuickConnectApproverTest : ServerApiTestBase() {
-    private var active = true
-    private val approver by lazy { QuickConnectApprover(api) { active && it == session } }
+    private val active by lazy { MutableStateFlow<Session?>(session) }
+    private val approver by lazy { QuickConnectApprover(api, active, activeWaitMs = 300) }
 
     private fun approve(code: String) = runBlocking { approver.approve(session, code) }
 
@@ -57,9 +61,19 @@ class QuickConnectApproverTest : ServerApiTestBase() {
 
     @Test fun nothingIsAuthorisedOnceTheProfileIsNoLongerActive() {
         web.enqueue(json("true"))
-        active = false
+        active.value = null
         assertEquals(ApproveOutcome.REFUSED, approve("123456"))
         assertEquals(1, web.requestCount)
+    }
+
+    /** Emulator walkthrough, 21/11/2026: the first approval after an app start failed, as the active profile was not yet heard. */
+    @Test fun anActiveProfileHeardJustAfterTheTapStillApproves() = runBlocking {
+        web.enqueue(json("true"))
+        web.enqueue(json("true"))
+        active.value = null
+        launch { delay(100); active.value = session }
+        assertEquals(ApproveOutcome.APPROVED, approver.approve(session, "123456"))
+        assertEquals(2, web.requestCount)
     }
 
     @Test fun offlineSendsNothing() {

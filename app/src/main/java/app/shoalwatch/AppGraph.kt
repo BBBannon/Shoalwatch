@@ -390,6 +390,6 @@ class AppGraph(internal val appContext: Context) {
     val pickedImages: app.shoalwatch.data.manage.PickedImages by lazy { app.shoalwatch.data.manage.PickedImages(appContext.contentResolver::openInputStream) }
     /** Approving a Quick Connect code from Settings: only while the asking profile is still the active one. */
     val quickConnectApprover: app.shoalwatch.data.servers.QuickConnectApprover by lazy {
-        app.shoalwatch.data.servers.QuickConnectApprover(serverApi) { s -> activeNow.value == s }
+        app.shoalwatch.data.servers.QuickConnectApprover(serverApi, activeNow)
     }
 }

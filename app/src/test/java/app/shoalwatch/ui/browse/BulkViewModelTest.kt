@@ -1,5 +1,8 @@
 package app.shoalwatch.ui.browse
 
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.take
 import app.shoalwatch.R
 import app.shoalwatch.core.AppError
 import app.shoalwatch.data.admin.AdminStatus
@@ -21,6 +24,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -92,6 +96,23 @@ class BulkViewModelTest {
         assertEquals(listOf(Triple(BEN, id(1), false), Triple(BEN, id(2), false)), library.forgets)
         assertEquals(listOf(id(1), id(2)), evicted)
         assertNull(vm.state.value.deleteAsk)
+    }
+
+    /** Emulator walkthrough, 21/11/2026: the deleted film's own page stayed on "Loading"; it now hears the delete and leaves. */
+    @Test fun eachItemTheServerDeletesIsAnnouncedSoItsOwnPageCanLeave() = runTest(main.dispatcher) {
+        val vm = vm()
+        vm.apply(listOf(one, two), BulkAction.DELETE_FROM_SERVER)
+        vm.confirmDelete()
+        assertEquals(listOf(id(1), id(2)), vm.deleted.take(2).toList())
+    }
+
+    @Test fun aRefusedDeleteIsNotAnnounced() = runTest(main.dispatcher) {
+        val vm = vm()
+        vm.apply(listOf(one), BulkAction.DELETE_FROM_SERVER)
+        assertNotNull("asked first", vm.state.value.deleteAsk)
+        manage.failWith = AppError.of(AppError.Kind.FORBIDDEN)
+        vm.confirmDelete()
+        assertNull(withTimeoutOrNull(100) { vm.deleted.first() })
     }
 
     @Test fun keepingThePhoneCopyKeepsTheDownloadAndItsRecord() = runTest(main.dispatcher) {

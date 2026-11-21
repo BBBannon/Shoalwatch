@@ -87,6 +87,9 @@ class BulkViewModel(
 
     /** Snackbar lines, each once, only while their session is the one on screen. */
     val notices: Flow<BulkNotice> = channel.receiveAsFlow().filter { it.session == sessionNow.value }
+    private val deletedNow = Channel<String>(Channel.BUFFERED)
+    /** Each item the server has just deleted, so the screen showing that item's own page can leave it. */
+    val deleted: Flow<String> = deletedNow.receiveAsFlow()
 
     private val rightsFor: Flow<Pair<Session?, AdminState?>> = sessionNow.flatMapLatest { s ->
         if (s == null) flowOf<Pair<Session?, AdminState?>>(null to null) else flow<Pair<Session?, AdminState?>> {
@@ -174,6 +177,7 @@ class BulkViewModel(
         ask.value = null
         each(a.session, a.items, R.plurals.bulk_deleted) { item ->
             manage.delete(a.session, item.id)
+            deletedNow.trySend(item.id)
             // Deleted on the server: done from here, whatever happens on the phone.
             tidyAfterServerDelete(downloads, a.session, item.id, a.downloaded[item.id].orEmpty(), a.keepCopy) { id, keep ->
                 library.forgetDeleted(a.session, id, keep)

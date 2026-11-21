@@ -1,6 +1,7 @@
 package app.shoalwatch.ui.nav
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -22,6 +23,7 @@ internal fun rememberBulkHost(graph: AppGraph, nav: NavHostController, canDownlo
         )
     }
     val state by vm.state.collectAsStateWithLifecycle()
+    LaunchedEffect(vm, nav) { vm.deleted.collect { nav.leaveItemPage(it) } }
     return remember(vm, nav, state, canDownload) {
         BulkHost(
             state, vm.notices, vm::apply, vm::setKeepCopy, vm::confirmDelete, vm::dismissDelete,
@@ -29,4 +31,13 @@ internal fun rememberBulkHost(graph: AppGraph, nav: NavHostController, canDownlo
             canDownload = canDownload,
         )
     }
+}
+
+/**
+ * After [itemId] was deleted from the server, leaves its own page (film, episode or series) if that page is the one on top;
+ * anywhere else (a library, Home, search) this does nothing, as the item has already left those lists.
+ */
+internal fun NavHostController.leaveItemPage(itemId: String) {
+    val args = currentBackStackEntry?.arguments ?: return
+    if (args.getString(Routes.ARG_ITEM) == itemId || args.getString(Routes.ARG_SERIES) == itemId) popBackStack()
 }
