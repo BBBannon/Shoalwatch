@@ -67,8 +67,11 @@ internal object Routes {
     const val ARG_ITEM = "itemId"
     const val ITEM = "item/{$ARG_ITEM}"
     const val ARG_FROM = "from"
+    /** The player's optional play queue token (`PlayQueues`; an unknown one plays the item alone) and chosen version (`MediaSourceId`, one play only). */
+    const val ARG_QUEUE = "queue"
+    const val ARG_SOURCE = "source"
     /** The player for an item. [ARG_FROM] is "resume" or "start"; anything else (or nothing) arrives as the start. */
-    const val PLAYER = "play/{$ARG_ITEM}?$ARG_FROM={$ARG_FROM}"
+    const val PLAYER = "play/{$ARG_ITEM}?$ARG_FROM={$ARG_FROM}&$ARG_QUEUE={$ARG_QUEUE}&$ARG_SOURCE={$ARG_SOURCE}"
     const val SERVERS = "servers"
     const val ARG_SERVER = "serverId"
     /** [ARG_USER]: a profile's name to fill in (signing in again after the server rejected its sign-in); optional. */
@@ -114,7 +117,9 @@ internal object Routes {
 
     fun item(itemId: String) = "item/${Uri.encode(itemId)}"
     fun downloadedSeries(seriesId: String) = "downloads/series/${Uri.encode(seriesId)}"
-    fun player(itemId: String, from: StartFrom) = "play/${Uri.encode(itemId)}?$ARG_FROM=${if (from == StartFrom.RESUME) FROM_RESUME else FROM_START}"
+    fun player(itemId: String, from: StartFrom, queue: String? = null, source: String? = null) =
+        "play/${Uri.encode(itemId)}?$ARG_FROM=${if (from == StartFrom.RESUME) FROM_RESUME else FROM_START}" +
+            (queue?.let { "&$ARG_QUEUE=${Uri.encode(it)}" } ?: "") + (source?.let { "&$ARG_SOURCE=${Uri.encode(it)}" } ?: "")
     const val FROM_RESUME = "resume"
     const val FROM_START = "start"
     fun signIn(serverId: String) = "sign_in/${Uri.encode(serverId)}"
@@ -216,7 +221,7 @@ private fun AppNavHost(graph: AppGraph, start: String, openTab: String?, onTabOp
             library = { viewId -> LibraryRoute(graph, nav, viewId) },
             series = { id, season, episode -> SeriesRoute(graph, nav, id, season, episode) },
             item = { id -> DetailRoute(graph, nav, id) },
-            player = { id, from -> PlayerRoute(graph, nav, id, from) },
+            player = { id, from, queue, source -> PlayerRoute(graph, nav, id, from, queue, source) },
             downloadedSeries = { id -> OfflineSeriesRoute(graph, nav, id) },
             storage = { StorageRoute(graph, nav) },
         )
@@ -297,7 +302,7 @@ internal fun NavGraphBuilder.browsingDestinations(
     library: @Composable (viewId: String) -> Unit,
     series: @Composable (seriesId: String, seasonId: String?, episodeId: String?) -> Unit,
     item: @Composable (itemId: String) -> Unit,
-    player: @Composable (itemId: String, from: StartFrom) -> Unit,
+    player: @Composable (itemId: String, from: StartFrom, queueToken: String?, sourceId: String?) -> Unit,
     downloadedSeries: @Composable (seriesId: String) -> Unit,
     storage: @Composable () -> Unit = {},
 ) {
@@ -331,9 +336,11 @@ internal fun NavGraphBuilder.browsingDestinations(
         listOf(
             navArgument(Routes.ARG_ITEM) { type = NavType.StringType },
             navArgument(Routes.ARG_FROM) { type = NavType.StringType; nullable = true; defaultValue = null },
+            navArgument(Routes.ARG_QUEUE) { type = NavType.StringType; nullable = true; defaultValue = null },
+            navArgument(Routes.ARG_SOURCE) { type = NavType.StringType; nullable = true; defaultValue = null },
         ),
     ) {
         val from = if (it.arguments?.getString(Routes.ARG_FROM) == Routes.FROM_RESUME) StartFrom.RESUME else StartFrom.BEGINNING
-        player(it.arguments?.getString(Routes.ARG_ITEM).orEmpty(), from)
+        player(it.arguments?.getString(Routes.ARG_ITEM).orEmpty(), from, it.arguments?.getString(Routes.ARG_QUEUE), it.arguments?.getString(Routes.ARG_SOURCE))
     }
 }

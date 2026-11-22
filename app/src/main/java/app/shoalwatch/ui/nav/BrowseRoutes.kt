@@ -15,6 +15,7 @@ import app.shoalwatch.data.playback.PlaybackState
 import android.content.pm.PackageManager
 import androidx.compose.ui.platform.LocalContext
 import app.shoalwatch.ui.components.LocalCovered
+import app.shoalwatch.data.playback.MediaPaths
 import app.shoalwatch.ui.player.HostLifecycle
 import app.shoalwatch.ui.player.LocalPipHost
 import app.shoalwatch.ui.player.PipEffect
@@ -333,9 +334,11 @@ internal fun OfflineSeriesRoute(graph: AppGraph, nav: NavHostController, seriesI
  * nothing if that has already taken the player away.
  */
 @Composable
-internal fun PlayerRoute(graph: AppGraph, nav: NavHostController, itemId: String, from: StartFrom) {
-    val vm = graphStateViewModel(key = "$itemId|$from") { saved ->
-        PlayerViewModel(itemId, from, saved, graph.serverCatalog, { s, scope -> graph.playbackController(s, scope, graph.lockParts.profilePlayback.autoplayReader(s, scope)) }, graph.subtitleSettings, graph.qualityDefault, graph.addressSelector::refreshIfOffline, graph.housekeeping)
+internal fun PlayerRoute(graph: AppGraph, nav: NavHostController, itemId: String, from: StartFrom, queueToken: String? = null, sourceId: String? = null) {
+    val vm = graphStateViewModel(key = "$itemId|$from|$queueToken|$sourceId") { saved ->
+        PlayerViewModel(itemId, from, saved, graph.serverCatalog, { s, scope -> graph.playbackController(s, scope, graph.lockParts.profilePlayback.autoplayReader(s, scope)) }, graph.subtitleSettings, graph.qualityDefault, graph.addressSelector::refreshIfOffline, graph.housekeeping,
+            graph.playQueues.get(queueToken), sourceId?.takeIf(MediaPaths::isSourceId),
+        )
     }
     val state by vm.state.collectAsStateWithLifecycle()
     LaunchedEffect(state.leave) { if (state.leave) nav.popBackStack(Routes.PLAYER, inclusive = true) }

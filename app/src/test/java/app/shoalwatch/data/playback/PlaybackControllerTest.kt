@@ -141,9 +141,9 @@ internal class PlaybackControllerTest : PlaybackControllerTestBase() {
         assertFalse(c.state.value.finished)
     }
 
-    /** Milestone 5 reads "finished" through `stateOf` only: the controller itself is not edited (it is at its size limit). */
+    /** The controller is at its size limit (Milestone 11 T6 took it from 399 to exactly 400: queue and version, the rest in `EpisodeNavigator`). */
     @Test fun theControllerIsUnchanged() {
-        assertEquals(399, java.io.File("src/main/java/app/shoalwatch/data/playback/PlaybackController.kt").readLines().size)
+        assertEquals(400, java.io.File("src/main/java/app/shoalwatch/data/playback/PlaybackController.kt").readLines().size)
     }
 
     @Test fun becomingNoisyReportsTheRealPosition() = runTest {

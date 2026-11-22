@@ -15,7 +15,7 @@ import app.shoalwatch.data.servers.JellyfinId
 object PlaybackDecision {
     /**
      * 1. refusal set -> throw AppError.of(refusal).
-     * 2. First source (the server orders them); none -> NO_COMPATIBLE_STREAM.
+     * 2. The source the request chose (`mediaSourceId`) if the server returned it, else the first (the server orders them); none -> NO_COMPATIBLE_STREAM.
      * 3. DIRECT_PLAY when supportsDirectPlay and nothing forces a transcode (forceTranscode or a burn-in):
      *    source = MediaPaths.directStream(itemId, source.id, source.eTag). A PICTURE subtitle the server would have to encode
      *    already makes its `SupportsDirectPlay` false (the profile lists picture formats Embed and Encode), so it needs no rule here.
@@ -29,7 +29,7 @@ object PlaybackDecision {
     fun decide(request: PlaybackRequest, info: PlaybackInfo): PlaybackPlan {
         if (JellyfinId.parseOrNull(request.itemId)?.value != request.itemId) throw AppError.of(AppError.Kind.SERVER_NOT_FOUND)
         info.refusal?.let { throw AppError.of(it) }
-        val source = info.sources.firstOrNull()?.takeIf { MediaPaths.isSafeId(it.id) } ?: throw noStream()
+        val source = chosen(request, info)?.takeIf { MediaPaths.isSafeId(it.id) } ?: throw noStream()
         val eTag = source.eTag?.takeIf(MediaPaths::isSafeId)
         val forced = forcesTranscode(request)
         val serverPath = source.transcoding?.takeIf(MediaPaths::isServerSource)
@@ -60,9 +60,13 @@ object PlaybackDecision {
     /** True when the answer would burn in a subtitle but offers no transcoding path: ask again with direct play and direct stream off. */
     fun needsForcedTranscode(request: PlaybackRequest, info: PlaybackInfo): Boolean {
         if (request.forceTranscode || request.burnInSubtitleIndex == null || info.refusal != null) return false
-        val source = info.sources.firstOrNull() ?: return false
+        val source = chosen(request, info) ?: return false
         return source.transcoding?.takeIf(MediaPaths::isServerSource) == null
     }
+
+    /** The version the user chose for this play if the server returned it (and the id is valid), else the first. */
+    private fun chosen(request: PlaybackRequest, info: PlaybackInfo): SourceInfo? =
+        request.mediaSourceId?.takeIf(MediaPaths::isSourceId)?.let { id -> info.sources.firstOrNull { it.id == id } } ?: info.sources.firstOrNull()
 
     private fun forcesTranscode(request: PlaybackRequest) = request.forceTranscode || request.burnInSubtitleIndex != null
 

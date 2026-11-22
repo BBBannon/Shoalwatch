@@ -19,7 +19,7 @@ import app.shoalwatch.data.servers.Session
 internal class PlaybackGatewayImpl(private val api: ServerApi) : PlaybackGateway {
 
     override suspend fun playbackInfo(s: Session, itemId: String, body: PlaybackInfoBody): PlaybackInfo {
-        val json = PlaybackJson.encodeToString(PlaybackInfoBody.serializer(), body.copy(userId = s.userId))
+        val json = PlaybackJson.encodeToString(PlaybackInfoBody.serializer(), body.copy(userId = s.userId, mediaSourceId = body.mediaSourceId?.takeIf(MediaPaths::isSourceId)))
         return api.postForJson(s, "/Items/${idOf(itemId)}/PlaybackInfo", listOf("userId" to s.userId), json, PlaybackInfoResponseDto.serializer())
             .toPlaybackInfo()
     }

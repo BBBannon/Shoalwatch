@@ -25,6 +25,11 @@ object MediaPaths {
 
     fun isSafeId(value: String?): Boolean = value != null && TOKEN.matches(value)
 
+    private val SOURCE_ID = Regex("[0-9A-Fa-f]{32}")
+
+    /** A version the user may choose: Jellyfin's media source id, 32 hex characters (anything else is never sent). */
+    fun isSourceId(value: String?): Boolean = value != null && SOURCE_ID.matches(value)
+
     /**
      * GET /Videos/{itemId}/stream with static=true, mediaSourceId and tag (all three in the 12.4.0 parameter list).
      * @throws IllegalArgumentException (fixed message) unless [itemId] is a normalised `JellyfinId` and the others pass [isSafeId].

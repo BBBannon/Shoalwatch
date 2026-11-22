@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.shoalwatch.data.downloads.Housekeeping
 import app.shoalwatch.data.playback.EndReason
+import app.shoalwatch.data.playback.PlayQueue
 import app.shoalwatch.data.playback.PlaybackController
 import app.shoalwatch.data.playback.PlaybackState
 import app.shoalwatch.data.playback.PlaybackState.Phase
@@ -53,6 +54,10 @@ class PlayerViewModel(
     /** Asks the address selector to probe this server again now if it is `Offline` (`ServerConnections.refreshIfOffline`, as every screen's user refresh does): no token, no URL. */
     private val reprobe: (serverId: String) -> Unit,
     housekeeping: Housekeeping,
+    /** The play queue the route carried (null: the item plays alone, as when its token is unknown). */
+    private val queue: PlayQueue? = null,
+    /** The version chosen for this one play (the first item only; not remembered). */
+    private val mediaSourceId: String? = null,
 ) : ViewModel() {
     private val _state = MutableStateFlow(PlayerUiState(appearance = subtitleSettings.appearance.value))
     val state: StateFlow<PlayerUiState> = _state.asStateFlow()
@@ -120,7 +125,7 @@ class PlayerViewModel(
         if (hostStopped) c.onHostStopped()
         c.setQuality(quality.start()) // the saved default, or 8 Mbps on mobile data (final review I-2)
         // Restored: the episode that was playing (after Up next it is not the route's), back at its own position below.
-        restoredItem?.let { c.open(it, StartFrom.RESUME) } ?: c.open(itemId, from)
+        restoredItem?.let { c.open(it, StartFrom.RESUME, queue) } ?: c.open(itemId, from, queue, mediaSourceId)
     }
 
     private fun leave() {

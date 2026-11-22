@@ -42,6 +42,7 @@ import app.shoalwatch.ui.browse.connectionRegained
 import app.shoalwatch.data.downloads.savedRows
 import app.shoalwatch.data.db.downloads.DownloadKey
 import app.shoalwatch.data.playback.LocalPlaybackReports
+import app.shoalwatch.data.playback.PlayQueues
 import app.shoalwatch.data.playback.RoutedPlaybackReports
 import app.shoalwatch.data.playback.SavedFirstPlaybackGateway
 import app.shoalwatch.data.sync.OfflinePlays
@@ -315,6 +316,8 @@ class AppGraph(internal val appContext: Context) {
         session, playerEngineFactory(), playbackResolver, routedReports, playerGateway, library, EpisodeNavigator(library),
         activePlayback, scope, appScope, SystemMonotonicClock, autoplayNext, trackPreferences, subtitleLoader, { systemCaptionDefaults(appContext) },
     )
+    /** Live play queues (a playlist played in order or shuffled), by random token; in memory only. */
+    val playQueues: PlayQueues by lazy { PlayQueues() }
     /** Audio and subtitle choices per (server, user, series), in Room (see "Track choices" in docs/ARCHITECTURE.md). */
     val trackPreferences: TrackPreferences by lazy { TrackPreferences(database.trackChoiceDao(), System::currentTimeMillis) }
     /** Subtitle size, colour, background and edge: a device setting, following the phone's caption settings until changed. */
