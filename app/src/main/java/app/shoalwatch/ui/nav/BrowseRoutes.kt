@@ -337,7 +337,7 @@ internal fun OfflineSeriesRoute(graph: AppGraph, nav: NavHostController, seriesI
 internal fun PlayerRoute(graph: AppGraph, nav: NavHostController, itemId: String, from: StartFrom, queueToken: String? = null, sourceId: String? = null) {
     val vm = graphStateViewModel(key = "$itemId|$from|$queueToken|$sourceId") { saved ->
         PlayerViewModel(itemId, from, saved, graph.serverCatalog, { s, scope -> graph.playbackController(s, scope, graph.lockParts.profilePlayback.autoplayReader(s, scope)) }, graph.subtitleSettings, graph.qualityDefault, graph.addressSelector::refreshIfOffline, graph.housekeeping,
-            graph.playQueues.get(queueToken), sourceId?.takeIf(MediaPaths::isSourceId),
+            { s -> graph.playQueues.get(s, queueToken) }, sourceId?.takeIf(MediaPaths::isSourceId),
         )
     }
     val state by vm.state.collectAsStateWithLifecycle()

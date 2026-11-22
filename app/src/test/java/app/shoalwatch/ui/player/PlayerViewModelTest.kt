@@ -85,13 +85,13 @@ internal class PlayerViewModelTest : PlaybackControllerTestBase() {
     private val profileDao = app.shoalwatch.data.playback.FakeProfileDao()
     private val profilePlayback = app.shoalwatch.data.playback.ProfilePlayback(profileDao)
 
-    private fun TestScope.vm(saved: SavedStateHandle = SavedStateHandle(), from: StartFrom = StartFrom.RESUME, settle: Boolean = true): PlayerViewModel {
+    private fun TestScope.vm(saved: SavedStateHandle = SavedStateHandle(), from: StartFrom = StartFrom.RESUME, settle: Boolean = true, source: String? = null): PlayerViewModel {
         val factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T =
                 // The controller runs on the test's background scope: its endless tick loops would keep a ViewModel scope from ever going idle.
                 PlayerViewModel(ep1, from, saved, catalog, { s, scope -> made += s; controllerFor(s, backgroundScope, autoplayNext = profilePlayback.autoplayReader(s, scope)) }, settings, quality,
-                    { serverId -> reprobed += serverId; onReprobe() }, housekeeping) as T
+                    { serverId -> reprobed += serverId; onReprobe() }, housekeeping, mediaSourceId = source) as T
         }
         return ViewModelProvider.create(store, factory)[PlayerViewModel::class.java].also { if (settle) runCurrent() }
     }
@@ -302,6 +302,16 @@ internal class PlayerViewModelTest : PlaybackControllerTestBase() {
         assertEquals(Phase.FAILED, vm.state.value.playback.phase)
         vm.retry(); runCurrent()
         assertEquals(2, engine.loads.size)
+    }
+
+    @Test fun tryAgainAsksForTheSameChosenVersionAgain() = runTest(dispatcher) {
+        val b = "fedcba9876543210fedcba9876543210"
+        gateway.failWith = AppError(AppError.Kind.OFFLINE, "offline")
+        val vm = vm(source = b)
+        assertEquals(Phase.FAILED, vm.state.value.playback.phase)
+        gateway.failWith = null
+        vm.retry(); runCurrent()
+        assertEquals(listOf(b, b), gateway.bodies.map { it.mediaSourceId })
     }
 
     @Test fun lockingKeepsTheControlsFromHidingNothingButTogglesIt() = runTest(dispatcher) {

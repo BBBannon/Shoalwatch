@@ -1,6 +1,8 @@
 package app.shoalwatch.data.playback
 
 import app.shoalwatch.data.library.ItemKind
+import app.shoalwatch.ui.browse.AMY
+import app.shoalwatch.ui.browse.BEN
 import app.shoalwatch.ui.browse.id
 import app.shoalwatch.ui.browse.item
 import org.junit.Assert.assertEquals
@@ -80,20 +82,32 @@ class PlayQueueTest {
     @Test fun tokensAreRandomAndUnknownOnesPlayAlone() {
         val queues = PlayQueues()
         val q = PlayQueue.of(films(1..3), false)!!
-        val a = queues.put(q); val b = queues.put(q)
+        val a = queues.put(BEN, q); val b = queues.put(BEN, q)
         assertNotEquals(a, b)
         assertTrue(Regex("[A-Za-z0-9_-]{22}").matches(a)) // 128 bits, URL-safe
-        assertEquals(q, queues.get(a))
-        assertNull(queues.get("AAAAAAAAAAAAAAAAAAAAAA"))
-        assertNull(queues.get(null)); assertNull(queues.get("")); assertNull(queues.get("../../x"))
-        assertNull(PlayQueues().get(a)) // a new process: unknown
+        assertEquals(q, queues.get(BEN, a))
+        assertNull(queues.get(BEN, "AAAAAAAAAAAAAAAAAAAAAA"))
+        assertNull(queues.get(BEN, null)); assertNull(queues.get(BEN, "")); assertNull(queues.get(BEN, "../../x"))
+        assertNull(PlayQueues().get(BEN, a)) // a new process: unknown
     }
 
     @Test fun theRegistryKeepsOnlyTheLatestFew() {
         val queues = PlayQueues(maxQueues = 2)
         val q = PlayQueue.of(films(1..3), false)!!
-        val first = queues.put(q); val second = queues.put(q); val third = queues.put(q)
-        assertNull(queues.get(first)); assertNotNull(queues.get(second)); assertNotNull(queues.get(third))
+        val first = queues.put(BEN, q); val second = queues.put(BEN, q); val third = queues.put(BEN, q)
+        assertNull(queues.get(BEN, first)); assertNotNull(queues.get(BEN, second)); assertNotNull(queues.get(BEN, third))
+    }
+
+    @Test fun aQueueBelongsToItsProfileAndGoesWhenTheSessionChanges() {
+        val queues = PlayQueues()
+        val q = PlayQueue.of(films(1..3), false)!!
+        val mine = queues.put(BEN, q); val hers = queues.put(AMY, q)
+        assertNull(queues.get(AMY, mine)) // another profile on the same phone cannot open it
+        assertEquals(q, queues.get(BEN, mine))
+        queues.keepOnly(AMY) // profile switch
+        assertNull(queues.get(BEN, mine)); assertEquals(q, queues.get(AMY, hers))
+        queues.keepOnly(null) // signed out or locked
+        assertNull(queues.get(AMY, hers))
     }
 
     @Test fun neverPrintsItsIds() {

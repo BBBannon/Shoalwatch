@@ -317,7 +317,9 @@ class AppGraph(internal val appContext: Context) {
         activePlayback, scope, appScope, SystemMonotonicClock, autoplayNext, trackPreferences, subtitleLoader, { systemCaptionDefaults(appContext) },
     )
     /** Live play queues (a playlist played in order or shuffled), by random token; in memory only. */
-    val playQueues: PlayQueues by lazy { PlayQueues() }
+    val playQueues: PlayQueues by lazy {
+        PlayQueues().also { q -> appScope.launch { serverCatalog.activeSession().collect(q::keepOnly) } } // one profile playlist never outlives its session
+    }
     /** Audio and subtitle choices per (server, user, series), in Room (see "Track choices" in docs/ARCHITECTURE.md). */
     val trackPreferences: TrackPreferences by lazy { TrackPreferences(database.trackChoiceDao(), System::currentTimeMillis) }
     /** Subtitle size, colour, background and edge: a device setting, following the phone's caption settings until changed. */

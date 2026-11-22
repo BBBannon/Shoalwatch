@@ -141,9 +141,9 @@ internal class PlaybackControllerTest : PlaybackControllerTestBase() {
         assertFalse(c.state.value.finished)
     }
 
-    /** The controller is at its size limit (Milestone 11 T6 took it from 399 to exactly 400: queue and version, the rest in `EpisodeNavigator`). */
+    /** The controller is at its size limit (Milestone 11 T6 kept it at 399: the queue neighbours are `EpisodeNavigator`). */
     @Test fun theControllerIsUnchanged() {
-        assertEquals(400, java.io.File("src/main/java/app/shoalwatch/data/playback/PlaybackController.kt").readLines().size)
+        assertEquals(399, java.io.File("src/main/java/app/shoalwatch/data/playback/PlaybackController.kt").readLines().size)
     }
 
     @Test fun becomingNoisyReportsTheRealPosition() = runTest {

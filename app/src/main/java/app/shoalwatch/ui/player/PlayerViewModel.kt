@@ -54,8 +54,8 @@ class PlayerViewModel(
     /** Asks the address selector to probe this server again now if it is `Offline` (`ServerConnections.refreshIfOffline`, as every screen's user refresh does): no token, no URL. */
     private val reprobe: (serverId: String) -> Unit,
     housekeeping: Housekeeping,
-    /** The play queue the route carried (null: the item plays alone, as when its token is unknown). */
-    private val queue: PlayQueue? = null,
+    /** The play queue the route carried, for this session only (null: the item plays alone, as when its token is unknown). */
+    private val queue: (Session) -> PlayQueue? = { null },
     /** The version chosen for this one play (the first item only; not remembered). */
     private val mediaSourceId: String? = null,
 ) : ViewModel() {
@@ -125,7 +125,7 @@ class PlayerViewModel(
         if (hostStopped) c.onHostStopped()
         c.setQuality(quality.start()) // the saved default, or 8 Mbps on mobile data (final review I-2)
         // Restored: the episode that was playing (after Up next it is not the route's), back at its own position below.
-        restoredItem?.let { c.open(it, StartFrom.RESUME, queue) } ?: c.open(itemId, from, queue, mediaSourceId)
+        restoredItem?.let { c.open(it, StartFrom.RESUME, queue(s)) } ?: c.open(itemId, from, queue(s), mediaSourceId)
     }
 
     private fun leave() {
@@ -246,7 +246,9 @@ class PlayerViewModel(
      */
     fun retry() = touched { c ->
         _state.value.session?.let { reprobe(it.serverId) }
-        c.open(c.state.value.itemId ?: itemId, StartFrom.RESUME)
+        val item = c.state.value.itemId ?: itemId
+        // The version chosen for this play is asked for again; another item (after Next) has none.
+        c.open(item, StartFrom.RESUME, null, mediaSourceId.takeIf { item == itemId })
     }
 
     /** The activity stopped: pause and report (no background playback in this milestone); remembered until it starts again. */

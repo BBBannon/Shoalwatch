@@ -99,7 +99,8 @@ class PlaybackController internal constructor(
             work.launch { while (true) { delay(TICK_MS); tick() } }
             work.launch { while (true) { delay(CUE_TICK_MS); if (phase == Phase.PLAYING) trackControl.refreshCues() } }
         }
-        queue?.let { this.queue = it }; play(itemId, from, mediaSourceId) // null keeps the queue (a retry); the version is for this play only
+        queue?.let { this.queue = it } // null keeps the queue (a retry)
+        play(itemId, from, mediaSourceId) // the version is for this play only
     }
 
     fun playPause() {
@@ -220,9 +221,7 @@ class PlaybackController internal constructor(
             c.entry = entry
             trackControl.recall(c)
             publish()
-            if (queue != null || entry.item.kind == ItemKind.EPISODE) {
-                work.launch { c.around = navigator.around(session, entry.item, queue); if (current === c) publish() }
-            }
+            if (queue != null || entry.item.kind == ItemKind.EPISODE) work.launch { c.around = navigator.around(session, entry.item, queue); if (current === c) publish() }
             load(c, PlaybackRules.startAt(entry.userData?.positionMs ?: 0, entry.item.runtimeMs, from), Stop.NONE) { resolver.resolve(session, PlaybackRequest(itemId, quality, mediaSourceId = mediaSourceId)) }
         }
     }

@@ -44,7 +44,8 @@ class PlaybackResolver internal constructor(
     suspend fun resolve(s: Session, request: PlaybackRequest, burnInFormat: String? = null): Resolved {
         if (!request.forceTranscode && request.burnInSubtitleIndex == null) {
             // A saved copy is the first version: a different chosen version is asked of the server.
-            saved(s, request.itemId)?.takeIf { request.mediaSourceId == null || it.plan.mediaSourceId == request.mediaSourceId }?.let { copy -> return Resolved(TrackRules.withRequest(copy.plan, request), null, copy.media) }
+            val version = request.mediaSourceId?.takeIf(MediaPaths::isSourceId) // an invalid id is no choice, so it cannot skip the saved copy
+            saved(s, request.itemId)?.takeIf { version == null || it.plan.mediaSourceId == version }?.let { copy -> return Resolved(TrackRules.withRequest(copy.plan, request), null, copy.media) }
         }
         return remote(s, request, burnInFormat)
     }
