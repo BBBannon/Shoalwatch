@@ -70,12 +70,12 @@ object SubtitleLimits {
 fun isLanguageCode(raw: String?): Boolean = raw != null && raw.length == 3 && raw.all { it in 'a'..'z' }
 
 /**
- * A subtitle id is safe as one path segment: 1 to [SubtitleLimits.ID] characters of letters, digits, `.`, `_` and `-` (the shape of
- * real provider ids such as `srt-eng-1234567`), with no `..`. Anything else (slash, backslash, `%`, `?`, spaces, controls) is refused.
+ * A subtitle id is safe as one path segment: 1 to [SubtitleLimits.ID] characters of letters, digits and `. _ ~ = + -` (real provider ids such as
+ * `srt-eng-1234567`, and base64-shaped ones), with no `..` and not made only of dots. Anything else (slash, backslash, `%`, `?`, spaces, controls) is refused.
  */
 fun isSubtitleId(raw: String?): Boolean =
-    raw != null && raw.length in 1..SubtitleLimits.ID && !raw.contains("..") &&
-        raw.all { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' || it == '.' || it == '_' || it == '-' }
+    raw != null && raw.length in 1..SubtitleLimits.ID && !raw.contains("..") && !raw.all { it == '.' } &&
+        raw.all { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' || it in "._~=+-" }
 
 /** The fallback chain, pure: the profile's choice if valid, else the phone's ISO 639-2 code if valid, else `eng`. */
 fun chooseLanguage(profile: String?, phone: String?): String {

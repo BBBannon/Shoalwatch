@@ -194,16 +194,22 @@ class SubtitlesGatewayTest {
     // ---- id check
 
     @Test fun theSubtitleIdCharsetFitsRealIdsAndRefusesAnythingThatCouldMoveThePath() {
-        for (ok in listOf("srt-eng-1234567", "ass_fra.2", "A1", "x".repeat(128), "a.b")) assertTrue(ok, isSubtitleId(ok))
-        for (bad in listOf("", "..", "a..b", "../a", "a/b", "a\\b", "a%2f", "a?b", "a#b", "a b", "a\u0000b", "a\nb", "a\tb", "é", "x".repeat(129))) {
+        for (ok in listOf("srt-eng-1234567", "ass_fra.2", "A1", "x".repeat(128), "a.b", "QUJD+/==".replace("/", "~"), "abc=", "a+b~c")) assertTrue(ok, isSubtitleId(ok))
+        for (bad in listOf("", ".", "...", "..", "a..b", "a/b=", "../a", "a/b", "a\\b", "a%2f", "a?b", "a#b", "a b", "a\u0000b", "a\nb", "a\tb", "é", "x".repeat(129))) {
             assertFalse(bad, isSubtitleId(bad))
         }
         assertFalse(isSubtitleId(null))
     }
 
+    @Test fun anIdWithEqualsAndPlusGoesOutAsOneUnchangedPathSegment() {
+        route = { MockResponse().setResponseCode(204) }
+        assertEquals(SubtitleDownload.Requested, runBlocking { subs.download(session, movie, "QUJD+x~y==") })
+        assertEquals("/Items/$movie/RemoteSearch/Subtitles/QUJD+x~y==", url(requests().single()).encodedPath)
+    }
+
     @Test fun downloadWithABadSubtitleIdSendsNothing() {
         route = { MockResponse().setResponseCode(204) }
-        for (bad in listOf("..", "a/../b", "a/b", "a\\b", "a\u0000", "a\u0007b", "", "x".repeat(200))) {
+        for (bad in listOf(".", "...", "..", "a/../b", "a/b", "a\\b", "a\u0000", "a\u0007b", "", "x".repeat(200))) {
             assertEquals(bad, AppError.Kind.UNKNOWN, refusal { subs.download(session, movie, bad) }.kind)
         }
         assertEquals(0, requests().size)
@@ -328,6 +334,13 @@ class SubtitlesGatewayTest {
         route = { if (reads.getAndIncrement() == 0) MockResponse().setResponseCode(404) else json("""{"MediaStreams":[{"Type":"Subtitle"}]}""") }
         assertEquals(Arrival.Arrived, subs.awaitArrival(session, movie, 0))
         assertEquals(4000L, currentTime)
+    }
+
+    @Test fun aMalformedAnswerOnAReadIsNotYetAndCancellationStillPropagates() = runTest {
+        val reads = AtomicInteger()
+        route = { if (reads.getAndIncrement() < 2) MockResponse().setResponseCode(200).setBody("not json {") else json("""{"MediaStreams":[{"Type":"Subtitle"}]}""") }
+        assertEquals(Arrival.Arrived, subs.awaitArrival(session, movie, 0))
+        assertEquals(8000L, currentTime)
     }
 
     @Test fun theWaitCanBeCancelled() = runTest {

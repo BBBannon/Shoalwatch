@@ -66,8 +66,10 @@ internal class SubtitlesGateway(
             waited = at
             val now = try {
                 subtitleCount(s, itemId)
-            } catch (_: AppError) {
-                continue // a failed read is "not yet"; the next one may work
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                continue // any failed read (AppError or not) is "not yet"; the next one may work
             }
             if (now > countBefore) return Arrival.Arrived
         }
