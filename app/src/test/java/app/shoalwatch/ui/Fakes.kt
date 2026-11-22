@@ -231,3 +231,33 @@ class FakeConnections : ServerConnections {
 class FakeChooser(private val alias: String?) : ClientCertChooser {
     override suspend fun choose(): String? = alias
 }
+
+/** A [app.shoalwatch.data.lists.Lists] for ViewModel tests: scripted answers, every call recorded in [calls], [failure] thrown by everything when set. */
+class FakeLists : app.shoalwatch.data.lists.Lists {
+    var playlists = emptyList<app.shoalwatch.data.library.ItemWithUserData>()
+    var playlist: app.shoalwatch.data.lists.Playlist? = null
+    var collections = emptyList<app.shoalwatch.data.library.ItemWithUserData>()
+    var collectionsOf = emptyList<app.shoalwatch.data.lists.CollectionRef>()
+    var failure: app.shoalwatch.core.AppError? = null
+    val calls = mutableListOf<String>()
+
+    private fun <T> run(call: String, answer: () -> T): T {
+        calls += call
+        failure?.let { throw it }
+        return answer()
+    }
+
+    override suspend fun playlists(s: Session) = run("playlists") { playlists }
+    override suspend fun playlist(s: Session, playlistId: String) = run("playlist:$playlistId") { playlist ?: throw app.shoalwatch.core.AppError.of(app.shoalwatch.core.AppError.Kind.SERVER_NOT_FOUND) }
+    override suspend fun createPlaylist(s: Session, name: String, itemIds: List<String>) = run("createPlaylist:$name:${itemIds.joinToString(",")}") { }
+    override suspend fun renamePlaylist(s: Session, playlistId: String, name: String) = run("renamePlaylist:$playlistId:$name") { }
+    override suspend fun addToPlaylist(s: Session, playlistId: String, itemIds: List<String>) = run("addToPlaylist:$playlistId:${itemIds.joinToString(",")}") { }
+    override suspend fun removeFromPlaylist(s: Session, playlistId: String, entryIds: List<String>) = run("removeFromPlaylist:$playlistId:${entryIds.joinToString(",")}") { }
+    override suspend fun moveInPlaylist(s: Session, playlistId: String, entryId: String, newIndex: Int) = run("moveInPlaylist:$playlistId:$entryId:$newIndex") { }
+    override suspend fun deletePlaylist(s: Session, playlistId: String) = run("deletePlaylist:$playlistId") { }
+    override suspend fun collections(s: Session) = run("collections") { collections }
+    override suspend fun createCollection(s: Session, name: String, itemIds: List<String>) = run("createCollection:$name:${itemIds.joinToString(",")}") { }
+    override suspend fun addToCollection(s: Session, collectionId: String, itemIds: List<String>) = run("addToCollection:$collectionId:${itemIds.joinToString(",")}") { }
+    override suspend fun removeFromCollection(s: Session, collectionId: String, itemIds: List<String>) = run("removeFromCollection:$collectionId:${itemIds.joinToString(",")}") { }
+    override suspend fun collectionsOf(s: Session, itemId: String) = run("collectionsOf:$itemId") { collectionsOf }
+}
