@@ -86,6 +86,19 @@ internal object Routes {
     const val QUICK_CONNECT = "settings/quick_connect"
     const val STORAGE = "downloads/storage"
 
+    // ---- Milestone 11 (see "Playlists, collections and richer browsing" in docs/ARCHITECTURE.md). Ids are not trusted.
+    const val PLAYLISTS = "playlists"
+    const val ARG_PLAYLIST = "playlistId"
+    const val PLAYLIST = "playlist/{$ARG_PLAYLIST}"
+    const val ARG_PARENT = "parent"
+    /** The photo viewer at a photo, paging through its folder's photos ([ARG_PARENT], optional). */
+    const val PHOTO = "photo/{$ARG_ITEM}?$ARG_PARENT={$ARG_PARENT}"
+    const val ARG_PERSON = "personId"
+    const val PERSON = "person/{$ARG_PERSON}"
+    fun playlist(playlistId: String) = "playlist/${Uri.encode(playlistId)}"
+    fun photo(photoId: String, parentId: String?) = "photo/${Uri.encode(photoId)}" + (parentId?.let { "?$ARG_PARENT=${Uri.encode(it)}" } ?: "")
+    fun person(personId: String) = "person/${Uri.encode(personId)}"
+
     fun home(fresh: Boolean = false) = "home?$ARG_FRESH=$fresh"
     fun library(viewId: String) = "library/${Uri.encode(viewId)}"
 

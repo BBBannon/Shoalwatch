@@ -12,6 +12,12 @@ sealed interface Destination {
 
     /** A collection or folder, opened like a library. */
     data class Library(val parentId: String) : Destination
+
+    /** Milestone 11: a playlist's own page. */
+    data class Playlist(val playlistId: String) : Destination
+
+    /** Milestone 11: the full-screen photo viewer at [photoId], paging through the photos of [parentId] (the folder it was opened from). */
+    data class Photo(val photoId: String, val parentId: String?) : Destination
 }
 
 /**
@@ -26,7 +32,9 @@ fun ItemWithUserData.destination(): Destination {
         ItemKind.EPISODE -> if (series != null) Destination.Series(series, i.seasonId ?: i.parentId, i.id) else Destination.Detail(i.id)
         ItemKind.SEASON -> if (series != null) Destination.Series(series, i.id) else Destination.Detail(i.id)
         ItemKind.BOX_SET, ItemKind.FOLDER -> Destination.Library(i.id)
-        ItemKind.MOVIE, ItemKind.OTHER -> Destination.Detail(i.id)
+        ItemKind.MOVIE, ItemKind.OTHER, ItemKind.VIDEO -> Destination.Detail(i.id)
+        ItemKind.PLAYLIST -> Destination.Playlist(i.id)
+        ItemKind.PHOTO -> Destination.Photo(i.id, i.parentId)
     }
 }
 
@@ -34,5 +42,6 @@ fun ItemWithUserData.destination(): Destination {
 fun ItemWithUserData.detailsDestination(): Destination = when (item.kind) {
     ItemKind.SERIES -> Destination.Series(item.id)
     ItemKind.BOX_SET, ItemKind.FOLDER -> Destination.Library(item.id)
+    ItemKind.PLAYLIST -> Destination.Playlist(item.id)
     else -> Destination.Detail(item.id)
 }

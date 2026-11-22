@@ -22,7 +22,7 @@ import java.util.concurrent.atomic.AtomicReference
 
 /** The memory-cache key of an [ArtworkRef]: the same text the disk cache uses (see [ArtworkLimits.cacheKey]). */
 internal class ArtworkKeyer : Keyer<ArtworkRef> {
-    override fun key(data: ArtworkRef, options: Options): String = ArtworkLimits.cacheKey(data, ArtworkLimits.bucketFor(options.size))
+    override fun key(data: ArtworkRef, options: Options): String = ArtworkLimits.cacheKey(data, ArtworkLimits.bucketFor(data.type, options.size))
 }
 
 /**
@@ -44,7 +44,7 @@ internal class ArtworkFetcher(
     private val cache: DiskCache = caches.forServer(ref.session.serverId)
 
     override suspend fun fetch(): FetchResult {
-        val bucket = ArtworkLimits.bucketFor(options.size)
+        val bucket = ArtworkLimits.bucketFor(ref.type, options.size)
         val key = ArtworkLimits.cacheKey(ref, bucket)
         if (options.diskCachePolicy.readEnabled) fromDisk(key)?.let { return it }
         // The copy kept with a download (any width; re-checked on every read), before the network, so it shows offline.
@@ -144,7 +144,7 @@ internal object ArtworkRequest {
      * limits). Throws [ArtworkRejectedException] or `AppError`; nothing from the response is in either.
      */
     suspend fun download(api: ServerApi, session: Session, itemId: String, type: ArtworkType, tag: String, maxWidth: Int): Downloaded {
-        val query = listOf("tag" to tag, "maxWidth" to maxWidth.toString(), "quality" to ArtworkLimits.QUALITY.toString(), "format" to FORMAT)
+        val query = ArtworkLimits.query(type, tag, maxWidth, FORMAT)
         return api.getBytes(session, "/Items/$itemId/Images/${type.path}", query, ArtworkLimits.MAX_BYTES) { source, contentType ->
             val declared = ArtworkLimits.kindOfContentType(contentType) ?: throw ArtworkValidation.refuse(ArtworkRejectedException.Reason.CONTENT_TYPE)
             // Early out before the body is read: the first bytes must already agree with the header.

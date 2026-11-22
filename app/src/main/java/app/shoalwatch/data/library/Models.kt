@@ -2,11 +2,17 @@ package app.shoalwatch.data.library
 
 import java.time.Instant
 
-/** What an item is, as far as v1 (films and TV) cares. Anything else the server sends is [OTHER]. */
-enum class ItemKind { MOVIE, SERIES, SEASON, EPISODE, BOX_SET, FOLDER, OTHER }
+/**
+ * What an item is, as far as the app cares. Anything else the server sends is [OTHER]. Milestone 11 added [PHOTO], [VIDEO] (a home
+ * video or any plain `Video`) and [PLAYLIST]; kinds are stored by name, so an older row simply never has them.
+ */
+enum class ItemKind { MOVIE, SERIES, SEASON, EPISODE, BOX_SET, FOLDER, OTHER, PHOTO, VIDEO, PLAYLIST }
 
-/** The kinds of library v1 shows. Libraries of any other kind (music, books, photos, live TV...) are not offered. */
-enum class LibraryKind { MOVIES, TV, BOX_SETS, MIXED }
+/**
+ * The kinds of library the app shows. Milestone 11 added [PHOTOS] and [HOME_VIDEOS]; libraries of any other kind (music, books,
+ * live TV...) are still not offered.
+ */
+enum class LibraryKind { MOVIES, TV, BOX_SETS, MIXED, PHOTOS, HOME_VIDEOS }
 
 /**
  * One of the user's libraries. [id] is a normalised `JellyfinId`; [name] is safe to display, or empty when the server

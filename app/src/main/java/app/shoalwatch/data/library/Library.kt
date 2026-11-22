@@ -63,12 +63,15 @@ data class ListShape(val kinds: Set<ItemKind>, val recursive: Boolean) {
         /** Direct children of any kind: a folder, a collection's contents, a mixed library. */
         val DIRECT = ListShape(emptySet(), recursive = false)
 
-        /** What to ask for when opening a library: films under a films library, series under a TV library, collections, or everything one level down. */
+        /**
+         * What to ask for when opening a library: films under a films library, series under a TV library, collections, or everything
+         * one level down (a mixed library, and photo and home-video libraries, whose albums and folders open like a collection).
+         */
         fun forLibrary(kind: LibraryKind): ListShape = when (kind) {
             LibraryKind.MOVIES -> ListShape(setOf(ItemKind.MOVIE), recursive = true)
             LibraryKind.TV -> ListShape(setOf(ItemKind.SERIES), recursive = true)
             LibraryKind.BOX_SETS -> ListShape(setOf(ItemKind.BOX_SET), recursive = true)
-            LibraryKind.MIXED -> DIRECT
+            LibraryKind.MIXED, LibraryKind.PHOTOS, LibraryKind.HOME_VIDEOS -> DIRECT
         }
     }
 }

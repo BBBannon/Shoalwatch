@@ -163,6 +163,8 @@ fun LibraryKind.label(strings: Strings): String = strings.get(
         LibraryKind.TV -> R.string.library_kind_tv
         LibraryKind.BOX_SETS -> R.string.library_kind_collections
         LibraryKind.MIXED -> R.string.library_kind_mixed
+        LibraryKind.PHOTOS -> R.string.library_kind_photos
+        LibraryKind.HOME_VIDEOS -> R.string.library_kind_home_videos
     },
 )
 

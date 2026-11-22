@@ -84,6 +84,8 @@ internal fun NavHostController.open(destination: Destination) {
         is Destination.Library -> navigate(Routes.library(destination.parentId))
         is Destination.Series -> navigate(Routes.series(destination.seriesId, destination.seasonId, destination.episodeId))
         is Destination.Detail -> navigate(Routes.item(destination.itemId))
+        is Destination.Playlist -> navigate(Routes.playlist(destination.playlistId))
+        is Destination.Photo -> navigate(Routes.photo(destination.photoId, destination.parentId))
     }
 }
 

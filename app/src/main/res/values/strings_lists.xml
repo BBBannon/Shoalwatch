@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Milestone 11: playlists, collections, richer browsing, subtitles from the internet, photos. UK English, plain words. -->
+<resources>
+    <string name="library_kind_photos">Photos</string>
+    <string name="library_kind_home_videos">Home videos</string>
+</resources>

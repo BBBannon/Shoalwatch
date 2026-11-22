@@ -37,5 +37,5 @@ val FolderIcon: ImageVector by lazy {
 fun LibraryKind.icon(): ImageVector = when (this) {
     LibraryKind.MOVIES -> FilmsIcon
     LibraryKind.TV -> TvIcon
-    LibraryKind.BOX_SETS, LibraryKind.MIXED -> FolderIcon
+    LibraryKind.BOX_SETS, LibraryKind.MIXED, LibraryKind.PHOTOS, LibraryKind.HOME_VIDEOS -> FolderIcon
 }

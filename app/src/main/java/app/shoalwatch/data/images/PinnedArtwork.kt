@@ -74,7 +74,7 @@ class PinnedArtwork internal constructor(
         private const val TAG = "Artwork"
 
         fun slotOf(type: ArtworkType): ArtworkSlot = when (type) {
-            ArtworkType.PRIMARY -> ArtworkSlot.PRIMARY
+            ArtworkType.PRIMARY, ArtworkType.PHOTO -> ArtworkSlot.PRIMARY
             ArtworkType.BACKDROP -> ArtworkSlot.BACKDROP
             ArtworkType.THUMB -> ArtworkSlot.THUMB
         }
