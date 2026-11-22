@@ -11,25 +11,6 @@ import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import app.shoalwatch.AppGraph
-import app.shoalwatch.data.playback.PlaybackState
-import android.content.pm.PackageManager
-import androidx.compose.ui.platform.LocalContext
-import app.shoalwatch.ui.components.LocalCovered
-import app.shoalwatch.ui.findActivity
-import kotlinx.coroutines.launch
-import app.shoalwatch.data.playback.MediaPaths
-import app.shoalwatch.ui.player.HostLifecycle
-import app.shoalwatch.ui.player.LocalPipHost
-import app.shoalwatch.ui.player.PipEffect
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import app.shoalwatch.ui.player.PlayerActions
-import app.shoalwatch.ui.player.PlayerScreen
-import app.shoalwatch.ui.player.PlayerViewModel
-import app.shoalwatch.ui.player.PlayerWindow
-import app.shoalwatch.ui.player.TouchExploration
-import app.shoalwatch.ui.player.VideoSurface
-import app.shoalwatch.ui.player.rememberDolbyVisionScreen
 import app.shoalwatch.ui.home.HomeActions
 import app.shoalwatch.ui.home.HomeScreen
 import app.shoalwatch.ui.home.HomeViewModel
@@ -199,7 +180,7 @@ internal fun SeriesRoute(graph: AppGraph, nav: NavHostController, seriesId: Stri
 
 @Composable
 internal fun DetailRoute(graph: AppGraph, nav: NavHostController, itemId: String) {
-    val vm = graphViewModel(key = itemId) { DetailViewModel(itemId, graph.serverCatalog, graph.addressSelector, graph.library, graph.playstate, graph.downloads, graph.remoteSubtitles) }
+    val vm = graphViewModel(key = itemId) { DetailViewModel(itemId, graph.serverCatalog, graph.addressSelector, graph.library, graph.playstate, graph.downloads, graph.live.remoteSubtitles) }
     val statuses by vm.downloadStatus.collectAsStateWithLifecycle()
     val state by vm.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
@@ -249,16 +230,16 @@ internal fun DetailRoute(graph: AppGraph, nav: NavHostController, itemId: String
 
 @Composable
 internal fun SearchRoute(graph: AppGraph, nav: NavHostController) {
-    val vm = graphViewModel { SearchViewModel(graph.serverCatalog, graph.library, graph.addressSelector, graph.discover) }
+    val vm = graphViewModel { SearchViewModel(graph.serverCatalog, graph.library, graph.addressSelector, graph.live.discover) }
     val tap = app.shoalwatch.ui.discover.rememberTapOnce()
     val state by vm.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
-    val actions = remember(vm, nav) {
+    val actions = remember(vm, nav, tap) {
         SearchActions(
             onQueryChange = vm::onQueryChange,
             onClear = vm::clear,
             onRetry = vm::retry,
-            onOpen = nav::open,
+            onOpen = nav.openOnce(tap), // title and collection rows: a double tap opens one page
             onOpenServers = { nav.navigate(Routes.SERVERS) },
             onOpenPerson = { id -> tap.once { nav.navigate(Routes.person(id)) } },
             onOpenGenre = { genre -> tap.once { nav.navigate(Routes.browse(null, genreId = genre)) } },
@@ -349,232 +330,4 @@ internal fun OfflineSeriesRoute(graph: AppGraph, nav: NavHostController, seriesI
         OfflineSeriesScreen(state, actions, vm.messages, snackbar)
         androidx.compose.material3.SnackbarHost(snackbar, androidx.compose.ui.Modifier.align(androidx.compose.ui.Alignment.BottomCenter).navigationBarsPadding())
     } }
-}
-
-/** The profile's playlists (Milestone 11): not a tab, reached from Home's Playlists card. */
-@Composable
-internal fun PlaylistsRoute(graph: AppGraph, nav: NavHostController) {
-    val vm = graphViewModel { app.shoalwatch.ui.lists.PlaylistsViewModel(graph.serverCatalog, graph.lists) }
-    val state by vm.state.collectAsStateWithLifecycle()
-    val snackbar = remember { SnackbarHostState() }
-    androidx.lifecycle.compose.LifecycleResumeEffect(vm) {
-        vm.refresh()
-        onPauseOrDispose {}
-    }
-    val actions = remember(vm, nav) {
-        app.shoalwatch.ui.lists.PlaylistsActions(
-            onBack = { nav.popBackStack() }, onOpen = nav::open, onRetry = vm::retry, onNew = vm::startCreate, onCreate = vm::create,
-            onCancelCreate = vm::cancelCreate, onOpenServers = { nav.navigate(Routes.SERVERS) },
-        )
-    }
-    app.shoalwatch.ui.lists.PlaylistsScreen(state, actions, vm.name, vm.notices, snackbar)
-}
-
-/** The full-screen photo viewer (Milestone 11): the folder's photos in a pager, starting at the tapped one. Close leaves once, however often it is tapped. */
-@Composable
-internal fun PhotoRoute(graph: AppGraph, nav: NavHostController, photoId: String, parentId: String?) {
-    val vm = graphViewModel(key = "$photoId|$parentId") { app.shoalwatch.ui.photos.PhotoViewerViewModel(photoId, parentId, graph.serverCatalog, graph.discover, graph.library) }
-    val state by vm.state.collectAsStateWithLifecycle()
-    val actions = remember(vm, nav) {
-        app.shoalwatch.ui.photos.PhotoViewerActions(
-            onClose = { vm.once { nav.popBackStack() } }, onRetry = vm::retry, onOpenServers = { nav.navigate(Routes.SERVERS) },
-        )
-    }
-    app.shoalwatch.ui.photos.PhotoViewerScreen(state, actions)
-}
-
-/** One playlist (Milestone 11). Play and Shuffle open the player carrying the queue's token; deleting it leaves the screen. */
-@Composable
-internal fun PlaylistRoute(graph: AppGraph, nav: NavHostController, playlistId: String) {
-    val vm = graphViewModel(key = playlistId) { app.shoalwatch.ui.lists.PlaylistViewModel(playlistId, graph.serverCatalog, graph.lists, graph.playQueues, graph.downloads) }
-    val state by vm.state.collectAsStateWithLifecycle()
-    val snackbar = remember { SnackbarHostState() }
-    LaunchedEffect(vm, nav) { vm.launches.collect { nav.navigate(Routes.player(it.itemId, StartFrom.BEGINNING, it.token)) } }
-    LaunchedEffect(state.deleted) { if (state.deleted) nav.popBackStack() }
-    androidx.lifecycle.compose.LifecycleResumeEffect(vm) {
-        vm.onResumed()
-        onPauseOrDispose {}
-    }
-    val actions = remember(vm, nav) {
-        app.shoalwatch.ui.lists.PlaylistActions(
-            onBack = { nav.popBackStack() }, onOpen = nav::open, onRetry = vm::retry,
-            onPlay = { vm.play(shuffle = false) }, onShuffle = { vm.play(shuffle = true) }, onDownloadAll = vm::downloadAll,
-            onMove = vm::move, onRemove = vm::remove, onAskRename = vm::startRename, onRename = vm::rename, onCancelRename = vm::cancelRename,
-            onAskDelete = vm::askDelete, onConfirmDelete = vm::confirmDelete, onCancelDelete = vm::cancelDelete,
-            onOpenServers = { nav.navigate(Routes.SERVERS) },
-        )
-    }
-    app.shoalwatch.ui.lists.PlaylistScreen(state, actions, vm.name, vm.notices, snackbar)
-}
-
-/**
- * The player. Its ViewModel (and so the controller and the engine) lives as long as this back-stack entry, so a rotation does not
- * rebuffer. It leaves as soon as the session ends or the controller closes: popped back to where Play was pressed (and if the
- * session changed, `ClearBrowsingOnSessionChange` takes the stack to Home as for any other screen). Popping by route does
- * nothing if that has already taken the player away.
- */
-@Composable
-internal fun PlayerRoute(graph: AppGraph, nav: NavHostController, itemId: String, from: StartFrom, queueToken: String? = null, sourceId: String? = null) {
-    val vm = graphStateViewModel(key = "$itemId|$from|$queueToken|$sourceId") { saved ->
-        PlayerViewModel(itemId, from, saved, graph.serverCatalog, { s, scope -> graph.playbackController(s, scope, graph.lockParts.profilePlayback.autoplayReader(s, scope)) }, graph.subtitleSettings, graph.qualityDefault, graph.addressSelector::refreshIfOffline, graph.housekeeping,
-            { s -> graph.playQueues.get(s, queueToken) }, sourceId?.takeIf(MediaPaths::isSourceId), graph.remoteSubtitles,
-        )
-    }
-    val state by vm.state.collectAsStateWithLifecycle()
-    LaunchedEffect(state.leave) { if (state.leave) nav.popBackStack(Routes.PLAYER, inclusive = true) }
-    val playing = state.playback.phase == PlaybackState.Phase.PLAYING || state.playback.phase == PlaybackState.Phase.BUFFERING
-    PlayerWindow(keepOn = playing, locked = state.locked)
-    HostLifecycle(onStopped = vm::onHostStopped, onStarted = vm::onHostStarted)
-    TouchExploration(vm::setTouchExploration)
-    // Picture-in-picture (Milestone 7): wished for while this player shows and nothing covers it; the small window's button plays and pauses.
-    val pip = LocalPipHost.current?.takeIf { LocalContext.current.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE) }
-    val inPip by (pip?.inPip ?: NotInPip).collectAsStateWithLifecycle()
-    val aspect by (vm.video?.aspectRatio ?: NoAspect).collectAsStateWithLifecycle()
-    PipEffect(state, enabled = !LocalCovered.current, onPlayPause = vm::playPause, aspect = aspect)
-    val actions = remember(vm, nav, pip) {
-        PlayerActions(
-            onBack = { nav.popBackStack(Routes.PLAYER, inclusive = true) },
-            onTapSurface = vm::tapSurface,
-            onPlayPause = vm::playPause,
-            onSeek = vm::seekTo,
-            onSkipBack = { vm.skipBy(-SKIP_MS) },
-            onSkipForward = { vm.skipBy(SKIP_MS) },
-            onDoubleTap = { forward -> vm.skipBy(if (forward) SKIP_MS else -SKIP_MS) },
-            onPrevious = vm::previous,
-            onNext = vm::next,
-            onSkipSegment = vm::skipSegment,
-            onPlayUpNext = vm::playUpNext,
-            onCancelUpNext = vm::cancelUpNext,
-            onToggleLock = vm::toggleLock,
-            onOpenSheet = vm::openSheet,
-            onCloseSheet = vm::closeSheet,
-            onSelectAudio = vm::selectAudio,
-            onSelectSubtitle = vm::selectSubtitle,
-            onBurnIn = vm::burnIn,
-            onQuality = vm::setQuality,
-            onSpeed = vm::setSpeed,
-            onSleep = vm::setSleep,
-            onAppearance = vm::setAppearance,
-            onDelay = vm::setDelay,
-            onRetry = vm::retry,
-            onSignIn = { vm.state.value.session?.let { nav.navigate(Routes.signIn(it.serverId)) } },
-            onDismissSubtitleNotice = vm::dismissSubtitleNotice,
-            onDismissSleepFired = vm::dismissSleepFired,
-            onWatchedDelete = vm::watchedDelete,
-            onWatchedTogether = vm::watchedTogether,
-            onKeepDownload = vm::keepDownload,
-            onDismissWatchedMessage = vm::dismissWatchedMessage,
-            onSubmitSharerPin = vm::submitSharerPin,
-            onCancelSharerPin = vm::cancelSharerPin,
-            onEnterPip = pip?.let { host -> { host.enterNow(); Unit } },
-            search = vm.searchActions,
-        )
-    }
-    PlayerScreen(state, actions, rememberDolbyVisionScreen(), inPip, sharerPin = vm.sharerPin) { controlsUp ->
-        VideoSurface(vm.video, vm.cues, state.appearance, controlsUp)
-    }
-}
-
-private const val SKIP_MS = 10_000L
-private val NotInPip: StateFlow<Boolean> = MutableStateFlow(false)
-private val NoAspect: StateFlow<Float?> = MutableStateFlow(null)
-
-
-/** The extras block's ViewModel and what the page passes its screen. */
-internal class ExtrasHost(val vm: app.shoalwatch.ui.discover.ExtrasViewModel, val controls: app.shoalwatch.ui.discover.ExtrasControls)
-
-/**
- * The extras block of the detail and series pages (Milestone 11): its ViewModel, read again where the page comes back on top, and its
- * actions wired to navigation. A local trailer plays in the app's player; an online one is handed to Android as a plain `ACTION_VIEW`
- * (the app never fetches it), and a second tap before the page is back on top does nothing.
- */
-@Composable
-internal fun rememberExtras(graph: AppGraph, nav: NavHostController, itemId: String, snackbar: SnackbarHostState): ExtrasHost {
-    val vm = graphViewModel(key = "extras:$itemId") { app.shoalwatch.ui.discover.ExtrasViewModel(itemId, graph.serverCatalog, graph.discover, graph.lists) }
-    val state by vm.state.collectAsStateWithLifecycle()
-    androidx.lifecycle.compose.LifecycleResumeEffect(vm) {
-        vm.onResumed()
-        onPauseOrDispose {}
-    }
-    val context = LocalContext.current
-    val scope = androidx.compose.runtime.rememberCoroutineScope()
-    val noApp = androidx.compose.ui.res.stringResource(app.shoalwatch.R.string.extras_no_app)
-    val actions = remember(vm, nav, context, noApp) {
-        app.shoalwatch.ui.discover.ExtrasActions(
-            onOpen = { d -> vm.once { nav.open(d) } },
-            onOpenPerson = { id -> vm.once { nav.navigate(Routes.person(id)) } },
-            onPlayTrailer = { id -> vm.once { nav.navigate(Routes.player(id, StartFrom.BEGINNING)) } },
-            onWatchOnline = { trailer ->
-                val intent = app.shoalwatch.ui.discover.trailerIntent(trailer.url)
-                val activity = context.findActivity()
-                if (intent == null || activity == null) {
-                    scope.launch { snackbar.showSnackbar(noApp) }
-                } else vm.once {
-                    try {
-                        activity.startActivity(intent)
-                    } catch (e: android.content.ActivityNotFoundException) {
-                        vm.release()
-                        scope.launch { snackbar.showSnackbar(noApp) }
-                    }
-                }
-            },
-            onChooseVersion = vm::chooseVersion,
-            onRetry = vm::retry,
-        )
-    }
-    return ExtrasHost(vm, app.shoalwatch.ui.discover.ExtrasControls(state, actions))
-}
-
-/** A person's page (Milestone 11): their picture and overview and their films and shows. */
-@Composable
-internal fun PersonRoute(graph: AppGraph, nav: NavHostController, personId: String) {
-    val vm = graphViewModel(key = personId) { app.shoalwatch.ui.discover.PersonViewModel(personId, graph.serverCatalog, graph.discover) }
-    val state by vm.state.collectAsStateWithLifecycle()
-    val tap = app.shoalwatch.ui.discover.rememberTapOnce()
-    val actions = remember(vm, nav, tap) {
-        app.shoalwatch.ui.discover.PersonActions(
-            onBack = { nav.popBackStack() }, onOpen = { d -> tap.once { nav.open(d) } }, onEndVisible = vm::onEndVisible, onRetry = vm::retry, onRetryMore = vm::retryMore,
-            onOpenServers = { nav.navigate(Routes.SERVERS) },
-        )
-    }
-    app.shoalwatch.ui.discover.PersonScreen(state, actions)
-}
-
-/** A library's live filtered list (Milestone 11), opened with no filter or at one genre or studio. */
-@Composable
-internal fun BrowseRoute(graph: AppGraph, nav: NavHostController, parentId: String?, genreId: String?, studioId: String?) {
-    val vm = graphViewModel(key = "$parentId|$genreId|$studioId") {
-        app.shoalwatch.ui.discover.BrowseViewModel(
-            parentId, app.shoalwatch.data.discover.BrowseFilter(genreId = genreId, studioId = studioId), graph.serverCatalog, graph.library, graph.discover,
-        )
-    }
-    val state by vm.state.collectAsStateWithLifecycle()
-    val tap = app.shoalwatch.ui.discover.rememberTapOnce()
-    val actions = remember(vm, nav, tap) {
-        app.shoalwatch.ui.discover.BrowseActions(
-            onBack = { nav.popBackStack() }, onOpen = { d -> tap.once { nav.open(d) } }, onGenre = vm::setGenre, onStudio = vm::setStudio, onYear = vm::setYear,
-            onRating = vm::setRating, onTag = vm::setTag, onLetter = vm::setLetter, // With no filter the cached grid is what shows: Clear filters goes back to the library's own page (from a page with no library, it clears in place).
-            onClear = { if (!nav.popBackStack(Routes.LIBRARY, inclusive = false)) vm.clearFilters() }, onEndVisible = vm::onEndVisible,
-            onRetry = vm::retry, onRetryMore = vm::retryMore, onOpenServers = { nav.navigate(Routes.SERVERS) },
-        )
-    }
-    app.shoalwatch.ui.discover.BrowseScreen(state, actions)
-}
-
-/** A library's genres or studios (Milestone 11); each opens the filtered list. */
-@Composable
-internal fun NamesRoute(graph: AppGraph, nav: NavHostController, parentId: String, kind: app.shoalwatch.ui.discover.NamesKind) {
-    val vm = graphViewModel(key = "$kind|$parentId") { app.shoalwatch.ui.discover.NamesViewModel(parentId, kind, graph.serverCatalog, graph.discover) }
-    val state by vm.state.collectAsStateWithLifecycle()
-    val tap = app.shoalwatch.ui.discover.rememberTapOnce()
-    val actions = remember(vm, nav, tap) {
-        app.shoalwatch.ui.discover.NamesActions(
-            onBack = { nav.popBackStack() },
-            onOpen = { named ->
-                tap.once { nav.navigate(if (kind == app.shoalwatch.ui.discover.NamesKind.GENRES) Routes.browse(parentId, genreId = named.id) else Routes.browse(parentId, studioId = named.id)) }
-            },
-            onEndVisible = vm::onEndVisible, onRetry = vm::retry, onOpenServers = { nav.navigate(Routes.SERVERS) },
-        )
-    }
-    app.shoalwatch.ui.discover.NamesScreen(state, actions)
 }

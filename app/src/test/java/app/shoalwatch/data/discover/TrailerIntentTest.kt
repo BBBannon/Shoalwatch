@@ -1,4 +1,4 @@
-package app.shoalwatch.ui.discover
+package app.shoalwatch.data.discover
 
 import android.content.Intent
 import org.junit.Assert.assertEquals
@@ -10,7 +10,8 @@ import org.robolectric.RobolectricTestRunner
 
 /**
  * Milestone 11 Task 8 (S7): an online trailer is only ever handed to Android as `ACTION_VIEW` on the validated address: no
- * extras, no flags (so no permission is granted), no category, no type, no package. The app never fetches it.
+ * extras, no flags (so no permission is granted), no type, no package, and only the browsable category (final review M2). The app
+ * never fetches it.
  */
 @RunWith(RobolectricTestRunner::class)
 class TrailerIntentTest {
@@ -22,7 +23,7 @@ class TrailerIntentTest {
         assertEquals("https://www.youtube.com/watch?v=abc", intent.data.toString())
         assertNull(intent.extras)
         assertEquals(0, intent.flags)
-        assertNull(intent.categories)
+        assertEquals(setOf(Intent.CATEGORY_BROWSABLE), intent.categories)
         assertNull(intent.type)
         assertNull(intent.`package`)
         assertNull(intent.component)

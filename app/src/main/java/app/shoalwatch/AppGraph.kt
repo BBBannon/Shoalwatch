@@ -42,7 +42,6 @@ import app.shoalwatch.ui.browse.connectionRegained
 import app.shoalwatch.data.downloads.savedRows
 import app.shoalwatch.data.db.downloads.DownloadKey
 import app.shoalwatch.data.playback.LocalPlaybackReports
-import app.shoalwatch.data.playback.PlayQueues
 import app.shoalwatch.data.playback.RoutedPlaybackReports
 import app.shoalwatch.data.playback.SavedFirstPlaybackGateway
 import app.shoalwatch.data.sync.OfflinePlays
@@ -316,10 +315,6 @@ class AppGraph(internal val appContext: Context) {
         session, playerEngineFactory(), playbackResolver, routedReports, playerGateway, library, EpisodeNavigator(library),
         activePlayback, scope, appScope, SystemMonotonicClock, autoplayNext, trackPreferences, subtitleLoader, { systemCaptionDefaults(appContext) },
     )
-    /** Live play queues (a playlist played in order or shuffled), by random token; in memory only. */
-    val playQueues: PlayQueues by lazy {
-        PlayQueues().also { q -> appScope.launch { serverCatalog.activeSession().collect(q::keepOnly) } } // one profile playlist never outlives its session
-    }
     /** Audio and subtitle choices per (server, user, series), in Room (see "Track choices" in docs/ARCHITECTURE.md). */
     val trackPreferences: TrackPreferences by lazy { TrackPreferences(database.trackChoiceDao(), System::currentTimeMillis) }
     /** Subtitle size, colour, background and edge: a device setting, following the phone's caption settings until changed. */
@@ -391,18 +386,8 @@ class AppGraph(internal val appContext: Context) {
     }
     /** What the management screens call: every request gated on [adminRights] (see "Library management" in docs/ARCHITECTURE.md). */
     val manage: app.shoalwatch.data.manage.Manage get() = manageGateway
-    // ---- Playlists and collections (Milestone 11, data/lists). Live only; the one cache is the collection index, in memory.
-    private val listsGateway: app.shoalwatch.data.lists.api.ListsGateway by lazy { app.shoalwatch.data.lists.api.ListsGateway(serverApi, SystemMonotonicClock) }
-    /** What the playlist and collection screens call. */
-    val lists: app.shoalwatch.data.lists.Lists get() = listsGateway
-    // ---- Discovery (Milestone 11, data/discover). Live only, reads only: nothing is cached.
-    private val discoverGateway: app.shoalwatch.data.discover.api.DiscoverGateway by lazy { app.shoalwatch.data.discover.api.DiscoverGateway(serverApi) }
-    /** What the detail extras, person, filtered-browse, genre, studio and search-extras screens call. */
-    val discover: app.shoalwatch.data.discover.Discover get() = discoverGateway
-    // ---- Subtitles from the internet (Milestone 11, data/subtitles). Live only; always through the user's own server.
-    private val subtitlesGateway: app.shoalwatch.data.subtitles.api.SubtitlesGateway by lazy { app.shoalwatch.data.subtitles.api.SubtitlesGateway(serverApi) }
-    /** What the subtitle search sheet calls. */
-    val remoteSubtitles: app.shoalwatch.data.subtitles.RemoteSubtitles get() = subtitlesGateway
+    // ---- Milestone 11: playlists and collections, discovery, subtitles from the internet, play queues. Live only.
+    internal val live: LiveParts by lazy { LiveParts(this) }
     /** Pictures from the photo picker, read through the content resolver and re-encoded on the phone. */
     val pickedImages: app.shoalwatch.data.manage.PickedImages by lazy { app.shoalwatch.data.manage.PickedImages(appContext.contentResolver::openInputStream) }
     /** Approving a Quick Connect code from Settings: only while the asking profile is still the active one. */

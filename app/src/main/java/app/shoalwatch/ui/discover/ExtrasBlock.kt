@@ -1,7 +1,5 @@
 package app.shoalwatch.ui.discover
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,7 +18,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import app.shoalwatch.R
-import app.shoalwatch.data.discover.DiscoverLimits
 import app.shoalwatch.data.discover.OnlineTrailer
 import app.shoalwatch.data.lists.CollectionRef
 import app.shoalwatch.data.servers.Session
@@ -37,7 +34,7 @@ class ExtrasActions(
     val onOpenPerson: (personId: String) -> Unit,
     /** A trailer kept on the server is an item: it plays in the app's player. */
     val onPlayTrailer: (itemId: String) -> Unit,
-    /** An online trailer is handed to Android (see [trailerIntent]); the app never fetches it. */
+    /** An online trailer is handed to Android (see `data.discover.trailerIntent`); the app never fetches it. */
     val onWatchOnline: (OnlineTrailer) -> Unit,
     val onChooseVersion: (versionId: String) -> Unit,
     val onRetry: () -> Unit,
@@ -45,19 +42,6 @@ class ExtrasActions(
 
 /** The extras block's state with what it can ask for, passed to the detail and series screens. */
 class ExtrasControls(val state: ExtrasUiState, val actions: ExtrasActions)
-
-/**
- * The intent that opens an online trailer: `ACTION_VIEW` on the validated address and nothing else (no extras, no flags, no
- * grants), so no token or header can ride along and the other app gets no access to this one. Null for anything that is not
- * a printable `http` or `https` address of at most [DiscoverLimits.URL] characters.
- */
-fun trailerIntent(url: String): Intent? {
-    if (url.isEmpty() || url.length > DiscoverLimits.URL) return null
-    val uri = Uri.parse(url)
-    if (uri.scheme != "http" && uri.scheme != "https") return null
-    if (uri.host.isNullOrEmpty()) return null
-    return Intent(Intent.ACTION_VIEW, uri)
-}
 
 /**
  * "Version": one radio choice for each file of a film that has more than one. The pick is for the next play only. Nothing shows

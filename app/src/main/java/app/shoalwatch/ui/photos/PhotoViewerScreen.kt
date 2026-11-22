@@ -36,8 +36,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
@@ -48,21 +46,16 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import app.shoalwatch.R
-import app.shoalwatch.data.images.ArtworkLimits
 import app.shoalwatch.data.images.photoArtwork
 import app.shoalwatch.data.library.Item
 import app.shoalwatch.data.servers.Session
-import app.shoalwatch.ui.components.ArtworkPlaceholder
-import app.shoalwatch.ui.components.LocalArtworkLoader
+import app.shoalwatch.ui.components.PhotoArtwork
 import app.shoalwatch.ui.components.SignedOutNotice
 import app.shoalwatch.ui.lists.ListsFrame
 import app.shoalwatch.ui.lists.ListsPhase
 import app.shoalwatch.ui.lists.ReadProblem
 import app.shoalwatch.ui.present.displayName
 import app.shoalwatch.ui.present.rememberStrings
-import coil3.compose.AsyncImage
-import coil3.request.ImageRequest
-import coil3.size.Precision
 
 /** What the viewer can ask for. The route wires these to the ViewModel and to navigation. */
 class PhotoViewerActions(
@@ -130,8 +123,6 @@ private fun Viewer(session: Session, photos: List<Item>, startIndex: Int, onClos
 @Composable
 private fun PhotoPage(session: Session, photo: Item, description: String, zoomIn: String, zoomOut: String) {
     val zoom = remember(photo.id) { PhotoZoom() }
-    val loader = LocalArtworkLoader.current
-    val context = LocalContext.current
     val ref = remember(photo, session) { photo.photoArtwork(session) }
     val toggleLabel = if (zoom.zoomed) zoomOut else zoomIn
     BoxWithConstraints(
@@ -167,17 +158,6 @@ private fun PhotoPage(session: Session, photo: Item, description: String, zoomIn
             translationX = zoom.offset.x
             translationY = zoom.offset.y
         }
-        if (ref == null || loader == null) {
-            ArtworkPlaceholder(seed = photo.id, title = photo.name, modifier = shown)
-        } else {
-            val request = remember(ref, longest) {
-                val bucket = ArtworkLimits.photoBucket(longest)
-                ImageRequest.Builder(context).data(ref).size(bucket, bucket).precision(Precision.INEXACT).build()
-            }
-            Box(Modifier.fillMaxSize()) {
-                ArtworkPlaceholder(seed = photo.id, title = photo.name, modifier = Modifier.fillMaxSize())
-                AsyncImage(request, contentDescription = null, imageLoader = loader, contentScale = ContentScale.Fit, modifier = shown)
-            }
-        }
+        PhotoArtwork(ref, longest, seed = photo.id, title = photo.name, pictureModifier = shown)
     }
 }

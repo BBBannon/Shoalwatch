@@ -49,7 +49,7 @@ internal fun NavHostController.leaveItemPage(itemId: String) {
 /** The add-to picker (Milestone 11): one [ListPickerViewModel] per screen entry, keyed apart from the screen's own. */
 @Composable
 internal fun rememberListPicker(graph: AppGraph): ListPickerHost {
-    val vm = graphViewModel(key = "picker") { ListPickerViewModel(graph.serverCatalog, graph.lists) }
+    val vm = graphViewModel(key = "picker") { ListPickerViewModel(graph.serverCatalog, graph.live.lists) }
     val state by vm.state.collectAsStateWithLifecycle()
     return remember(vm, state) {
         ListPickerHost(state, vm.notices, vm.name, vm::open, vm::choose, vm::startCreate, vm::backToList, vm::create, vm::retry, vm::dismiss)
