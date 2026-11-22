@@ -15,6 +15,7 @@ import app.shoalwatch.data.library.api.Limits
 import app.shoalwatch.data.library.api.rawCount
 import app.shoalwatch.data.library.api.toItemDto
 import app.shoalwatch.data.library.api.usableTotal
+import app.shoalwatch.data.playback.MediaPaths
 import app.shoalwatch.data.servers.JellyfinId
 import app.shoalwatch.data.servers.Session
 import kotlinx.serialization.DeserializationStrategy
@@ -80,13 +81,14 @@ internal fun List<JsonElement>?.toOnlineTrailers(): List<OnlineTrailer> =
 
 // ---- versions
 
-private val SOURCE_ID = Regex("[A-Za-z0-9_-]{1,64}")
-
-/** The item's files when there is more than one (valid id, first of each id, at most [DiscoverLimits.VERSIONS]); else none. */
+/**
+ * The item's files when there is more than one (first of each id, at most [DiscoverLimits.VERSIONS]); else none. Only an id the
+ * player honours ([MediaPaths.isSourceId], 32 hex) is offered, so a choice is never silently dropped for the first version (final review M1).
+ */
 internal fun List<JsonElement>?.toVersions(): List<MediaVersion> {
     val all = orEmpty().asSequence().mapNotNull { e ->
         val dto = e.decodeAs(MediaSourceDto.serializer()) ?: return@mapNotNull null
-        val sourceId = dto.id?.takeIf { SOURCE_ID.matches(it) } ?: return@mapNotNull null
+        val sourceId = dto.id?.takeIf(MediaPaths::isSourceId) ?: return@mapNotNull null
         MediaVersion(sourceId, displayText(dto.name, DiscoverLimits.NAME))
     }.distinctBy { it.id }.take(DiscoverLimits.VERSIONS).toList()
     return if (all.size > 1) all else emptyList()

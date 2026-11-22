@@ -61,19 +61,25 @@ class ExtrasViewModel(private val itemId: String, catalog: ServerCatalog, privat
         }
     }
 
-    private suspend fun read(s: Session) {
-        val (extras, collections) = coroutineScope {
-            val e = async { runCatching { discover.extras(s, itemId) } }
-            val c = async { runCatching { lists.collectionsOf(s, itemId) } }
-            e.await() to c.await()
-        }
+    /**
+     * The extras show as soon as they arrive; "Part of this collection" fills in when the collection index answers, which can take
+     * many requests on a server with many collections (final review I1), so it never holds the rest of the block back.
+     */
+    private suspend fun read(s: Session) = coroutineScope {
+        val collections = async { runCatching { lists.collectionsOf(s, itemId) } }
+        val extras = runCatching { discover.extras(s, itemId) }
         val failure = extras.exceptionOrNull()
         if (failure is CancellationException) throw failure
         val phase = if (failure != null && phaseOf(failure) == ExtrasPhase.OFFLINE) ExtrasPhase.OFFLINE else ExtrasPhase.READY
-        body.update {
-            if (it.session != s) it
-            else it.copy(phase = phase, extras = extras.getOrDefault(Extras.NONE), collections = if (phase == ExtrasPhase.OFFLINE) emptyList() else collections.getOrDefault(emptyList()))
+        body.update { if (it.session != s) it else it.copy(phase = phase, extras = extras.getOrDefault(Extras.NONE), collections = emptyList()) }
+        if (phase == ExtrasPhase.OFFLINE) {
+            collections.cancel()
+            return@coroutineScope
         }
+        val found = collections.await()
+        found.exceptionOrNull()?.let { if (it is CancellationException) throw it }
+        val now = found.getOrDefault(emptyList())
+        body.update { if (it.session == s && it.phase == ExtrasPhase.READY) it.copy(collections = now) else it }
     }
 
     private fun phaseOf(e: Throwable) = when ((e as? AppError)?.kind) {

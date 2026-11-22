@@ -144,6 +144,18 @@ class PlaylistViewModelTest {
     private fun vm(d: FakeDownloads? = downloads) = PlaylistViewModel(pl, catalog, lists, queues, d)
     private fun reads() = lists.calls.count { it == "playlist:$pl" }
 
+    /** T7 review R2: entry, its page, Add to playlist, Back shows the playlist as it now is, without a spinner. */
+    @Test fun comingBackReadsThePlaylistAgainWithoutASpinner() = runTest(main.dispatcher) {
+        lists.playlist = playlistOf(place(1))
+        val vm = vm()
+        assertEquals(1, reads())
+        lists.playlist = playlistOf(place(1), place(2))
+        vm.refresh()
+        assertEquals(ListsPhase.READY, vm.state.value.phase)
+        assertEquals(listOf(id(1), id(2)), vm.state.value.playlist!!.entries.map { it.item.item.id })
+        assertEquals(2, reads())
+    }
+
     @Test fun playOpensTheFirstEntryWithAQueueInOrderAndShuffleKeepsTheSameSet() = runTest(main.dispatcher) {
         lists.playlist = playlistOf(place(1), place(2), place(3), place(4, ItemKind.SERIES))
         val vm = vm()
@@ -189,8 +201,31 @@ class PlaylistViewModelTest {
         val notices = mutableListOf<ListNotice>()
         backgroundScope.launch { vm.notices.toList(notices) }
         vm.downloadAll()
-        assertEquals(listOf(R.plurals.lists_downloading_some to 1), notices.map { it.plural to it.count })
+        assertEquals(listOf(R.plurals.lists_downloading_some_room to 1), notices.map { it.plural to it.count })
         assertEquals("2", notices.single().arg)
+    }
+
+    /** T7 review R4: the line gives the true reason for the rest: the connection, room, or (mixed or anything else) none guessed. */
+    @Test fun downloadAllGivesTheTrueReasonForTheRest() = runTest(main.dispatcher) {
+        lists.playlist = playlistOf(place(1), place(2), place(3))
+        val vm = vm()
+        val notices = mutableListOf<ListNotice>()
+        backgroundScope.launch { vm.notices.toList(notices) }
+        fun downloadWith(rest: (Int) -> Unit) {
+            downloads.plans = { s, t, _ ->
+                val n = (1..3).first { t.toString().contains(id(it)) }
+                if (n == 1) FAKE_PLAN(s, true) else { rest(n); FAKE_PLAN(s, false) }
+            }
+            vm.downloadAll()
+        }
+        downloadWith { throw AppError.of(AppError.Kind.NETWORK) }
+        downloadWith { n -> if (n == 2) throw AppError.of(AppError.Kind.OFFLINE) }
+        downloadWith { throw AppError.of(AppError.Kind.SERVER_ERROR) }
+        assertEquals(
+            listOf(R.plurals.lists_downloading_some_offline, R.plurals.lists_downloading_some, R.plurals.lists_downloading_some),
+            notices.map { it.plural },
+        )
+        assertTrue(notices.all { it.count == 1 && it.arg == "3" })
     }
 
     @Test fun moveSendsTheNeighbouringPlaceThenReadsAgainAndDoesNothingAtTheEnds() = runTest(main.dispatcher) {

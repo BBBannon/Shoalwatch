@@ -221,6 +221,20 @@ abstract class ListsRenderBase : RenderBase() {
         assertEquals(listOf("playlists"), opened)
     }
 
+    /** T7 review R3: no "Libraries" heading over the lone card, and no second refresh banner under the empty message's Try again. */
+    @Test fun homeWithNoLibrariesShowsOnlyTheCardUnderTheEmptyMessage() {
+        val actions = HomeActions({}, {}, {}, {}, {}, {}, {}, {}, {}, { _, _ -> }, { _, _ -> })
+        val state = HomeUiState(
+            phase = HomePhase.READY, session = BEN, serverId = SERVER_ID, serverName = "Den", userName = "ben", views = emptyList(),
+            viewsBanner = app.shoalwatch.ui.present.BannerKind.GENERIC,
+        )
+        show { HomeScreen(state, actions, emptyFlow(), snackbar) }
+        scrollTo(hasContentDescription("${text(R.string.lists_playlists_title)}, ${text(R.string.lists_home_card_subtitle)}"))
+        assertShown(text(R.string.home_empty_title))
+        assertNotShown(text(R.string.home_libraries))
+        assertNotShown(text(R.string.banner_generic))
+    }
+
     @Test fun homeEndsItsLibrariesWithAPlaylistsCard() {
         val opened = mutableListOf<String>()
         val actions = HomeActions({}, {}, {}, {}, {}, {}, {}, {}, {}, { _, _ -> }, { _, _ -> }, onOpenPlaylists = { opened += "playlists" })

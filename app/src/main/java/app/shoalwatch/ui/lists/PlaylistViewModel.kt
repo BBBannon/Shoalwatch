@@ -131,6 +131,17 @@ class PlaylistViewModel(
     /** The screen is on top again (back from the player): Play and Shuffle work again. A double tap opens the player once. */
     fun onResumed() { launched = false }
 
+    /**
+     * Back on this screen after a change made elsewhere (an entry's page: Add to playlist, or Remove there): read again, without a
+     * spinner (T7 review R2). Not while the first read or a change of this screen's own is running (that reads again itself), nor
+     * once the playlist is deleted.
+     */
+    fun refresh() {
+        val s = body.value.session ?: return
+        if (body.value.phase == ListsPhase.LOADING || body.value.busy || body.value.deleted) return
+        viewModelScope.launch { read(s) }
+    }
+
     /** Each film or episode through prepare and start at the default quality; one line sums it up. */
     fun downloadAll() {
         val s = body.value.session ?: return
@@ -146,6 +157,7 @@ class PlaylistViewModel(
         viewModelScope.launch {
             var started = 0
             var firstFailure: Exception? = null
+            val notStarted = mutableSetOf<NotStartedBecause>()
             try {
                 for (id in ids) {
                     if (sessionNow.value != s) break
@@ -154,11 +166,12 @@ class PlaylistViewModel(
                         if (plan.enoughSpace && plan.items.isNotEmpty()) {
                             d.start(s, plan)
                             started++
-                        }
+                        } else notStarted += if (plan.enoughSpace) NotStartedBecause.OTHER else NotStartedBecause.ROOM
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
                         if (firstFailure == null) firstFailure = e
+                        notStarted += if (failureText(e) == R.string.lists_offline_change) NotStartedBecause.CONNECTION else NotStartedBecause.OTHER
                     }
                 }
             } finally {
@@ -166,12 +179,19 @@ class PlaylistViewModel(
             }
             val rest = ids.size - started
             when {
-                started > 0 && rest > 0 -> channel.trySend(ListNotice(s, R.plurals.lists_downloading_some, started, arg = ids.size.toString()))
+                started > 0 && rest > 0 -> channel.trySend(ListNotice(s, someStarted(notStarted), started, arg = ids.size.toString()))
                 started > 0 -> channel.trySend(ListNotice(s, R.plurals.lists_downloading, started))
                 firstFailure != null -> channel.trySend(ListNotice(s, text = failureText(firstFailure)))
                 else -> channel.trySend(ListNotice(s, R.plurals.lists_download_not_started, rest))
             }
         }
+    }
+
+    /** "Downloading 2 of 5 items" with the true reason for the rest, when they all share one; else no reason is guessed (T7 review R4). */
+    private fun someStarted(reasons: Set<NotStartedBecause>): Int = when (reasons.singleOrNull()) {
+        NotStartedBecause.ROOM -> R.plurals.lists_downloading_some_room
+        NotStartedBecause.CONNECTION -> R.plurals.lists_downloading_some_offline
+        else -> R.plurals.lists_downloading_some
     }
 
     /** One place earlier ([delta] -1) or later (+1); nothing at either end. */
@@ -282,3 +302,6 @@ class PlaylistViewModel(
         }
     }
 }
+
+/** Why an item of Download all was not started: no room on the phone, the connection, or anything else (nothing to download, a refusal). */
+private enum class NotStartedBecause { ROOM, CONNECTION, OTHER }

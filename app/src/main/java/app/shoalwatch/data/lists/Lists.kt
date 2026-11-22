@@ -60,4 +60,6 @@ object ListsLimits {
     /** Adds made in the app past [INDEX_CHILDREN] are still remembered, up to this. */
     const val INDEX_CHILDREN_HARD = 1_000
     const val INDEX_TTL_MS = 10L * 60 * 1000
+    /** Collections whose children are read at the same time while the index is read. */
+    const val INDEX_READS_AT_ONCE = 4
 }

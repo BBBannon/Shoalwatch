@@ -98,6 +98,20 @@ class ExtrasViewModelTest {
         assertEquals(2, v.state.value.extras.cast.size)
     }
 
+    /** Final review I1: the collection index can take many requests; the cast, trailers and versions never wait for it. */
+    @Test fun theExtrasShowBeforeTheCollectionIndexAnswersAndTheCollectionsFillInAfter() = runTest(main.dispatcher) {
+        discover.extras = full
+        lists.collectionsOf = listOf(CollectionRef(id(7), "Saga"))
+        val held = HeldLists(lists)
+        val v = ExtrasViewModel(item, catalog, discover, held)
+        assertEquals(ExtrasPhase.READY, v.state.value.phase)
+        assertEquals(2, v.state.value.extras.cast.size)
+        assertEquals(2, v.state.value.extras.versions.size)
+        assertTrue("the index has not answered yet", v.state.value.collections.isEmpty())
+        held.gate.complete(Unit)
+        assertEquals(listOf("Saga"), v.state.value.collections.map { it.name })
+    }
+
     @Test fun aServerRefusalThatIsNotOfflineHidesTheBlockInsteadOfSayingOffline() = runTest(main.dispatcher) {
         discover.failure = AppError.of(AppError.Kind.SERVER_ERROR)
         val v = vm()
@@ -173,6 +187,16 @@ class ExtrasViewModelTest {
         val v = vm()
         assertNull(v.state.value.session)
         assertTrue(discover.calls.isEmpty())
+    }
+}
+
+/** [Lists] whose "Part of this collection" answer is held back until [gate] completes, as a slow collection index is. */
+private class HeldLists(private val base: FakeLists) : app.shoalwatch.data.lists.Lists by base {
+    val gate = CompletableDeferred<Unit>()
+
+    override suspend fun collectionsOf(s: Session, itemId: String): List<CollectionRef> {
+        gate.await()
+        return base.collectionsOf(s, itemId)
     }
 }
 

@@ -126,8 +126,12 @@ internal fun LazyListScope.librariesSection(state: HomeUiState, actions: HomeAct
     val gap = gaps.next()
     item(key = "libraries") {
         Column(gap, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            state.viewsBanner?.let { FreshnessBanner(it, BannerActions(actions.onRefresh, { state.serverId?.let(actions.onSignIn) }, { state.serverId?.let(actions.onReview) })) }
-            SectionHeader(stringResource(R.string.home_libraries))
+            // With no library (an offline first run, a profile with no library access) only the Playlists card shows: no "Libraries"
+            // heading over it, and no banner under the empty message, which has its own Try again (T7 review R3).
+            if (state.views.isNotEmpty()) {
+                state.viewsBanner?.let { FreshnessBanner(it, BannerActions(actions.onRefresh, { state.serverId?.let(actions.onSignIn) }, { state.serverId?.let(actions.onReview) })) }
+                SectionHeader(stringResource(R.string.home_libraries))
+            }
             // The libraries, then the Playlists card as the last of them (Milestone 11).
             val cards = state.views.map<LibraryView, @Composable (Modifier) -> Unit> { view -> { m -> LibraryCard(view, strings, { actions.onOpenLibrary(view.id) }, m) } } +
                 listOf<@Composable (Modifier) -> Unit>({ m -> PlaylistsCard(actions.onOpenPlaylists, m) })

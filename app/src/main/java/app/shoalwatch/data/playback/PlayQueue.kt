@@ -73,7 +73,10 @@ class PlayQueues(private val maxQueues: Int = 8, private val random: SecureRando
     fun get(session: Session, token: String?): PlayQueue? =
         token?.takeIf { TOKEN.matches(it) }?.let { queues[it] }?.takeIf { it.session == session }?.queue
 
-    /** The active session changed (sign-out, lock, profile switch): everything held for any other session (or for nobody) goes. */
+    /**
+     * The active session changed (sign-out, profile switch): everything held for any other session (or for nobody) goes. A lock does
+     * not change the session, so it keeps the queues: they belong to the same profile, and the lock reset leaves no route holding a token.
+     */
     @Synchronized
     fun keepOnly(session: Session?) { queues.values.removeAll { it.session != session } }
 

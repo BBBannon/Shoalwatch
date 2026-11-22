@@ -48,8 +48,16 @@
         <item quantity="other">Downloading %1$d items.</item>
     </plurals>
     <plurals name="lists_downloading_some">
-        <item quantity="one">Downloading %1$d of %2$s items. The rest could not be started: not enough room, or nothing to download.</item>
-        <item quantity="other">Downloading %1$d of %2$s items. The rest could not be started: not enough room, or nothing to download.</item>
+        <item quantity="one">Downloading %1$d of %2$s items. The rest could not be started.</item>
+        <item quantity="other">Downloading %1$d of %2$s items. The rest could not be started.</item>
+    </plurals>
+    <plurals name="lists_downloading_some_room">
+        <item quantity="one">Downloading %1$d of %2$s items. There isn\'t enough room on this phone for the rest.</item>
+        <item quantity="other">Downloading %1$d of %2$s items. There isn\'t enough room on this phone for the rest.</item>
+    </plurals>
+    <plurals name="lists_downloading_some_offline">
+        <item quantity="one">Downloading %1$d of %2$s items. The rest could not be started because the connection dropped. Try again when you\'re connected.</item>
+        <item quantity="other">Downloading %1$d of %2$s items. The rest could not be started because the connection dropped. Try again when you\'re connected.</item>
     </plurals>
     <plurals name="lists_download_not_started">
         <item quantity="one">%1$d could not be started: not enough room, or nothing to download.</item>

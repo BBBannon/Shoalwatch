@@ -123,7 +123,7 @@ class DiscoverGatewayTest {
         val person = """{"Id":"${id(70)}","Name":"Ada","Role":"Hero","Type":"Actor","PrimaryImageTag":"abc123"}"""
         routes(
             "/Items/$self" to """{"Id":"$self","People":[$person],"RemoteTrailers":[{"Url":"https://www.youtube.com/watch?v=x","Name":"Trailer"}],""" +
-                """"MediaSources":[{"Id":"s1","Name":"1080p"},{"Id":"s2","Name":"4K"}]}""",
+                """"MediaSources":[{"Id":"${id(601)}","Name":"1080p"},{"Id":"${id(602)}","Name":"4K"}]}""",
             "/Items/$self/LocalTrailers" to "[${item(10, "Trailer")}]",
             "/Items/$self/SpecialFeatures" to "[${item(11, "Video")}]",
             "/Items/$self/Similar" to page(item(12), item(13)),
@@ -138,7 +138,7 @@ class DiscoverGatewayTest {
         assertEquals(listOf(id(11)), got.specialFeatures.map { it.item.id })
         assertEquals(listOf(id(12), id(13)), got.similar.map { it.item.id })
         assertEquals("www.youtube.com", got.onlineTrailers.single().host)
-        assertEquals(listOf(MediaVersion("s1", "1080p"), MediaVersion("s2", "4K")), got.versions)
+        assertEquals(listOf(MediaVersion(id(601), "1080p"), MediaVersion(id(602), "4K")), got.versions)
         val byPath = requests().associateBy { url(it).encodedPath }
         assertEquals(4, byPath.size)
         byPath.values.forEach { assertEquals("GET", it.method); assertEquals(U1, url(it).queryParameter("userId")) }
@@ -146,8 +146,23 @@ class DiscoverGatewayTest {
     }
 
     @Test fun oneVersionIsNoChoice() {
-        routes("/Items/$self" to """{"Id":"$self","MediaSources":[{"Id":"s1","Name":"Only"}]}""")
+        routes("/Items/$self" to """{"Id":"$self","MediaSources":[{"Id":"${id(601)}","Name":"Only"}]}""")
         assertTrue(runBlocking { discover.extras(session, self) }.versions.isEmpty())
+    }
+
+    /** Final review M1: the player honours only a 32-hex source id, so no other id is offered as a choice it would drop. */
+    @Test fun onlyVersionsThePlayerCanHonourAreOffered() {
+        val dashed = "6d4e7a3c-1f2b-4c5d-8e9f-0a1b2c3d4e5f"
+        routes(
+            "/Items/$self" to """{"Id":"$self","MediaSources":[{"Id":"$dashed","Name":"Dashed"},{"Id":"s1","Name":"Short"},""" +
+                """{"Id":"${id(601)}","Name":"1080p"},{"Id":"${"g".repeat(32)}","Name":"Not hex"}]}""",
+        )
+        assertTrue("one usable version is no choice", runBlocking { discover.extras(session, self) }.versions.isEmpty())
+        routes(
+            "/Items/$self" to """{"Id":"$self","MediaSources":[{"Id":"$dashed","Name":"Dashed"},{"Id":"${id(601)}","Name":"1080p"},""" +
+                """{"Id":"${id(602)}","Name":"4K"}]}""",
+        )
+        assertEquals(listOf(id(601), id(602)), runBlocking { discover.extras(session, self) }.versions.map { it.id })
     }
 
     @Test fun eachPartFailsAloneAndTheOthersSurvive() {
@@ -187,7 +202,7 @@ class DiscoverGatewayTest {
         val people = (1..80).map { """{"Id":"${id(1000 + it)}","Name":"P$it","PrimaryImageTag":"t$it"}""" } +
             """{"Id":"nope","Name":"bad id"}""" + """{"Id":"${id(3)}"}""" + """{"Id":"${id(4)}","Name":"Z","PrimaryImageTag":"../x"}""" + "17"
         val long = "x".repeat(5000)
-        val sources = (1..30).map { """{"Id":"s$it","Name":"v$it"}""" } + """{"Id":"a/b","Name":"slash"}"""
+        val sources = (1..30).map { """{"Id":"${id(600 + it)}","Name":"v$it"}""" } + """{"Id":"a/b","Name":"slash"}"""
         routes(
             "/Items/$self" to """{"Id":"$self","People":[${people.joinToString(",")}],"RemoteTrailers":[{"Url":"https://$long.example.com/"}],""" +
                 """"MediaSources":[${sources.joinToString(",")}]}""",

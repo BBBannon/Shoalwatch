@@ -443,9 +443,9 @@ class ListsGatewayTest {
         assertEquals(emptyList<String>(), partOf(99))
         val all = requests()
         assertEquals("one list and one read per collection, once", 1 + 3, all.size)
-        val child = url(all[1])
+        // The children are read a few collections at a time, so in no set order.
+        val child = all.map(::url).single { it.queryParameter("parentId") == id(800) }
         assertEquals("/Items", child.encodedPath)
-        assertEquals(id(800), child.queryParameter("parentId"))
         assertEquals(null, child.queryParameter("fields"))
         assertEquals("false", child.queryParameter("enableImages"))
         assertEquals("500", child.queryParameter("limit"))
@@ -462,6 +462,26 @@ class ListsGatewayTest {
         indexRoute(big)
         assertEquals(listOf(id(800)), partOf(500))
         assertEquals("the 501st child is not kept", emptyList<String>(), partOf(501))
+    }
+
+    /** Final review I1: a server with many collections is read a few at a time, never one after another and never all at once. */
+    @Test fun theIndexReadsFourCollectionsAtATimeAndKeepsTheirOrder() {
+        val inFlight = java.util.concurrent.atomic.AtomicInteger()
+        val most = java.util.concurrent.atomic.AtomicInteger()
+        val collections = (1..12).associate { 800 + it to listOf(1) }
+        indexRoute(collections)
+        val listed = route
+        route = { r ->
+            if (url(r).queryParameter("parentId") == null) listed(r) else {
+                most.accumulateAndGet(inFlight.incrementAndGet(), ::maxOf)
+                Thread.sleep(50)
+                inFlight.decrementAndGet()
+                listed(r)
+            }
+        }
+        assertEquals("in the order they were listed", collections.keys.map(::id), partOf(1))
+        assertEquals("one list and a read per collection", 1 + 12, requests().size)
+        assertEquals(ListsLimits.INDEX_READS_AT_ONCE, most.get())
     }
 
     @Test fun theIndexLastsTenMinutesOnTheMonotonicClock() {

@@ -16,6 +16,11 @@ import app.shoalwatch.data.lists.ListsLimits
 import app.shoalwatch.data.lists.Playlist
 import app.shoalwatch.data.servers.JellyfinId
 import app.shoalwatch.data.servers.Session
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.json.JsonElement
 
 /**
@@ -130,24 +135,28 @@ internal class ListsGateway(private val api: ServerApi, clock: MonotonicClock) :
         return api.get(s, "/Items", query, BaseItemDtoQueryResult.serializer(), maxBytes = LIST_BYTES)
     }
 
-    /** Every collection (at most 100) with its direct children (at most 500 each): ids only, no fields, no images. */
-    private suspend fun loadIndex(s: Session): List<HeldCollection> {
-        val out = ArrayList<HeldCollection>()
+    /**
+     * Every collection (at most 100) with its direct children (at most 500 each): ids only, no fields, no images. The children are
+     * read [ListsLimits.INDEX_READS_AT_ONCE] collections at a time (final review I1), and kept in the order the collections were listed.
+     */
+    private suspend fun loadIndex(s: Session): List<HeldCollection> = coroutineScope {
         val collections = listCollections(s).toModels(ListsLimits.INDEX_COLLECTIONS)
-        for (c in collections) {
-            val query = listOf(
-                "userId" to s.userId, "parentId" to c.item.id, "limit" to ListsLimits.INDEX_CHILDREN.toString(),
-                "enableImages" to "false", "enableUserData" to "false",
-            )
-            val page = api.get(s, "/Items", query, BaseItemDtoQueryResult.serializer(), maxBytes = LIST_BYTES)
-            val children = LinkedHashSet<String>()
-            for (element in page.items.orEmpty()) {
-                if (children.size >= ListsLimits.INDEX_CHILDREN) break
-                JellyfinId.parseOrNull(element.toItemDto()?.id)?.let { children += it.value }
-            }
-            out += HeldCollection(c.item.id, c.item.name, children)
+        val reads = Semaphore(ListsLimits.INDEX_READS_AT_ONCE)
+        collections.map { c -> async { reads.withPermit { HeldCollection(c.item.id, c.item.name, childrenOf(s, c.item.id)) } } }.awaitAll()
+    }
+
+    private suspend fun childrenOf(s: Session, collectionId: String): MutableSet<String> {
+        val query = listOf(
+            "userId" to s.userId, "parentId" to collectionId, "limit" to ListsLimits.INDEX_CHILDREN.toString(),
+            "enableImages" to "false", "enableUserData" to "false",
+        )
+        val page = api.get(s, "/Items", query, BaseItemDtoQueryResult.serializer(), maxBytes = LIST_BYTES)
+        val children = LinkedHashSet<String>()
+        for (element in page.items.orEmpty()) {
+            if (children.size >= ListsLimits.INDEX_CHILDREN) break
+            JellyfinId.parseOrNull(element.toItemDto()?.id)?.let { children += it.value }
         }
-        return out
+        return children
     }
 
     /** Every change: sent once and never retried, and a 401 is checked before it can sign anyone out. */

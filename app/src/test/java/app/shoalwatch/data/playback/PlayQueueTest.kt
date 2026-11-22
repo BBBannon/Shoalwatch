@@ -106,7 +106,7 @@ class PlayQueueTest {
         assertEquals(q, queues.get(BEN, mine))
         queues.keepOnly(AMY) // profile switch
         assertNull(queues.get(BEN, mine)); assertEquals(q, queues.get(AMY, hers))
-        queues.keepOnly(null) // signed out or locked
+        queues.keepOnly(null) // signed out (a lock does not change the session, so it never comes here)
         assertNull(queues.get(AMY, hers))
     }
 
