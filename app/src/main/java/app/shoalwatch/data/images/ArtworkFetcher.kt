@@ -73,12 +73,12 @@ internal class ArtworkFetcher(
             cache.remove(key)
             return@handingOver null
         }
-        SourceFetchResult(ImageSource(snapshot.data, cache.fileSystem, key, snapshot, ArtworkSourceInfo { cache.remove(key) }), kind.mime, DataSource.DISK)
+        SourceFetchResult(ImageSource(snapshot.data, cache.fileSystem, key, snapshot, ArtworkSourceInfo(ref.type) { cache.remove(key) }), kind.mime, DataSource.DISK)
     }
 
     private fun fromPinned(bytes: ByteArray): SourceFetchResult {
         val kind = checkNotNull(ArtworkLimits.sniff(bytes)) // find() has just run every check on these bytes
-        return SourceFetchResult(ImageSource(Buffer().write(bytes), options.fileSystem, ArtworkSourceInfo { }), kind.mime, DataSource.DISK)
+        return SourceFetchResult(ImageSource(Buffer().write(bytes), options.fileSystem, ArtworkSourceInfo(ref.type) { }), kind.mime, DataSource.DISK)
     }
 
     private fun readSaved(file: Path): ByteArray {
@@ -91,8 +91,8 @@ internal class ArtworkFetcher(
     private suspend fun save(key: String, downloaded: ArtworkRequest.Downloaded): SourceFetchResult = handingOver { held ->
         val snapshot = if (options.diskCachePolicy.writeEnabled) write(key, downloaded.bytes) else null
         held.set(snapshot)
-        val source = if (snapshot != null) ImageSource(snapshot.data, cache.fileSystem, key, snapshot, ArtworkSourceInfo { cache.remove(key) })
-        else ImageSource(Buffer().write(downloaded.bytes), options.fileSystem, ArtworkSourceInfo { })
+        val source = if (snapshot != null) ImageSource(snapshot.data, cache.fileSystem, key, snapshot, ArtworkSourceInfo(ref.type) { cache.remove(key) })
+        else ImageSource(Buffer().write(downloaded.bytes), options.fileSystem, ArtworkSourceInfo(ref.type) { })
         SourceFetchResult(source, downloaded.kind.mime, DataSource.NETWORK)
     }
 

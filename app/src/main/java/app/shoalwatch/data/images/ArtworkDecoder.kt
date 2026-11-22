@@ -43,7 +43,7 @@ object ArtworkDecoder {
             if (ArtworkBounds.kind(source) == null) throw ArtworkValidation.refuse(Reason.NOT_AN_IMAGE)
             val bounds = ArtworkBounds.read(source.peek().inputStream())
             if (bounds == null || !ArtworkLimits.dimensionsAcceptable(bounds.first, bounds.second)) throw ArtworkValidation.refuse(Reason.DIMENSIONS)
-            val sample = ArtworkLimits.sampleSize(bounds.first, bounds.second, ArtworkLimits.bucketFor(options.size))
+            val sample = ArtworkLimits.sampleSize(bounds.first, bounds.second, ArtworkLimits.bucketFor((result.source.metadata as? ArtworkSourceInfo)?.type ?: ArtworkType.PRIMARY, options.size))
                 ?: throw ArtworkValidation.refuse(Reason.DIMENSIONS)
             return permits.withPermit {
                 runInterruptible {

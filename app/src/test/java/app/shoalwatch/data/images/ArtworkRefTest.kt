@@ -48,7 +48,7 @@ class ArtworkRefTest {
     }
 
     @Test fun typesMapToTheReferenceImageTypeNames() {
-        assertEquals(listOf("Primary", "Backdrop", "Thumb"), ArtworkType.entries.map { it.path })
+        assertEquals(listOf("Primary", "Backdrop", "Thumb", "Primary"), ArtworkType.entries.map { it.path })
     }
 
     private fun item(kind: ItemKind = ItemKind.MOVIE, images: ItemImages, seriesId: String? = null) = Item(

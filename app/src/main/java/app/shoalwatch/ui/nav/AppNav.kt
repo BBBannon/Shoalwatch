@@ -247,6 +247,7 @@ private fun AppNavHost(graph: AppGraph, start: String, openTab: String?, onTabOp
             browse = { parent, genre, studio -> BrowseRoute(graph, nav, parent, genre, studio) },
             genres = { parent -> NamesRoute(graph, nav, parent, app.shoalwatch.ui.discover.NamesKind.GENRES) },
             studios = { parent -> NamesRoute(graph, nav, parent, app.shoalwatch.ui.discover.NamesKind.STUDIOS) },
+            photo = { id, parent -> PhotoRoute(graph, nav, id, parent) },
         )
         composable(Routes.SERVERS) { ServersRoute(graph, nav) }
         composable(Routes.DOWNLOAD_SETTINGS) { DownloadSettingsRoute(graph, nav) }
@@ -334,11 +335,21 @@ internal fun NavGraphBuilder.browsingDestinations(
     browse: @Composable (parentId: String?, genreId: String?, studioId: String?) -> Unit = { _, _, _ -> },
     genres: @Composable (parentId: String) -> Unit = {},
     studios: @Composable (parentId: String) -> Unit = {},
+    photo: @Composable (photoId: String, parentId: String?) -> Unit = { _, _ -> },
 ) {
     composable(Routes.STORAGE) { storage() }
     composable(Routes.PLAYLISTS) { playlists() }
     composable(Routes.PLAYLIST, listOf(navArgument(Routes.ARG_PLAYLIST) { type = NavType.StringType })) {
         playlist(it.arguments?.getString(Routes.ARG_PLAYLIST).orEmpty())
+    }
+    composable(
+        Routes.PHOTO,
+        listOf(
+            navArgument(Routes.ARG_ITEM) { type = NavType.StringType },
+            navArgument(Routes.ARG_PARENT) { type = NavType.StringType; nullable = true; defaultValue = null },
+        ),
+    ) {
+        photo(it.arguments?.getString(Routes.ARG_ITEM).orEmpty(), it.arguments?.getString(Routes.ARG_PARENT)?.ifEmpty { null })
     }
     composable(Routes.PERSON, listOf(navArgument(Routes.ARG_PERSON) { type = NavType.StringType })) {
         person(it.arguments?.getString(Routes.ARG_PERSON).orEmpty())

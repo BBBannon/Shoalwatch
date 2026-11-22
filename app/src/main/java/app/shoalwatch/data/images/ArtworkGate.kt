@@ -19,8 +19,8 @@ class ArtworkRejectedException(val reason: Reason) : RuntimeException("Artwork r
 /** Something other than an [ArtworkRef] was handed to the artwork loader; nothing was fetched. */
 class ModelNotAllowedException : RuntimeException("Only artwork can be loaded.")
 
-/** Travels with a picture's [ImageSource] so the decoder can have a picture that will not decode removed from the cache. */
-internal class ArtworkSourceInfo(val evict: () -> Unit) : ImageSource.Metadata()
+/** Travels with a picture's [ImageSource] so the decoder can have a picture that will not decode removed from the cache, and knows a photo's own size buckets ([type]). */
+internal class ArtworkSourceInfo(val type: ArtworkType = ArtworkType.PRIMARY, val evict: () -> Unit) : ImageSource.Metadata()
 
 /** Reads what an image declares about itself from its header only: no pixel is allocated. */
 internal object ArtworkBounds {

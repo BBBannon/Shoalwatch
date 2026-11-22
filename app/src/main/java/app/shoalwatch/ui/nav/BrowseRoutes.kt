@@ -370,6 +370,19 @@ internal fun PlaylistsRoute(graph: AppGraph, nav: NavHostController) {
     app.shoalwatch.ui.lists.PlaylistsScreen(state, actions, vm.name, vm.notices, snackbar)
 }
 
+/** The full-screen photo viewer (Milestone 11): the folder's photos in a pager, starting at the tapped one. Close leaves once, however often it is tapped. */
+@Composable
+internal fun PhotoRoute(graph: AppGraph, nav: NavHostController, photoId: String, parentId: String?) {
+    val vm = graphViewModel(key = "$photoId|$parentId") { app.shoalwatch.ui.photos.PhotoViewerViewModel(photoId, parentId, graph.serverCatalog, graph.discover, graph.library) }
+    val state by vm.state.collectAsStateWithLifecycle()
+    val actions = remember(vm, nav) {
+        app.shoalwatch.ui.photos.PhotoViewerActions(
+            onClose = { vm.once { nav.popBackStack() } }, onRetry = vm::retry, onOpenServers = { nav.navigate(Routes.SERVERS) },
+        )
+    }
+    app.shoalwatch.ui.photos.PhotoViewerScreen(state, actions)
+}
+
 /** One playlist (Milestone 11). Play and Shuffle open the player carrying the queue's token; deleting it leaves the screen. */
 @Composable
 internal fun PlaylistRoute(graph: AppGraph, nav: NavHostController, playlistId: String) {

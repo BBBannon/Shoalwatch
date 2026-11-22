@@ -38,8 +38,13 @@ fun ItemWithUserData.destination(): Destination {
     }
 }
 
-/** "Details" in the actions sheet: a series opens its page, a collection or folder opens as a library, anything else its detail page. */
+/**
+ * "Details" in the actions sheet: a series opens its page, a collection or folder opens as a library, a photo opens the photo
+ * viewer (a photo has no detail page: there is nothing to play, no cast or versions, and the viewer is where its name and place
+ * in its folder show), anything else its detail page.
+ */
 fun ItemWithUserData.detailsDestination(): Destination = when (item.kind) {
+    ItemKind.PHOTO -> Destination.Photo(item.id, item.parentId)
     ItemKind.SERIES -> Destination.Series(item.id)
     ItemKind.BOX_SET, ItemKind.FOLDER -> Destination.Library(item.id)
     ItemKind.PLAYLIST -> Destination.Playlist(item.id)

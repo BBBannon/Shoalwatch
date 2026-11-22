@@ -30,8 +30,11 @@ object ArtworkLimits {
     fun bucketFor(type: ArtworkType, size: Size): Int {
         if (type != ArtworkType.PHOTO) return bucketFor(size)
         val longest = listOfNotNull((size.width as? Dimension.Pixels)?.px, (size.height as? Dimension.Pixels)?.px).maxOrNull() ?: PHOTO_BUCKETS[1]
-        return PHOTO_BUCKETS.firstOrNull { it >= longest } ?: PHOTO_BUCKETS.last()
+        return photoBucket(longest)
     }
+
+    /** The photo size bucket (720, 1280 or 1920) for a screen whose longer side is [longestSidePx]: the smallest that is at least that, else 1920. */
+    fun photoBucket(longestSidePx: Int): Int = PHOTO_BUCKETS.firstOrNull { it >= longestSidePx } ?: PHOTO_BUCKETS.last()
 
     /** The picture request's query: `tag`, `maxWidth` (and for a photo `maxHeight`, so it fits a square of [bucket]), quality and format. */
     fun query(type: ArtworkType, tag: String, bucket: Int, format: String): List<Pair<String, String>> = buildList {
