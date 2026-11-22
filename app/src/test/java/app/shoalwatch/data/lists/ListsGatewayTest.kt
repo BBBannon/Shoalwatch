@@ -20,9 +20,12 @@ import app.shoalwatch.data.servers.Session
 import app.shoalwatch.net.HttpClientFactory
 import app.shoalwatch.net.ServerAddress
 import app.shoalwatch.security.SecretBox
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -246,10 +249,9 @@ class ListsGatewayTest {
     @Test fun namesAreOneToTwoHundredVisibleCharactersOrNothingIsSent() {
         route = { noContent() }
         for (bad in listOf("", "   ", "\u0000\n‮", "x".repeat(201))) {
-            val e = failure { lists.createPlaylist(session, bad, listOf(id(1))) }
-            assertTrue(e is IllegalArgumentException)
-            assertTrue(failure { lists.renamePlaylist(session, id(900), bad) } is IllegalArgumentException)
-            assertTrue(failure { lists.createCollection(session, bad, listOf(id(1))) } is IllegalArgumentException)
+            assertEquals(AppError.Kind.UNKNOWN, refusal { lists.createPlaylist(session, bad, listOf(id(1))) }.kind)
+            assertEquals(AppError.Kind.UNKNOWN, refusal { lists.renamePlaylist(session, id(900), bad) }.kind)
+            assertEquals(AppError.Kind.UNKNOWN, refusal { lists.createCollection(session, bad, listOf(id(1))) }.kind)
         }
         assertEquals(0, requests().size)
         runBlocking { lists.createPlaylist(session, "x".repeat(200), listOf(id(1))) }
@@ -298,8 +300,8 @@ class ListsGatewayTest {
         runBlocking { lists.moveInPlaylist(session, id(900), "e-7", 3) }
         assertEquals("POST", last().method)
         assertEquals("/Playlists/${id(900)}/Items/e-7/Move/3", url(last()).encodedPath)
-        assertTrue(failure { lists.moveInPlaylist(session, id(900), "e-7", -1) } is IllegalArgumentException)
-        assertTrue(failure { lists.moveInPlaylist(session, id(900), "e-7", 2_000) } is IllegalArgumentException)
+        assertEquals(AppError.Kind.UNKNOWN, refusal { lists.moveInPlaylist(session, id(900), "e-7", -1) }.kind)
+        assertEquals(AppError.Kind.UNKNOWN, refusal { lists.moveInPlaylist(session, id(900), "e-7", 2_000) }.kind)
         assertEquals(AppError.Kind.SERVER_NOT_FOUND, refusal { lists.moveInPlaylist(session, id(900), "a/b", 1) }.kind)
         assertEquals(1, requests().size)
     }
@@ -404,11 +406,15 @@ class ListsGatewayTest {
         assertEquals("${id(1)},${id(2)}", url(add).queryParameter("ids"))
         assertEquals(id(2), url(remove).queryParameter("ids"))
         assertEquals(AppError.Kind.SERVER_NOT_FOUND, refusal { lists.addToCollection(session, "../x", listOf(id(1))) }.kind)
-        assertTrue(failure { lists.addToCollection(session, id(800), emptyList()) } is IllegalArgumentException)
+        assertEquals(AppError.Kind.UNKNOWN, refusal { lists.addToCollection(session, id(800), emptyList()) }.kind)
         assertEquals(2, requests().size)
     }
 
     // ---- the collection index
+
+    /** When set, a collection's children are answered only after it is released; [started] counts down at the first such read. */
+    private var gate: java.util.concurrent.CountDownLatch? = null
+    private val started = java.util.concurrent.CountDownLatch(1)
 
     /** [collections] by id, each with its children (ids). */
     private fun indexRoute(collections: Map<Int, List<Int>>, childCap: Int = Int.MAX_VALUE) {
@@ -417,6 +423,8 @@ class ListsGatewayTest {
             val parent = u.queryParameter("parentId")
             when {
                 u.encodedPath == "/Items" && parent != null -> {
+                    started.countDown()
+                    gate?.await(5, java.util.concurrent.TimeUnit.SECONDS)
                     val kids = collections.entries.first { id(it.key) == parent }.value.take(childCap)
                     json(page(*kids.map { item(it) }.toTypedArray()))
                 }
@@ -506,5 +514,79 @@ class ListsGatewayTest {
     @Test fun anIndexItemIdMustBeNormalised() {
         assertEquals(AppError.Kind.SERVER_NOT_FOUND, refusal { lists.collectionsOf(session, "../x") }.kind)
         assertEquals(0, requests().size)
+    }
+
+    // ---- limits as AppError, and the index under concurrency
+
+    @Test fun anEmptyOrOversizedIdListIsRefusedWithNothingSent() {
+        route = { noContent() }
+        val tooMany = (1..501).map { id(it) }
+        assertEquals(AppError.Kind.UNKNOWN, refusal { lists.addToPlaylist(session, id(900), emptyList()) }.kind)
+        assertEquals(AppError.Kind.UNKNOWN, refusal { lists.addToCollection(session, id(800), emptyList()) }.kind)
+        assertEquals(AppError.Kind.UNKNOWN, refusal { lists.removeFromCollection(session, id(800), emptyList()) }.kind)
+        assertEquals(AppError.Kind.UNKNOWN, refusal { lists.removeFromPlaylist(session, id(900), emptyList()) }.kind)
+        assertEquals(AppError.Kind.UNKNOWN, refusal { lists.addToPlaylist(session, id(900), tooMany) }.kind)
+        assertEquals(AppError.Kind.UNKNOWN, refusal { lists.createPlaylist(session, "A", tooMany) }.kind)
+        assertEquals(AppError.Kind.UNKNOWN, refusal { lists.removeFromPlaylist(session, id(900), tooMany.map { "e$it" }) }.kind)
+        assertEquals(0, requests().size)
+        runBlocking { lists.addToPlaylist(session, id(900), tooMany.take(500)) }
+        runBlocking { lists.createPlaylist(session, "A", emptyList()) }
+        assertEquals(2, requests().size)
+    }
+
+    @Test fun anAddToAFullCollectionIsStillRemembered() {
+        indexRoute(mapOf(800 to (1..600).toList()))
+        assertEquals(emptyList<String>(), partOf(700))
+        runBlocking { lists.addToCollection(session, id(800), listOf(id(700))) }
+        assertEquals(listOf(id(800)), partOf(700))
+    }
+
+    /** Runs [change] while the index read is held open at its first child read, then lets the read finish; returns that read's answer. */
+    private fun duringRead(itemN: Int, change: suspend () -> Unit): List<String> {
+        gate = java.util.concurrent.CountDownLatch(1)
+        return runBlocking {
+            val read = async(Dispatchers.IO) { lists.collectionsOf(session, id(itemN)).map { it.id } }
+            withContext(Dispatchers.IO) { assertTrue(started.await(5, java.util.concurrent.TimeUnit.SECONDS)) }
+            change()
+            gate!!.countDown()
+            read.await()
+        }.also { gate = null }
+    }
+
+    @Test fun severalCallersAtOnceMakeOneReadOnly() {
+        indexRoute(mapOf(800 to listOf(1), 801 to listOf(1)))
+        gate = java.util.concurrent.CountDownLatch(1)
+        val answers = runBlocking {
+            val reads = (1..4).map { async(Dispatchers.IO) { lists.collectionsOf(session, id(1)).map { it.id } } }
+            withContext(Dispatchers.IO) { assertTrue(started.await(5, java.util.concurrent.TimeUnit.SECONDS)) }
+            gate!!.countDown()
+            reads.map { it.await() }
+        }
+        assertTrue(answers.all { it == listOf(id(800), id(801)) })
+        assertEquals("one list and two child reads, not four times that", 3, requests().size)
+    }
+
+    @Test fun anAddMadeWhileTheIndexIsBeingReadSurvives() {
+        indexRoute(mapOf(800 to listOf(1)))
+        val answer = duringRead(7) { lists.addToCollection(session, id(800), listOf(id(7))) }
+        assertEquals(listOf(id(800)), answer)
+        assertEquals(listOf(id(800)), partOf(7))
+    }
+
+    @Test fun aRemoveMadeWhileTheIndexIsBeingReadSurvives() {
+        indexRoute(mapOf(800 to listOf(1, 2)))
+        val answer = duringRead(1) { lists.removeFromCollection(session, id(800), listOf(id(1))) }
+        assertEquals(emptyList<String>(), answer)
+        assertEquals(emptyList<String>(), partOf(1))
+        assertEquals(listOf(id(800)), partOf(2))
+    }
+
+    @Test fun aForgetMadeWhileTheIndexIsBeingReadIsNotUndoneByTheStaleRead() {
+        indexRoute(mapOf(800 to listOf(1)))
+        duringRead(1) { lists.createCollection(session, "New", listOf(id(1))) }
+        val before = requests().size
+        indexRoute(mapOf(800 to listOf(1), 801 to listOf(1)))
+        assertEquals("read again, not the stale snapshot", listOf(id(800), id(801)), partOf(1))
+        assertTrue(requests().size > before)
     }
 }

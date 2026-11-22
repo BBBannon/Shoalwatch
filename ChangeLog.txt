@@ -1,3 +1,4 @@
+v1.206 — 22/11/2026 — Behind the scenes: playlist and collection lists stay correct when you change them while they are still loading, and a wrong name or selection is reported instead of failing
 v1.205 — 22/11/2026 — The test server can now pretend to have playlists, collections, cast, trailers, online subtitles, photos and home videos
 v1.204 — 22/11/2026 — Behind the scenes: the app can now read, create and change playlists and collections on your server, ready for the screens that come next
 v1.203 — 22/11/2026 — Behind the scenes: the app can now tell a refused action from an expired sign-in for more kinds of request, so a refusal will not sign you out

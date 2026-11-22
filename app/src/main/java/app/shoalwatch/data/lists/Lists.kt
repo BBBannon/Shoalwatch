@@ -8,7 +8,7 @@ import app.shoalwatch.data.servers.Session
  * Playlists and collections as the screens use them (Milestone 11): a token-free [Session] in, validated models out. Live only
  * (nothing is cached except the in-memory collection index behind [collectionsOf]). Implemented by `api/ListsGateway` only.
  * Ids must be normalised `JellyfinId`s, else `SERVER_NOT_FOUND` with nothing sent; names are 1 to [ListsLimits.NAME] visible
- * characters, else `IllegalArgumentException` with nothing sent. Every change is sent once, never retried, and a refusal (403, or a
+ * characters, and a call carries 1 to [ListsLimits.IDS_PER_CALL] ids (a new list may carry none), else `AppError` (kind `UNKNOWN`) with nothing sent. Every change is sent once, never retried, and a refusal (403, or a
  * 401 the server confirms is not the sign-in ending) is an `AppError` of kind `FORBIDDEN` that never signs the profile out; the
  * screens word it "The server didn't let this profile change that." from a string resource.
  */
@@ -57,5 +57,7 @@ object ListsLimits {
     const val IDS_PER_CALL = 500
     const val INDEX_COLLECTIONS = 100
     const val INDEX_CHILDREN = 500
+    /** Adds made in the app past [INDEX_CHILDREN] are still remembered, up to this. */
+    const val INDEX_CHILDREN_HARD = 1_000
     const val INDEX_TTL_MS = 10L * 60 * 1000
 }

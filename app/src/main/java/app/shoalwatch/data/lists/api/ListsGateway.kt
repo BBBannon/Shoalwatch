@@ -6,6 +6,7 @@ import app.shoalwatch.core.MonotonicClock
 import app.shoalwatch.data.api.JsonBodies
 import app.shoalwatch.data.api.ServerApi
 import app.shoalwatch.data.library.ItemWithUserData
+import app.shoalwatch.data.library.api.LibraryGatewayImpl.Companion.MEDIA_QUERY
 import app.shoalwatch.data.library.api.BaseItemDtoQueryResult
 import app.shoalwatch.data.library.api.toItemDto
 import app.shoalwatch.data.library.api.toModels
@@ -70,7 +71,7 @@ internal class ListsGateway(private val api: ServerApi, clock: MonotonicClock) :
 
     override suspend fun removeFromPlaylist(s: Session, playlistId: String, entryIds: List<String>) = logged("removeFromPlaylist") {
         val id = itemId(playlistId)
-        require(entryIds.size in 1..ListsLimits.IDS_PER_CALL) { "Nothing to remove." }
+        if (entryIds.size !in 1..ListsLimits.IDS_PER_CALL) throw invalid()
         val entries = entryIds.map { entryId(it) ?: throw AppError.of(AppError.Kind.SERVER_NOT_FOUND) }
         send(s, "DELETE", "/Playlists/$id/Items", listOf("entryIds" to entries.joinToString(",")))
     }
@@ -78,7 +79,7 @@ internal class ListsGateway(private val api: ServerApi, clock: MonotonicClock) :
     override suspend fun moveInPlaylist(s: Session, playlistId: String, entryId: String, newIndex: Int) = logged("moveInPlaylist") {
         val id = itemId(playlistId)
         val entry = entryId(entryId) ?: throw AppError.of(AppError.Kind.SERVER_NOT_FOUND)
-        require(newIndex in 0 until ListsLimits.ENTRIES) { "Invalid position." }
+        if (newIndex !in 0 until ListsLimits.ENTRIES) throw invalid()
         send(s, "POST", "/Playlists/$id/Items/$entry/Move/$newIndex")
     }
 
@@ -169,20 +170,18 @@ internal class ListsGateway(private val api: ServerApi, clock: MonotonicClock) :
     private fun itemId(raw: String) = raw.takeIf { JellyfinId.parseOrNull(it)?.value == it } ?: throw AppError.of(AppError.Kind.SERVER_NOT_FOUND)
 
     private fun itemIds(raw: List<String>, allowEmpty: Boolean = false): List<String> {
-        require(raw.size <= ListsLimits.IDS_PER_CALL && (allowEmpty || raw.isNotEmpty())) { "Nothing to send." }
+        if (raw.size > ListsLimits.IDS_PER_CALL || (!allowEmpty && raw.isEmpty())) throw invalid()
         return raw.map(::itemId)
     }
 
-    private fun cleaned(name: String) = cleanName(name) ?: throw IllegalArgumentException("A name is 1 to ${ListsLimits.NAME} characters.")
+    /** Input the seam refuses with nothing sent: an `AppError` so a screen can show it (its wording is the screen's own). */
+    private fun invalid() = AppError(AppError.Kind.UNKNOWN, "That name or selection can't be used.")
+
+    private fun cleaned(name: String) = cleanName(name) ?: throw invalid()
 
     private companion object {
         const val TAG = "Lists"
         const val ONE_MIB = 1024L * 1024
         const val LIST_BYTES = 4 * ONE_MIB
-
-        /** What every list asks for besides its own fields (as the library's lists do): user data and one each of the three drawn images. */
-        val MEDIA_QUERY = listOf(
-            "enableUserData" to "true", "enableImages" to "true", "enableImageTypes" to "Primary,Backdrop,Thumb", "imageTypeLimit" to "1",
-        )
     }
 }
