@@ -113,6 +113,16 @@ class PlaylistsViewModelTest {
         assertFalse(vm.state.value.busy)
     }
 
+    @Test fun comingBackReadsAgainSoADeletedOrRenamedPlaylistShowsRightWithoutASpinner() = runTest(main.dispatcher) {
+        lists.playlists = listOf(listItem(1, "Weekend"), listItem(2, "Bedtime"))
+        val vm = vm()
+        lists.playlists = listOf(listItem(1, "Midweek"))
+        vm.refresh()
+        assertEquals(listOf("Midweek"), vm.state.value.playlists.map { it.item.name })
+        assertEquals(ListsPhase.READY, vm.state.value.phase)
+        assertEquals(2, lists.calls.count { it == "playlists" })
+    }
+
     @Test fun anotherProfileStartsFresh() = runTest(main.dispatcher) {
         lists.playlists = listOf(listItem(1))
         val vm = vm()
@@ -179,7 +189,8 @@ class PlaylistViewModelTest {
         val notices = mutableListOf<ListNotice>()
         backgroundScope.launch { vm.notices.toList(notices) }
         vm.downloadAll()
-        assertEquals(listOf(R.plurals.lists_downloading to 1, R.plurals.lists_download_not_started to 1), notices.map { it.plural to it.count })
+        assertEquals(listOf(R.plurals.lists_downloading_some to 1), notices.map { it.plural to it.count })
+        assertEquals("2", notices.single().arg)
     }
 
     @Test fun moveSendsTheNeighbouringPlaceThenReadsAgainAndDoesNothingAtTheEnds() = runTest(main.dispatcher) {
@@ -256,6 +267,41 @@ class PlaylistViewModelTest {
         assertFalse(vm.state.value.deleted)
         assertFalse(vm.state.value.deleteAsk)
         assertEquals(R.string.lists_refused, notices.single().text)
+    }
+
+    @Test fun aRefusedDeleteReadsThePlaylistAgainSoCanDeleteIsCurrent() = runTest(main.dispatcher) {
+        lists.playlist = playlistOf(place(1), canDelete = true)
+        val vm = vm()
+        vm.askDelete()
+        lists.failure = AppError.of(AppError.Kind.FORBIDDEN)
+        val before = reads()
+        vm.confirmDelete()
+        assertEquals(before + 1, reads())
+        assertFalse(vm.state.value.deleting)
+    }
+
+    @Test fun deleteCannotBeAskedWhileAnotherChangeRuns() = runTest(main.dispatcher) {
+        lists.playlist = playlistOf(place(1), place(2))
+        val vm = vm()
+        // busy is set by a change in flight; with the test dispatcher a change finishes at once, so check the guard directly
+        vm.downloadAll()
+        assertFalse(vm.state.value.busy)
+        vm.askDelete()
+        assertTrue(vm.state.value.deleteAsk)
+        assertFalse(vm.state.value.deleting)
+    }
+
+    @Test fun aDoubleTapOnPlayOpensThePlayerOnceUntilTheScreenIsBack() = runTest(main.dispatcher) {
+        lists.playlist = playlistOf(place(1), place(2))
+        val vm = vm()
+        val launches = mutableListOf<PlayLaunch>()
+        backgroundScope.launch { vm.launches.toList(launches) }
+        vm.play(false)
+        vm.play(true)
+        assertEquals(1, launches.size)
+        vm.onResumed()
+        vm.play(true)
+        assertEquals(2, launches.size)
     }
 
     @Test fun anUnknownPlaylistIsGoneAndOfflineOffersTryAgain() = runTest(main.dispatcher) {

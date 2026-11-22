@@ -223,7 +223,7 @@ private fun HomeList(state: HomeUiState, actions: HomeActions, selection: Select
                 state.latest.forEach { latest ->
                     posterRow(latest.view, latest.row, session, strings, state, banner, actions, wide, gaps, selection) { id -> sheetId = id; sheetFromResume = false }
                 }
-                if (state.views.isNotEmpty()) librariesSection(state, actions, strings, wide, gaps)
+                librariesSection(state, actions, strings, wide, gaps)
             }
         }
     }

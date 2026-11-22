@@ -114,7 +114,7 @@ fun PlaylistScreen(
                 item(key = "manage") {
                     Column(Modifier.padding(horizontal = Gutter)) {
                         SecondaryButton(stringResource(R.string.lists_rename), actions.onAskRename, enabled = !state.busy)
-                        if (playlist.canDelete) CautionButton(stringResource(R.string.lists_delete), actions.onAskDelete)
+                        if (playlist.canDelete) CautionButton(stringResource(R.string.lists_delete), actions.onAskDelete, enabled = !state.busy)
                     }
                 }
             }
@@ -131,7 +131,7 @@ fun PlaylistScreen(
         ConfirmDialog(
             stringResource(R.string.lists_delete_title, shown), stringResource(R.string.lists_delete_confirm),
             onConfirm = actions.onConfirmDelete, onDismiss = actions.onCancelDelete,
-            busyLabel = if (state.busy) stringResource(R.string.lists_delete_confirm) else null,
+            busyLabel = if (state.deleting) stringResource(R.string.lists_delete_confirm) else null,
         ) { Text(stringResource(R.string.lists_delete_body), style = MaterialTheme.typography.bodyMedium) }
     }
 }

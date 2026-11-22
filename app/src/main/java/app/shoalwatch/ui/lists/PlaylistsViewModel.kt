@@ -80,6 +80,13 @@ class PlaylistsViewModel(catalog: ServerCatalog, private val lists: Lists) : Vie
 
     private fun apply(s: Session, change: (PlaylistsUiState) -> PlaylistsUiState) = body.update { if (it.session == s) change(it) else it }
 
+    /** Back on this screen after a change made elsewhere (a playlist deleted or renamed, items added): read again, without a spinner. */
+    fun refresh() {
+        val s = body.value.session ?: return
+        if (body.value.phase == ListsPhase.LOADING) return
+        viewModelScope.launch { read(s) }
+    }
+
     /** Try again (offline or failed). */
     fun retry() {
         val s = body.value.session ?: return

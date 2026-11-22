@@ -211,6 +211,16 @@ abstract class ListsRenderBase : RenderBase() {
         assertEquals(listOf("create", "back-to-list"), done)
     }
 
+    @Test fun homeShowsThePlaylistsCardEvenWithNoLibraries() {
+        val opened = mutableListOf<String>()
+        val actions = HomeActions({}, {}, {}, {}, {}, {}, {}, {}, {}, { _, _ -> }, { _, _ -> }, onOpenPlaylists = { opened += "playlists" })
+        val state = HomeUiState(phase = HomePhase.READY, session = BEN, serverId = SERVER_ID, serverName = "Den", userName = "ben", views = emptyList())
+        show { HomeScreen(state, actions, emptyFlow(), snackbar) }
+        scrollTo(hasContentDescription("${text(R.string.lists_playlists_title)}, ${text(R.string.lists_home_card_subtitle)}"))
+        rule.onNodeWithContentDescription("${text(R.string.lists_playlists_title)}, ${text(R.string.lists_home_card_subtitle)}").performClick()
+        assertEquals(listOf("playlists"), opened)
+    }
+
     @Test fun homeEndsItsLibrariesWithAPlaylistsCard() {
         val opened = mutableListOf<String>()
         val actions = HomeActions({}, {}, {}, {}, {}, {}, {}, {}, {}, { _, _ -> }, { _, _ -> }, onOpenPlaylists = { opened += "playlists" })

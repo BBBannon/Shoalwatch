@@ -41,6 +41,8 @@ data class PlaylistUiState(
     val nameError: Int = 0,
     /** Delete is waiting for a yes (the dialog names the playlist). */
     val deleteAsk: Boolean = false,
+    /** This playlist's own delete is running (not any other change). */
+    val deleting: Boolean = false,
     /** The playlist was deleted: the route leaves the screen. */
     val deleted: Boolean = false,
 ) {
@@ -69,6 +71,7 @@ class PlaylistViewModel(
     private val body = MutableStateFlow(PlaylistUiState())
     private val channel = Channel<ListNotice>(Channel.BUFFERED)
     private val launchChannel = Channel<PlayLaunch>(Channel.BUFFERED)
+    private var launched = false
     private val sessionNow: StateFlow<Session?> = catalog.activeSession().stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     val state: StateFlow<PlaylistUiState> = body.asStateFlow()
@@ -114,14 +117,19 @@ class PlaylistViewModel(
     fun play(shuffle: Boolean) {
         val s = body.value.session ?: return
         val p = body.value.playlist ?: return
+        if (launched) return
         val queue = PlayQueue.of(p.entries.map { it.item.item }, shuffle)
         val first = queue?.ids?.firstOrNull()
         if (queue == null || first == null) {
             channel.trySend(ListNotice(s, text = R.string.lists_nothing_to_play))
             return
         }
+        launched = true
         launchChannel.trySend(PlayLaunch(s, first, queues.put(s, queue)))
     }
+
+    /** The screen is on top again (back from the player): Play and Shuffle work again. A double tap opens the player once. */
+    fun onResumed() { launched = false }
 
     /** Each film or episode through prepare and start at the default quality; one line sums it up. */
     fun downloadAll() {
@@ -158,10 +166,8 @@ class PlaylistViewModel(
             }
             val rest = ids.size - started
             when {
-                started > 0 -> {
-                    channel.trySend(ListNotice(s, R.plurals.lists_downloading, started))
-                    if (rest > 0) channel.trySend(ListNotice(s, R.plurals.lists_download_not_started, rest))
-                }
+                started > 0 && rest > 0 -> channel.trySend(ListNotice(s, R.plurals.lists_downloading_some, started, arg = ids.size.toString()))
+                started > 0 -> channel.trySend(ListNotice(s, R.plurals.lists_downloading, started))
                 firstFailure != null -> channel.trySend(ListNotice(s, text = failureText(firstFailure)))
                 else -> channel.trySend(ListNotice(s, R.plurals.lists_download_not_started, rest))
             }
@@ -233,7 +239,7 @@ class PlaylistViewModel(
 
     /** Delete asks first; only a playlist the server says this profile may delete ([Playlist.canDelete]) is asked about. */
     fun askDelete() {
-        if (body.value.playlist?.canDelete != true) return
+        if (body.value.playlist?.canDelete != true || body.value.busy) return
         body.update { it.copy(deleteAsk = true) }
     }
 
@@ -242,7 +248,7 @@ class PlaylistViewModel(
     fun confirmDelete() {
         val s = body.value.session ?: return
         if (!body.value.deleteAsk || body.value.busy) return
-        body.update { it.copy(busy = true) }
+        body.update { it.copy(busy = true, deleting = true) }
         viewModelScope.launch {
             try {
                 lists.deletePlaylist(s, playlistId)
@@ -252,8 +258,9 @@ class PlaylistViewModel(
             } catch (e: Exception) {
                 apply(s) { it.copy(deleteAsk = false) }
                 channel.trySend(ListNotice(s, text = failureText(e)))
+                read(s) // CanDelete may have changed
             } finally {
-                apply(s) { it.copy(busy = false) }
+                apply(s) { it.copy(busy = false, deleting = false) }
             }
         }
     }

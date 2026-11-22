@@ -342,6 +342,10 @@ internal fun PlaylistsRoute(graph: AppGraph, nav: NavHostController) {
     val vm = graphViewModel { app.shoalwatch.ui.lists.PlaylistsViewModel(graph.serverCatalog, graph.lists) }
     val state by vm.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
+    androidx.lifecycle.compose.LifecycleResumeEffect(vm) {
+        vm.refresh()
+        onPauseOrDispose {}
+    }
     val actions = remember(vm, nav) {
         app.shoalwatch.ui.lists.PlaylistsActions(
             onBack = { nav.popBackStack() }, onOpen = nav::open, onRetry = vm::retry, onNew = vm::startCreate, onCreate = vm::create,
@@ -359,6 +363,10 @@ internal fun PlaylistRoute(graph: AppGraph, nav: NavHostController, playlistId: 
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(vm, nav) { vm.launches.collect { nav.navigate(Routes.player(it.itemId, StartFrom.BEGINNING, it.token)) } }
     LaunchedEffect(state.deleted) { if (state.deleted) nav.popBackStack() }
+    androidx.lifecycle.compose.LifecycleResumeEffect(vm) {
+        vm.onResumed()
+        onPauseOrDispose {}
+    }
     val actions = remember(vm, nav) {
         app.shoalwatch.ui.lists.PlaylistActions(
             onBack = { nav.popBackStack() }, onOpen = nav::open, onRetry = vm::retry,

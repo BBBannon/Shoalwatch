@@ -47,6 +47,10 @@
         <item quantity="one">Downloading %1$d item.</item>
         <item quantity="other">Downloading %1$d items.</item>
     </plurals>
+    <plurals name="lists_downloading_some">
+        <item quantity="one">Downloading %1$d of %2$s items. The rest could not be started: not enough room, or nothing to download.</item>
+        <item quantity="other">Downloading %1$d of %2$s items. The rest could not be started: not enough room, or nothing to download.</item>
+    </plurals>
     <plurals name="lists_download_not_started">
         <item quantity="one">%1$d could not be started: not enough room, or nothing to download.</item>
         <item quantity="other">%1$d could not be started: not enough room, or nothing to download.</item>
