@@ -46,7 +46,7 @@ import java.io.IOException
  * - 401: the server rejected this sign-in, so `ServerStore.invalidateToken` stops the app looping on a dead token (later calls
  *   fail fast as `NOT_SIGNED_IN` with nothing sent) and this call fails with "Your sign-in has expired. Sign in again." Skipped
  *   if the sign-in was replaced after the request began. Only ever for a 401 from the verified address of this signed-in call.
- *   Exception, by the caller's choice ([delete]'s `verifyUnauthorised`): an endpoint where Jellyfin also answers a plain refusal
+ *   Exception, by the caller's choice (`verifyUnauthorised` on [get], [post] and [delete]): an endpoint where Jellyfin also answers a plain refusal
  *   with 401 (`DELETE /Items/{id}` for an item this user may not delete). There a 401 is checked with one `GET /Users/Me` first: a
  *   401 to that ends the sign-in as above; any other answer (it still works, or the check could not be made) keeps it, and the
  *   call fails `FORBIDDEN`, "The server refused to do that." The refused request itself is never sent again.
@@ -78,14 +78,16 @@ class ServerApi(
         deserializer: DeserializationStrategy<T>,
         maxBytes: Long = DEFAULT_MAX_BYTES,
         retry: Boolean = true,
-    ): T = execute(session, "GET", path, query, null, retry) { response ->
+        verifyUnauthorised: Boolean = false,
+    ): T = execute(session, "GET", path, query, null, retry, verifyUnauthorised = verifyUnauthorised) { response ->
         JsonBodies.decode(JsonBodies.readBounded(response, maxBytes, AppError.Kind.SERVER_ERROR), deserializer, AppError.Kind.SERVER_ERROR)
     }
 
     /**
      * POST with an optional JSON body; the response body is ignored. Not retried unless the caller opts in with [retry]. With
      * [sendOnce] (admin actions) OkHttp may not resend it either (see [sentOnce]). [sendIf] is asked once more just before the
-     * request is written (after the wait for a verified address): false sends nothing and fails `FORBIDDEN`.
+     * request is written (after the wait for a verified address): false sends nothing and fails `FORBIDDEN`. [verifyUnauthorised]
+     * as for [delete] (also on [get]).
      */
     suspend fun post(
         session: Session,
@@ -95,9 +97,10 @@ class ServerApi(
         retry: Boolean = false,
         sendOnce: Boolean = false,
         sendIf: () -> Boolean = ALWAYS,
+        verifyUnauthorised: Boolean = false,
     ) {
         val body = jsonBody?.toRequestBody(JSON) ?: ByteArray(0).toRequestBody(null)
-        execute(session, "POST", path, query, if (sendOnce) body.sentOnce() else body, retry, sendIf) { }
+        execute(session, "POST", path, query, if (sendOnce) body.sentOnce() else body, retry, sendIf, verifyUnauthorised) { }
     }
 
     /**
