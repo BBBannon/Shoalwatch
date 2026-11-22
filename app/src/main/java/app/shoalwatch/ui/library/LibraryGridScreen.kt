@@ -4,12 +4,17 @@ import app.shoalwatch.ui.present.sheetTitle
 import app.shoalwatch.ui.components.refreshAction
 import app.shoalwatch.ui.components.ErrorState
 import app.shoalwatch.ui.components.ScrollingColumn
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.AssistChip
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -52,6 +57,7 @@ import app.shoalwatch.R
 import app.shoalwatch.data.library.ItemFilter
 import app.shoalwatch.data.library.ItemKind
 import app.shoalwatch.data.library.ItemWithUserData
+import app.shoalwatch.data.library.LibraryKind
 import app.shoalwatch.data.library.Sort
 import app.shoalwatch.ui.browse.isWorking
 import app.shoalwatch.ui.browse.BulkAction
@@ -99,6 +105,10 @@ class LibraryGridActions(
     val onOpenServers: () -> Unit,
     val onSetPlayed: (itemId: String, played: Boolean) -> Unit,
     val onSetFavourite: (itemId: String, favourite: Boolean) -> Unit,
+    /** Milestone 11: Filter, Genres and Studios open this library's live filtered list and its genre and studio pages; null hides them. */
+    val onOpenFilter: (() -> Unit)? = null,
+    val onOpenGenres: (() -> Unit)? = null,
+    val onOpenStudios: (() -> Unit)? = null,
 )
 
 /**
@@ -255,5 +265,21 @@ private fun SortFilterBar(state: LibraryGridUiState, actions: LibraryGridActions
             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         SortFilterChips(state.sort, state.filter, actions.onSetSort, actions.onSetFilter)
+        // Films, series and mixed libraries only: a collection, folder, photo or home-video library has no genres to list.
+        if (state.kind == LibraryKind.MOVIES || state.kind == LibraryKind.TV || state.kind == LibraryKind.MIXED) DiscoverChips(actions)
+    }
+}
+
+/** Filter, Genres and Studios: buttons that open this library's live filtered list and its genre and studio pages. */
+@Composable
+private fun DiscoverChips(actions: LibraryGridActions) {
+    val filter = actions.onOpenFilter
+    val genres = actions.onOpenGenres
+    val studios = actions.onOpenStudios
+    if (filter == null && genres == null && studios == null) return
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        filter?.let { AssistChip(onClick = it, label = { Text(stringResource(R.string.discover_filter_button)) }, modifier = Modifier.heightIn(min = 48.dp)) }
+        genres?.let { AssistChip(onClick = it, label = { Text(stringResource(R.string.discover_genres_title)) }, modifier = Modifier.heightIn(min = 48.dp)) }
+        studios?.let { AssistChip(onClick = it, label = { Text(stringResource(R.string.discover_studios_title)) }, modifier = Modifier.heightIn(min = 48.dp)) }
     }
 }

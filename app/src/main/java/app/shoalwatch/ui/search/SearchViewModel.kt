@@ -3,7 +3,12 @@ package app.shoalwatch.ui.search
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.shoalwatch.core.AppError
+import app.shoalwatch.data.discover.Discover
+import app.shoalwatch.data.discover.Named
+import app.shoalwatch.data.discover.PersonRef
+import app.shoalwatch.data.discover.SearchExtras
 import app.shoalwatch.data.library.ItemKind
+import app.shoalwatch.data.library.LibraryKind
 import app.shoalwatch.data.library.ItemWithUserData
 import app.shoalwatch.data.library.Library
 import app.shoalwatch.data.library.SearchResult
@@ -12,6 +17,9 @@ import app.shoalwatch.data.servers.ServerConnections
 import app.shoalwatch.data.servers.Session
 import app.shoalwatch.ui.browse.reprobeIfOffline
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -43,6 +51,12 @@ data class SearchUiState(
     val episodes: List<ItemWithUserData> = emptyList(),
     val offline: Boolean = false,
     val error: String? = null,
+    /** Milestone 11: people, genres and collections matching the words, from the server (never while offline). */
+    val people: List<PersonRef> = emptyList(),
+    val genres: List<Named> = emptyList(),
+    val collections: List<ItemWithUserData> = emptyList(),
+    /** The library a genre opens its filtered list in; null hides the genres (no library to filter). */
+    val genreLibraryId: String? = null,
 ) {
     /** One letter typed: not enough to search yet. */
     val tooShort: Boolean get() = query.trim().length in 1 until MIN_QUERY
@@ -60,6 +74,7 @@ class SearchViewModel(
     private val catalog: ServerCatalog,
     private val library: Library,
     private val connections: ServerConnections,
+    private val discover: Discover? = null,
 ) : ViewModel() {
     private val query = MutableStateFlow("")
     private val retries = MutableStateFlow(0)
@@ -67,7 +82,7 @@ class SearchViewModel(
     private sealed interface Outcome {
         data object Idle : Outcome
         data object Searching : Outcome
-        data class Done(val result: SearchResult) : Outcome
+        data class Done(val result: SearchResult, val more: SearchExtras = SearchExtras.NONE, val genreLibraryId: String? = null) : Outcome
         data class Failed(val message: String) : Outcome
     }
 
@@ -81,7 +96,7 @@ class SearchViewModel(
                     emit(Outcome.Searching)
                     emit(
                         try {
-                            Outcome.Done(library.search(s, term))
+                            searchAll(s, term)
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: AppError) {
@@ -92,6 +107,40 @@ class SearchViewModel(
                     )
                 }
             }
+
+    /**
+     * The saved-or-live titles and, in step with them, people, genres and collections from the server. The extras are only asked
+     * for while online (offline only saved titles show) and each part failing leaves the titles as they are.
+     */
+    private suspend fun searchAll(s: Session, term: String): Outcome.Done = coroutineScope {
+        val more = discover?.let { d ->
+            async {
+                try {
+                    d.searchMore(s, term)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    SearchExtras.NONE
+                }
+            }
+        }
+        val result = library.search(s, term)
+        if (result.offline || more == null) {
+            more?.cancel()
+            return@coroutineScope Outcome.Done(result)
+        }
+        val extras = more.await()
+        Outcome.Done(result, extras, if (extras.genres.isEmpty()) null else genreLibrary(s))
+    }
+
+    /** The first library that holds films, series or both: where a genre from search opens its list. */
+    private suspend fun genreLibrary(s: Session): String? = try {
+        library.home(s).first().views.firstOrNull { it.kind == LibraryKind.MOVIES || it.kind == LibraryKind.TV || it.kind == LibraryKind.MIXED }?.id
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        null
+    }
 
     val state: StateFlow<SearchUiState> =
         combine(
@@ -118,8 +167,13 @@ class SearchViewModel(
                 val films = items.filter { it.item.kind == ItemKind.MOVIE }
                 val series = items.filter { it.item.kind == ItemKind.SERIES }
                 val episodes = items.filter { it.item.kind == ItemKind.EPISODE }
-                val empty = films.isEmpty() && series.isEmpty() && episodes.isEmpty()
-                SearchUiState(if (empty) SearchPhase.EMPTY else SearchPhase.RESULTS, session, q, films, series, episodes, outcome.result.offline)
+                val more = outcome.more
+                val genres = if (outcome.genreLibraryId == null) emptyList() else more.genres
+                val empty = films.isEmpty() && series.isEmpty() && episodes.isEmpty() && more.people.isEmpty() && genres.isEmpty() && more.collections.isEmpty()
+                SearchUiState(
+                    if (empty) SearchPhase.EMPTY else SearchPhase.RESULTS, session, q, films, series, episodes, outcome.result.offline,
+                    people = more.people, genres = genres, collections = more.collections, genreLibraryId = outcome.genreLibraryId,
+                )
             }
         }
     }

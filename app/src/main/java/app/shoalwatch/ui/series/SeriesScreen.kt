@@ -58,6 +58,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.shoalwatch.R
+import app.shoalwatch.ui.discover.ExtrasBlock
+import app.shoalwatch.ui.discover.ExtrasControls
 import app.shoalwatch.data.images.backdropArtwork
 import app.shoalwatch.ui.components.BannerActions
 import app.shoalwatch.ui.components.CollectMessages
@@ -110,6 +112,7 @@ fun SeriesScreen(
     snackbar: SnackbarHostState,
     download: DownloadControls? = null,
     bulk: BulkHost? = null,
+    extras: ExtrasControls? = null,
 ) {
     CollectMessages(messages, snackbar, state.session)
     val strings = rememberStrings()
@@ -141,7 +144,7 @@ fun SeriesScreen(
                     val twoPane = isTwoPane()
                     CompositionLocalProvider(LocalSelection provides selection) {
                         PullRefresh(isRefreshing = state.pulling, onRefresh = actions.onRefresh, modifier = Modifier.fillMaxSize(), belowStatusBar = true) {
-                            if (twoPane) SeriesTwoPane(state, actions, download) else SeriesContent(state, actions, download)
+                            if (twoPane) SeriesTwoPane(state, actions, download, extras) else SeriesContent(state, actions, download, extras)
                         }
                     }
                     RefreshLine(state.refreshing && !state.pulling, Modifier.statusBarsPadding().align(Alignment.TopCenter))
@@ -155,7 +158,7 @@ fun SeriesScreen(
 }
 
 @Composable
-private fun SeriesContent(state: SeriesUiState, actions: SeriesActions, download: DownloadControls?) {
+private fun SeriesContent(state: SeriesUiState, actions: SeriesActions, download: DownloadControls?, extras: ExtrasControls?) {
     val strings = rememberStrings()
     val session = state.session
     val listState = rememberLazyListState()
@@ -202,6 +205,7 @@ private fun SeriesContent(state: SeriesUiState, actions: SeriesActions, download
                     item(key = "season-header") { SeasonHeader(state, actions) }
                 }
                 episodes(state, actions, session, strings, banner, download) { sheetId = it }
+                if (extras != null && session != null && series != null) item(key = "extras") { ExtrasBlock(extras, session) }
             }
         }
         AnimatedVisibility(visible = showBar, modifier = Modifier.align(Alignment.TopStart)) {

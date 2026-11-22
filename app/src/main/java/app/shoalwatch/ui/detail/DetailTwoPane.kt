@@ -31,6 +31,9 @@ import app.shoalwatch.ui.components.BackBar
 import app.shoalwatch.ui.components.FreshnessBanner
 import app.shoalwatch.ui.components.Gutter
 import app.shoalwatch.ui.components.ReadableWidth
+import app.shoalwatch.ui.discover.ExtrasBlock
+import app.shoalwatch.ui.discover.ExtrasControls
+import app.shoalwatch.ui.discover.ExtrasVersions
 import app.shoalwatch.ui.downloads.DetailDownloadButton
 import app.shoalwatch.ui.downloads.DownloadControls
 import app.shoalwatch.ui.present.detailFacts
@@ -52,7 +55,7 @@ internal const val DETAIL_PICTURE_TAG = "detail-picture"
  * watched state with its bar, Mark watched and favourite, Go to series and the overview. Each pane scrolls on its own.
  */
 @Composable
-internal fun DetailTwoPane(state: DetailUiState, entry: ItemWithUserData, session: Session, actions: DetailActions, download: DownloadControls?) {
+internal fun DetailTwoPane(state: DetailUiState, entry: ItemWithUserData, session: Session, actions: DetailActions, download: DownloadControls?, extras: ExtrasControls? = null) {
     val strings = rememberStrings()
     val item = entry.item
     val data = entry.userData
@@ -74,6 +77,7 @@ internal fun DetailTwoPane(state: DetailUiState, entry: ItemWithUserData, sessio
             )
             Column(Modifier.padding(horizontal = Gutter), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 PlayButtons(resume, actions)
+                if (extras != null) ExtrasVersions(extras)
                 if (download != null && (item.kind == ItemKind.MOVIE || episode)) DetailDownloadButton(item.id, download)
             }
         }
@@ -92,6 +96,7 @@ internal fun DetailTwoPane(state: DetailUiState, entry: ItemWithUserData, sessio
                     GoToSeries(item, actions)
                     Overview(overview)
                 }
+                if (extras != null) ExtrasBlock(extras, session)
             }
         }
     }

@@ -89,6 +89,7 @@ import app.shoalwatch.ui.components.SignedOutNotice
 import app.shoalwatch.ui.components.Tone
 import app.shoalwatch.ui.components.titleLines
 import app.shoalwatch.ui.components.NoKeyboardLearning
+import app.shoalwatch.ui.discover.PersonRow
 import app.shoalwatch.ui.present.Destination
 import app.shoalwatch.ui.present.SearchRowUi
 import app.shoalwatch.ui.present.destination
@@ -102,6 +103,9 @@ class SearchActions(
     val onRetry: () -> Unit,
     val onOpen: (Destination) -> Unit,
     val onOpenServers: () -> Unit,
+    /** Milestone 11: a person from the results opens their page; a genre opens the filtered list of [parentId] at that genre. */
+    val onOpenPerson: (personId: String) -> Unit = {},
+    val onOpenGenre: (parentId: String, genreId: String) -> Unit = { _, _ -> },
 )
 
 /**
@@ -219,7 +223,7 @@ private fun Searching() {
 private fun ResultList(state: SearchUiState, actions: SearchActions, selection: Selection?) {
     val strings = rememberStrings()
     val session = state.session ?: return
-    val count = state.films.size + state.series.size + state.episodes.size
+    val count = state.films.size + state.series.size + state.episodes.size + state.people.size + state.genres.size + state.collections.size
     val countText = pluralStringResource(R.plurals.search_results_count, count, count)
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         // How many results there are: shown, and announced politely when they arrive.
@@ -242,6 +246,22 @@ private fun ResultList(state: SearchUiState, actions: SearchActions, selection: 
         group(R.string.search_heading_films, "films", state.films) { entry -> ResultRow(searchRow(entry, session, strings), entry, false, actions, selection) }
         group(R.string.search_heading_series, "series", state.series) { entry -> ResultRow(searchRow(entry, session, strings), entry, false, actions, selection) }
         group(R.string.search_heading_episodes, "episodes", state.episodes) { entry -> ResultRow(searchRow(entry, session, strings), entry, true, actions, selection) }
+        // Milestone 11: from the server only. Not selectable: a person and a genre are not items, and a collection is opened, not bulk-changed from here.
+        if (state.people.isNotEmpty()) {
+            item(key = "heading-people") { SectionHeader(stringResource(R.string.search_heading_people), Modifier.padding(top = 12.dp)) }
+            items(state.people.withIndex().toList(), key = { "people-${it.index}" }) { (_, person) -> PersonRow(person, onOpen = { actions.onOpenPerson(person.id) }) }
+        }
+        val genreLibrary = state.genreLibraryId
+        if (genreLibrary != null && state.genres.isNotEmpty()) {
+            item(key = "heading-genres") { SectionHeader(stringResource(R.string.search_heading_genres), Modifier.padding(top = 12.dp)) }
+            items(state.genres, key = { "genre-${it.id}" }) { genre ->
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(role = Role.Button, onClick = { actions.onOpenGenre(genreLibrary, genre.id) }).padding(horizontal = Gutter, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) { Text(genre.name, style = MaterialTheme.typography.bodyLarge) }
+            }
+        }
+        group(R.string.search_heading_collections, "collections", state.collections) { entry -> ResultRow(searchRow(entry, session, strings), entry, false, actions, null) }
     }
 }
 

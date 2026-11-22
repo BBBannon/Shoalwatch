@@ -98,9 +98,24 @@ internal object Routes {
     const val PHOTO = "photo/{$ARG_ITEM}?$ARG_PARENT={$ARG_PARENT}"
     const val ARG_PERSON = "personId"
     const val PERSON = "person/{$ARG_PERSON}"
+    const val ARG_GENRE = "genre"
+    const val ARG_STUDIO = "studio"
+    /** A library's live filtered list, optionally opened at one genre or studio (the Genres and Studios pages). */
+    const val BROWSE = "browse/{$ARG_PARENT}?$ARG_GENRE={$ARG_GENRE}&$ARG_STUDIO={$ARG_STUDIO}"
+    const val GENRES = "genres/{$ARG_PARENT}"
+    const val STUDIOS = "studios/{$ARG_PARENT}"
     fun playlist(playlistId: String) = "playlist/${Uri.encode(playlistId)}"
     fun photo(photoId: String, parentId: String?) = "photo/${Uri.encode(photoId)}" + (parentId?.let { "?$ARG_PARENT=${Uri.encode(it)}" } ?: "")
     fun person(personId: String) = "person/${Uri.encode(personId)}"
+    fun browse(parentId: String, genreId: String? = null, studioId: String? = null): String {
+        val query = listOfNotNull(
+            genreId?.takeIf { it.isNotEmpty() }?.let { "$ARG_GENRE=${Uri.encode(it)}" },
+            studioId?.takeIf { it.isNotEmpty() }?.let { "$ARG_STUDIO=${Uri.encode(it)}" },
+        )
+        return "browse/${Uri.encode(parentId)}" + if (query.isEmpty()) "" else query.joinToString("&", prefix = "?")
+    }
+    fun genres(parentId: String) = "genres/${Uri.encode(parentId)}"
+    fun studios(parentId: String) = "studios/${Uri.encode(parentId)}"
 
     fun home(fresh: Boolean = false) = "home?$ARG_FRESH=$fresh"
     fun library(viewId: String) = "library/${Uri.encode(viewId)}"
@@ -226,6 +241,10 @@ private fun AppNavHost(graph: AppGraph, start: String, openTab: String?, onTabOp
             storage = { StorageRoute(graph, nav) },
             playlists = { PlaylistsRoute(graph, nav) },
             playlist = { id -> PlaylistRoute(graph, nav, id) },
+            person = { id -> PersonRoute(graph, nav, id) },
+            browse = { parent, genre, studio -> BrowseRoute(graph, nav, parent, genre, studio) },
+            genres = { parent -> NamesRoute(graph, nav, parent, app.shoalwatch.ui.discover.NamesKind.GENRES) },
+            studios = { parent -> NamesRoute(graph, nav, parent, app.shoalwatch.ui.discover.NamesKind.STUDIOS) },
         )
         composable(Routes.SERVERS) { ServersRoute(graph, nav) }
         composable(Routes.DOWNLOAD_SETTINGS) { DownloadSettingsRoute(graph, nav) }
@@ -309,12 +328,32 @@ internal fun NavGraphBuilder.browsingDestinations(
     storage: @Composable () -> Unit = {},
     playlists: @Composable () -> Unit = {},
     playlist: @Composable (playlistId: String) -> Unit = {},
+    person: @Composable (personId: String) -> Unit = {},
+    browse: @Composable (parentId: String, genreId: String?, studioId: String?) -> Unit = { _, _, _ -> },
+    genres: @Composable (parentId: String) -> Unit = {},
+    studios: @Composable (parentId: String) -> Unit = {},
 ) {
     composable(Routes.STORAGE) { storage() }
     composable(Routes.PLAYLISTS) { playlists() }
     composable(Routes.PLAYLIST, listOf(navArgument(Routes.ARG_PLAYLIST) { type = NavType.StringType })) {
         playlist(it.arguments?.getString(Routes.ARG_PLAYLIST).orEmpty())
     }
+    composable(Routes.PERSON, listOf(navArgument(Routes.ARG_PERSON) { type = NavType.StringType })) {
+        person(it.arguments?.getString(Routes.ARG_PERSON).orEmpty())
+    }
+    composable(
+        Routes.BROWSE,
+        listOf(
+            navArgument(Routes.ARG_PARENT) { type = NavType.StringType },
+            navArgument(Routes.ARG_GENRE) { type = NavType.StringType; nullable = true; defaultValue = null },
+            navArgument(Routes.ARG_STUDIO) { type = NavType.StringType; nullable = true; defaultValue = null },
+        ),
+    ) {
+        val args = it.arguments
+        browse(args?.getString(Routes.ARG_PARENT).orEmpty(), args?.getString(Routes.ARG_GENRE)?.ifEmpty { null }, args?.getString(Routes.ARG_STUDIO)?.ifEmpty { null })
+    }
+    composable(Routes.GENRES, listOf(navArgument(Routes.ARG_PARENT) { type = NavType.StringType })) { genres(it.arguments?.getString(Routes.ARG_PARENT).orEmpty()) }
+    composable(Routes.STUDIOS, listOf(navArgument(Routes.ARG_PARENT) { type = NavType.StringType })) { studios(it.arguments?.getString(Routes.ARG_PARENT).orEmpty()) }
     composable(Routes.DOWNLOADED_SERIES, listOf(navArgument(Routes.ARG_SERIES) { type = NavType.StringType })) {
         downloadedSeries(it.arguments?.getString(Routes.ARG_SERIES).orEmpty())
     }

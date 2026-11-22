@@ -78,6 +78,9 @@ import app.shoalwatch.ui.components.isTwoPane
 import app.shoalwatch.ui.components.SignedOutNotice
 import app.shoalwatch.ui.components.SkeletonBlock
 import app.shoalwatch.ui.components.WatchedButton
+import app.shoalwatch.ui.discover.ExtrasBlock
+import app.shoalwatch.ui.discover.ExtrasControls
+import app.shoalwatch.ui.discover.ExtrasVersions
 import app.shoalwatch.ui.present.Destination
 import app.shoalwatch.ui.present.detailFacts
 import app.shoalwatch.ui.present.displayName
@@ -116,7 +119,7 @@ class DetailActions(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DetailScreen(state: DetailUiState, actions: DetailActions, messages: Flow<String>, snackbar: SnackbarHostState, download: DownloadControls? = null) {
+fun DetailScreen(state: DetailUiState, actions: DetailActions, messages: Flow<String>, snackbar: SnackbarHostState, download: DownloadControls? = null, extras: ExtrasControls? = null) {
     CollectMessages(messages, snackbar, state.session)
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -146,7 +149,7 @@ fun DetailScreen(state: DetailUiState, actions: DetailActions, messages: Flow<St
                 else -> {
                     val twoPane = isTwoPane()
                     PullRefresh(isRefreshing = state.pulling, onRefresh = actions.onRefresh, modifier = Modifier.fillMaxSize(), belowStatusBar = true) {
-                        if (twoPane) DetailTwoPane(state, item, session, actions, download) else Content(state, item, session, actions, download)
+                        if (twoPane) DetailTwoPane(state, item, session, actions, download, extras) else Content(state, item, session, actions, download, extras)
                     }
                     RefreshLine(state.refreshing && !state.pulling, Modifier.statusBarsPadding().align(Alignment.TopCenter))
                 }
@@ -177,7 +180,7 @@ private fun Loading(onBack: () -> Unit) {
 }
 
 @Composable
-private fun Content(state: DetailUiState, entry: ItemWithUserData, session: Session, actions: DetailActions, download: DownloadControls?) {
+private fun Content(state: DetailUiState, entry: ItemWithUserData, session: Session, actions: DetailActions, download: DownloadControls?, extras: ExtrasControls?) {
     val strings = rememberStrings()
     val item = entry.item
     val facts = detailFacts(strings, item)
@@ -204,11 +207,13 @@ private fun Content(state: DetailUiState, entry: ItemWithUserData, session: Sess
                 }
                 WatchStateFor(entry)
                 PlayButtons(resume, actions)
+                if (extras != null) ExtrasVersions(extras)
                 if (download != null && (item.kind == ItemKind.MOVIE || item.kind == ItemKind.EPISODE)) DetailDownloadButton(item.id, download)
                 MarkAndFavourite(state, entry, actions)
                 GoToSeries(item, actions)
                 Overview(overview)
             }
+            if (extras != null) ExtrasBlock(extras, session)
         }
     }
 }
