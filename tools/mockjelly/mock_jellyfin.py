@@ -29,6 +29,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # python -I does not add the script folder
 import mock_admin  # noqa: E402
 import mock_manage  # noqa: E402
+import mock_lists  # noqa: E402
 
 SERVER_ID = "0123456789abcdef0123456789abcdef"
 USER_ID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -135,12 +136,14 @@ def build_catalogue():
                      "Runtime": 45 * 60 * TICKS, "Overview": f"Episode {ep} of season {sn} of {title}.", "Aspect": 1.778, "Year": 2015 + s * 3 + sn})
     HIDDEN[KID_ID] = {guid("series-2"), *descendants(guid("series-2"))}  # kid never sees Night Shift
     mock_admin.setup(SERVER_ID, USER_ID, USER_NAME, guid, NOW, [(FILMS_ID, "Films", "movies"), (TV_ID, "TV", "tvshows")], tokens=TOKENS, items=ITEMS)
+    mock_lists.seed(sys.modules[__name__])  # Milestone 11: people, trailers, collections, playlists, photos and home videos
     setup_manage()
 
 
 def setup_manage():
     """Milestone 10: the management routes (mock_manage.py) over this catalogue."""
     mock_manage.setup(ITEMS, guid, norm, mock_admin.may_delete, lambda colour, w, h: png({"Id": f"{colour:06x}"}, w, h))
+    mock_lists.setup(sys.modules[__name__])
 
 
 HIDDEN = {}  # user id -> the item ids that user is not allowed to see (404 by id, left out of every list)
@@ -149,7 +152,7 @@ HIDDEN = {}  # user id -> the item ids that user is not allowed to see (404 by i
 def visible(item_id, uid=None):
     if item_id in mock_manage.S.get("deleted", ()):  # deleted from the server (Milestone 10): gone for everyone
         return False
-    return item_id not in HIDDEN.get(uid or current_user(), ())
+    return item_id not in HIDDEN.get(uid or current_user(), ()) and not mock_lists.hidden(item_id, uid or current_user())
 
 
 # ----------------------------------------------------------------- playback
@@ -163,7 +166,7 @@ HLS_SEGMENT_RE = re.compile(r"hls/(seg\d+\.ts)")
 
 
 def playable(item):
-    return item["Type"] in ("Movie", "Episode")
+    return item["Type"] in ("Movie", "Episode", "Video", "Trailer")
 
 
 def flag(body, q, name):
@@ -183,6 +186,7 @@ def media_source(item_id, direct_play, direct_stream, play_session_id, transcodi
          "SupportsExternalStream": True, "DeliveryMethod": "External", "IsDefault": False, "DisplayTitle": "English - SubRip - External"},
         {"Index": 3, "Type": "Subtitle", "Codec": "ass", "Language": "jpn", "IsExternal": True, "IsTextSubtitleStream": True,
          "SupportsExternalStream": True, "DeliveryMethod": "External", "IsDefault": False, "DisplayTitle": "Japanese - ASS - External"},
+        *mock_lists.added_streams(item_id),  # subtitles fetched from the internet (Milestone 11)
     ]
     source = {"Protocol": "File", "Id": item_id, "Type": "Default", "Container": "mp4", "Name": ITEMS[item_id]["Name"], "RunTimeTicks": CLIP_TICKS,
               "Size": (MEDIA_DIR / "clip.mp4").stat().st_size, "Bitrate": 1_000_000, "IsRemote": False, "SupportsTranscoding": True,
@@ -323,6 +327,7 @@ def dto(item):
     if item["IsFolder"]:
         out["ChildCount"] = len(CHILDREN.get(item["Id"], []))
         out["RecursiveItemCount"] = len(episodes_of(item["Id"])) or len([c for c in descendants(item["Id"]) if ITEMS[c]["Type"] == "Movie"])
+    mock_lists.decorate(item, out)  # Milestone 11: studios, tags, photo size, collection and playlist counts
     return out
 
 
@@ -358,7 +363,10 @@ def list_items(q):
     parent = norm(q.get("parentid", [""])[0])
     recursive = q.get("recursive", ["false"])[0].lower() == "true"
     ids = {norm(i) for i in csv(q, "ids")}
-    if parent:
+    held = mock_lists.members(parent) if parent else None  # a collection's or playlist's own entries (Milestone 11)
+    if held is not None:
+        pool = held
+    elif parent:
         pool = descendants(parent) if recursive else CHILDREN.get(parent, [])
     else:  # like Jellyfin, ids name items wherever they are
         pool = [i for i in ORDER if ids or recursive or ITEMS[i]["Type"] == "CollectionFolder"]
@@ -368,6 +376,8 @@ def list_items(q):
     for iid in pool:
         item, st = ITEMS[iid], peek(iid)
         if not visible(iid) or ids and iid not in ids or types and item["Type"].lower() not in types or term and term not in item["Name"].lower():
+            continue
+        if item.get("Aux") and not types and not ids or not mock_lists.keep(item, q):  # people, trailers and extras are not plain list rows
             continue
         played = user_data(item)["Played"]
         if "isunplayed" in filters and played or "isplayed" in filters and not played or "isfavorite" in filters and not st["fav"]:
@@ -783,6 +793,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, True)
         user = mock_admin.S.get("users", {}).get(current_user(), {})
         admin = bool(user and user["Policy"]["IsAdministrator"] and not mock_admin.CONFIG["admin_forbidden"])
+        if mock_lists.handle(self, method, path, q, raw, current_user()):
+            return
         if mock_manage.handle(self, method, path, q, raw, current_user(), admin):
             return
         if mock_admin.handle(self, method, path, q, raw, token):
@@ -834,13 +846,17 @@ class Handler(BaseHTTPRequestHandler):
             source = media_source(target["Id"], flag(body, q, "EnableDirectPlay"), flag(body, q, "EnableDirectStream"), session, transcoding)
             if transcoding:
                 new_session(session, target["Id"])
-            return self.reply(200, {"MediaSources": [source], "PlaySessionId": session})
+            sources = mock_lists.versions(target, source)  # Milestone 11: a film with two versions answers both, or the one asked for
+            wanted = str(body.get("MediaSourceId") or q.get("mediasourceid", [""])[0])
+            if wanted:
+                sources = [next((s for s in sources if s["Id"] == wanted), sources[0])]
+            return self.reply(200, {"MediaSources": sources, "PlaySessionId": session})
         target = item(segs[1]) if method == "GET" and low[0] == "videos" and len(segs) > 1 else None
         if target and playable(target):
             if len(segs) == 3 and low[2] == "stream":
                 return self.clip(self.headers.get("Range", ""))  # a key in the query was already refused (dispatch)
-            if len(segs) == 6 and low[3] == "subtitles" and SUBTITLE_FILE_RE.fullmatch(low[5]) and segs[4].isdigit() and int(segs[4]) in SUBTITLES:
-                name, content_type = SUBTITLES[int(segs[4])]
+            if len(segs) == 6 and low[3] == "subtitles" and SUBTITLE_FILE_RE.fullmatch(low[5]) and segs[4].isdigit() and (int(segs[4]) in SUBTITLES or mock_lists.is_added(target["Id"], int(segs[4]))):
+                name, content_type = SUBTITLES.get(int(segs[4]), SUBTITLES[2])
                 return self.reply(200, raw=(MEDIA_DIR / name).read_bytes(), content_type=content_type)
             if segs[0] == "videos":  # the lower-case path the mock puts in its own TranscodingUrl
                 return self.hls(target["Id"], "/".join(segs[2:]), q)
@@ -926,7 +942,7 @@ class Handler(BaseHTTPRequestHandler):
             if low == "/users/me":
                 return self.reply(200, {"Name": USER_NAME, "ServerId": SERVER_ID, "Id": USER_ID, "HasPassword": True})
             if low == "/userviews":
-                return self.reply(200, result([ITEMS[FILMS_ID], ITEMS[TV_ID]]))
+                return self.reply(200, result([ITEMS[FILMS_ID], ITEMS[TV_ID], *mock_lists.libraries()]))
             if low == "/items":
                 return self.reply(200, list_items(q))
             if low == "/items/latest":
@@ -937,7 +953,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(200, next_up(q))
             if len(segs) == 2 and segs[0] == "items" and item(segs[1]):
                 # One item: Jellyfin's GetItem fills every field, CanDelete (for this user) among them.
-                return self.reply(200, {**dto(item(segs[1])), "CanDelete": mock_admin.may_delete(current_user())})
+                row = {**dto(item(segs[1])), "CanDelete": mock_admin.may_delete(current_user())}
+                download_fields(row, item(segs[1]), {"mediasources"})  # Milestone 11: MediaSources and MediaStreams (a download adds subtitle streams)
+                mock_lists.detail(item(segs[1]), row)
+                return self.reply(200, row)
             if len(segs) == 3 and segs[0] == "shows" and item(segs[1]) and item(segs[1])["Type"] == "Series":
                 series = item(segs[1])
                 if segs[2] == "seasons":
@@ -985,8 +1004,11 @@ class Handler(BaseHTTPRequestHandler):
         if mock_manage.stored(item["Id"]) is None and not (kind == "primary" and not item.get("NoImage") or kind == "backdrop" and item.get("Backdrop")):
             return self.reply(404)
         aspect = 1.778 if kind == "backdrop" else item["Aspect"]
-        width = min(intq(q, "maxwidth") or intq(q, "width") or intq(q, "fillwidth") or 300, 1000)
-        height = min(intq(q, "maxheight") or intq(q, "height") or intq(q, "fillheight") or round(width / aspect), 1500)
+        cap_w, cap_h = (1920, 1920) if item["Type"] == "Photo" else (1000, 1500)  # a photo is drawn at screen size (Milestone 11)
+        width = min(intq(q, "maxwidth") or intq(q, "width") or intq(q, "fillwidth") or 300, cap_w)
+        height = min(intq(q, "maxheight") or intq(q, "height") or intq(q, "fillheight") or round(width / aspect), cap_h)
+        if item["Type"] == "Photo":  # fit inside the box, keeping the shape
+            width, height = min(width, round(height * aspect)), min(height, round(width / aspect))
         etag = f'"{image_tag(item)}-{kind}-{width}x{height}"'
         headers = {"ETag": etag, "Cache-Control": "public, max-age=3600"}
         if self.headers.get("If-None-Match") == etag:

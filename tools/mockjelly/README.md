@@ -256,3 +256,18 @@ Set `H` as above. `SID`, `TID` and `UID` are ids from the lists.
 | `GET /mock/admin-events` | Every admin action received, newest last (`Kind`, `Target`, `Query`; a message's `Header` and `Text`) | `curl -H "$H" http://127.0.0.1:8096/mock/admin-events` |
 
 Run the admin tests with `python -I tools/mockjelly/test_mock_admin.py`.
+
+## Milestone 11 routes (playlists, collections, browsing, subtitles)
+
+In `mock_lists.py`; tests in `test_mock_lists.py` (`python -I tools/mockjelly/test_mock_lists.py`). Same token rules as above. **Not Jellyfin; test only.**
+
+| Area | Behaviour |
+|---|---|
+| Playlists | `Saturday films` (ben, private, 4 entries) and `Family favourites` (ben, public, 3). `GET /Items?includeItemTypes=Playlist` lists the caller's own and public ones. `GET /Playlists/{id}/Items` adds `PlaylistItemId` and pages. `POST /Playlists` (JSON `Name`, `Ids`, `UserId`, `IsPublic`), `POST /Playlists/{id}` (rename), `POST`/`DELETE /Playlists/{id}/Items` (`ids`, `entryIds`), `POST /Playlists/{id}/Items/{entry}/Move/{index}`. **A non-owner's change is 403**; a private playlist is 404 to others. Delete is `DELETE /Items/{id}`: **401 for a user without `EnableContentDeletion` (kid), while `/Users/Me` stays 200** |
+| Collections | `Harbour Collection` and `Family Night` (`BoxSet`); `GET /Items?parentId={collection}` lists its films. `POST /Collections` (`name`, `ids`), `POST`/`DELETE /Collections/{id}/Items` need `EnableCollectionManagement` (ben has it; anna and kid get **403**) |
+| One film with everything | `The Broken Orchard` (film-12): 5 people (one with no picture), a local trailer, an online YouTube trailer in `RemoteTrailers`, two extras, **two versions** (`MediaSources`; `PlaybackInfo` takes `MediaSourceId`, else answers both), similar films. `GET /Items/{id}/LocalTrailers`, `/SpecialFeatures` (arrays), `/Similar?limit=` |
+| People | `Person` items with pictures (`GET /Items/{personId}`, `/Persons?searchTerm=`); `GET /Items?personIds=` lists their films and series |
+| Browsing | `GET /Items/Filters`, `/Genres`, `/Studios` (`parentId`, `searchTerm`, paging); `GET /Items` also takes `genreIds`, `studioIds`, `years`, `officialRatings`, `tags`, `nameStartsWith`, `nameLessThan` (a bad id or year is 400). People, trailers and extras are left out of plain lists |
+| Subtitles | `GET /Items/{id}/RemoteSearch/Subtitles/{lang}` (3 letters, else 400; 3 text-only results, no addresses) and `POST .../Subtitles/{subtitleId}` need `EnableSubtitleManagement` (ben; others **403**). A download adds a subtitle stream (Index 4 up) to the item's `MediaStreams` and `PlaybackInfo` after 3 seconds. `/Users/Me` carries `Configuration.SubtitleLanguagePreference` (ben `eng`, anna `fra`, kid empty) |
+| Photos, home videos | `/UserViews` also lists `Photos` (`photos`: an album of 3 photos, 2 loose; one named `2019 beach` for the "#" jump) and `Home videos` (`homevideos`: 2 videos, a photo, a folder with a video). Photo pictures are drawn up to 1,920 px, fitted to the box |
+| `GET /mock/lists-events` | What the app did (`Kind`, `Target`, `Query`), newest last |
