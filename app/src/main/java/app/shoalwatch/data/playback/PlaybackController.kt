@@ -155,7 +155,7 @@ class PlaybackController internal constructor(
         val c = current
         val plan = c?.resolved?.plan
         if (c == null || plan == null) return publish()
-        val wanted = trackControl.want(c) { it.copy(quality = quality) }.also { c.startPaused = phase == Phase.PAUSED } // a reload while paused loads paused
+        val wanted = trackControl.want(c) { it.copy(quality = quality) }.also { if (phase == Phase.PAUSED) c.startPaused = true } // a reload while paused loads paused (never clears an earlier mark)
         reload(c, stop = Stop.NORMAL) { resolver.resolve(session, wanted, TrackRules.burnInFormat(plan.copy(request = wanted))) }
     }
 
