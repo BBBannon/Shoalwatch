@@ -293,3 +293,30 @@ class FakeDiscover : app.shoalwatch.data.discover.Discover {
     override suspend fun studios(s: Session, parentId: String?, startIndex: Int) = run("studios:$parentId:$startIndex") { one(studios, startIndex) }
     override suspend fun searchMore(s: Session, term: String) = run("searchMore:$term") { searchExtras }
 }
+
+/** A [app.shoalwatch.data.subtitles.RemoteSubtitles] for ViewModel tests: scripted answers, every call recorded in [calls], [failure] thrown by everything when set. */
+class FakeRemoteSubtitles : app.shoalwatch.data.subtitles.RemoteSubtitles {
+    var found = emptyList<app.shoalwatch.data.subtitles.SubtitleCandidate>()
+    var notAllowed = false
+    var count = 0
+    var arrival = app.shoalwatch.data.subtitles.Arrival.Arrived
+    var language = "eng"
+    var failure: app.shoalwatch.core.AppError? = null
+    val calls = mutableListOf<String>()
+
+    private fun <T> run(call: String, answer: () -> T): T {
+        calls += call
+        failure?.let { throw it }
+        return answer()
+    }
+
+    override suspend fun search(s: Session, itemId: String, language: String) = run("search:$itemId:$language") {
+        if (notAllowed) app.shoalwatch.data.subtitles.SubtitleSearch.NotAllowed else app.shoalwatch.data.subtitles.SubtitleSearch.Found(found)
+    }
+    override suspend fun download(s: Session, itemId: String, subtitleId: String) = run("download:$itemId:$subtitleId") {
+        if (notAllowed) app.shoalwatch.data.subtitles.SubtitleDownload.NotAllowed else app.shoalwatch.data.subtitles.SubtitleDownload.Requested
+    }
+    override suspend fun subtitleCount(s: Session, itemId: String) = run("subtitleCount:$itemId") { count }
+    override suspend fun awaitArrival(s: Session, itemId: String, countBefore: Int) = run("awaitArrival:$itemId:$countBefore") { arrival }
+    override suspend fun preferredLanguage(s: Session) = run("preferredLanguage") { language }
+}

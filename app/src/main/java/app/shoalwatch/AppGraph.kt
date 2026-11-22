@@ -394,6 +394,10 @@ class AppGraph(internal val appContext: Context) {
     private val discoverGateway: app.shoalwatch.data.discover.api.DiscoverGateway by lazy { app.shoalwatch.data.discover.api.DiscoverGateway(serverApi) }
     /** What the detail extras, person, filtered-browse, genre, studio and search-extras screens call. */
     val discover: app.shoalwatch.data.discover.Discover get() = discoverGateway
+    // ---- Subtitles from the internet (Milestone 11, data/subtitles). Live only; always through the user's own server.
+    private val subtitlesGateway: app.shoalwatch.data.subtitles.api.SubtitlesGateway by lazy { app.shoalwatch.data.subtitles.api.SubtitlesGateway(serverApi) }
+    /** What the subtitle search sheet calls. */
+    val remoteSubtitles: app.shoalwatch.data.subtitles.RemoteSubtitles get() = subtitlesGateway
     /** Pictures from the photo picker, read through the content resolver and re-encoded on the phone. */
     val pickedImages: app.shoalwatch.data.manage.PickedImages by lazy { app.shoalwatch.data.manage.PickedImages(appContext.contentResolver::openInputStream) }
     /** Approving a Quick Connect code from Settings: only while the asking profile is still the active one. */

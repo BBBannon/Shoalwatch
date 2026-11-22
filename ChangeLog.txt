@@ -1,3 +1,4 @@
+v1.208 — 22/11/2026 — Behind the scenes: the app can now search for subtitles on the internet through your server, ask it to download one, and check that it has arrived, ready for the screens that come next
 v1.207 — 22/11/2026 — Behind the scenes: the app can now read cast, trailers, similar titles, people, genres, studios and filtered lists from your server, ready for the screens that come next
 v1.206 — 22/11/2026 — Behind the scenes: playlist and collection lists stay correct when you change them while they are still loading, and a wrong name or selection is reported instead of failing
 v1.205 — 22/11/2026 — The test server can now pretend to have playlists, collections, cast, trailers, online subtitles, photos and home videos
