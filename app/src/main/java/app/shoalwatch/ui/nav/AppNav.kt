@@ -224,6 +224,8 @@ private fun AppNavHost(graph: AppGraph, start: String, openTab: String?, onTabOp
             player = { id, from, queue, source -> PlayerRoute(graph, nav, id, from, queue, source) },
             downloadedSeries = { id -> OfflineSeriesRoute(graph, nav, id) },
             storage = { StorageRoute(graph, nav) },
+            playlists = { PlaylistsRoute(graph, nav) },
+            playlist = { id -> PlaylistRoute(graph, nav, id) },
         )
         composable(Routes.SERVERS) { ServersRoute(graph, nav) }
         composable(Routes.DOWNLOAD_SETTINGS) { DownloadSettingsRoute(graph, nav) }
@@ -305,8 +307,14 @@ internal fun NavGraphBuilder.browsingDestinations(
     player: @Composable (itemId: String, from: StartFrom, queueToken: String?, sourceId: String?) -> Unit,
     downloadedSeries: @Composable (seriesId: String) -> Unit,
     storage: @Composable () -> Unit = {},
+    playlists: @Composable () -> Unit = {},
+    playlist: @Composable (playlistId: String) -> Unit = {},
 ) {
     composable(Routes.STORAGE) { storage() }
+    composable(Routes.PLAYLISTS) { playlists() }
+    composable(Routes.PLAYLIST, listOf(navArgument(Routes.ARG_PLAYLIST) { type = NavType.StringType })) {
+        playlist(it.arguments?.getString(Routes.ARG_PLAYLIST).orEmpty())
+    }
     composable(Routes.DOWNLOADED_SERIES, listOf(navArgument(Routes.ARG_SERIES) { type = NavType.StringType })) {
         downloadedSeries(it.arguments?.getString(Routes.ARG_SERIES).orEmpty())
     }

@@ -104,6 +104,9 @@ class DetailActions(
     val onManage: (() -> Unit)? = null,
     /** Milestone 10: "Delete from server" for a profile that may delete but is no administrator (who has it under Manage). */
     val onDelete: (() -> Unit)? = null,
+    /** Milestone 11: Add to playlist and Add to collection open the add-to picker; null hides them. */
+    val onAddToPlaylist: (() -> Unit)? = null,
+    val onAddToCollection: (() -> Unit)? = null,
 )
 
 /**
@@ -267,6 +270,8 @@ internal fun MarkAndFavourite(state: DetailUiState, entry: ItemWithUserData, act
         manage != null -> app.shoalwatch.ui.components.SecondaryButton(stringResource(R.string.manage_button), manage, Modifier.fillMaxWidth())
         delete != null -> app.shoalwatch.ui.components.SecondaryButton(stringResource(R.string.select_delete_server), delete, Modifier.fillMaxWidth())
     }
+    actions.onAddToPlaylist?.let { app.shoalwatch.ui.components.SecondaryButton(stringResource(R.string.select_add_to_playlist), it, Modifier.fillMaxWidth()) }
+    actions.onAddToCollection?.let { app.shoalwatch.ui.components.SecondaryButton(stringResource(R.string.select_add_to_collection), it, Modifier.fillMaxWidth()) }
 }
 
 /** An episode's "Go to series". */

@@ -122,6 +122,7 @@ internal fun HomeRoute(graph: AppGraph, nav: NavHostController, fresh: Boolean) 
             onSubmitSwitch = vm::submitSwitch,
             onDismissSwitch = vm::dismissSwitch,
             onOpenSettings = { nav.navigate(Routes.SETTINGS) },
+            onOpenPlaylists = { nav.navigate(Routes.PLAYLISTS) { launchSingleTop = true } },
         )
     }
     val bulk = rememberBulkHost(graph, nav)
@@ -203,7 +204,9 @@ internal fun DetailRoute(graph: AppGraph, nav: NavHostController, itemId: String
     val canDelete = bulk.state.canDelete && !canManage && shown != null
     app.shoalwatch.ui.components.BulkNoticesEffect(bulk.notices, snackbar)
     bulk.state.deleteAsk?.let { ask -> app.shoalwatch.ui.components.DeleteFromServerDialog(ask, bulk.onKeepCopy, bulk.onConfirmDelete, bulk.onDismissDelete, busy = bulk.state.running) }
-    val actions = remember(vm, nav, canManage, canDelete, shown, strings) {
+    val picker = bulk.picker
+    if (picker != null) app.shoalwatch.ui.lists.ListPickerEffects(picker, snackbar)
+    val actions = remember(vm, nav, canManage, canDelete, shown, strings, picker) {
         DetailActions(
             onBack = { nav.popBackStack() },
             onRefresh = vm::refresh,
@@ -217,6 +220,12 @@ internal fun DetailRoute(graph: AppGraph, nav: NavHostController, itemId: String
             onManage = if (canManage) ({ nav.navigate(app.shoalwatch.ui.manage.ManageRoutes.hub(itemId)) { launchSingleTop = true } }) else null,
             onDelete = if (canDelete && shown != null) ({
                 bulk.onApply(listOf(app.shoalwatch.ui.browse.BulkItem(shown.id, shown.sheetTitle(strings), shown.kind, shown.seriesId)), app.shoalwatch.ui.browse.BulkAction.DELETE_FROM_SERVER)
+            }) else null,
+            onAddToPlaylist = if (picker != null && shown != null) ({
+                picker.onOpen(listOf(app.shoalwatch.ui.browse.BulkItem(shown.id, shown.sheetTitle(strings), shown.kind, shown.seriesId)), app.shoalwatch.ui.lists.ListKind.PLAYLIST)
+            }) else null,
+            onAddToCollection = if (picker != null && shown != null) ({
+                picker.onOpen(listOf(app.shoalwatch.ui.browse.BulkItem(shown.id, shown.sheetTitle(strings), shown.kind, shown.seriesId)), app.shoalwatch.ui.lists.ListKind.COLLECTION)
             }) else null,
         )
     }
@@ -325,6 +334,41 @@ internal fun OfflineSeriesRoute(graph: AppGraph, nav: NavHostController, seriesI
         OfflineSeriesScreen(state, actions, vm.messages, snackbar)
         androidx.compose.material3.SnackbarHost(snackbar, androidx.compose.ui.Modifier.align(androidx.compose.ui.Alignment.BottomCenter).navigationBarsPadding())
     } }
+}
+
+/** The profile's playlists (Milestone 11): not a tab, reached from Home's Playlists card. */
+@Composable
+internal fun PlaylistsRoute(graph: AppGraph, nav: NavHostController) {
+    val vm = graphViewModel { app.shoalwatch.ui.lists.PlaylistsViewModel(graph.serverCatalog, graph.lists) }
+    val state by vm.state.collectAsStateWithLifecycle()
+    val snackbar = remember { SnackbarHostState() }
+    val actions = remember(vm, nav) {
+        app.shoalwatch.ui.lists.PlaylistsActions(
+            onBack = { nav.popBackStack() }, onOpen = nav::open, onRetry = vm::retry, onNew = vm::startCreate, onCreate = vm::create,
+            onCancelCreate = vm::cancelCreate, onOpenServers = { nav.navigate(Routes.SERVERS) },
+        )
+    }
+    app.shoalwatch.ui.lists.PlaylistsScreen(state, actions, vm.name, vm.notices, snackbar)
+}
+
+/** One playlist (Milestone 11). Play and Shuffle open the player carrying the queue's token; deleting it leaves the screen. */
+@Composable
+internal fun PlaylistRoute(graph: AppGraph, nav: NavHostController, playlistId: String) {
+    val vm = graphViewModel(key = playlistId) { app.shoalwatch.ui.lists.PlaylistViewModel(playlistId, graph.serverCatalog, graph.lists, graph.playQueues, graph.downloads) }
+    val state by vm.state.collectAsStateWithLifecycle()
+    val snackbar = remember { SnackbarHostState() }
+    LaunchedEffect(vm, nav) { vm.launches.collect { nav.navigate(Routes.player(it.itemId, StartFrom.BEGINNING, it.token)) } }
+    LaunchedEffect(state.deleted) { if (state.deleted) nav.popBackStack() }
+    val actions = remember(vm, nav) {
+        app.shoalwatch.ui.lists.PlaylistActions(
+            onBack = { nav.popBackStack() }, onOpen = nav::open, onRetry = vm::retry,
+            onPlay = { vm.play(shuffle = false) }, onShuffle = { vm.play(shuffle = true) }, onDownloadAll = vm::downloadAll,
+            onMove = vm::move, onRemove = vm::remove, onAskRename = vm::startRename, onRename = vm::rename, onCancelRename = vm::cancelRename,
+            onAskDelete = vm::askDelete, onConfirmDelete = vm::confirmDelete, onCancelDelete = vm::cancelDelete,
+            onOpenServers = { nav.navigate(Routes.SERVERS) },
+        )
+    }
+    app.shoalwatch.ui.lists.PlaylistScreen(state, actions, vm.name, vm.notices, snackbar)
 }
 
 /**

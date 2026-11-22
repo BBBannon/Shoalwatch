@@ -9,6 +9,8 @@ import androidx.navigation.NavHostController
 import app.shoalwatch.AppGraph
 import app.shoalwatch.ui.browse.BulkHost
 import app.shoalwatch.ui.browse.BulkViewModel
+import app.shoalwatch.ui.lists.ListPickerHost
+import app.shoalwatch.ui.lists.ListPickerViewModel
 
 /**
  * Multi-select for a browsing screen (Milestone 10): one [BulkViewModel] per screen entry, keyed apart from the screen's own.
@@ -24,11 +26,13 @@ internal fun rememberBulkHost(graph: AppGraph, nav: NavHostController, canDownlo
     }
     val state by vm.state.collectAsStateWithLifecycle()
     LaunchedEffect(vm, nav) { vm.deleted.collect { nav.leaveItemPage(it) } }
-    return remember(vm, nav, state, canDownload) {
+    val picker = rememberListPicker(graph)
+    return remember(vm, nav, state, canDownload, picker) {
         BulkHost(
             state, vm.notices, vm::apply, vm::setKeepCopy, vm::confirmDelete, vm::dismissDelete,
             onManage = { nav.navigate(app.shoalwatch.ui.manage.ManageRoutes.hub(it)) { launchSingleTop = true } },
             canDownload = canDownload,
+            picker = picker,
         )
     }
 }
@@ -40,4 +44,14 @@ internal fun rememberBulkHost(graph: AppGraph, nav: NavHostController, canDownlo
 internal fun NavHostController.leaveItemPage(itemId: String) {
     val args = currentBackStackEntry?.arguments ?: return
     if (args.getString(Routes.ARG_ITEM) == itemId || args.getString(Routes.ARG_SERIES) == itemId) popBackStack()
+}
+
+/** The add-to picker (Milestone 11): one [ListPickerViewModel] per screen entry, keyed apart from the screen's own. */
+@Composable
+internal fun rememberListPicker(graph: AppGraph): ListPickerHost {
+    val vm = graphViewModel(key = "picker") { ListPickerViewModel(graph.serverCatalog, graph.lists) }
+    val state by vm.state.collectAsStateWithLifecycle()
+    return remember(vm, state) {
+        ListPickerHost(state, vm.notices, vm.name, vm::open, vm::choose, vm::startCreate, vm::backToList, vm::create, vm::retry, vm::dismiss)
+    }
 }

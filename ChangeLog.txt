@@ -1,3 +1,4 @@
+v1.210 — 22/11/2026 — You can now make and open playlists from a Playlists card on Home, play them in order or shuffled, download them, reorder, rename, remove and delete them, and add films and episodes to a playlist or collection from the selection bar or a film's page
 v1.209 — 22/11/2026 — Behind the scenes: the player can now follow a list of films and episodes in order or shuffled, with Up next, Next and Previous, and can play a chosen version of a film, ready for the Play, Shuffle and Version buttons that come next
 v1.208 — 22/11/2026 — Behind the scenes: the app can now search for subtitles on the internet through your server, ask it to download one, and check that it has arrived, ready for the screens that come next
 v1.207 — 22/11/2026 — Behind the scenes: the app can now read cast, trailers, similar titles, people, genres, studios and filtered lists from your server, ready for the screens that come next

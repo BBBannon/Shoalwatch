@@ -118,6 +118,8 @@ fun BulkAction.label(): Int = when (this) {
     BulkAction.UNFAVOURITE -> R.string.select_unfavourite
     BulkAction.DOWNLOAD -> R.string.select_download
     BulkAction.REMOVE_DOWNLOAD -> R.string.select_remove_download
+    BulkAction.ADD_TO_PLAYLIST -> R.string.select_add_to_playlist
+    BulkAction.ADD_TO_COLLECTION -> R.string.select_add_to_collection
     BulkAction.DELETE_FROM_SERVER -> R.string.select_delete_server
     BulkAction.MANAGE -> R.string.select_manage
     BulkAction.MORE -> R.string.select_more

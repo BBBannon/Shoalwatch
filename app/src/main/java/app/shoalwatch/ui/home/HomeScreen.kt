@@ -98,6 +98,8 @@ class HomeActions(
     val onDismissSwitch: () -> Unit = {},
     /** The account menu's "Settings" (Milestone 7). */
     val onOpenSettings: () -> Unit = {},
+    /** The Playlists card at the end of the libraries (Milestone 11). */
+    val onOpenPlaylists: () -> Unit = {},
 )
 
 /**
