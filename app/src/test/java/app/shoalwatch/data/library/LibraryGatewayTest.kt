@@ -17,7 +17,7 @@ class LibraryGatewayTest : LibraryGatewayTestBase() {
 
     // ---- views
 
-    @Test fun viewsAsksForTheUsersViewsAndKeepsOnlyFilmsTvCollectionsAndMixed() {
+    @Test fun viewsAsksForTheUsersViewsAndKeepsFilmsTvCollectionsHomeVideosAndMixedSkippingMusicPlaylistsAndBadIds() {
         enqueueFixture("views.json")
         val views = runBlocking { gateway.views(session) }
         assertRequest("GET", "/UserViews", mapOf("userId" to U1))
@@ -26,6 +26,7 @@ class LibraryGatewayTest : LibraryGatewayTestBase() {
                 LibraryView(FILMS, "Films", LibraryKind.MOVIES),
                 LibraryView(TV, "TV Shows", LibraryKind.TV),
                 LibraryView("c0ffee00000000000000000000000004", "Collections", LibraryKind.BOX_SETS),
+                LibraryView("c0ffee00000000000000000000000005", "Home videos", LibraryKind.HOME_VIDEOS),
                 LibraryView("c0ffee00000000000000000000000006", "Mixed stuff", LibraryKind.MIXED),
             ),
             views,
