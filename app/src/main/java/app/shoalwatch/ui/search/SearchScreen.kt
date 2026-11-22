@@ -103,9 +103,9 @@ class SearchActions(
     val onRetry: () -> Unit,
     val onOpen: (Destination) -> Unit,
     val onOpenServers: () -> Unit,
-    /** Milestone 11: a person from the results opens their page; a genre opens the filtered list of [parentId] at that genre. */
+    /** Milestone 11: a person from the results opens their page; a genre opens the filtered list, across every library, at that genre. */
     val onOpenPerson: (personId: String) -> Unit = {},
-    val onOpenGenre: (parentId: String, genreId: String) -> Unit = { _, _ -> },
+    val onOpenGenre: (genreId: String) -> Unit = {},
 )
 
 /**
@@ -251,12 +251,11 @@ private fun ResultList(state: SearchUiState, actions: SearchActions, selection: 
             item(key = "heading-people") { SectionHeader(stringResource(R.string.search_heading_people), Modifier.padding(top = 12.dp)) }
             items(state.people.withIndex().toList(), key = { "people-${it.index}" }) { (_, person) -> PersonRow(person, onOpen = { actions.onOpenPerson(person.id) }) }
         }
-        val genreLibrary = state.genreLibraryId
-        if (genreLibrary != null && state.genres.isNotEmpty()) {
+        if (state.genres.isNotEmpty()) {
             item(key = "heading-genres") { SectionHeader(stringResource(R.string.search_heading_genres), Modifier.padding(top = 12.dp)) }
             items(state.genres, key = { "genre-${it.id}" }) { genre ->
                 Row(
-                    Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(role = Role.Button, onClick = { actions.onOpenGenre(genreLibrary, genre.id) }).padding(horizontal = Gutter, vertical = 8.dp),
+                    Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(role = Role.Button, onClick = { actions.onOpenGenre(genre.id) }).padding(horizontal = Gutter, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) { Text(genre.name, style = MaterialTheme.typography.bodyLarge) }
             }

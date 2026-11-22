@@ -124,6 +124,16 @@ class ExtrasViewModelTest {
         assertNull(v.takeVersion())
     }
 
+    @Test fun aDoubleTapOnPlayTakesTheChosenVersionOnceAndKeepsItForTheSecondTapToIgnore() = runTest(main.dispatcher) {
+        discover.extras = full
+        val v = vm()
+        v.chooseVersion("b".repeat(32))
+        val sent = mutableListOf<String?>()
+        v.once { sent += v.takeVersion() }
+        v.once { sent += v.takeVersion() }
+        assertEquals(listOf<String?>("b".repeat(32)), sent)
+    }
+
     @Test fun aSecondTapBeforeThePageIsBackDoesNothingAndResumingAllowsItAgain() = runTest(main.dispatcher) {
         val v = vm()
         var opened = 0
@@ -171,6 +181,7 @@ private class ScriptedDiscover(private val base: FakeDiscover) : Discover by bas
     var workPages: List<List<ItemWithUserData>> = emptyList()
     var gate: CompletableDeferred<Unit>? = null
     val browseCalls = mutableListOf<Pair<BrowseFilter, Int>>()
+    val browseParents = mutableListOf<String?>()
     var browseItems: (BrowseFilter) -> List<ItemWithUserData> = { emptyList() }
     var optionsFailure: AppError? = null
 
@@ -183,8 +194,9 @@ private class ScriptedDiscover(private val base: FakeDiscover) : Discover by bas
         return Page(items, startIndex, workPages.sumOf { it.size }, startIndex + 2, page >= workPages.lastIndex)
     }
 
-    override suspend fun browse(s: Session, parentId: String, shape: ListShape, filter: BrowseFilter, sort: Sort, startIndex: Int): Page<ItemWithUserData> {
+    override suspend fun browse(s: Session, parentId: String?, shape: ListShape, filter: BrowseFilter, sort: Sort, startIndex: Int): Page<ItemWithUserData> {
         browseCalls += filter to startIndex
+        browseParents += parentId
         gate?.await()
         base.failure?.let { throw it }
         val items = browseItems(filter)
@@ -250,7 +262,7 @@ class BrowseViewModelTest {
     private val library = FakeLibrary().also { it.homeFlow(BEN).value = EMPTY_HOME.copy(views = listOf(FILMS)) }
     private val fake = FakeDiscover()
     private val discover = ScriptedDiscover(fake).also { it.browseItems = { listOf(entry(1), entry(2)) } }
-    private fun vm(initial: BrowseFilter = BrowseFilter(), parent: String = FILMS.id) = BrowseViewModel(parent, initial, catalog, library, discover)
+    private fun vm(initial: BrowseFilter = BrowseFilter(), parent: String? = FILMS.id) = BrowseViewModel(parent, initial, catalog, library, discover)
 
     @Test fun readsTheFirstPageOfTheLibraryAndItsFilterChoices() = runTest(main.dispatcher) {
         fake.options = FilterOptions(listOf(2019, 2020), listOf("PG"), listOf("kids"), listOf(Named(id(5), "Comedy")), listOf(Named(id(6), "Acme")))
@@ -328,6 +340,33 @@ class BrowseViewModelTest {
         val v = vm()
         assertEquals(ListsPhase.OFFLINE, v.state.value.phase)
         assertTrue(discover.browseCalls.isEmpty())
+    }
+
+    @Test fun tryAgainAlsoReadsTheFilterChoicesThatFailedWithTheList() = runTest(main.dispatcher) {
+        discover.optionsFailure = AppError.of(AppError.Kind.NETWORK)
+        val v = vm()
+        assertNull(v.state.value.options)
+        discover.optionsFailure = null
+        fake.options = FilterOptions(listOf(2020), emptyList(), emptyList(), emptyList(), emptyList())
+        v.retry()
+        assertEquals(listOf(2020), v.state.value.options?.years)
+    }
+
+    @Test fun anotherProfileStartsFromTheOpeningFilterNotTheLastOnesChoices() = runTest(main.dispatcher) {
+        library.homeFlow(AMY).value = EMPTY_HOME.copy(views = listOf(FILMS))
+        val v = vm(BrowseFilter(genreId = id(5)))
+        v.setYear(2020); v.setStudio(id(6))
+        catalog.activeFlow.value = account(AMY, "amy")
+        assertEquals(BrowseFilter(genreId = id(5)), v.state.value.filter)
+        assertEquals(BrowseFilter(genreId = id(5)), discover.browseCalls.last().first)
+    }
+
+    @Test fun noLibraryBrowsesAcrossAllOfThemSendingNoParentAndNoChoicesRead() = runTest(main.dispatcher) {
+        val v = vm(BrowseFilter(genreId = id(5)), parent = null)
+        assertEquals(ListsPhase.READY, v.state.value.phase)
+        assertEquals(listOf<String?>(null), discover.browseParents)
+        assertEquals(2, v.state.value.list.items.size)
+        assertTrue(fake.calls.none { it.startsWith("filterOptions") })
     }
 
     @Test fun aFolderThatIsNoLibraryListsItsChildrenOfAnyKind() = runTest(main.dispatcher) {

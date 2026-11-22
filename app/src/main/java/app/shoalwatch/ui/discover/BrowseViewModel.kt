@@ -8,6 +8,7 @@ import app.shoalwatch.data.discover.Discover
 import app.shoalwatch.data.discover.FilterOptions
 import app.shoalwatch.data.library.Freshness
 import app.shoalwatch.data.library.ItemWithUserData
+import app.shoalwatch.data.library.ItemKind
 import app.shoalwatch.data.library.Library
 import app.shoalwatch.data.library.ListShape
 import app.shoalwatch.data.library.Sort
@@ -26,6 +27,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+
+/** What a list across every library asks for: films and series, wherever they are. */
+val ALL_LIBRARIES = ListShape(setOf(ItemKind.MOVIE, ItemKind.SERIES), recursive = true)
 
 /** The letters of the bar, in order: "#" (names before A), then A to Z. */
 val BROWSE_LETTERS: List<String> = listOf("#") + ('A'..'Z').map { it.toString() }
@@ -52,8 +56,8 @@ data class BrowseUiState(
  * [initial] is the genre or studio a Genres or Studios page opened this with.
  */
 class BrowseViewModel(
-    private val parentId: String,
-    initial: BrowseFilter,
+    private val parentId: String?,
+    private val initial: BrowseFilter,
     catalog: ServerCatalog,
     private val library: Library,
     private val discover: Discover,
@@ -72,7 +76,8 @@ class BrowseViewModel(
     init {
         viewModelScope.launch {
             catalog.activeSession().collectLatest { s ->
-                head.update { Head(s, if (s == null) ListsPhase.READY else ListsPhase.LOADING, "", null, it.filter, null) }
+                // Ids belong to one server: another profile starts from what this screen was opened with, never the last one's choices.
+                head.value = Head(s, if (s == null) ListsPhase.READY else ListsPhase.LOADING, "", null, initial, null)
                 if (s == null) items.restart(null) else open(s)
             }
         }
@@ -81,6 +86,12 @@ class BrowseViewModel(
     /** Works out what the library holds (the shape of its list), then reads the first page and the filter choices. */
     private suspend fun open(s: Session) {
         items.fail(ListsPhase.LOADING)
+        if (parentId == null) {
+            // Every library at once (a genre from Search): films and series anywhere; there are no per-library choices to offer.
+            head.update { if (it.session == s) it.copy(phase = ListsPhase.READY, shape = ALL_LIBRARIES) else it }
+            start(s, ALL_LIBRARIES, head.value.filter)
+            return
+        }
         val home = try {
             library.home(s).first { it.views.isNotEmpty() || it.viewsFreshness !is Freshness.Refreshing }
         } catch (e: CancellationException) {
@@ -101,8 +112,13 @@ class BrowseViewModel(
         val shape = view?.let { ListShape.forLibrary(it.kind) } ?: ListShape.DIRECT
         head.update { if (it.session == s) it.copy(phase = ListsPhase.READY, title = view?.name.orEmpty(), shape = shape) else it }
         start(s, shape, head.value.filter)
+        loadOptions(s)
+    }
+
+    private suspend fun loadOptions(s: Session) {
+        val parent = parentId ?: return
         val options = try {
-            discover.filterOptions(s, parentId)
+            discover.filterOptions(s, parent)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -147,7 +163,11 @@ class BrowseViewModel(
         if (shape == null) {
             head.update { it.copy(phase = ListsPhase.LOADING) }
             viewModelScope.launch { open(s) }
-        } else items.retry()
+        } else {
+            items.retry()
+            // The choices may have failed with the list (offline): read them again so the filters work once it is back.
+            if (h.options == null) viewModelScope.launch { loadOptions(s) }
+        }
     }
 
     /** A later page failed: that page again. */

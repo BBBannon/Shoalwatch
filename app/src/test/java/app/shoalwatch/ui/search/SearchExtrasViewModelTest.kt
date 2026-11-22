@@ -53,7 +53,6 @@ class SearchExtrasViewModelTest {
         assertEquals(listOf("Ada"), s.people.map { it.name })
         assertEquals(listOf("Comedy"), s.genres.map { it.name })
         assertEquals(listOf("Ada Saga"), s.collections.map { it.item.name })
-        assertEquals(FILMS.id, s.genreLibraryId)
         assertEquals(listOf("searchMore:ada"), discover.calls)
     }
 
@@ -66,6 +65,7 @@ class SearchExtrasViewModelTest {
         assertTrue(s.offline)
         assertEquals(1, s.films.size)
         assertTrue(s.people.isEmpty() && s.genres.isEmpty() && s.collections.isEmpty())
+        assertTrue("nothing is asked of the server offline", discover.calls.isEmpty())
     }
 
     @Test fun theExtrasFailingLeavesTheTitlesAlone() {
@@ -86,13 +86,30 @@ class SearchExtrasViewModelTest {
         assertEquals(SearchPhase.RESULTS, v.state.value.phase)
     }
 
-    @Test fun genresNeedALibraryToOpenIn() {
+    @Test fun genresShowWithNoLibraryToPick() {
         library.homeFlow(BEN).value = EMPTY_HOME
         library.onSearch = { _, _ -> SearchResult(emptyList(), offline = false) }
         discover.searchExtras = SearchExtras(emptyList(), listOf(Named(id(5), "Comedy")), emptyList())
         val v = vm()
         search(v)
-        assertTrue(v.state.value.genres.isEmpty())
-        assertEquals(SearchPhase.EMPTY, v.state.value.phase)
+        assertEquals(listOf("Comedy"), v.state.value.genres.map { it.name })
+    }
+
+    private class Slow(private val base: FakeDiscover, val gate: kotlinx.coroutines.CompletableDeferred<Unit>) : app.shoalwatch.data.discover.Discover by base {
+        override suspend fun searchMore(s: app.shoalwatch.data.servers.Session, term: String): SearchExtras { gate.await(); return base.searchMore(s, term) }
+    }
+
+    @Test fun titlesShowAtOnceAndTheExtrasFollowWhenTheyArrive() {
+        library.onSearch = { _, _ -> SearchResult(listOf(entry(1, name = "Ada Film")), offline = false) }
+        discover.searchExtras = SearchExtras(listOf(ada), emptyList(), emptyList())
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val v = SearchViewModel(catalog, library, FakeConnections(), Slow(discover, gate))
+        search(v)
+        assertEquals(1, v.state.value.films.size)
+        assertTrue(v.state.value.people.isEmpty())
+        gate.complete(Unit)
+        scheduler.runCurrent()
+        assertEquals(1, v.state.value.films.size)
+        assertEquals(listOf("Ada"), v.state.value.people.map { it.name })
     }
 }

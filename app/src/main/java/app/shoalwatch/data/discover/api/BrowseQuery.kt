@@ -37,14 +37,14 @@ internal fun filterText(raw: String, max: Int): String {
  */
 internal fun browseQuery(
     userId: String,
-    parentId: String,
+    parentId: String?,
     shape: ListShape,
     filter: BrowseFilter,
     sort: Sort,
     startIndex: Int,
 ): List<Pair<String, String>> = buildList {
     add("userId" to userId)
-    add("parentId" to normalisedId(parentId))
+    parentId?.let { add("parentId" to normalisedId(it)) }
     add("startIndex" to checkedStart(startIndex).toString())
     add("limit" to DiscoverLimits.PAGE.toString())
     add("sortBy" to sort.sortByWire())

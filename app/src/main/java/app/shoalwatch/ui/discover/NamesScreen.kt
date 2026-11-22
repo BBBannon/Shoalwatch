@@ -1,7 +1,14 @@
 package app.shoalwatch.ui.discover
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -72,6 +79,13 @@ fun NamesScreen(state: NamesUiState, actions: NamesActions) {
                             verticalAlignment = Alignment.CenterVertically,
                         ) { Text(named.name, style = MaterialTheme.typography.bodyLarge) }
                         HorizontalDivider()
+                    }
+                    if (names.loadingMore) item(key = "more") {
+                        val more = stringResource(R.string.library_loading_more)
+                        Box(
+                            Modifier.fillMaxWidth().padding(8.dp).semantics { contentDescription = more; liveRegion = LiveRegionMode.Polite },
+                            contentAlignment = Alignment.Center,
+                        ) { CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 3.dp) }
                     }
                     if (names.moreFailed) item(key = "more-failed") { SecondaryButton(stringResource(R.string.action_retry), actions.onRetry, Modifier.fillMaxWidth().padding(Gutter)) }
                 }

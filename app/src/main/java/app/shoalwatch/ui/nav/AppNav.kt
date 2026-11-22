@@ -101,18 +101,20 @@ internal object Routes {
     const val ARG_GENRE = "genre"
     const val ARG_STUDIO = "studio"
     /** A library's live filtered list, optionally opened at one genre or studio (the Genres and Studios pages). */
-    const val BROWSE = "browse/{$ARG_PARENT}?$ARG_GENRE={$ARG_GENRE}&$ARG_STUDIO={$ARG_STUDIO}"
+    const val BROWSE = "browse?$ARG_PARENT={$ARG_PARENT}&$ARG_GENRE={$ARG_GENRE}&$ARG_STUDIO={$ARG_STUDIO}"
     const val GENRES = "genres/{$ARG_PARENT}"
     const val STUDIOS = "studios/{$ARG_PARENT}"
     fun playlist(playlistId: String) = "playlist/${Uri.encode(playlistId)}"
     fun photo(photoId: String, parentId: String?) = "photo/${Uri.encode(photoId)}" + (parentId?.let { "?$ARG_PARENT=${Uri.encode(it)}" } ?: "")
     fun person(personId: String) = "person/${Uri.encode(personId)}"
-    fun browse(parentId: String, genreId: String? = null, studioId: String? = null): String {
+    /** A library's filtered list; [parentId] null lists films and series of every library (a genre from Search). */
+    fun browse(parentId: String?, genreId: String? = null, studioId: String? = null): String {
         val query = listOfNotNull(
+            parentId?.takeIf { it.isNotEmpty() }?.let { "$ARG_PARENT=${Uri.encode(it)}" },
             genreId?.takeIf { it.isNotEmpty() }?.let { "$ARG_GENRE=${Uri.encode(it)}" },
             studioId?.takeIf { it.isNotEmpty() }?.let { "$ARG_STUDIO=${Uri.encode(it)}" },
         )
-        return "browse/${Uri.encode(parentId)}" + if (query.isEmpty()) "" else query.joinToString("&", prefix = "?")
+        return "browse" + if (query.isEmpty()) "" else query.joinToString("&", prefix = "?")
     }
     fun genres(parentId: String) = "genres/${Uri.encode(parentId)}"
     fun studios(parentId: String) = "studios/${Uri.encode(parentId)}"
@@ -329,7 +331,7 @@ internal fun NavGraphBuilder.browsingDestinations(
     playlists: @Composable () -> Unit = {},
     playlist: @Composable (playlistId: String) -> Unit = {},
     person: @Composable (personId: String) -> Unit = {},
-    browse: @Composable (parentId: String, genreId: String?, studioId: String?) -> Unit = { _, _, _ -> },
+    browse: @Composable (parentId: String?, genreId: String?, studioId: String?) -> Unit = { _, _, _ -> },
     genres: @Composable (parentId: String) -> Unit = {},
     studios: @Composable (parentId: String) -> Unit = {},
 ) {
@@ -344,13 +346,13 @@ internal fun NavGraphBuilder.browsingDestinations(
     composable(
         Routes.BROWSE,
         listOf(
-            navArgument(Routes.ARG_PARENT) { type = NavType.StringType },
+            navArgument(Routes.ARG_PARENT) { type = NavType.StringType; nullable = true; defaultValue = null },
             navArgument(Routes.ARG_GENRE) { type = NavType.StringType; nullable = true; defaultValue = null },
             navArgument(Routes.ARG_STUDIO) { type = NavType.StringType; nullable = true; defaultValue = null },
         ),
     ) {
         val args = it.arguments
-        browse(args?.getString(Routes.ARG_PARENT).orEmpty(), args?.getString(Routes.ARG_GENRE)?.ifEmpty { null }, args?.getString(Routes.ARG_STUDIO)?.ifEmpty { null })
+        browse(args?.getString(Routes.ARG_PARENT)?.ifEmpty { null }, args?.getString(Routes.ARG_GENRE)?.ifEmpty { null }, args?.getString(Routes.ARG_STUDIO)?.ifEmpty { null })
     }
     composable(Routes.GENRES, listOf(navArgument(Routes.ARG_PARENT) { type = NavType.StringType })) { genres(it.arguments?.getString(Routes.ARG_PARENT).orEmpty()) }
     composable(Routes.STUDIOS, listOf(navArgument(Routes.ARG_PARENT) { type = NavType.StringType })) { studios(it.arguments?.getString(Routes.ARG_PARENT).orEmpty()) }

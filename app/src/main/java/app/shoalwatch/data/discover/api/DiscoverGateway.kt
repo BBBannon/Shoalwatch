@@ -83,7 +83,7 @@ internal class DiscoverGateway(private val api: ServerApi) : Discover {
         api.get(s, "/Items", query, BaseItemDtoQueryResult.serializer(), maxBytes = LIST_BYTES).toPage(start, DiscoverLimits.PAGE)
     }
 
-    override suspend fun browse(s: Session, parentId: String, shape: ListShape, filter: BrowseFilter, sort: Sort, startIndex: Int): Page<ItemWithUserData> =
+    override suspend fun browse(s: Session, parentId: String?, shape: ListShape, filter: BrowseFilter, sort: Sort, startIndex: Int): Page<ItemWithUserData> =
         logged("browse") {
             val query = browseQuery(s.userId, parentId, shape, filter, sort, startIndex)
             api.get(s, "/Items", query, BaseItemDtoQueryResult.serializer(), maxBytes = LIST_BYTES).toPage(startIndex, DiscoverLimits.PAGE)

@@ -261,6 +261,11 @@ abstract class DiscoverRenderBase : RenderBase() {
         assertShown(text(R.string.discover_studios_empty))
     }
 
+    @Test fun aLaterPageOfGenresShowsAnAnnouncedSpinner() {
+        show { NamesScreen(NamesUiState(BEN, NamesKind.GENRES, PagedState(ListsPhase.READY, listOf(Named(id(5), "Comedy")), canLoadMore = true, loadingMore = true)), namesActions) }
+        assertDescribed(text(R.string.library_loading_more))
+    }
+
     @Test fun genresAreOfflineWithTryAgain() {
         show { NamesScreen(NamesUiState(BEN, NamesKind.GENRES, PagedState(ListsPhase.OFFLINE)), namesActions) }
         assertShown(text(R.string.lists_offline_title))
@@ -299,20 +304,20 @@ abstract class DiscoverRenderBase : RenderBase() {
 
     private val searchActions = app.shoalwatch.ui.search.SearchActions(
         onQueryChange = {}, onClear = {}, onRetry = {}, onOpen = { done += "open:$it" }, onOpenServers = {},
-        onOpenPerson = { done += "person:$it" }, onOpenGenre = { parent, genre -> done += "genre:$parent:$genre" },
+        onOpenPerson = { done += "person:$it" }, onOpenGenre = { genre -> done += "genre:$genre" },
     )
 
     @Test fun searchShowsPeopleGenresAndCollections() {
         val state = app.shoalwatch.ui.search.SearchUiState(
             phase = app.shoalwatch.ui.search.SearchPhase.RESULTS, session = BEN, query = "ada",
             people = listOf(person(1, "Ada Lovelace", null)), genres = listOf(Named(id(5), "Comedy")),
-            collections = listOf(entry(9, ItemKind.BOX_SET, "Ada Saga")), genreLibraryId = id(1),
+            collections = listOf(entry(9, ItemKind.BOX_SET, "Ada Saga")),
         )
         show { app.shoalwatch.ui.search.SearchScreen(state, searchActions) }
         listOf(R.string.search_heading_people, R.string.search_heading_genres, R.string.search_heading_collections).forEach { assertShown(text(it)) }
         rule.onNodeWithContentDescription("Ada Lovelace").assertHeightIsAtLeast(48.dp).performClick()
         rule.onNode(hasText("Comedy")).assertHeightIsAtLeast(48.dp).performClick()
-        assertEquals(listOf("person:${id(1)}", "genre:${id(1)}:${id(5)}"), done)
+        assertEquals(listOf("person:${id(1)}", "genre:${id(5)}"), done)
     }
 }
 

@@ -58,6 +58,8 @@ class DiscoverNavigationTest {
         assertEquals("browse:$library|null|$genre", go(Routes.browse(library, studioId = genre)))
     }
 
+    @Test fun aGenreWithNoLibraryOpensAcrossAllOfThem() = assertEquals("browse:null|$genre|null", go(Routes.browse(null, genreId = genre)))
+
     @Test fun genresAndStudiosOpenForALibrary() {
         assertEquals("genres:$library", go(Routes.genres(library)))
         assertEquals("studios:$library", go(Routes.studios(library)))

@@ -27,8 +27,8 @@ interface Discover {
     /** The films and series a person appears in, [DiscoverLimits.PAGE] at a time from [startIndex]. */
     suspend fun personWorks(s: Session, personId: String, startIndex: Int): Page<ItemWithUserData>
 
-    /** A library's items under [filter] (at most one value of each kind) in [sort] order, [DiscoverLimits.PAGE] at a time. */
-    suspend fun browse(s: Session, parentId: String, shape: ListShape, filter: BrowseFilter, sort: Sort, startIndex: Int): Page<ItemWithUserData>
+    /** A library's items (or, with [parentId] null, those of every library) under [filter] (at most one value of each kind) in [sort] order, [DiscoverLimits.PAGE] at a time. */
+    suspend fun browse(s: Session, parentId: String?, shape: ListShape, filter: BrowseFilter, sort: Sort, startIndex: Int): Page<ItemWithUserData>
 
     /** The values a library can be filtered by. Each of the five lists fails on its own (empty). */
     suspend fun filterOptions(s: Session, parentId: String): FilterOptions

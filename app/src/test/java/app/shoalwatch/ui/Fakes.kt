@@ -286,7 +286,7 @@ class FakeDiscover : app.shoalwatch.data.discover.Discover {
     override suspend fun extras(s: Session, itemId: String) = run("extras:$itemId") { extras }
     override suspend fun person(s: Session, personId: String) = run("person:$personId") { person ?: throw app.shoalwatch.core.AppError.of(app.shoalwatch.core.AppError.Kind.SERVER_NOT_FOUND) }
     override suspend fun personWorks(s: Session, personId: String, startIndex: Int) = run("personWorks:$personId:$startIndex") { one(works, startIndex) }
-    override suspend fun browse(s: Session, parentId: String, shape: app.shoalwatch.data.library.ListShape, filter: app.shoalwatch.data.discover.BrowseFilter, sort: app.shoalwatch.data.library.Sort, startIndex: Int) =
+    override suspend fun browse(s: Session, parentId: String?, shape: app.shoalwatch.data.library.ListShape, filter: app.shoalwatch.data.discover.BrowseFilter, sort: app.shoalwatch.data.library.Sort, startIndex: Int) =
         run("browse:$parentId:$filter:$startIndex") { one(browsed, startIndex) }
     override suspend fun filterOptions(s: Session, parentId: String) = run("filterOptions:$parentId") { options }
     override suspend fun genres(s: Session, parentId: String?, startIndex: Int) = run("genres:$parentId:$startIndex") { one(genres, startIndex) }

@@ -385,6 +385,16 @@ class DiscoverGatewayTest {
         assertEquals(listOf(10, 10, 10), listOf(got.people.size, got.genres.size, got.collections.size))
     }
 
+    @Test fun browsingWithNoLibraryAsksAcrossAllOfThemWithNoParentId() {
+        routes("/Items" to page(item(1)))
+        runBlocking { discover.browse(session, null, ListShape(setOf(ItemKind.MOVIE, ItemKind.SERIES), recursive = true), BrowseFilter(genreId = id(5)), Sort(SortBy.NAME, false), 0) }
+        val u = url(requests().single())
+        assertNull(u.queryParameter("parentId"))
+        assertEquals(id(5), u.queryParameter("genreIds"))
+        assertEquals("true", u.queryParameter("recursive"))
+        assertNull(browseQuery(U1, null, ListShape.DIRECT, BrowseFilter(), Sort(SortBy.NAME, false), 0).toMap()["parentId"])
+    }
+
     // ---- the pure query
 
     private val byName = Sort(SortBy.NAME, false)
