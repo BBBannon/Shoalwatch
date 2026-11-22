@@ -230,7 +230,7 @@ List views do not request `Overview` (large); detail and episodes do. The three 
 - **Long series:** `episodes` pages with `startIndex`/`limit=500` until the server's own usable count is reached (an empty page ends it; with no usable count, a short page does), at most 10,000 items and 50 requests. `/Shows/{id}/Seasons` has no paging parameters, so seasons are one request (capped at 1,000).
 - **Sizes:** lists are capped at the requested limit (views at 100) even if the server sends more; `Page.total` is at most 1,000,000. **A nonsense total is no total:** a `TotalRecordCount` that is negative, zero while elements came back, or smaller than the elements already seen (`startIndex` plus what this response held) is ignored, so `Page.total` is `null` (unknown) and the episodes loop does not stop early on it. **Paging by what the server consumed:** `Page.items` holds only the kept elements (malformed ones are skipped, repeats removed), so a caller must not advance by `items.size`. `Page.nextStartIndex` is `startIndex` plus every element the server sent, and `Page.endReached` is true when the server sent nothing, or the usable total is reached, or (no usable total) it sent fewer than the limit. An all-skipped page is therefore not the end.
 - **Unproven until a real server:** the mutations send no `datePlayed`, so a retried mark-as-watched should not count a second play; and comma-delimited `sortBy`/`sortOrder` pairing per key. Both to be confirmed against a real Jellyfin 12.x server.
-- Libraries whose collection type is not films, TV, collections or mixed (music, books, photos, live TV, playlists, home videos...) are skipped.
+- Libraries whose collection type is not films, TV, collections, mixed, photos or home videos (music, books, live TV, playlists...) are skipped. Photo and home-video libraries are offered from Milestone 11 (see "Playlists, collections and richer browsing").
 
 ## Playback endpoints (`PlaybackGateway`)
 
@@ -1326,6 +1326,121 @@ to some libraries is respected item by item, before anything is sent). Tests: `M
 `LibraryRepositoryForgetDeletedTest`, `ArtworkEvictionTest`, `ServerApiPostBytesTest`, `ServerApiVerifyUnauthorisedTest`,
 `ManageBoundaryTest`; the stand-in's `tools/mockjelly/test_mock_manage.py` (which, like Jellyfin, answers a refused delete with 401
 and gives `CanDelete` on a single item).
+
+## Playlists, collections and richer browsing (`data/lists`, `data/discover`, `data/subtitles`, `PlayQueue`, `ui/lists`, `ui/discover`, `ui/photos`, Milestone 11)
+
+Plan: `docs/plans/2026-11-21-milestone-11-playlists-browsing.md` (its "Decisions made" binds what follows). Roadmap decision D7.
+**No new dependency, permission, component or Room schema change.** Three new data packages, built as `data/manage` is: a seam
+interface, internal DTOs, mappers that validate and bound everything, and one gateway on `ServerApi`. They are **live only**: no
+cache, and offline a screen says "You're offline" with Try again. What stays offline is what Milestones 2 to 5 cached and the
+downloads. `ItemKind` gained `PHOTO`, `VIDEO` and `PLAYLIST`; `LibraryKind` gained `PHOTOS` and `HOME_VIDEOS` (stored by name, so no
+migration); `ArtworkType.PHOTO` is the photo bucket (720, 1280 or 1920 px). Photo, home-video and playlist libraries are **offered**
+(no other new kind): music, books and live TV are still skipped.
+
+```
+data/lists/       Lists (playlists, collections, collectionsOf), ListsGateway, ListsMappers, ListsDtos, CollectionIndex, ListsLimits
+data/discover/    Discover (extras, person, personWorks, browse, filterOptions, genres, studios, searchMore), DiscoverGateway,
+                  DiscoverMappers, DiscoverDtos, BrowseQuery, TrailerIntent
+data/subtitles/   RemoteSubtitles (search, download, subtitleCount, preferredLanguage), SubtitlesGateway, SubtitlesMappers, SubtitlesDtos
+data/playback/    PlayQueue + PlayQueues (the queue and its token), EpisodeNavigator follows it; mediaSourceId in PlaybackInfo
+ui/lists/         Playlists and playlist screens, ListPickerDialog (the add-to picker), their ViewModels
+ui/discover/      ExtrasBlock (+ ExtrasViewModel), Person, Browse (filters, letters), Names (genres and studios), PagedGrid, TapOnce
+ui/photos/        PhotoViewerScreen, PhotoViewerViewModel, PhotoZoom; drawn through ui/components/ArtworkPhoto.kt (no Coil in the screen)
+ui/subtitles/     SubtitleSearchLogic, SubtitleSearchUi (the sheet, used by the player and the detail page)
+ui/nav/           ListsRoutes, DiscoverRoutes, BrowsingDestinations (registration), AppNav (Routes), BrowseRoutes, PlayerRoute
+```
+
+**Wiring.** The M11 gateways are built in `LiveParts` (reached as `graph.live`), kept out of `AppGraph` (397 of 400 lines) as
+`HousekeepingParts` is. New routes: `playlists`, `playlist/{playlistId}`, `photo/{itemId}?parent=`, `person/{personId}`, `browse`
+(optional `parent`, `genre`, `studio`), `genres/{parent}`, `studios/{parent}`; the player route gains `queue` and `source`. Every
+id from a route is checked before it is used.
+
+**Every change** (playlist, collection, subtitle download) is `retry = false` with a one-shot body and uses `verifyUnauthorised`:
+a 401 is checked with `GET /Users/Me` before anything signs out. Jellyfin answers a refused delete and a refused playlist change
+with 401 or 403; these say "The server didn't let this profile change that." (collections: the CollectionManagement sentence;
+subtitles: "This profile isn't allowed to fetch subtitles.") and keep the sign-in.
+
+### Playlists and collections (`data/lists`)
+
+- Playlists: `GET /Items?includeItemTypes=Playlist&recursive=true`; one playlist is `GET /Items/{id}` then paged
+  `GET /Playlists/{id}/Items` (200 a page, at most 2,000). Create, rename, add, remove and move are `POST`/`DELETE` as in the plan's
+  table. A new playlist is private (`IsPublic: false`). Entries keep the server's `PlaylistItemId` (`[A-Za-z0-9-]{1,64}`), used for
+  remove and move; reordering is Move up and Move down (no drag), then the list is read again.
+- Deleting a playlist asks first and names it, reads the playlist's own `CanDelete`, then `DELETE /Items/{id}` with
+  `verifyUnauthorised`.
+- Collections: `POST /Collections`, `POST`/`DELETE /Collections/{id}/Items`, decided by the server's CollectionManagement policy.
+- **Collection index** (`CollectionIndex`): Jellyfin has no "which collections hold this item" query, so the gateway reads the
+  collections (at most 100) and each one's direct children (at most 500), **four at a time** (`INDEX_READS_AT_ONCE`), in memory per
+  profile for 10 minutes. The user's own adds update it at once and are remembered up to 1,000 per collection (the server read
+  stays capped at 500). Any failed read fails the whole index; it is never part-filled.
+- Names are 1 to 200 visible characters, checked by the screen (`cleanListName`) and again in the gateway. Ids are validated before
+  they become path segments or comma lists (at most 500 per call).
+- Home always shows the **Playlists** card, even for a profile with no libraries (the libraries heading shows only when there are
+  libraries). The playlist screen re-reads on return without a spinner.
+- **Download all** goes through `Downloads.prepare` and `start` at the default quality; one line sums the result and names the
+  true reason (not enough space, no connection) when the rest share one.
+
+### Detail extras, person pages and browsing (`data/discover`)
+
+- `Discover.extras` reads the item, `LocalTrailers`, `SpecialFeatures` and `Similar` (12). **Each part fails alone** and just hides;
+  when every part fails the first error is shown, so offline says so. Cast and crew are at most 50, each person's picture through
+  the artwork path (`ArtworkRef(personId, PRIMARY, tag)`), never a third-party address.
+- The extras block shows **as soon as they arrive**; "Part of this collection" fills in when the index answers.
+- **Versions:** only a `MediaSource` whose id passes `MediaPaths.isSourceId` (32 hex) is offered, because the player honours only
+  those. The choice is sent as `MediaSourceId` in PlaybackInfo, lasts for that play, and survives Retry for the route's own item.
+  Downloads use the server's first version.
+- **Trailers (S7):** a local trailer is an item and plays in the app. An online trailer is kept only as a printable http or https
+  address (at most 2,048 characters, with a host). `data/discover/TrailerIntent.kt` builds the `ACTION_VIEW` intent
+  (`CATEGORY_BROWSABLE`, no extras, no granted permission); it lives outside `ui/` so no screen builds an intent (`AdminBoundaryTest`).
+  The button names the host. **The app never fetches it**, and no token goes with it. With no app to open it a snackbar says so.
+  One `launched` flag stops a double tap from opening it twice.
+- **Browse** (`BrowseQuery`): one value each of genre, year, age rating, studio and tag (so the reference's comma-or-pipe array
+  question never arises); options from `/Items/Filters`, `/Genres` and `/Studios` for the library. Jump by letter is `nameStartsWith`
+  A to Z, and `nameLessThan=A` for "#". Filter, Genres and Studios are chips in the library grid's controls row (film, TV and mixed
+  libraries). With no filter the cached grid is what shows. A genre tapped in Search browses across all libraries (no `parentId`),
+  and Clear filters there goes back to Search.
+- Person page: the person's own item and `GET /Items?personIds=` (films and series, paged). Search also shows People, Genres and
+  Collections (10 each) from the server while online.
+
+### Subtitles from the internet (`data/subtitles`, `ui/subtitles`)
+
+Decision D7: the **server** searches and fetches; the phone only talks to the server (S7). `GET /Items/{id}/RemoteSearch/Subtitles/{language}`
+(three letters, `[a-z]{3}`) and `POST` of the same path with the subtitle id, **sent once**, both under SubtitleManagement.
+
+- Results are text only (provider, name, format, rating, downloads, hearing impaired, forced). No address is shown or kept.
+- **Subtitle ids** are accepted if `[A-Za-z0-9._~=+-]`, 1 to 128 characters, no `..`, not all dots (base64-shaped provider ids are
+  allowed). Anything else is dropped before it can become a path segment.
+- The language defaults to the profile's (`/Users/Me`), else the phone's, else English.
+- **Arrival check:** the server adds the subtitle and refreshes the item itself. The phone reads the item's subtitle count after
+  2, 4, 8 and 16 seconds (a failed read counts as "not yet"); when it grows the player asks again **at the same position**
+  (a paused player stays paused) and the track can be picked; the detail page refreshes the item. If it has not appeared the line
+  says it can take a minute.
+- `ManageBoundaryTest` keeps management endpoints inside `data/manage`; subtitle search is its **one narrowed exception**, the text
+  `RemoteSearch/Subtitles/` in `SubtitlesGateway.kt` only (identify, pictures and the editor are still refused there).
+
+### The play queue (`PlayQueue`, `PlayQueues`)
+
+A playlist's playable entries (films, episodes, videos) become a `PlayQueue`: ids in order, or shuffled once on the phone with
+`SecureRandom`, at most 2,000. `PlayQueues` holds them **in memory per profile** (server and user), at most 8, under a random token
+that the player route carries (`queue=`). They are dropped on sign-out and when the active profile changes; **a lock does not
+change the session**, so it does not clear them. While one is in force the player's Up next, Next and Previous follow it instead of
+the series (`EpisodeNavigator`). After the process ends the token is unknown and the item plays alone. The queue stops at an
+entry the server cannot return.
+
+### Photos (`ui/photos`)
+
+A photo opens a full-screen viewer: a pager over that folder's photos (ordered by name), pinch 1x to 4x, double tap 2x, a drag pans
+when zoomed, Close leaves once. The picture is the server's own, requested at 720, 1280 or 1920 px (`format=Webp`, `quality=90`,
+through `ServerApi`) and decoded against its own bucket under the existing 4-megapixel cap, by `ui/components/ArtworkPhoto.kt`
+(so `ArtworkBoundaryTest` still finds Coil only in the artwork files). Photo "Details" opens the viewer too (a detail page for a still
+would only offer Play). A video opens its page and plays in the normal player. Albums and folders open like a collection.
+
+**Known limits.** Nothing here is cached. A folder of more than 500 photos prepends a tapped photo past the 500th ("1 of 501").
+Zoom is centred, not at the pinch point. The selection bar offers Download and Add to playlist for every kind. Read failures other
+than offline share one "That didn't load" line. The index is never pruned for removed profiles (memory only, bounded).
+Tests: `ListsGatewayTest`, `DiscoverGatewayTest`, `TrailerIntentTest`, `SubtitlesGatewayTest`, `PlayQueueTest`, `ExtrasViewModelTest`,
+`ui.lists.*`, `ui.photos.*`, `ui.nav.*` (route and double-tap tests), `ManageBoundaryTest`, `ArtworkBoundaryTest`, `AdminBoundaryTest`,
+`SourceShapeTest`; the stand-in's `tools/mockjelly` tests. Security check: `docs/security/milestone-11-check.md`.
 
 ## Version checks
 

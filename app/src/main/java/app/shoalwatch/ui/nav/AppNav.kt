@@ -151,7 +151,10 @@ internal object Routes {
  * ([StartupViewModel]), so the wrong screen never flashes.
  *
  * Navigation graph: `welcome` (first run) or `home` to start; `add_server` and `sign_in/{serverId}` for
- * onboarding; `play/{itemId}?from=` for the player; `servers` and `server/{serverId}` for management. Signing in clears the stack and lands on `home`.
+ * onboarding; `play/{itemId}?from=&queue=&source=` for the player (a play queue token and a chosen version); `servers` and
+ * `server/{serverId}` for management. Browsing (Milestone 2 onward): `library/{viewId}`, `series/{seriesId}`, `item/{itemId}`; Milestone 11
+ * adds `playlists`, `playlist/{playlistId}`, `photo/{itemId}`, `person/{personId}`, `browse`, `genres/{parent}` and `studios/{parent}`.
+ * Signing in clears the stack and lands on `home`.
  */
 @Composable
 fun AppRoot(graph: AppGraph, openTab: String? = null, onTabOpened: () -> Unit = {}) {

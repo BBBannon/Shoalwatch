@@ -34,7 +34,21 @@ Download whole seasons before a trip and browse them by series → season → ep
 - 🔒 **Private by design.** Your sign-in is locked away in the phone's secure storage, no passwords are kept, it uses a secure connection by default, and there are **no adverts, no tracking and no data sent anywhere** except your own server.
 - 🚗 **In the car, when parked.** Continue Watching, Next Up and your downloads on the Android Auto screen — handy for charging stops.
 - 🛠️ **Look after your server from the sofa.** If you run the server, you can see who's watching, scan libraries, restart and more, straight from the phone.
-- 💬 **Subtitles that look right.** Styled subtitles (the fancy coloured kind for anime) are drawn properly on the phone, with no server effort.
+- 💬 **Subtitles that look right.** Styled subtitles (the fancy coloured kind for anime) are drawn properly on the phone, with no server effort. Missing some? Find them online without leaving the player.
+
+---
+
+## What's new in 1.3.0
+
+- **Playlists.** Create them, add films and episodes, reorder them, play them in order or shuffled, and download the lot. Who may change a playlist is up to your server.
+- **Collections.** Gather films into collections and see which collections a film belongs to.
+- **Cast, trailers and extras.** Film and series pages show the cast, trailers, extras and similar titles. Tap a person to see everything else they appear in. A trailer from the internet opens in your browser or video app; Shoalwatch itself never loads it.
+- **Choose a version.** If a film has more than one file on your server (say 4K and 1080p), pick which one to play.
+- **Filter and jump.** Filter a library by genre, year, age rating, studio or tag, and jump straight to a letter. Browse by Genres or Studios, and search now finds people, genres and collections too.
+- **Subtitles from the internet.** Tap **Find subtitles online** in the player or on a film or episode page. Your **server** does the searching and downloading, so the phone still talks only to your own servers. It needs the subtitle permission on your server.
+- **Photos and home videos.** Photo libraries open full screen with swiping and zoom. Home-video libraries play in the normal player.
+
+Playlists, extras, filters and online subtitles need a connection to your server; offline they say so. Downloads and your saved library work offline exactly as before.
 
 ---
 
@@ -42,8 +56,10 @@ Download whole seasons before a trip and browse them by series → season → ep
 
 | Area | Highlights |
 |---|---|
-| **Browsing** | Home with Continue Watching and Next Up, library grids, series and film pages, search; two panes on a tablet |
-| **Player** | Direct play or server conversion, quality choice, resume, remembered audio and subtitle choice per series, styled subtitles drawn on the phone, skip intro, Up next, sleep timer, picture-in-picture |
+| **Browsing** | Home with Continue Watching and Next Up, library grids with filters (genre, year, age rating, studio, tag) and jump-by-letter, Genres and Studios pages, series and film pages with cast, trailers, extras and similar titles, people pages, search that also finds people, genres and collections; two panes on a tablet |
+| **Playlists and collections** | Make playlists, add to them from a long-press or a film's page, reorder, play in order or shuffled, download a whole playlist; gather films into collections (if your server allows it) |
+| **Photos and home videos** | Photo libraries open full screen: swipe through a folder, pinch or double tap to zoom. Home videos play like any other video |
+| **Player** | Direct play or server conversion, quality choice, a choice of version when a film has more than one, resume, remembered audio and subtitle choice per series, styled subtitles drawn on the phone, skip intro, Up next, sleep timer, picture-in-picture, subtitles found online through your server |
 | **Downloads** | Films, episodes, seasons or whole series; original file or a smaller size; resumes after a cut; every file checked playable; internal storage or SD card |
 | **Housekeeping** | Mark watched and delete at the credits; download the next episodes by themselves on Wi-Fi; a Storage screen |
 | **Sync back** | Watched marks, progress and favourites made offline reach the server in order when you reconnect |

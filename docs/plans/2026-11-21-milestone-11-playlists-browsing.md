@@ -65,8 +65,8 @@ detail extras block), `ui/photos` (the viewer) and the subtitle search sheet in 
    download, Milestone 10 decision 6); one line sums it.
 7. **Collections**: create, add, remove; the server's CollectionManagement policy decides (a refusal says so). Collections open as
    before (a collection is a library-like grid). **"Part of this collection"** on a film's page comes from a per-profile index in
-   memory: the collections (at most 100, by name) and each one's direct children (at most 500 each), read once in the background
-   when the first film page opens and kept for 10 minutes (an add or remove made in the app updates it at once). Jellyfin has no
+   memory: the collections (at most 100, by name) and each one's direct children (at most 500 each), read once
+   when the first film page opens (the page does not wait for it, build decision 11) and kept for 10 minutes (an add or remove made in the app updates it at once). Jellyfin has no
    "which collections hold this item" query.
 8. **The bar** gains **Add to playlist** and **Add to collection** (under More options). Both open one picker (a secure dialog):
    the existing playlists or collections, and "New playlist…" / "New collection…" with a name (1 to 200 visible characters). The
@@ -85,7 +85,7 @@ detail extras block), `ui/photos` (the viewer) and the subtitle search sheet in 
     never arises), with the choices from `/Items/Filters` (years, ratings, tags) and `/Genres`, `/Studios` (ids), all for the
     library. **Jump by letter:** A to Z (`nameStartsWith`) and "#" (`nameLessThan=A`). The library grid's Filter button opens the
     live filtered list; with no filter the cached grid is what shows.
-13. **Genre and studio pages:** Genres and Studios buttons on a library's top bar list them for that library; each opens the
+13. **Genre and studio pages:** Genres and Studios chips in the library grid's controls row (see build decision 9) list them for that library; each opens the
     filtered list. A person opens their page (picture, overview, their films and shows).
 14. **Search** also shows People, Genres and Collections (10 each) from the server while online; offline only saved titles show.
 15. **Subtitles from the internet (D7):** in the player's subtitle sheet ("Find subtitles online") and on the detail page. The
@@ -141,3 +141,17 @@ for the new screens. Stand-in server: Python tests for every new route.
 ## Decisions made (during the build)
 
 Recorded as they happen; each can be changed.
+
+1. Discover: when every part of extras / filter options / search extras fails, the first error is shown (so offline says so); one part failing alone just hides that part.
+2. Subtitle ids accepted: `[A-Za-z0-9._~=+-]`, 1-128 characters, no `..`, not all dots (base64-shaped provider ids allowed).
+3. A remote subtitle arrival check counts any failed read as "not yet".
+4. Play queues are kept per profile (server + user) and dropped when the active profile changes; at most 8 held. A lock does not clear them.
+5. Retry keeps the chosen version for the route's own item.
+6. The collection index records the user's own adds up to 1,000 per collection (the server read stays capped at 500).
+7. Home always shows the Playlists card, even for a profile with no libraries.
+8. Photo "Details" action opens the photo viewer (a detail page for a still would only offer Play).
+9. Filter, Genres and Studios are buttons (chips) in the library grid's controls row, not the top bar, so they fit at large text sizes; shown for film, TV and mixed libraries.
+10. A genre tapped in Search browses across all libraries (no `parentId`); Clear filters there goes back to Search.
+11. The detail page shows extras as soon as they arrive; "Part of this collection" fills in when the index is ready (children read 4 at a time).
+12. Only versions with a valid 32-hex id are offered.
+13. Subtitle search is the one narrowed exception to the management-endpoint guard (`ManageBoundaryTest`), in `SubtitlesGateway` only.
