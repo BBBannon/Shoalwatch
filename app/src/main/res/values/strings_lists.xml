@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Milestone 11: playlists, collections, richer browsing, subtitles from the internet, photos. UK English, plain words. -->
+<resources>
+    <string name="library_kind_photos">Photos</string>
+    <string name="library_kind_home_videos">Home videos</string>
+
+    <!-- Playlists, the add-to picker and the bar (Milestone 11, Task 7) -->
+    <string name="lists_playlists_title">Playlists</string>
+    <string name="lists_home_card_subtitle">Playlists on this server</string>
+    <string name="lists_new_playlist">New playlist…</string>
+    <string name="lists_new_collection">New collection…</string>
+    <string name="lists_create_playlist_title">New playlist</string>
+    <string name="lists_create_collection_title">New collection</string>
+    <string name="lists_rename_title">Rename playlist</string>
+    <string name="lists_name_label">Name</string>
+    <string name="lists_name_empty">Type a name.</string>
+    <string name="lists_name_too_long">Use 200 characters or fewer.</string>
+    <string name="lists_create">Create</string>
+    <string name="lists_save">Save</string>
+    <string name="lists_offline_title">You\'re offline</string>
+    <string name="lists_offline_body">Connect to your server to see this.</string>
+    <string name="lists_load_failed_title">That didn\'t load</string>
+    <string name="lists_load_failed_body">The server didn\'t answer as expected. Try again.</string>
+    <string name="lists_empty_title">No playlists yet</string>
+    <string name="lists_empty_body">Make one here, or select films and episodes anywhere and choose Add to playlist under More options.</string>
+    <string name="lists_playlist_empty_title">This playlist is empty</string>
+    <string name="lists_playlist_empty_body">Add films and episodes from their pages, or select several and choose Add to playlist under More options.</string>
+    <plurals name="lists_item_count">
+        <item quantity="one">%1$d item</item>
+        <item quantity="other">%1$d items</item>
+    </plurals>
+    <string name="lists_play">Play</string>
+    <string name="lists_shuffle">Shuffle</string>
+    <string name="lists_download_all">Download all</string>
+    <string name="lists_rename">Rename</string>
+    <string name="lists_delete">Delete playlist</string>
+    <string name="lists_delete_title">Delete “%1$s”?</string>
+    <string name="lists_delete_confirm">Delete</string>
+    <string name="lists_delete_body">This deletes the playlist from the server for everyone who can see it. The films and episodes in it stay where they are.</string>
+    <string name="lists_move_up">Move %1$s up</string>
+    <string name="lists_move_down">Move %1$s down</string>
+    <string name="lists_remove_entry">Remove %1$s from this playlist</string>
+    <string name="lists_nothing_to_play">Nothing in this playlist can be played.</string>
+    <string name="lists_nothing_to_download">Nothing in this playlist can be downloaded.</string>
+    <string name="lists_removed">Removed “%1$s”.</string>
+    <plurals name="lists_downloading">
+        <item quantity="one">Downloading %1$d item.</item>
+        <item quantity="other">Downloading %1$d items.</item>
+    </plurals>
+    <plurals name="lists_downloading_some">
+        <item quantity="one">Downloading %1$d of %2$s items. The rest could not be started.</item>
+        <item quantity="other">Downloading %1$d of %2$s items. The rest could not be started.</item>
+    </plurals>
+    <plurals name="lists_downloading_some_room">
+        <item quantity="one">Downloading %1$d of %2$s items. There isn\'t enough room on this phone for the rest.</item>
+        <item quantity="other">Downloading %1$d of %2$s items. There isn\'t enough room on this phone for the rest.</item>
+    </plurals>
+    <plurals name="lists_downloading_some_offline">
+        <item quantity="one">Downloading %1$d of %2$s items. The rest could not be started because the connection dropped. Try again when you\'re connected.</item>
+        <item quantity="other">Downloading %1$d of %2$s items. The rest could not be started because the connection dropped. Try again when you\'re connected.</item>
+    </plurals>
+    <plurals name="lists_download_not_started">
+        <item quantity="one">%1$d could not be started: not enough room, or nothing to download.</item>
+        <item quantity="other">%1$d could not be started: not enough room, or nothing to download.</item>
+    </plurals>
+    <string name="lists_refused">The server didn\'t let this profile change that.</string>
+    <string name="lists_failed">That didn\'t work. Try again.</string>
+    <string name="lists_offline_change">You\'re offline. Try again when you\'re connected.</string>
+    <string name="lists_gone">That\'s no longer on the server.</string>
+    <string name="lists_created">Created “%1$s”.</string>
+    <string name="lists_too_many">You can add up to 500 at a time. Select fewer and try again.</string>
+    <string name="lists_picker_playlist_title">Add to playlist</string>
+    <string name="lists_picker_collection_title">Add to collection</string>
+    <string name="lists_picker_loading">Loading…</string>
+    <string name="lists_picker_playlists_empty">You have no playlists yet.</string>
+    <string name="lists_picker_collections_empty">There are no collections yet.</string>
+    <plurals name="lists_picker_adding">
+        <item quantity="one">Adding %1$d item.</item>
+        <item quantity="other">Adding %1$d items.</item>
+    </plurals>
+    <plurals name="lists_added_playlist">
+        <item quantity="one">Added %1$d item to “%2$s”.</item>
+        <item quantity="other">Added %1$d items to “%2$s”.</item>
+    </plurals>
+    <plurals name="lists_added_collection">
+        <item quantity="one">Added %1$d item to the collection “%2$s”.</item>
+        <item quantity="other">Added %1$d items to the collection “%2$s”.</item>
+    </plurals>
+    <plurals name="lists_created_playlist">
+        <item quantity="one">Created “%2$s” with %1$d item.</item>
+        <item quantity="other">Created “%2$s” with %1$d items.</item>
+    </plurals>
+    <plurals name="lists_created_collection">
+        <item quantity="one">Created the collection “%2$s” with %1$d item.</item>
+        <item quantity="other">Created the collection “%2$s” with %1$d items.</item>
+    </plurals>
+    <string name="select_add_to_playlist">Add to playlist</string>
+    <string name="select_add_to_collection">Add to collection</string>
+</resources>

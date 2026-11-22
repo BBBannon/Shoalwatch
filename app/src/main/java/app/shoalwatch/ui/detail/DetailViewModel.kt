@@ -17,6 +17,8 @@ import app.shoalwatch.data.library.RefreshTarget
 import app.shoalwatch.data.servers.ServerCatalog
 import app.shoalwatch.data.servers.ServerConnections
 import app.shoalwatch.data.servers.Session
+import app.shoalwatch.data.subtitles.RemoteSubtitles
+import app.shoalwatch.ui.subtitles.SubtitleSearchLogic
 import app.shoalwatch.ui.browse.FAILED_LOCALLY
 import app.shoalwatch.ui.browse.ItemActions
 import app.shoalwatch.ui.browse.Work
@@ -63,10 +65,31 @@ class DetailViewModel(
     private val library: Library,
     playstate: Playstate,
     downloads: Downloads? = null,
+    subtitles: RemoteSubtitles? = null,
 ) : ViewModel() {
     /** The download sheet's steps (null when this screen offers no download). */
     val downloadActions: DownloadActions? = downloads?.let { d -> DownloadActions(viewModelScope, d) { state.value.session } }
     private val downloadsSeam = downloads
+
+    /** "Find subtitles online" (Milestone 11); null when not offered. When a download arrives the item is read again. */
+    val subtitleSearch: SubtitleSearchLogic? = subtitles?.let { remote ->
+        SubtitleSearchLogic(
+            viewModelScope, remote, { state.value.session }, { itemId },
+            { s, _ ->
+                viewModelScope.launch {
+                    try {
+                        library.refresh(s, RefreshTarget.Item(itemId))
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        // the item is read again next time the page is shown
+                    }
+                }
+                true
+            },
+            arrivedText = app.shoalwatch.R.string.subsearch_arrived_detail,
+        )
+    }
 
     /** This item's download, for the active session only. */
     val downloadStatus: StateFlow<Map<String, DownloadInfo>> = downloadStatuses(catalog, viewModelScope) { s ->
@@ -110,6 +133,7 @@ class DetailViewModel(
 
     init {
         viewModelScope.launch { catalog.activeSession().collect { downloadActions?.sessionChanged(it) } }
+        subtitleSearch?.let { l -> viewModelScope.launch { catalog.activeSession().collect { l.close() } } }
         viewModelScope.launch {
             connectionRegained(catalog, connections).collect { s -> actions.attempt(s) { library.refresh(s, RefreshTarget.Item(itemId)) } }
         }

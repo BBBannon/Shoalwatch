@@ -204,6 +204,19 @@ internal class SavedPlaybackTest : PlaybackControllerTestBase() {
         assertEquals(PlayMethod.DIRECT_PLAY, c.state.value.method)
     }
 
+    @Test fun anInvalidVersionDoesNotSkipTheSavedCopy() = runTest {
+        val c = controller(); c.open(ep1, StartFrom.RESUME, null, "not-a-version"); runCurrent()
+        assertSame(media, lastLoad.saved)
+        assertEquals(0, playbackInfos)
+    }
+
+    @Test fun aDifferentValidVersionIsAskedOfTheServerNotTheSavedCopy() = runTest {
+        gateway.failWith = null
+        val c = controller(); c.open(ep1, StartFrom.RESUME, null, "fedcba9876543210fedcba9876543210"); runCurrent()
+        assertEquals(1, playbackInfos)
+        assertEquals("fedcba9876543210fedcba9876543210", gateway.bodies.last().mediaSourceId)
+    }
+
     @Test fun theControllerFileIsStillAtMost400Lines() {
         val file = listOf("src/main/java", "app/src/main/java").map { File(it, "app/shoalwatch/data/playback/PlaybackController.kt") }.first { it.isFile }
         assertTrue(file.readLines().size <= 400)

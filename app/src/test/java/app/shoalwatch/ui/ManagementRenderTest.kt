@@ -172,15 +172,15 @@ class ManagementRenderTest {
     }
 
     @Test fun anExpiredSignInSaysSoWithSignInAgainAndItsCountAndIsNotARadio() {
-        var again: Pair<String, String>? = null
-        val actions = ServersActions({}, {}, { _, _ -> error("not switchable") }, { _, _ -> }, {}, {}, {}, {}, {}, onSignInAgain = { s, name -> again = s to name })
+        var again: Triple<String, String, String>? = null
+        val actions = ServersActions({}, {}, { _, _ -> error("not switchable") }, { _, _ -> }, {}, {}, {}, {}, {}, onSignInAgain = { s, id, name -> again = Triple(s, id, name) })
         val expired = AccountItem("u4", "dan", isActive = false, sync = app.shoalwatch.data.sync.SyncStatus(6, 0, true, null), expired = true)
         val state = servers.copy(servers = servers.servers.take(1).map { it.copy(accounts = it.accounts + expired) })
         show { ServersScreen(state, actions) }
         assertTrue(shown(text(R.string.account_sign_in_expired)))
         assertTrue(shown("Sign in again to send 6 changes."))
         rule.onNode(hasContentDescription(text(R.string.account_sign_in_again_cd, "dan"))).performClick()
-        org.junit.Assert.assertEquals(state.servers.first().id to "dan", again)
+        org.junit.Assert.assertEquals(Triple(state.servers.first().id, "u4", "dan"), again)
         rule.onNodeWithText("dan").performClick() // the name itself does nothing
     }
 

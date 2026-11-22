@@ -13,6 +13,8 @@ object ArtworkLimits {
     const val QUALITY = 90
     const val DEFAULT_WIDTH = 480
     val BUCKETS = intArrayOf(160, 320, 480, 720, 1280)
+    /** Milestone 11: photos in the viewer are asked for at screen size, within a square of one of these (so 1,920 at most a side). */
+    val PHOTO_BUCKETS = intArrayOf(720, 1280, 1920)
 
     enum class Kind(val mime: String) { JPEG("image/jpeg"), PNG("image/png"), WEBP("image/webp") }
 
@@ -23,6 +25,25 @@ object ArtworkLimits {
     }
 
     fun bucketFor(size: Size): Int = bucketFor((size.width as? Dimension.Pixels)?.px)
+
+    /** As [bucketFor], but a [ArtworkType.PHOTO] uses [PHOTO_BUCKETS] and the longer side of the slot (a photo is fitted, not cropped). */
+    fun bucketFor(type: ArtworkType, size: Size): Int {
+        if (type != ArtworkType.PHOTO) return bucketFor(size)
+        val longest = listOfNotNull((size.width as? Dimension.Pixels)?.px, (size.height as? Dimension.Pixels)?.px).maxOrNull() ?: PHOTO_BUCKETS[1]
+        return photoBucket(longest)
+    }
+
+    /** The photo size bucket (720, 1280 or 1920) for a screen whose longer side is [longestSidePx]: the smallest that is at least that, else 1920. */
+    fun photoBucket(longestSidePx: Int): Int = PHOTO_BUCKETS.firstOrNull { it >= longestSidePx } ?: PHOTO_BUCKETS.last()
+
+    /** The picture request's query: `tag`, `maxWidth` (and for a photo `maxHeight`, so it fits a square of [bucket]), quality and format. */
+    fun query(type: ArtworkType, tag: String, bucket: Int, format: String): List<Pair<String, String>> = buildList {
+        add("tag" to tag)
+        add("maxWidth" to bucket.toString())
+        if (type == ArtworkType.PHOTO) add("maxHeight" to bucket.toString())
+        add("quality" to QUALITY.toString())
+        add("format" to format)
+    }
 
     /** The kind named by a Content-Type header (case-insensitive, parameters ignored), or null if it is not one of the three. */
     fun kindOfContentType(header: String?): Kind? {

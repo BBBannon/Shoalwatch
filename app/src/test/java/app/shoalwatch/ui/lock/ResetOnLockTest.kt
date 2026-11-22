@@ -70,7 +70,7 @@ class ResetOnLockTest {
                 library = { Text("library") },
                 series = { _, _, _ -> recorders["series"] = viewModel(); Text("series") },
                 item = { itemComposed++; recorders["item"] = viewModel(); Text("item") },
-                player = { _, _ -> Text("player") },
+                player = { _, _, _, _ -> Text("player") },
                 downloadedSeries = { Text("downloaded") },
             )
         }

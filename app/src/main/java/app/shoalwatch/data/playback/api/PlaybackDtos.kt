@@ -30,6 +30,8 @@ internal data class PlaybackInfoBody(
     @SerialName("AllowVideoStreamCopy") val allowVideoStreamCopy: Boolean,
     @SerialName("AllowAudioStreamCopy") val allowAudioStreamCopy: Boolean,
     @SerialName("AlwaysBurnInSubtitleWhenTranscoding") val alwaysBurnInSubtitleWhenTranscoding: Boolean,
+    /** The version chosen for this play (32 hex characters); left out when null. */
+    @SerialName("MediaSourceId") val mediaSourceId: String? = null,
 ) {
     override fun toString() = "PlaybackInfoBody(<redacted>)"
 }

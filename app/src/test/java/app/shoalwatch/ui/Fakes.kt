@@ -97,8 +97,12 @@ class FakeAuthenticator(private val catalog: FakeCatalog? = null) : Authenticato
         return onFind(input, draft)
     }
 
-    override suspend fun signInRoute(serverId: String): SignInRoute? {
+    /** The profile each [signInRoute] call said it was for (null: any account). */
+    val expectedUsers = mutableListOf<String?>()
+
+    override suspend fun signInRoute(serverId: String, expectedUserId: String?): SignInRoute? {
         routesAsked += serverId
+        expectedUsers += expectedUserId
         return routeAnswer(serverId)
     }
 
@@ -226,4 +230,93 @@ class FakeConnections : ServerConnections {
 
 class FakeChooser(private val alias: String?) : ClientCertChooser {
     override suspend fun choose(): String? = alias
+}
+
+/** A [app.shoalwatch.data.lists.Lists] for ViewModel tests: scripted answers, every call recorded in [calls], [failure] thrown by everything when set. */
+class FakeLists : app.shoalwatch.data.lists.Lists {
+    var playlists = emptyList<app.shoalwatch.data.library.ItemWithUserData>()
+    var playlist: app.shoalwatch.data.lists.Playlist? = null
+    var collections = emptyList<app.shoalwatch.data.library.ItemWithUserData>()
+    var collectionsOf = emptyList<app.shoalwatch.data.lists.CollectionRef>()
+    var failure: app.shoalwatch.core.AppError? = null
+    val calls = mutableListOf<String>()
+
+    private fun <T> run(call: String, answer: () -> T): T {
+        calls += call
+        failure?.let { throw it }
+        return answer()
+    }
+
+    override suspend fun playlists(s: Session) = run("playlists") { playlists }
+    override suspend fun playlist(s: Session, playlistId: String) = run("playlist:$playlistId") { playlist ?: throw app.shoalwatch.core.AppError.of(app.shoalwatch.core.AppError.Kind.SERVER_NOT_FOUND) }
+    override suspend fun createPlaylist(s: Session, name: String, itemIds: List<String>) = run("createPlaylist:$name:${itemIds.joinToString(",")}") { }
+    override suspend fun renamePlaylist(s: Session, playlistId: String, name: String) = run("renamePlaylist:$playlistId:$name") { }
+    override suspend fun addToPlaylist(s: Session, playlistId: String, itemIds: List<String>) = run("addToPlaylist:$playlistId:${itemIds.joinToString(",")}") { }
+    override suspend fun removeFromPlaylist(s: Session, playlistId: String, entryIds: List<String>) = run("removeFromPlaylist:$playlistId:${entryIds.joinToString(",")}") { }
+    override suspend fun moveInPlaylist(s: Session, playlistId: String, entryId: String, newIndex: Int) = run("moveInPlaylist:$playlistId:$entryId:$newIndex") { }
+    override suspend fun deletePlaylist(s: Session, playlistId: String) = run("deletePlaylist:$playlistId") { }
+    override suspend fun collections(s: Session) = run("collections") { collections }
+    override suspend fun createCollection(s: Session, name: String, itemIds: List<String>) = run("createCollection:$name:${itemIds.joinToString(",")}") { }
+    override suspend fun addToCollection(s: Session, collectionId: String, itemIds: List<String>) = run("addToCollection:$collectionId:${itemIds.joinToString(",")}") { }
+    override suspend fun removeFromCollection(s: Session, collectionId: String, itemIds: List<String>) = run("removeFromCollection:$collectionId:${itemIds.joinToString(",")}") { }
+    override suspend fun collectionsOf(s: Session, itemId: String) = run("collectionsOf:$itemId") { collectionsOf }
+}
+
+/** A [app.shoalwatch.data.discover.Discover] for ViewModel tests: scripted answers, every call recorded in [calls], [failure] thrown by everything when set. */
+class FakeDiscover : app.shoalwatch.data.discover.Discover {
+    var extras = app.shoalwatch.data.discover.Extras.NONE
+    var person: app.shoalwatch.data.library.Item? = null
+    var works = emptyList<app.shoalwatch.data.library.ItemWithUserData>()
+    var browsed = emptyList<app.shoalwatch.data.library.ItemWithUserData>()
+    var options = app.shoalwatch.data.discover.FilterOptions(emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
+    var genres = emptyList<app.shoalwatch.data.discover.Named>()
+    var studios = emptyList<app.shoalwatch.data.discover.Named>()
+    var searchExtras = app.shoalwatch.data.discover.SearchExtras.NONE
+    var failure: app.shoalwatch.core.AppError? = null
+    val calls = mutableListOf<String>()
+
+    private fun <T> run(call: String, answer: () -> T): T {
+        calls += call
+        failure?.let { throw it }
+        return answer()
+    }
+
+    private fun <T> one(items: List<T>, start: Int) = app.shoalwatch.data.library.Page(items, start, items.size, start + items.size, true)
+
+    override suspend fun extras(s: Session, itemId: String) = run("extras:$itemId") { extras }
+    override suspend fun person(s: Session, personId: String) = run("person:$personId") { person ?: throw app.shoalwatch.core.AppError.of(app.shoalwatch.core.AppError.Kind.SERVER_NOT_FOUND) }
+    override suspend fun personWorks(s: Session, personId: String, startIndex: Int) = run("personWorks:$personId:$startIndex") { one(works, startIndex) }
+    override suspend fun browse(s: Session, parentId: String?, shape: app.shoalwatch.data.library.ListShape, filter: app.shoalwatch.data.discover.BrowseFilter, sort: app.shoalwatch.data.library.Sort, startIndex: Int) =
+        run("browse:$parentId:$filter:$startIndex") { one(browsed, startIndex) }
+    override suspend fun filterOptions(s: Session, parentId: String) = run("filterOptions:$parentId") { options }
+    override suspend fun genres(s: Session, parentId: String?, startIndex: Int) = run("genres:$parentId:$startIndex") { one(genres, startIndex) }
+    override suspend fun studios(s: Session, parentId: String?, startIndex: Int) = run("studios:$parentId:$startIndex") { one(studios, startIndex) }
+    override suspend fun searchMore(s: Session, term: String) = run("searchMore:$term") { searchExtras }
+}
+
+/** A [app.shoalwatch.data.subtitles.RemoteSubtitles] for ViewModel tests: scripted answers, every call recorded in [calls], [failure] thrown by everything when set. */
+class FakeRemoteSubtitles : app.shoalwatch.data.subtitles.RemoteSubtitles {
+    var found = emptyList<app.shoalwatch.data.subtitles.SubtitleCandidate>()
+    var notAllowed = false
+    var count = 0
+    var arrival = app.shoalwatch.data.subtitles.Arrival.Arrived
+    var language = "eng"
+    var failure: app.shoalwatch.core.AppError? = null
+    val calls = mutableListOf<String>()
+
+    private fun <T> run(call: String, answer: () -> T): T {
+        calls += call
+        failure?.let { throw it }
+        return answer()
+    }
+
+    override suspend fun search(s: Session, itemId: String, language: String) = run("search:$itemId:$language") {
+        if (notAllowed) app.shoalwatch.data.subtitles.SubtitleSearch.NotAllowed else app.shoalwatch.data.subtitles.SubtitleSearch.Found(found)
+    }
+    override suspend fun download(s: Session, itemId: String, subtitleId: String) = run("download:$itemId:$subtitleId") {
+        if (notAllowed) app.shoalwatch.data.subtitles.SubtitleDownload.NotAllowed else app.shoalwatch.data.subtitles.SubtitleDownload.Requested
+    }
+    override suspend fun subtitleCount(s: Session, itemId: String) = run("subtitleCount:$itemId") { count }
+    override suspend fun awaitArrival(s: Session, itemId: String, countBefore: Int) = run("awaitArrival:$itemId:$countBefore") { arrival }
+    override suspend fun preferredLanguage(s: Session) = run("preferredLanguage") { language }
 }

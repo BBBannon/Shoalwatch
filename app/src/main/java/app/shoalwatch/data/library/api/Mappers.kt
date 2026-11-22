@@ -58,7 +58,10 @@ internal fun kindOf(type: String?): ItemKind = when (type) {
     "Season" -> ItemKind.SEASON
     "Episode" -> ItemKind.EPISODE
     "BoxSet" -> ItemKind.BOX_SET
-    "Folder", "CollectionFolder", "UserView" -> ItemKind.FOLDER
+    "Folder", "CollectionFolder", "UserView", "PhotoAlbum" -> ItemKind.FOLDER
+    "Photo" -> ItemKind.PHOTO
+    "Video" -> ItemKind.VIDEO
+    "Playlist" -> ItemKind.PLAYLIST
     else -> ItemKind.OTHER
 }
 
@@ -172,7 +175,7 @@ internal fun BaseItemDtoQueryResult.toPage(start: Int, limit: Int): Page<ItemWit
     return Page(toModels(limit), start, total?.coerceAtMost(Limits.TOTAL_MAX.toLong())?.toInt(), next, end)
 }
 
-/** Only films, TV, collections and mixed libraries; other kinds (music, books, ...) and invalid ids are skipped. */
+/** Only films, TV, collections, mixed, photos and home videos; other kinds (music, books, ...) and invalid ids are skipped. */
 internal fun BaseItemDtoQueryResult.toViews(): List<LibraryView> =
     items.orEmpty().asSequence().mapNotNull { it.toItemDto() }.mapNotNull { dto ->
         val viewId = id(dto.id) ?: return@mapNotNull null
@@ -181,6 +184,8 @@ internal fun BaseItemDtoQueryResult.toViews(): List<LibraryView> =
             "tvshows" -> LibraryKind.TV
             "boxsets" -> LibraryKind.BOX_SETS
             null, "mixed" -> LibraryKind.MIXED
+            "photos" -> LibraryKind.PHOTOS
+            "homevideos" -> LibraryKind.HOME_VIDEOS
             else -> return@mapNotNull null
         }
         LibraryView(viewId, displayText(dto.name, Limits.NAME), kind)
@@ -219,6 +224,9 @@ internal fun Set<ItemKind>.wire(): String = mapNotNull {
         ItemKind.EPISODE -> "Episode"
         ItemKind.BOX_SET -> "BoxSet"
         ItemKind.FOLDER -> "Folder"
+        ItemKind.PHOTO -> "Photo"
+        ItemKind.VIDEO -> "Video"
+        ItemKind.PLAYLIST -> "Playlist"
         ItemKind.OTHER -> null
     }
 }.sorted().joinToString(",")

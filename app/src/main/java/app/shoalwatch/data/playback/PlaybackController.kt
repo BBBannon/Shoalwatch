@@ -57,6 +57,7 @@ class PlaybackController internal constructor(
     subtitles: SubtitleLoader,
     captions: () -> CaptionDefaults,
 ) {
+    private var queue: PlayQueue? = null // in force until the screen ends (see [PlayQueue]); only [open] sets it
     private val _state = MutableStateFlow(PlaybackState.EMPTY)
     val state: StateFlow<PlaybackState> = _state.asStateFlow()
 
@@ -88,7 +89,7 @@ class PlaybackController internal constructor(
     /** Where the screen puts its `SurfaceView`: the engine's video output, nothing else of the engine (let go by [end]). */
     val video: VideoOutput get() = engine.video
 
-    fun open(itemId: String, from: StartFrom) {
+    fun open(itemId: String, from: StartFrom, queue: PlayQueue? = null, mediaSourceId: String? = null) {
         if (ended) return
         if (token == null) {
             val t = activePlayback.begin(session) { end(it) }
@@ -98,7 +99,8 @@ class PlaybackController internal constructor(
             work.launch { while (true) { delay(TICK_MS); tick() } }
             work.launch { while (true) { delay(CUE_TICK_MS); if (phase == Phase.PLAYING) trackControl.refreshCues() } }
         }
-        play(itemId, from)
+        queue?.let { this.queue = it } // null keeps the queue (a retry)
+        play(itemId, from, mediaSourceId) // the version is for this play only
     }
 
     fun playPause() {
@@ -153,7 +155,7 @@ class PlaybackController internal constructor(
         val c = current
         val plan = c?.resolved?.plan
         if (c == null || plan == null) return publish()
-        val wanted = trackControl.want(c) { it.copy(quality = quality) }
+        val wanted = trackControl.want(c) { it.copy(quality = quality) }.also { if (phase == Phase.PAUSED) c.startPaused = true } // a reload while paused loads paused (never clears an earlier mark)
         reload(c, stop = Stop.NORMAL) { resolver.resolve(session, wanted, TrackRules.burnInFormat(plan.copy(request = wanted))) }
     }
 
@@ -204,7 +206,7 @@ class PlaybackController internal constructor(
         _state.value = PlaybackState.CLOSED
     }
 
-    private fun play(itemId: String, from: StartFrom) {
+    private fun play(itemId: String, from: StartFrom, mediaSourceId: String? = null) {
         // The old item is stopped and silent while the next resolves; a failed resolve leaves it paused (Task 6 review M-2).
         current?.let { stopReport(it, failed = false); if (it.resolved != null) engine.pause() }
         val c = PlayingItem(itemId)
@@ -219,10 +221,8 @@ class PlaybackController internal constructor(
             c.entry = entry
             trackControl.recall(c)
             publish()
-            if (entry.item.kind == ItemKind.EPISODE) {
-                work.launch { c.around = navigator.around(session, entry.item); if (current === c) publish() }
-            }
-            load(c, PlaybackRules.startAt(entry.userData?.positionMs ?: 0, entry.item.runtimeMs, from), Stop.NONE) { resolver.resolve(session, PlaybackRequest(itemId, quality)) }
+            if (queue != null || entry.item.kind == ItemKind.EPISODE) work.launch { c.around = navigator.around(session, entry.item, queue); if (current === c) publish() }
+            load(c, PlaybackRules.startAt(entry.userData?.positionMs ?: 0, entry.item.runtimeMs, from), Stop.NONE) { resolver.resolve(session, PlaybackRequest(itemId, quality, mediaSourceId = mediaSourceId)) }
         }
     }
 

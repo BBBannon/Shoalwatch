@@ -19,7 +19,9 @@ import kotlinx.coroutines.withTimeoutOrNull
 class EpisodeNavigator(private val library: Library, private val waitMs: Long = 5_000) {
     data class Around(val previous: Item?, val next: Item?)
 
-    suspend fun around(s: Session, episode: Item): Around {
+    suspend fun around(s: Session, episode: Item, queue: PlayQueue? = null): Around {
+        // A play queue the item is in wins over the series; a neighbour that cannot be read is no neighbour.
+        queue?.takeIf { it.contains(episode.id) }?.let { return Around(readItem(s, it.previous(episode.id)), readItem(s, it.next(episode.id))) }
         val seriesId = episode.seriesId?.takeIf { episode.kind == ItemKind.EPISODE } ?: return NONE
         val here = read(s, seriesId, episode.seasonId) ?: return NONE
         val episodes = here.episodes.map { it.item }
@@ -34,6 +36,9 @@ class EpisodeNavigator(private val library: Library, private val waitMs: Long = 
         val next = episodes.getOrNull(at + 1) ?: seasonAt(season + 1).firstOrNull()
         return Around(previous, next)
     }
+
+    private suspend fun readItem(s: Session, id: String?): Item? =
+        id?.let { withTimeoutOrNull(waitMs) { library.item(s, it).first { d -> d.item != null } }?.item?.item }
 
     private fun isSpecials(season: Item) = season.indexNumber == 0
 

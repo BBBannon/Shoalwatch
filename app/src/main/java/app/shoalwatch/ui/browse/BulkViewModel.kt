@@ -121,7 +121,7 @@ class BulkViewModel(
             BulkAction.DOWNLOAD -> each(s, items, R.plurals.bulk_downloading) { download(s, it) }
             BulkAction.REMOVE_DOWNLOAD -> each(s, items, R.plurals.bulk_download_removed) { downloads?.remove(s, it.id) }
             BulkAction.DELETE_FROM_SERVER -> askDelete(s, items)
-            BulkAction.MANAGE, BulkAction.MORE -> Unit // the screen opens its own sheet or route
+            BulkAction.ADD_TO_PLAYLIST, BulkAction.ADD_TO_COLLECTION, BulkAction.MANAGE, BulkAction.MORE -> Unit // the screen opens its own picker, sheet or route
         }
     }
 

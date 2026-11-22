@@ -29,6 +29,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import app.shoalwatch.R
+import app.shoalwatch.ui.discover.ExtrasBlock
+import app.shoalwatch.ui.discover.ExtrasControls
 import app.shoalwatch.data.images.backdropArtwork
 import app.shoalwatch.ui.components.BackBar
 import app.shoalwatch.ui.components.BannerActions
@@ -55,7 +57,7 @@ private val AboutPaneWidth = 400.dp
  * sheet are the one-column page's.
  */
 @Composable
-internal fun SeriesTwoPane(state: SeriesUiState, actions: SeriesActions, download: DownloadControls?) {
+internal fun SeriesTwoPane(state: SeriesUiState, actions: SeriesActions, download: DownloadControls?, extras: ExtrasControls? = null) {
     val strings = rememberStrings()
     val session = state.session
     val listState = rememberLazyListState()
@@ -108,6 +110,7 @@ internal fun SeriesTwoPane(state: SeriesUiState, actions: SeriesActions, downloa
                 item(key = "episodes-heading") { PaneHeading(stringResource(R.string.pane_series_episodes), Modifier.statusBarsPadding()) }
                 if (state.seasons.isNotEmpty()) item(key = "season-header") { SeasonHeader(state, actions) }
                 episodes(state, actions, session, strings, banner, download) { sheetId = it }
+                if (extras != null && session != null && series != null) item(key = "extras") { ExtrasBlock(extras, session) }
             }
         }
     }

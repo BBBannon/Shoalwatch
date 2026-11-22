@@ -56,9 +56,10 @@ fun SecondaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modi
 
 /** A text button in the error colour for the risky choice ("Use anyway", "Remove server"). */
 @Composable
-fun CautionButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, fillWidth: Boolean = true) {
+fun CautionButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, fillWidth: Boolean = true, enabled: Boolean = true) {
     TextButton(
         onClick = onClick,
+        enabled = enabled,
         modifier = (if (fillWidth) modifier.fillMaxWidth() else modifier).heightIn(min = 48.dp),
         colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
     ) {

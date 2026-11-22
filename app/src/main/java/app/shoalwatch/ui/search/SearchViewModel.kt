@@ -3,6 +3,10 @@ package app.shoalwatch.ui.search
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.shoalwatch.core.AppError
+import app.shoalwatch.data.discover.Discover
+import app.shoalwatch.data.discover.Named
+import app.shoalwatch.data.discover.PersonRef
+import app.shoalwatch.data.discover.SearchExtras
 import app.shoalwatch.data.library.ItemKind
 import app.shoalwatch.data.library.ItemWithUserData
 import app.shoalwatch.data.library.Library
@@ -43,6 +47,10 @@ data class SearchUiState(
     val episodes: List<ItemWithUserData> = emptyList(),
     val offline: Boolean = false,
     val error: String? = null,
+    /** Milestone 11: people, genres and collections matching the words, from the server (never while offline). */
+    val people: List<PersonRef> = emptyList(),
+    val genres: List<Named> = emptyList(),
+    val collections: List<ItemWithUserData> = emptyList(),
 ) {
     /** One letter typed: not enough to search yet. */
     val tooShort: Boolean get() = query.trim().length in 1 until MIN_QUERY
@@ -60,6 +68,7 @@ class SearchViewModel(
     private val catalog: ServerCatalog,
     private val library: Library,
     private val connections: ServerConnections,
+    private val discover: Discover? = null,
 ) : ViewModel() {
     private val query = MutableStateFlow("")
     private val retries = MutableStateFlow(0)
@@ -67,7 +76,7 @@ class SearchViewModel(
     private sealed interface Outcome {
         data object Idle : Outcome
         data object Searching : Outcome
-        data class Done(val result: SearchResult) : Outcome
+        data class Done(val result: SearchResult, val more: SearchExtras = SearchExtras.NONE) : Outcome
         data class Failed(val message: String) : Outcome
     }
 
@@ -79,17 +88,31 @@ class SearchViewModel(
             .flatMapLatest { (term, _) ->
                 if (term.length < MIN_QUERY) flowOf<Outcome>(Outcome.Idle) else flow<Outcome> {
                     emit(Outcome.Searching)
-                    emit(
-                        try {
-                            Outcome.Done(library.search(s, term))
+                    val result = try {
+                        library.search(s, term)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: AppError) {
+                        emit(Outcome.Failed(e.userMessage))
+                        return@flow
+                    } catch (e: Exception) {
+                        emit(Outcome.Failed(AppError.of(AppError.Kind.UNKNOWN).userMessage))
+                        return@flow
+                    }
+                    // Offline: only saved titles, and nothing is asked of the server. Online: the titles show at once and the people,
+                    // genres and collections follow when they arrive (a search with no titles waits for them rather than say "No results").
+                    val ask = discover != null && !result.offline
+                    if (!ask || result.items.isNotEmpty()) emit(Outcome.Done(result))
+                    if (ask) {
+                        val more = try {
+                            discover!!.searchMore(s, term)
                         } catch (e: CancellationException) {
                             throw e
-                        } catch (e: AppError) {
-                            Outcome.Failed(e.userMessage)
                         } catch (e: Exception) {
-                            Outcome.Failed(AppError.of(AppError.Kind.UNKNOWN).userMessage)
-                        },
-                    )
+                            SearchExtras.NONE
+                        }
+                        if (more != SearchExtras.NONE || result.items.isEmpty()) emit(Outcome.Done(result, more))
+                    }
                 }
             }
 
@@ -118,8 +141,13 @@ class SearchViewModel(
                 val films = items.filter { it.item.kind == ItemKind.MOVIE }
                 val series = items.filter { it.item.kind == ItemKind.SERIES }
                 val episodes = items.filter { it.item.kind == ItemKind.EPISODE }
-                val empty = films.isEmpty() && series.isEmpty() && episodes.isEmpty()
-                SearchUiState(if (empty) SearchPhase.EMPTY else SearchPhase.RESULTS, session, q, films, series, episodes, outcome.result.offline)
+                val more = outcome.more
+                val genres = more.genres
+                val empty = films.isEmpty() && series.isEmpty() && episodes.isEmpty() && more.people.isEmpty() && genres.isEmpty() && more.collections.isEmpty()
+                SearchUiState(
+                    if (empty) SearchPhase.EMPTY else SearchPhase.RESULTS, session, q, films, series, episodes, outcome.result.offline,
+                    people = more.people, genres = genres, collections = more.collections,
+                )
             }
         }
     }

@@ -93,8 +93,11 @@ interface SignInRoute {
 interface Authenticator {
     suspend fun findServer(input: String, draft: ServerNetDraft): ServerInfo
 
-    /** Null when no address of the server is verified right now. Ask again before every attempt. */
-    suspend fun signInRoute(serverId: String): SignInRoute?
+    /**
+     * Null when no address of the server is verified right now. Ask again before every attempt. [expectedUserId]: "Sign in
+     * again" for that profile, so signing in as anyone else fails with `WRONG_ACCOUNT` and changes no active profile.
+     */
+    suspend fun signInRoute(serverId: String, expectedUserId: String? = null): SignInRoute?
     fun quickConnect(route: SignInRoute): Flow<QuickConnectProgress>
     suspend fun signInWithPassword(route: SignInRoute, username: String, password: CharArray): AccountSummary
 
@@ -198,7 +201,7 @@ class AuthenticatorImpl(
 ) : Authenticator {
     override suspend fun findServer(input: String, draft: ServerNetDraft) = repository.findServer(input, draft)
 
-    override suspend fun signInRoute(serverId: String) = repository.signInRoute(serverId)
+    override suspend fun signInRoute(serverId: String, expectedUserId: String?) = repository.signInRoute(serverId, expectedUserId)
 
     override fun quickConnect(route: SignInRoute): Flow<QuickConnectProgress> =
         repository.quickConnect(route).map {

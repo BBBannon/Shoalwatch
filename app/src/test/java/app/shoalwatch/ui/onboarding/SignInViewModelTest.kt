@@ -51,6 +51,23 @@ class SignInViewModelTest {
 
     // --- Quick Connect ------------------------------------------------------------------------------------------
 
+    @Test fun signingInAgainAsOneProfileAsksForThatAccountAndSaysSoWhenAnotherApproves() {
+        auth.quickConnectFlow = { qc }
+        val vm = SignInViewModel("srv-1", auth, catalog, connections, expectedUserId = "u2")
+        main.dispatcher.scheduler.runCurrent()
+        assertEquals(listOf<String?>("u2"), auth.expectedUsers)
+        kotlinx.coroutines.runBlocking { qc.emit(QuickConnectProgress.Failed(app.shoalwatch.core.AppError.of(app.shoalwatch.core.AppError.Kind.WRONG_ACCOUNT))) }
+        val shown = vm.state.value.quickConnect as QuickConnectUi.Failed
+        assertTrue(shown.message.startsWith("That signed in as a different account"))
+        assertFalse(vm.state.value.signedIn)
+    }
+
+    @Test fun anOrdinarySignInAsksForAnyAccount() {
+        vm()
+        main.dispatcher.scheduler.runCurrent()
+        assertEquals(listOf<String?>(null), auth.expectedUsers)
+    }
+
     @Test fun quickConnectStartsFirstAndShowsTheCodeWithACountdown() {
         val vm = vm()
         assertEquals(SignInMode.QuickConnect, vm.state.value.mode)

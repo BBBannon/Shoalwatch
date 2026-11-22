@@ -59,13 +59,13 @@ fun SelectionBackHandler(selection: Selection) {
 
 /**
  * What the bar can do. Each screen offers the ones that make sense there ([BulkAction.forBrowsing], [BulkAction.forDownloads]).
- * Milestone 11 adds `ADD_TO_PLAYLIST` and `ADD_TO_COLLECTION` here and one branch in `BulkViewModel.apply`.
+ * `ADD_TO_PLAYLIST` and `ADD_TO_COLLECTION` (Milestone 11) open the add-to picker ([BulkHost.picker]) on the picked items.
  */
-enum class BulkAction { MARK_WATCHED, MARK_UNWATCHED, FAVOURITE, UNFAVOURITE, DOWNLOAD, REMOVE_DOWNLOAD, DELETE_FROM_SERVER, MANAGE, MORE;
+enum class BulkAction { MARK_WATCHED, MARK_UNWATCHED, FAVOURITE, UNFAVOURITE, DOWNLOAD, REMOVE_DOWNLOAD, ADD_TO_PLAYLIST, ADD_TO_COLLECTION, DELETE_FROM_SERVER, MANAGE, MORE;
 
     companion object {
         /** Library grids, Home rows, search and a season's episodes. */
-        val forBrowsing = listOf(MARK_WATCHED, MARK_UNWATCHED, FAVOURITE, UNFAVOURITE, DOWNLOAD, DELETE_FROM_SERVER, MANAGE, MORE)
+        val forBrowsing = listOf(MARK_WATCHED, MARK_UNWATCHED, FAVOURITE, UNFAVOURITE, DOWNLOAD, ADD_TO_PLAYLIST, ADD_TO_COLLECTION, DELETE_FROM_SERVER, MANAGE, MORE)
         /** The Downloads tab: what makes sense for what is on the phone. */
         val forDownloads = listOf(MARK_WATCHED, MARK_UNWATCHED, FAVOURITE, UNFAVOURITE, REMOVE_DOWNLOAD, DELETE_FROM_SERVER, MANAGE)
     }

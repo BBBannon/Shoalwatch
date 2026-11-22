@@ -11,22 +11,6 @@ import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import app.shoalwatch.AppGraph
-import app.shoalwatch.data.playback.PlaybackState
-import android.content.pm.PackageManager
-import androidx.compose.ui.platform.LocalContext
-import app.shoalwatch.ui.components.LocalCovered
-import app.shoalwatch.ui.player.HostLifecycle
-import app.shoalwatch.ui.player.LocalPipHost
-import app.shoalwatch.ui.player.PipEffect
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import app.shoalwatch.ui.player.PlayerActions
-import app.shoalwatch.ui.player.PlayerScreen
-import app.shoalwatch.ui.player.PlayerViewModel
-import app.shoalwatch.ui.player.PlayerWindow
-import app.shoalwatch.ui.player.TouchExploration
-import app.shoalwatch.ui.player.VideoSurface
-import app.shoalwatch.ui.player.rememberDolbyVisionScreen
 import app.shoalwatch.ui.home.HomeActions
 import app.shoalwatch.ui.home.HomeScreen
 import app.shoalwatch.ui.home.HomeViewModel
@@ -84,6 +68,8 @@ internal fun NavHostController.open(destination: Destination) {
         is Destination.Library -> navigate(Routes.library(destination.parentId))
         is Destination.Series -> navigate(Routes.series(destination.seriesId, destination.seasonId, destination.episodeId))
         is Destination.Detail -> navigate(Routes.item(destination.itemId))
+        is Destination.Playlist -> navigate(Routes.playlist(destination.playlistId))
+        is Destination.Photo -> navigate(Routes.photo(destination.photoId, destination.parentId))
     }
 }
 
@@ -119,6 +105,7 @@ internal fun HomeRoute(graph: AppGraph, nav: NavHostController, fresh: Boolean) 
             onSubmitSwitch = vm::submitSwitch,
             onDismissSwitch = vm::dismissSwitch,
             onOpenSettings = { nav.navigate(Routes.SETTINGS) },
+            onOpenPlaylists = { nav.navigate(Routes.PLAYLISTS) { launchSingleTop = true } },
         )
     }
     val bulk = rememberBulkHost(graph, nav)
@@ -146,6 +133,9 @@ internal fun LibraryRoute(graph: AppGraph, nav: NavHostController, viewId: Strin
             onOpenServers = { nav.navigate(Routes.SERVERS) },
             onSetPlayed = vm::setPlayed,
             onSetFavourite = vm::setFavourite,
+            onOpenFilter = { nav.navigate(Routes.browse(viewId)) },
+            onOpenGenres = { nav.navigate(Routes.genres(viewId)) },
+            onOpenStudios = { nav.navigate(Routes.studios(viewId)) },
         )
     }
     LibraryGridScreen(state, actions, vm.messages, snackbar, rememberBulkHost(graph, nav))
@@ -161,6 +151,7 @@ internal fun SeriesRoute(graph: AppGraph, nav: NavHostController, seriesId: Stri
     val state by vm.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val bulk = rememberBulkHost(graph, nav)
+    val extras = rememberExtras(graph, nav, seriesId, snackbar).controls
     val canManage = bulk.state.canManage
     val actions = remember(vm, nav, canManage) {
         SeriesActions(
@@ -183,13 +174,13 @@ internal fun SeriesRoute(graph: AppGraph, nav: NavHostController, seriesId: Stri
         statuses, onDownload = vm::downloadEpisode, onRetry = vm::retryDownload, onOpenDownloads = { nav.switchTab(Tab.DOWNLOADS) },
         onSeason = vm::downloadSeason, onSeries = vm::downloadSeries, onUnwatched = vm::downloadUnwatched,
     )
-    SeriesScreen(state, actions, vm.messages, snackbar, download, bulk)
+    SeriesScreen(state, actions, vm.messages, snackbar, download, bulk, extras)
     DownloadSheetHost(vm.downloadActions, state.session, { graph.downloadPrefs.notificationAsked }, graph.downloadPrefs::markNotificationAsked)
 }
 
 @Composable
 internal fun DetailRoute(graph: AppGraph, nav: NavHostController, itemId: String) {
-    val vm = graphViewModel(key = itemId) { DetailViewModel(itemId, graph.serverCatalog, graph.addressSelector, graph.library, graph.playstate, graph.downloads) }
+    val vm = graphViewModel(key = itemId) { DetailViewModel(itemId, graph.serverCatalog, graph.addressSelector, graph.library, graph.playstate, graph.downloads, graph.live.remoteSubtitles) }
     val statuses by vm.downloadStatus.collectAsStateWithLifecycle()
     val state by vm.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
@@ -200,7 +191,10 @@ internal fun DetailRoute(graph: AppGraph, nav: NavHostController, itemId: String
     val canDelete = bulk.state.canDelete && !canManage && shown != null
     app.shoalwatch.ui.components.BulkNoticesEffect(bulk.notices, snackbar)
     bulk.state.deleteAsk?.let { ask -> app.shoalwatch.ui.components.DeleteFromServerDialog(ask, bulk.onKeepCopy, bulk.onConfirmDelete, bulk.onDismissDelete, busy = bulk.state.running) }
-    val actions = remember(vm, nav, canManage, canDelete, shown, strings) {
+    val picker = bulk.picker
+    if (picker != null) app.shoalwatch.ui.lists.ListPickerEffects(picker, snackbar)
+    val extras = rememberExtras(graph, nav, itemId, snackbar)
+    val actions = remember(vm, nav, canManage, canDelete, shown, strings, picker, extras.vm) {
         DetailActions(
             onBack = { nav.popBackStack() },
             onRefresh = vm::refresh,
@@ -210,31 +204,45 @@ internal fun DetailRoute(graph: AppGraph, nav: NavHostController, itemId: String
             onOpenServers = { nav.navigate(Routes.SERVERS) },
             onSetPlayed = vm::setPlayed,
             onSetFavourite = vm::setFavourite,
-            onPlay = { from -> nav.navigate(Routes.player(itemId, from)) },
+            // The version picked is for this play only (taken, so it is cleared); none picked is the server's first.
+            onPlay = { from -> extras.vm.once { nav.navigate(Routes.player(itemId, from, source = extras.vm.takeVersion())) } },
             onManage = if (canManage) ({ nav.navigate(app.shoalwatch.ui.manage.ManageRoutes.hub(itemId)) { launchSingleTop = true } }) else null,
             onDelete = if (canDelete && shown != null) ({
                 bulk.onApply(listOf(app.shoalwatch.ui.browse.BulkItem(shown.id, shown.sheetTitle(strings), shown.kind, shown.seriesId)), app.shoalwatch.ui.browse.BulkAction.DELETE_FROM_SERVER)
             }) else null,
+            onAddToPlaylist = if (picker != null && shown != null) ({
+                picker.onOpen(listOf(app.shoalwatch.ui.browse.BulkItem(shown.id, shown.sheetTitle(strings), shown.kind, shown.seriesId)), app.shoalwatch.ui.lists.ListKind.PLAYLIST)
+            }) else null,
+            onAddToCollection = if (picker != null && shown != null) ({
+                picker.onOpen(listOf(app.shoalwatch.ui.browse.BulkItem(shown.id, shown.sheetTitle(strings), shown.kind, shown.seriesId)), app.shoalwatch.ui.lists.ListKind.COLLECTION)
+            }) else null,
+            onFindSubtitles = vm.subtitleSearch?.actions?.onOpen,
         )
     }
     val film = state.item?.item?.kind == app.shoalwatch.data.library.ItemKind.MOVIE
     val download = DownloadControls(statuses, onDownload = { vm.download(film) }, onRetry = { vm.retryDownload() }, onOpenDownloads = { nav.switchTab(Tab.DOWNLOADS) })
-    DetailScreen(state, actions, vm.messages, snackbar, download)
+    val search = vm.subtitleSearch
+    val searchUi = search?.state?.collectAsStateWithLifecycle()?.value
+    val subtitles = if (search != null && searchUi != null) app.shoalwatch.ui.subtitles.SubtitleSearchControls(searchUi, search.actions) else null
+    DetailScreen(state, actions, vm.messages, snackbar, download, extras.controls, subtitles)
     DownloadSheetHost(vm.downloadActions, state.session, { graph.downloadPrefs.notificationAsked }, graph.downloadPrefs::markNotificationAsked)
 }
 
 @Composable
 internal fun SearchRoute(graph: AppGraph, nav: NavHostController) {
-    val vm = graphViewModel { SearchViewModel(graph.serverCatalog, graph.library, graph.addressSelector) }
+    val vm = graphViewModel { SearchViewModel(graph.serverCatalog, graph.library, graph.addressSelector, graph.live.discover) }
+    val tap = app.shoalwatch.ui.discover.rememberTapOnce()
     val state by vm.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
-    val actions = remember(vm, nav) {
+    val actions = remember(vm, nav, tap) {
         SearchActions(
             onQueryChange = vm::onQueryChange,
             onClear = vm::clear,
             onRetry = vm::retry,
-            onOpen = nav::open,
+            onOpen = nav.openOnce(tap), // title and collection rows: a double tap opens one page
             onOpenServers = { nav.navigate(Routes.SERVERS) },
+            onOpenPerson = { id -> tap.once { nav.navigate(Routes.person(id)) } },
+            onOpenGenre = { genre -> tap.once { nav.navigate(Routes.browse(null, genreId = genre)) } },
         )
     }
     // Search shows no messages of its own, but the snackbar is the shell's: another tab's message does not outlive the account.
@@ -323,72 +331,3 @@ internal fun OfflineSeriesRoute(graph: AppGraph, nav: NavHostController, seriesI
         androidx.compose.material3.SnackbarHost(snackbar, androidx.compose.ui.Modifier.align(androidx.compose.ui.Alignment.BottomCenter).navigationBarsPadding())
     } }
 }
-
-/**
- * The player. Its ViewModel (and so the controller and the engine) lives as long as this back-stack entry, so a rotation does not
- * rebuffer. It leaves as soon as the session ends or the controller closes: popped back to where Play was pressed (and if the
- * session changed, `ClearBrowsingOnSessionChange` takes the stack to Home as for any other screen). Popping by route does
- * nothing if that has already taken the player away.
- */
-@Composable
-internal fun PlayerRoute(graph: AppGraph, nav: NavHostController, itemId: String, from: StartFrom) {
-    val vm = graphStateViewModel(key = "$itemId|$from") { saved ->
-        PlayerViewModel(itemId, from, saved, graph.serverCatalog, { s, scope -> graph.playbackController(s, scope, graph.lockParts.profilePlayback.autoplayReader(s, scope)) }, graph.subtitleSettings, graph.qualityDefault, graph.addressSelector::refreshIfOffline, graph.housekeeping)
-    }
-    val state by vm.state.collectAsStateWithLifecycle()
-    LaunchedEffect(state.leave) { if (state.leave) nav.popBackStack(Routes.PLAYER, inclusive = true) }
-    val playing = state.playback.phase == PlaybackState.Phase.PLAYING || state.playback.phase == PlaybackState.Phase.BUFFERING
-    PlayerWindow(keepOn = playing, locked = state.locked)
-    HostLifecycle(onStopped = vm::onHostStopped, onStarted = vm::onHostStarted)
-    TouchExploration(vm::setTouchExploration)
-    // Picture-in-picture (Milestone 7): wished for while this player shows and nothing covers it; the small window's button plays and pauses.
-    val pip = LocalPipHost.current?.takeIf { LocalContext.current.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE) }
-    val inPip by (pip?.inPip ?: NotInPip).collectAsStateWithLifecycle()
-    val aspect by (vm.video?.aspectRatio ?: NoAspect).collectAsStateWithLifecycle()
-    PipEffect(state, enabled = !LocalCovered.current, onPlayPause = vm::playPause, aspect = aspect)
-    val actions = remember(vm, nav, pip) {
-        PlayerActions(
-            onBack = { nav.popBackStack(Routes.PLAYER, inclusive = true) },
-            onTapSurface = vm::tapSurface,
-            onPlayPause = vm::playPause,
-            onSeek = vm::seekTo,
-            onSkipBack = { vm.skipBy(-SKIP_MS) },
-            onSkipForward = { vm.skipBy(SKIP_MS) },
-            onDoubleTap = { forward -> vm.skipBy(if (forward) SKIP_MS else -SKIP_MS) },
-            onPrevious = vm::previous,
-            onNext = vm::next,
-            onSkipSegment = vm::skipSegment,
-            onPlayUpNext = vm::playUpNext,
-            onCancelUpNext = vm::cancelUpNext,
-            onToggleLock = vm::toggleLock,
-            onOpenSheet = vm::openSheet,
-            onCloseSheet = vm::closeSheet,
-            onSelectAudio = vm::selectAudio,
-            onSelectSubtitle = vm::selectSubtitle,
-            onBurnIn = vm::burnIn,
-            onQuality = vm::setQuality,
-            onSpeed = vm::setSpeed,
-            onSleep = vm::setSleep,
-            onAppearance = vm::setAppearance,
-            onDelay = vm::setDelay,
-            onRetry = vm::retry,
-            onSignIn = { vm.state.value.session?.let { nav.navigate(Routes.signIn(it.serverId)) } },
-            onDismissSubtitleNotice = vm::dismissSubtitleNotice,
-            onDismissSleepFired = vm::dismissSleepFired,
-            onWatchedDelete = vm::watchedDelete,
-            onWatchedTogether = vm::watchedTogether,
-            onKeepDownload = vm::keepDownload,
-            onDismissWatchedMessage = vm::dismissWatchedMessage,
-            onSubmitSharerPin = vm::submitSharerPin,
-            onCancelSharerPin = vm::cancelSharerPin,
-            onEnterPip = pip?.let { host -> { host.enterNow(); Unit } },
-        )
-    }
-    PlayerScreen(state, actions, rememberDolbyVisionScreen(), inPip, sharerPin = vm.sharerPin) { controlsUp ->
-        VideoSurface(vm.video, vm.cues, state.appearance, controlsUp)
-    }
-}
-
-private const val SKIP_MS = 10_000L
-private val NotInPip: StateFlow<Boolean> = MutableStateFlow(false)
-private val NoAspect: StateFlow<Float?> = MutableStateFlow(null)

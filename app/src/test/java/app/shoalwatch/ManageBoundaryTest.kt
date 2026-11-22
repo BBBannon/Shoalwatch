@@ -67,11 +67,27 @@ class ManageBoundaryTest {
         val files = sources()
         val gateway = files.single { it.first.endsWith("/data/manage/api/ManageGateway.kt") }
         for (p in managePaths) assertTrue("the gateway names $p", gateway.second.any { p in it })
-        val found = hits(files, { !it.endsWith("/data/manage/api/ManageGateway.kt") && "/test/" !in it }) { line ->
-            listOf("RemoteSearch/", "/RemoteImages", "/MetadataEditor").any { it in line } && "\"" in line
-        }
+        val found = managePathsOutsideTheGateway(files)
         assertTrue(found.joinToString("\n"), found.isEmpty())
     }
+
+    /**
+     * The one narrowed allowance: Milestone 11 finds subtitles online through the user's own server (plan decision 15, roadmap D7),
+     * in its own gateway with its own rules (SubtitlesGatewayTest). That is not library management (no identify, no pictures, no
+     * metadata editing), so `RemoteSearch/Subtitles/` alone is allowed, in that one file only. Any other management path there, or
+     * the subtitle path anywhere else, still fails.
+     */
+    private val subtitlesGateway = "/data/subtitles/api/SubtitlesGateway.kt"
+    private val subtitleSearch = "RemoteSearch/Subtitles/"
+
+    internal fun managePathsOutsideTheGateway(files: List<Pair<String, List<String>>>) =
+        files.filter { (path, _) -> !path.endsWith("/data/manage/api/ManageGateway.kt") && "/test/" !in path }.flatMap { (path, lines) ->
+            val allowed = if (path.endsWith(subtitlesGateway)) subtitleSearch else null
+            hits(listOf(path to lines), { true }) { line ->
+                val scanned = allowed?.let { line.replace(it, "") } ?: line
+                listOf("RemoteSearch/", "/RemoteImages", "/MetadataEditor").any { it in scanned } && "\"" in scanned
+            }
+        }
 
     @Test fun everyCallIsGatedAndEveryChangeIsSentOnce() {
         val (path, lines) = sources().single { it.first.endsWith("/data/manage/api/ManageGateway.kt") }
@@ -105,5 +121,13 @@ class ManageBoundaryTest {
         for (word in stored) assertEquals(word, 1, storageViolations(listOf(ui to listOf("val a = $word"))).size)
         assertTrue("AppLog is fine", storageViolations(listOf(ui to listOf("AppLog.d(TAG, \"x\")"))).isEmpty())
         assertTrue("a comment is not a use", uiViolations(listOf(ui to listOf("// ManageGateway"))).isEmpty())
+        val subs = "src/main/java/app/shoalwatch/data/subtitles/api/SubtitlesGateway.kt"
+        val other = "src/main/java/app/shoalwatch/data/discover/api/DiscoverGateway.kt"
+        val search = "api.get(s, \"/Items/\$id/RemoteSearch/Subtitles/\$language\")"
+        assertTrue("subtitle search in its own gateway is allowed", managePathsOutsideTheGateway(listOf(subs to listOf(search))).isEmpty())
+        assertEquals("but nowhere else", 1, managePathsOutsideTheGateway(listOf(other to listOf(search))).size)
+        for (p in listOf("api.get(s, \"/Items/RemoteSearch/Movie\")", "api.get(s, \"/Items/\$id/RemoteImages\")", "api.get(s, \"/Items/\$id/MetadataEditor\")")) {
+            assertEquals("the subtitle gateway still may not name $p", 1, managePathsOutsideTheGateway(listOf(subs to listOf(p))).size)
+        }
     }
 }

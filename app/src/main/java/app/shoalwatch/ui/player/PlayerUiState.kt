@@ -6,6 +6,8 @@ import app.shoalwatch.data.playback.SleepChoice
 import app.shoalwatch.data.playback.SubtitleAppearance
 import app.shoalwatch.data.servers.Session
 import app.shoalwatch.security.PinCheck
+import app.shoalwatch.ui.subtitles.SubtitleSearchActions
+import app.shoalwatch.ui.subtitles.SubtitleSearchUi
 
 /**
  * What the player screen shows. [playback] is the controller's state (no URL, token or Media3 type; it holds a title and a
@@ -32,6 +34,8 @@ data class PlayerUiState(
     val sharerPin: SharerPinAsk? = null,
     /** What a watch-and-delete press did: said once in the snackbar, until dismissed. */
     val watchedMessage: WatchedMessage? = null,
+    /** "Find subtitles online" (the [PlayerSheet.SUBTITLE_SEARCH] sheet). */
+    val search: SubtitleSearchUi = SubtitleSearchUi(),
     val leave: Boolean = false,
 ) {
     override fun toString() = "PlayerUiState(phase=${playback.phase}, leave=$leave)"
@@ -57,7 +61,7 @@ data class SharerPinAsk(val name: String?, val answer: PinCheck? = null, val bus
     override fun toString() = "SharerPinAsk(<redacted>)"
 }
 
-enum class PlayerSheet { TRACKS, QUALITY, SPEED, SLEEP, SUBTITLE_STYLE, STREAM_INFO }
+enum class PlayerSheet { TRACKS, QUALITY, SPEED, SLEEP, SUBTITLE_STYLE, STREAM_INFO, SUBTITLE_SEARCH }
 
 /** What the player screen can ask for. The route wires these to the ViewModel and to navigation. */
 class PlayerActions(
@@ -97,4 +101,6 @@ class PlayerActions(
     val onCancelSharerPin: () -> Unit = {},
     /** The top bar's "Picture-in-picture" button; null where the window cannot do it (no button then). */
     val onEnterPip: (() -> Unit)? = null,
+    /** Milestone 11: "Find subtitles online" in the Subtitles sheet; null hides it. [SubtitleSearchActions.onClose] goes back to the Subtitles sheet. */
+    val search: SubtitleSearchActions? = null,
 )

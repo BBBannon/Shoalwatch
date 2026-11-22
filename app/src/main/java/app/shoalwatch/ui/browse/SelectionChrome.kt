@@ -9,6 +9,9 @@ import app.shoalwatch.ui.components.BulkNoticesEffect
 import app.shoalwatch.ui.components.CardSelect
 import app.shoalwatch.ui.components.DeleteFromServerDialog
 import app.shoalwatch.ui.components.SelectionControls
+import app.shoalwatch.ui.lists.ListKind
+import app.shoalwatch.ui.lists.ListPickerEffects
+import app.shoalwatch.ui.lists.ListPickerHost
 import kotlinx.coroutines.flow.Flow
 
 /** What a browsing screen is given for multi-select (Milestone 10): the shared [BulkViewModel]'s state and entry points. */
@@ -23,6 +26,8 @@ class BulkHost(
     val onManage: (itemId: String) -> Unit,
     /** Whether this screen can download (false on Downloads, where it already is). */
     val canDownload: Boolean = true,
+    /** The add-to picker (Milestone 11); null where a screen has none (Add to playlist and Add to collection are then not offered). */
+    val picker: ListPickerHost? = null,
 )
 
 /** The card's selection: null when the screen has no multi-select. */
@@ -43,6 +48,7 @@ fun rememberCardSelect(selection: Selection?, id: String, title: String): CardSe
 fun SelectionChrome(selection: Selection, host: BulkHost, listed: Map<String, BulkItem>, snackbar: SnackbarHostState) {
     SelectionBackHandler(selection)
     BulkNoticesEffect(host.notices, snackbar)
+    host.picker?.let { ListPickerEffects(it, snackbar) }
     LaunchedEffect(listed.keys) { selection.keepOnly(listed.keys) }
     host.state.deleteAsk?.let { ask ->
         DeleteFromServerDialog(ask, host.onKeepCopy, onConfirm = { host.onConfirmDelete(); selection.clear() }, onDismiss = host.onDismissDelete, busy = host.state.running)
@@ -69,6 +75,7 @@ fun selectionControls(
             BulkAction.MANAGE -> host.state.canManage && one
             BulkAction.MORE -> one && onMore != null
             BulkAction.DOWNLOAD -> host.canDownload
+            BulkAction.ADD_TO_PLAYLIST, BulkAction.ADD_TO_COLLECTION -> host.picker != null
             else -> true
         }
     }
@@ -77,6 +84,10 @@ fun selectionControls(
         when (action) {
             BulkAction.MORE -> items.singleOrNull()?.let { onMore?.invoke(it.id) }.also { selection.clear() }
             BulkAction.MANAGE -> items.singleOrNull()?.let { host.onManage(it.id) }.also { selection.clear() }
+            BulkAction.ADD_TO_PLAYLIST, BulkAction.ADD_TO_COLLECTION -> {
+                host.picker?.onOpen(items, if (action == BulkAction.ADD_TO_PLAYLIST) ListKind.PLAYLIST else ListKind.COLLECTION)
+                selection.clear()
+            }
             BulkAction.DELETE_FROM_SERVER -> host.onApply(items, action)
             else -> {
                 host.onApply(items, action)

@@ -98,6 +98,8 @@ class HomeActions(
     val onDismissSwitch: () -> Unit = {},
     /** The account menu's "Settings" (Milestone 7). */
     val onOpenSettings: () -> Unit = {},
+    /** The Playlists card at the end of the libraries (Milestone 11). */
+    val onOpenPlaylists: () -> Unit = {},
 )
 
 /**
@@ -221,7 +223,7 @@ private fun HomeList(state: HomeUiState, actions: HomeActions, selection: Select
                 state.latest.forEach { latest ->
                     posterRow(latest.view, latest.row, session, strings, state, banner, actions, wide, gaps, selection) { id -> sheetId = id; sheetFromResume = false }
                 }
-                if (state.views.isNotEmpty()) librariesSection(state, actions, strings, wide, gaps)
+                librariesSection(state, actions, strings, wide, gaps)
             }
         }
     }

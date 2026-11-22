@@ -43,7 +43,9 @@ class PlaybackResolver internal constructor(
      */
     suspend fun resolve(s: Session, request: PlaybackRequest, burnInFormat: String? = null): Resolved {
         if (!request.forceTranscode && request.burnInSubtitleIndex == null) {
-            saved(s, request.itemId)?.let { copy -> return Resolved(TrackRules.withRequest(copy.plan, request), null, copy.media) }
+            // A saved copy is the first version: a different chosen version is asked of the server.
+            val version = request.mediaSourceId?.takeIf(MediaPaths::isSourceId) // an invalid id is no choice, so it cannot skip the saved copy
+            saved(s, request.itemId)?.takeIf { version == null || it.plan.mediaSourceId == version }?.let { copy -> return Resolved(TrackRules.withRequest(copy.plan, request), null, copy.media) }
         }
         return remote(s, request, burnInFormat)
     }
@@ -129,6 +131,7 @@ class PlaybackResolver internal constructor(
             allowVideoStreamCopy = true,
             allowAudioStreamCopy = true,
             alwaysBurnInSubtitleWhenTranscoding = burnIn != null,
+            mediaSourceId = request.mediaSourceId?.takeIf(MediaPaths::isSourceId),
         )
         // StartTimeTicks is not sent: every stream starts at zero and the player seeks (HLS playlists cover the whole runtime).
         return gateway.playbackInfo(s, request.itemId, body)

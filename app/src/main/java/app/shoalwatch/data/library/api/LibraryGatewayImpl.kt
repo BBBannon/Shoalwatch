@@ -145,7 +145,7 @@ class LibraryGatewayImpl(private val api: ServerApi) : LibraryGateway {
     /** A caller's id as a normalised GUID; anything else fails before a request is made, without echoing it. */
     private fun idOf(raw: String): String = JellyfinId.parseOrNull(raw)?.value ?: throw AppError.of(AppError.Kind.SERVER_NOT_FOUND)
 
-    private companion object {
+    internal companion object {
         const val MAX_PAGE = 200
         const val MAX_SEARCH = 50
         const val MAX_TERM = 100

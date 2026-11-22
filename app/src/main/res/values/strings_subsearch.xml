@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Milestone 11, Task 9: find subtitles online (the player's subtitle sheet and the detail page). UK English, plain words. -->
+<resources>
+    <string name="subsearch_find">Find subtitles online</string>
+    <string name="subsearch_title">Find subtitles online</string>
+    <string name="subsearch_language">Language: %1$s</string>
+    <string name="subsearch_language_change">Change language</string>
+    <string name="subsearch_language_heading">Choose a language</string>
+    <string name="subsearch_searching">Looking for subtitles…</string>
+    <string name="subsearch_none">No subtitles found in this language.</string>
+    <string name="subsearch_offline_title">You\'re offline</string>
+    <string name="subsearch_offline_body">Connect to your server to look for subtitles.</string>
+    <string name="subsearch_failed">Couldn\'t look for subtitles.</string>
+    <string name="subsearch_refused">This profile isn\'t allowed to fetch subtitles.</string>
+    <string name="subsearch_download">Download</string>
+    <string name="subsearch_download_for">Download subtitles: %1$s</string>
+    <string name="subsearch_sending">Sending…</string>
+    <string name="subsearch_arrived">Subtitles added. Pick them in the Subtitles list.</string>
+    <string name="subsearch_arrived_detail">Subtitles added.</string>
+    <string name="subsearch_arrived_elsewhere">Subtitles added. They\'ll be there next time you play it.</string>
+    <string name="subsearch_later">Downloaded. It can take a minute to show.</string>
+    <string name="subsearch_send_failed">Couldn\'t download that one. Try again.</string>
+    <string name="subsearch_send_offline">You\'re offline. Try again when you\'re connected.</string>
+    <string name="subsearch_unreachable">Couldn\'t reach your server. Nothing was sent.</string>
+    <string name="subsearch_close">Close</string>
+    <string name="subsearch_rating">Rating %1$s</string>
+    <plurals name="subsearch_downloads">
+        <item quantity="one">%1$s download</item>
+        <item quantity="other">%1$s downloads</item>
+    </plurals>
+    <string name="subsearch_hearing_impaired">Hearing impaired</string>
+    <string name="subsearch_forced">Forced</string>
+</resources>

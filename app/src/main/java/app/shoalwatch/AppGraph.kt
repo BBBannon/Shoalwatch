@@ -386,6 +386,8 @@ class AppGraph(internal val appContext: Context) {
     }
     /** What the management screens call: every request gated on [adminRights] (see "Library management" in docs/ARCHITECTURE.md). */
     val manage: app.shoalwatch.data.manage.Manage get() = manageGateway
+    // ---- Milestone 11: playlists and collections, discovery, subtitles from the internet, play queues. Live only.
+    internal val live: LiveParts by lazy { LiveParts(this) }
     /** Pictures from the photo picker, read through the content resolver and re-encoded on the phone. */
     val pickedImages: app.shoalwatch.data.manage.PickedImages by lazy { app.shoalwatch.data.manage.PickedImages(appContext.contentResolver::openInputStream) }
     /** Approving a Quick Connect code from Settings: only while the asking profile is still the active one. */

@@ -28,9 +28,10 @@ def norm(raw):
     return raw.replace("-", "").lower()
 
 
-def policy(admin, downloads, all_folders, folders, disabled=False, deletion=None):
+def policy(admin, downloads, all_folders, folders, disabled=False, deletion=None, managing=None):
     return {"IsAdministrator": admin, "IsHidden": False, "IsDisabled": disabled, "EnableContentDownloading": downloads,
             "EnableContentDeletion": admin if deletion is None else deletion, "EnableContentDeletionFromFolders": [],
+            "EnableCollectionManagement": admin if managing is None else managing, "EnableSubtitleManagement": admin if managing is None else managing,
             "EnableAllFolders": all_folders, "EnabledFolders": folders, "EnableRemoteControlOfOtherUsers": admin,
             "EnableMediaPlayback": True, "MaxActiveSessions": 0, **PROVIDERS, "MockFutureField": 7}
 
@@ -181,7 +182,7 @@ def revoke_device(dev_id):
 def user_dto(uid):
     user = S["users"][uid]
     out = {"Name": user["Name"], "ServerId": S["server_id"], "Id": uid, "HasPassword": True, "HasConfiguredPassword": True,
-           "Policy": copy.deepcopy(user["Policy"]), "Configuration": {"PlayDefaultAudioTrack": True}}
+           "Policy": copy.deepcopy(user["Policy"]), "Configuration": {"PlayDefaultAudioTrack": True, "SubtitleLanguagePreference": {"anna": "fra"}.get(user["Name"], "eng" if user["Name"] == "ben" else "")}}
     if user["Seen"]:
         out["LastActivityDate"] = out["LastLoginDate"] = iso(user["Seen"])
     return out

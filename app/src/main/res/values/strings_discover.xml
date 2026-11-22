@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Milestone 11 Task 8: the detail extras block, person pages, the filtered library list, genre and studio pages and the search extras. UK English. -->
+<resources>
+    <!-- Detail extras -->
+    <string name="extras_cast">Cast and crew</string>
+    <string name="extras_person_cd">%1$s, %2$s</string>
+    <string name="extras_trailers">Trailers</string>
+    <string name="extras_play_trailer">Play trailer: %1$s</string>
+    <string name="extras_play_trailer_plain">Play trailer</string>
+    <string name="extras_watch_trailer">Watch the trailer on %1$s</string>
+    <string name="extras_extras">Extras</string>
+    <string name="extras_similar">More like this</string>
+    <string name="extras_collections">Part of this collection</string>
+    <string name="extras_version_heading">Version</string>
+    <string name="extras_version_n">Version %1$d</string>
+    <string name="extras_offline_body">Connect to your server to see the cast, trailers and more.</string>
+    <string name="extras_no_app">No app on this phone can open that link.</string>
+
+    <!-- Person page -->
+    <string name="person_title">Person</string>
+    <string name="person_no_overview">No description.</string>
+    <string name="person_works">Films and shows</string>
+    <string name="person_no_works">No films or shows found.</string>
+
+    <!-- Filtered list, genres and studios -->
+    <string name="discover_filter_button">Filter</string>
+    <string name="discover_filter_title">Filter</string>
+    <string name="discover_genres_title">Genres</string>
+    <string name="discover_studios_title">Studios</string>
+    <string name="discover_names_empty_title">Nothing listed</string>
+    <string name="discover_genres_empty">This library has no genres.</string>
+    <string name="discover_studios_empty">This library has no studios.</string>
+    <string name="discover_filter_genre">Genre</string>
+    <string name="discover_filter_year">Year</string>
+    <string name="discover_filter_rating">Age rating</string>
+    <string name="discover_filter_studio">Studio</string>
+    <string name="discover_filter_tag">Tag</string>
+    <string name="discover_filter_any">Any</string>
+    <string name="discover_filter_chosen">%1$s: %2$s</string>
+    <string name="discover_filter_selected">chosen</string>
+    <string name="discover_letter_cd">Titles starting with %1$s</string>
+    <string name="discover_letter_hash_cd">Titles starting with a number or symbol</string>
+
+    <!-- Search extras -->
+    <string name="search_heading_people">People</string>
+    <string name="search_heading_genres">Genres</string>
+    <string name="search_heading_collections">Collections</string>
+</resources>

@@ -51,6 +51,11 @@ data class PlaybackRequest(
     /** The user asked the server to draw this subtitle (any kind). */
     val burnInSubtitleIndex: Int? = null,
     val forceTranscode: Boolean = false,
+    /**
+     * The version (`MediaSourceInfo.Id`, 32 hex characters) the user chose for this one play; sent as `MediaSourceId`. The plan
+     * uses that source if the server returns it, else the first. Never remembered; an invalid id is ignored ([MediaPaths.isSourceId]).
+     */
+    val mediaSourceId: String? = null,
 )
 
 data class PlaybackPlan(

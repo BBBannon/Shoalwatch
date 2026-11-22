@@ -26,7 +26,6 @@ import androidx.compose.foundation.background
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavGraph
-import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -67,13 +66,18 @@ internal object Routes {
     const val ARG_ITEM = "itemId"
     const val ITEM = "item/{$ARG_ITEM}"
     const val ARG_FROM = "from"
+    /** The player's optional play queue token (`PlayQueues`; an unknown one plays the item alone) and chosen version (`MediaSourceId`, one play only). */
+    const val ARG_QUEUE = "queue"
+    const val ARG_SOURCE = "source"
     /** The player for an item. [ARG_FROM] is "resume" or "start"; anything else (or nothing) arrives as the start. */
-    const val PLAYER = "play/{$ARG_ITEM}?$ARG_FROM={$ARG_FROM}"
+    const val PLAYER = "play/{$ARG_ITEM}?$ARG_FROM={$ARG_FROM}&$ARG_QUEUE={$ARG_QUEUE}&$ARG_SOURCE={$ARG_SOURCE}"
     const val SERVERS = "servers"
     const val ARG_SERVER = "serverId"
     /** [ARG_USER]: a profile's name to fill in (signing in again after the server rejected its sign-in); optional. */
     const val ARG_USER = "user"
-    const val SIGN_IN = "sign_in/{$ARG_SERVER}?$ARG_USER={$ARG_USER}"
+    /** [ARG_USER_ID]: that profile's id; the sign-in must come back as it or nothing changes (`WRONG_ACCOUNT`). Optional. */
+    const val ARG_USER_ID = "userId"
+    const val SIGN_IN = "sign_in/{$ARG_SERVER}?$ARG_USER={$ARG_USER}&$ARG_USER_ID={$ARG_USER_ID}"
     const val SERVER_EDIT = "server/{$ARG_SERVER}"
     /** One downloaded series, offline (Milestone 4). A malformed id reads as "This is no longer available". */
     const val DOWNLOADED_SERIES = "downloads/series/{$ARG_SERIES}"
@@ -83,6 +87,36 @@ internal object Routes {
     /** Approve a Quick Connect code (Milestone 10): not an account route. */
     const val QUICK_CONNECT = "settings/quick_connect"
     const val STORAGE = "downloads/storage"
+
+    // ---- Milestone 11 (see "Playlists, collections and richer browsing" in docs/ARCHITECTURE.md). Ids are not trusted.
+    const val PLAYLISTS = "playlists"
+    const val ARG_PLAYLIST = "playlistId"
+    const val PLAYLIST = "playlist/{$ARG_PLAYLIST}"
+    const val ARG_PARENT = "parent"
+    /** The photo viewer at a photo, paging through its folder's photos ([ARG_PARENT], optional). */
+    const val PHOTO = "photo/{$ARG_ITEM}?$ARG_PARENT={$ARG_PARENT}"
+    const val ARG_PERSON = "personId"
+    const val PERSON = "person/{$ARG_PERSON}"
+    const val ARG_GENRE = "genre"
+    const val ARG_STUDIO = "studio"
+    /** A library's live filtered list, optionally opened at one genre or studio (the Genres and Studios pages). */
+    const val BROWSE = "browse?$ARG_PARENT={$ARG_PARENT}&$ARG_GENRE={$ARG_GENRE}&$ARG_STUDIO={$ARG_STUDIO}"
+    const val GENRES = "genres/{$ARG_PARENT}"
+    const val STUDIOS = "studios/{$ARG_PARENT}"
+    fun playlist(playlistId: String) = "playlist/${Uri.encode(playlistId)}"
+    fun photo(photoId: String, parentId: String?) = "photo/${Uri.encode(photoId)}" + (parentId?.let { "?$ARG_PARENT=${Uri.encode(it)}" } ?: "")
+    fun person(personId: String) = "person/${Uri.encode(personId)}"
+    /** A library's filtered list; [parentId] null lists films and series of every library (a genre from Search). */
+    fun browse(parentId: String?, genreId: String? = null, studioId: String? = null): String {
+        val query = listOfNotNull(
+            parentId?.takeIf { it.isNotEmpty() }?.let { "$ARG_PARENT=${Uri.encode(it)}" },
+            genreId?.takeIf { it.isNotEmpty() }?.let { "$ARG_GENRE=${Uri.encode(it)}" },
+            studioId?.takeIf { it.isNotEmpty() }?.let { "$ARG_STUDIO=${Uri.encode(it)}" },
+        )
+        return "browse" + if (query.isEmpty()) "" else query.joinToString("&", prefix = "?")
+    }
+    fun genres(parentId: String) = "genres/${Uri.encode(parentId)}"
+    fun studios(parentId: String) = "studios/${Uri.encode(parentId)}"
 
     fun home(fresh: Boolean = false) = "home?$ARG_FRESH=$fresh"
     fun library(viewId: String) = "library/${Uri.encode(viewId)}"
@@ -99,10 +133,16 @@ internal object Routes {
 
     fun item(itemId: String) = "item/${Uri.encode(itemId)}"
     fun downloadedSeries(seriesId: String) = "downloads/series/${Uri.encode(seriesId)}"
-    fun player(itemId: String, from: StartFrom) = "play/${Uri.encode(itemId)}?$ARG_FROM=${if (from == StartFrom.RESUME) FROM_RESUME else FROM_START}"
+    fun player(itemId: String, from: StartFrom, queue: String? = null, source: String? = null) =
+        "play/${Uri.encode(itemId)}?$ARG_FROM=${if (from == StartFrom.RESUME) FROM_RESUME else FROM_START}" +
+            (queue?.let { "&$ARG_QUEUE=${Uri.encode(it)}" } ?: "") + (source?.let { "&$ARG_SOURCE=${Uri.encode(it)}" } ?: "")
     const val FROM_RESUME = "resume"
     const val FROM_START = "start"
-    fun signIn(serverId: String, userName: String? = null) = "sign_in/${Uri.encode(serverId)}" + (userName?.let { "?$ARG_USER=${Uri.encode(it)}" } ?: "")
+    fun signIn(serverId: String) = "sign_in/${Uri.encode(serverId)}"
+
+    /** "Sign in again" for one profile: its name is filled in and only that account is accepted. */
+    fun signInAgain(serverId: String, userId: String, userName: String) =
+        "sign_in/${Uri.encode(serverId)}?$ARG_USER=${Uri.encode(userName)}&$ARG_USER_ID=${Uri.encode(userId)}"
     fun serverEdit(serverId: String) = "server/${Uri.encode(serverId)}"
 }
 
@@ -111,7 +151,10 @@ internal object Routes {
  * ([StartupViewModel]), so the wrong screen never flashes.
  *
  * Navigation graph: `welcome` (first run) or `home` to start; `add_server` and `sign_in/{serverId}` for
- * onboarding; `play/{itemId}?from=` for the player; `servers` and `server/{serverId}` for management. Signing in clears the stack and lands on `home`.
+ * onboarding; `play/{itemId}?from=&queue=&source=` for the player (a play queue token and a chosen version); `servers` and
+ * `server/{serverId}` for management. Browsing (Milestone 2 onward): `library/{viewId}`, `series/{seriesId}`, `item/{itemId}`; Milestone 11
+ * adds `playlists`, `playlist/{playlistId}`, `photo/{itemId}`, `person/{personId}`, `browse`, `genres/{parent}` and `studios/{parent}`.
+ * Signing in clears the stack and lands on `home`.
  */
 @Composable
 fun AppRoot(graph: AppGraph, openTab: String? = null, onTabOpened: () -> Unit = {}) {
@@ -179,8 +222,14 @@ private fun AppNavHost(graph: AppGraph, start: String, openTab: String?, onTabOp
         composable(Routes.LOCKED) {}
         composable(Routes.WELCOME) { AddServerRoute(graph, nav, firstRun = true) }
         composable(Routes.ADD_SERVER) { AddServerRoute(graph, nav, firstRun = false) }
-        composable(Routes.SIGN_IN, serverArg + navArgument(Routes.ARG_USER) { type = NavType.StringType; nullable = true; defaultValue = null }) {
-            SignInRoute(graph, nav, it.arguments?.getString(Routes.ARG_SERVER).orEmpty(), it.arguments?.getString(Routes.ARG_USER))
+        composable(
+            Routes.SIGN_IN,
+            serverArg + listOf(Routes.ARG_USER, Routes.ARG_USER_ID).map { name -> navArgument(name) { type = NavType.StringType; nullable = true; defaultValue = null } },
+        ) {
+            SignInRoute(
+                graph, nav, it.arguments?.getString(Routes.ARG_SERVER).orEmpty(),
+                it.arguments?.getString(Routes.ARG_USER), it.arguments?.getString(Routes.ARG_USER_ID),
+            )
         }
         composable(Routes.HOME, listOf(navArgument(Routes.ARG_FRESH) { type = NavType.BoolType; defaultValue = false })) {
             HomeRoute(graph, nav, fresh = it.arguments?.getBoolean(Routes.ARG_FRESH) == true)
@@ -191,9 +240,16 @@ private fun AppNavHost(graph: AppGraph, start: String, openTab: String?, onTabOp
             library = { viewId -> LibraryRoute(graph, nav, viewId) },
             series = { id, season, episode -> SeriesRoute(graph, nav, id, season, episode) },
             item = { id -> DetailRoute(graph, nav, id) },
-            player = { id, from -> PlayerRoute(graph, nav, id, from) },
+            player = { id, from, queue, source -> PlayerRoute(graph, nav, id, from, queue, source) },
             downloadedSeries = { id -> OfflineSeriesRoute(graph, nav, id) },
             storage = { StorageRoute(graph, nav) },
+            playlists = { PlaylistsRoute(graph, nav) },
+            playlist = { id -> PlaylistRoute(graph, nav, id) },
+            person = { id -> PersonRoute(graph, nav, id) },
+            browse = { parent, genre, studio -> BrowseRoute(graph, nav, parent, genre, studio) },
+            genres = { parent -> NamesRoute(graph, nav, parent, app.shoalwatch.ui.discover.NamesKind.GENRES) },
+            studios = { parent -> NamesRoute(graph, nav, parent, app.shoalwatch.ui.discover.NamesKind.STUDIOS) },
+            photo = { id, parent -> PhotoRoute(graph, nav, id, parent) },
         )
         composable(Routes.SERVERS) { ServersRoute(graph, nav) }
         composable(Routes.DOWNLOAD_SETTINGS) { DownloadSettingsRoute(graph, nav) }
@@ -263,52 +319,3 @@ internal fun ClearBrowsingOnSessionChange(nav: NavHostController, catalog: Serve
 
 /** Tabs left earlier were saved with their state (screens opened under Home, the Search query); none of it is kept. */
 private fun NavHostController.clearTabStates() = listOf(Routes.HOME, Routes.SEARCH, Routes.DOWNLOADS).forEach { clearBackStack(it) }
-
-/**
- * The library, series and item destinations: their routes, argument names, and how an argument that is not there arrives (as
- * null, never as an empty id). The screens are passed in so a test can drive this exact graph with recorders.
- */
-internal fun NavGraphBuilder.browsingDestinations(
-    library: @Composable (viewId: String) -> Unit,
-    series: @Composable (seriesId: String, seasonId: String?, episodeId: String?) -> Unit,
-    item: @Composable (itemId: String) -> Unit,
-    player: @Composable (itemId: String, from: StartFrom) -> Unit,
-    downloadedSeries: @Composable (seriesId: String) -> Unit,
-    storage: @Composable () -> Unit = {},
-) {
-    composable(Routes.STORAGE) { storage() }
-    composable(Routes.DOWNLOADED_SERIES, listOf(navArgument(Routes.ARG_SERIES) { type = NavType.StringType })) {
-        downloadedSeries(it.arguments?.getString(Routes.ARG_SERIES).orEmpty())
-    }
-    composable(Routes.LIBRARY, listOf(navArgument(Routes.ARG_VIEW) { type = NavType.StringType })) {
-        library(it.arguments?.getString(Routes.ARG_VIEW).orEmpty())
-    }
-    composable(
-        Routes.SERIES,
-        listOf(
-            navArgument(Routes.ARG_SERIES) { type = NavType.StringType },
-            navArgument(Routes.ARG_SEASON) { type = NavType.StringType; nullable = true; defaultValue = null },
-            navArgument(Routes.ARG_EPISODE) { type = NavType.StringType; nullable = true; defaultValue = null },
-        ),
-    ) {
-        val args = it.arguments
-        series(
-            args?.getString(Routes.ARG_SERIES).orEmpty(),
-            args?.getString(Routes.ARG_SEASON)?.ifEmpty { null },
-            args?.getString(Routes.ARG_EPISODE)?.ifEmpty { null },
-        )
-    }
-    composable(Routes.ITEM, listOf(navArgument(Routes.ARG_ITEM) { type = NavType.StringType })) {
-        item(it.arguments?.getString(Routes.ARG_ITEM).orEmpty())
-    }
-    composable(
-        Routes.PLAYER,
-        listOf(
-            navArgument(Routes.ARG_ITEM) { type = NavType.StringType },
-            navArgument(Routes.ARG_FROM) { type = NavType.StringType; nullable = true; defaultValue = null },
-        ),
-    ) {
-        val from = if (it.arguments?.getString(Routes.ARG_FROM) == Routes.FROM_RESUME) StartFrom.RESUME else StartFrom.BEGINNING
-        player(it.arguments?.getString(Routes.ARG_ITEM).orEmpty(), from)
-    }
-}

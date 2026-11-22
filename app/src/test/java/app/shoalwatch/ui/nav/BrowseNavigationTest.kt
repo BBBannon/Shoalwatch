@@ -41,7 +41,7 @@ class BrowseNavigationTest {
                     library = { viewId -> arrived += "library:$viewId" },
                     series = { id, s, e -> arrived += "series:$id|$s|$e" },
                     item = { id -> arrived += "item:$id" },
-                    player = { id, from -> arrived += "play:$id|$from" },
+                    player = { id, from, _, _ -> arrived += "play:$id|$from" },
                     downloadedSeries = { id -> arrived += "downloaded:$id" },
                     storage = { arrived += "storage" },
                 )
