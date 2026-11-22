@@ -85,6 +85,7 @@ class DetailViewModel(
                         // the item is read again next time the page is shown
                     }
                 }
+                true
             },
             arrivedText = app.shoalwatch.R.string.subsearch_arrived_detail,
         )

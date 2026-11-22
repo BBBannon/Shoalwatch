@@ -17,6 +17,7 @@
     <string name="subsearch_sending">Sending…</string>
     <string name="subsearch_arrived">Subtitles added. Pick them in the Subtitles list.</string>
     <string name="subsearch_arrived_detail">Subtitles added.</string>
+    <string name="subsearch_arrived_elsewhere">Subtitles added. They\'ll be there next time you play it.</string>
     <string name="subsearch_later">Downloaded. It can take a minute to show.</string>
     <string name="subsearch_send_failed">Couldn\'t download that one. Try again.</string>
     <string name="subsearch_send_offline">You\'re offline. Try again when you\'re connected.</string>

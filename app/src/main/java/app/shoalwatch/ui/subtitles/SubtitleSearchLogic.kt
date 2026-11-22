@@ -65,8 +65,8 @@ class SubtitleSearchLogic(
     private val remote: RemoteSubtitles,
     private val session: () -> Session?,
     private val itemId: () -> String?,
-    /** Told with the session and the item the download was for (the screen may have moved on to another item since). */
-    private val onArrived: (Session, String) -> Unit,
+    /** Told with the session and the item the download was for; true when the screen took it up now, false when it had moved on to another item (then the next play of that item has the track). */
+    private val onArrived: (Session, String) -> Boolean,
     /** What is said when the track has arrived (the player points at its Subtitles list). */
     @StringRes private val arrivedText: Int = R.string.subsearch_arrived,
 ) {
@@ -162,7 +162,7 @@ class SubtitleSearchLogic(
                 words = when (remote.download(s, item, candidate.id)) {
                     SubtitleDownload.NotAllowed -> R.string.subsearch_refused
                     SubtitleDownload.Requested -> when (remote.awaitArrival(s, item, before)) {
-                        Arrival.Arrived -> { if (session() == s) onArrived(s, item); arrivedText }
+                        Arrival.Arrived -> if (session() == s && !onArrived(s, item)) R.string.subsearch_arrived_elsewhere else arrivedText
                         Arrival.NotYet -> R.string.subsearch_later
                     }
                 }

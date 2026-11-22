@@ -32,7 +32,7 @@ class SubtitleSearchLogicTest {
     private val candidate = SubtitleCandidate("srt-eng-1", "OpenSubtitles", "The Film", "srt", 8.5f, 1200, hearingImpaired = true, forced = false)
 
     private fun TestScope.logic(r: RemoteSubtitles = remote) =
-        SubtitleSearchLogic(this, r, { session }, { item }, { s, _ -> arrived += s })
+        SubtitleSearchLogic(this, r, { session }, { item }, { s, _ -> arrived += s; true })
 
     @Test fun itOpensInTheProfilesLanguageAndSearchesIt() = runTest {
         remote.language = "fre"; remote.found = listOf(candidate)
@@ -196,9 +196,16 @@ class SubtitleSearchLogicTest {
 
     @Test fun theArrivalIsToldWhichItemItWasFor() = runTest {
         val got = mutableListOf<String>()
-        val l = SubtitleSearchLogic(this, remote, { session }, { item }, { _, i -> got += i })
+        val l = SubtitleSearchLogic(this, remote, { session }, { item }, { _, i -> got += i; true })
         l.open(); advanceUntilIdle()
         l.download(candidate); advanceUntilIdle()
         assertEquals(listOf(item), got)
+    }
+
+    @Test fun ifTheScreenHadMovedOnTheWordsSayTheyWillBeThereNextTime() = runTest {
+        val l = SubtitleSearchLogic(this, remote, { session }, { item }, { _, _ -> false })
+        l.open(); advanceUntilIdle()
+        l.download(candidate); advanceUntilIdle()
+        assertEquals(R.string.subsearch_arrived_elsewhere, l.state.value.message)
     }
 }

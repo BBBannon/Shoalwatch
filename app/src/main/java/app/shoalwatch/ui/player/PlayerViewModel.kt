@@ -92,18 +92,16 @@ class PlayerViewModel(
         SubtitleSearchActions(::findSubtitles, ::backFromSearch, l::togglePicking, l::setLanguage, l::retry, l::download)
     }
 
-    /** Set when the reload for arrived subtitles was made while paused: the first PLAYING it brings is paused again (the controller has no way to ask for a paused load). */
-    private var pauseAfterReload = false
-
     /**
-     * Only the item the download was for is reloaded; if the queue moved on, the next play of that item picks the track up. A paused player stays paused.
+     * Only the item the download was for is reloaded (true); if the queue moved on, nothing is done and the next play of that item has the
+     * track (false). The controller keeps a paused player paused.
      */
-    private fun reloadTracks(item: String) {
-        val c = controller ?: return
+    private fun reloadTracks(item: String): Boolean {
+        val c = controller ?: return false
         val now = c.state.value
-        if (now.itemId != item) return
-        pauseAfterReload = now.phase == Phase.PAUSED
+        if (now.itemId != item) return false
         c.setQuality(now.quality)
+        return true
     }
 
     /** The engine's video output, for `VideoSurface` only; null before playback starts or once it has ended. */
@@ -172,8 +170,6 @@ class PlayerViewModel(
         if (_state.value.leave) return
         if (p.closed) return leave()
         val before = _state.value.playback
-        if (pauseAfterReload && p.phase == Phase.PLAYING) { pauseAfterReload = false; controller?.playPause() }
-        else if (pauseAfterReload && (p.phase == Phase.FAILED || p.itemId != before.itemId)) pauseAfterReload = false
         val fired = lastSleep != SleepState.Off && p.sleep == SleepState.Off
         lastSleep = p.sleep
         _state.update { it.copy(playback = p, sleepFired = it.sleepFired || fired) }

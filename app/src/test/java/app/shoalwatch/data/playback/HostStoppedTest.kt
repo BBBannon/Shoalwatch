@@ -7,6 +7,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.launch
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -57,6 +58,31 @@ internal class HostStoppedTest : PlaybackControllerTestBase() {
         assertEquals("starting again does not play by itself", Phase.PAUSED, c.state.value.phase)
         c.playPause(); runCurrent()
         assertEquals("the user's Play plays", Phase.PLAYING, c.state.value.phase)
+    }
+
+    @Test fun aQualityChangeWhilePausedStaysPausedAtTheSamePositionWithNoPlayingInBetween() = runTest {
+        val c = controller(); openAndPlay(c); at(30_000)
+        c.playPause(); runCurrent()
+        assertEquals(Phase.PAUSED, c.state.value.phase)
+        val phases = mutableListOf<Phase>()
+        val watch = backgroundScope.launch(kotlinx.coroutines.Dispatchers.Unconfined) { c.state.collect { phases += it.phase } }
+        c.setQuality(Quality.MBPS_8); runCurrent()
+        assertEquals("it reloaded", 2, engine.loads.size)
+        assertEquals(30_000L, engine.loadedAt)
+        assertFalse("loaded with playWhenReady = false", engine.playWhenReady)
+        engine.emit(EngineEvent.Ready); runCurrent()
+        assertFalse("never PLAYING in between: $phases", phases.contains(Phase.PLAYING))
+        assertEquals(Phase.PAUSED, c.state.value.phase)
+        c.playPause(); runCurrent()
+        assertTrue("the user's Play plays", engine.playWhenReady)
+        watch.cancel()
+    }
+
+    @Test fun aQualityChangeWhilePlayingStillPlays() = runTest {
+        val c = controller(); openAndPlay(c); at(30_000)
+        c.setQuality(Quality.MBPS_8); runCurrent()
+        assertEquals(2, engine.loads.size)
+        assertTrue("loaded playing", engine.playWhenReady)
     }
 
     @Test fun aQualityChangeWhoseAnswerArrivesAfterTheHostStoppedStaysPaused() = runTest {

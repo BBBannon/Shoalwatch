@@ -27,6 +27,7 @@ import app.shoalwatch.ui.browse.account
 import app.shoalwatch.ui.testServer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.resetMain
@@ -358,20 +359,34 @@ internal class PlayerViewModelTest : PlaybackControllerTestBase() {
         assertEquals(infos, playbackInfos)
     }
 
-    @Test fun aPausedPlayerStaysPausedAtTheSamePositionWhenSubtitlesArrive() = runTest(dispatcher) {
+    @Test fun aPausedPlayerStaysPausedAtTheSamePositionWhenSubtitlesArriveWithNoPlayingInBetween() = runTest(dispatcher) {
         val remote = app.shoalwatch.ui.FakeRemoteSubtitles().also { it.found = listOf(candidate); it.count = 2 }
         val vm = vm(subtitles = remote); playing(vm); at(30_000)
         vm.playPause(); runCurrent()
         assertEquals(Phase.PAUSED, vm.state.value.playback.phase)
+        val phases = mutableListOf<Phase>()
+        val watch = backgroundScope.launch(kotlinx.coroutines.Dispatchers.Unconfined) { vm.state.collect { phases += it.playback.phase } }
         vm.findSubtitles(); runCurrent()
         vm.searchActions!!.onDownload(candidate); runCurrent()
         assertEquals(2, engine.loads.size)
         assertEquals(30_000L, engine.loadedAt)
-        engine.startPlaying(); runCurrent() // the engine reports ready; a reload that asked to play would show PLAYING here
+        assertFalse("loaded paused", engine.playWhenReady)
+        engine.emit(EngineEvent.Ready); runCurrent() // the engine reports ready; nothing asked it to play
+        assertFalse("never PLAYING in between: $phases", phases.contains(Phase.PLAYING))
         assertEquals(Phase.PAUSED, vm.state.value.playback.phase)
-        assertFalse(engine.playWhenReady)
         vm.playPause(); runCurrent()
-        assertEquals("Play still works", Phase.PLAYING, vm.state.value.playback.phase)
+        assertTrue("Play still works", engine.playWhenReady)
+        watch.cancel()
+    }
+
+    @Test fun anArrivalForAnotherItemSaysTheyWillBeThereNextTime() = runTest(dispatcher) {
+        val remote = GatedRemote()
+        val vm = vm(subtitles = remote); playing(vm); at(30_000)
+        vm.findSubtitles(); runCurrent()
+        vm.searchActions!!.onDownload(candidate); runCurrent()
+        vm.next(); runCurrent()
+        remote.gate.complete(Unit); runCurrent()
+        assertEquals(app.shoalwatch.R.string.subsearch_arrived_elsewhere, vm.state.value.search.message)
     }
 
     @Test fun aDownloadThatHasNotArrivedDoesNotReload() = runTest(dispatcher) {
