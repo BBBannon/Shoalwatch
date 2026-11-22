@@ -85,13 +85,13 @@ internal class PlayerViewModelTest : PlaybackControllerTestBase() {
     private val profileDao = app.shoalwatch.data.playback.FakeProfileDao()
     private val profilePlayback = app.shoalwatch.data.playback.ProfilePlayback(profileDao)
 
-    private fun TestScope.vm(saved: SavedStateHandle = SavedStateHandle(), from: StartFrom = StartFrom.RESUME, settle: Boolean = true, source: String? = null): PlayerViewModel {
+    private fun TestScope.vm(saved: SavedStateHandle = SavedStateHandle(), from: StartFrom = StartFrom.RESUME, settle: Boolean = true, source: String? = null, subtitles: app.shoalwatch.data.subtitles.RemoteSubtitles? = null): PlayerViewModel {
         val factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T =
                 // The controller runs on the test's background scope: its endless tick loops would keep a ViewModel scope from ever going idle.
                 PlayerViewModel(ep1, from, saved, catalog, { s, scope -> made += s; controllerFor(s, backgroundScope, autoplayNext = profilePlayback.autoplayReader(s, scope)) }, settings, quality,
-                    { serverId -> reprobed += serverId; onReprobe() }, housekeeping, mediaSourceId = source) as T
+                    { serverId -> reprobed += serverId; onReprobe() }, housekeeping, mediaSourceId = source, subtitles = subtitles) as T
         }
         return ViewModelProvider.create(store, factory)[PlayerViewModel::class.java].also { if (settle) runCurrent() }
     }
@@ -312,6 +312,61 @@ internal class PlayerViewModelTest : PlaybackControllerTestBase() {
         gateway.failWith = null
         vm.retry(); runCurrent()
         assertEquals(listOf(b, b), gateway.bodies.map { it.mediaSourceId })
+    }
+
+    // ---- Find subtitles online (Milestone 11, Task 9)
+
+    private val candidate = app.shoalwatch.data.subtitles.SubtitleCandidate("srt-eng-1", "OpenSubtitles", "Episode", "srt", null, null, hearingImpaired = false, forced = false)
+
+    @Test fun aDownloadThatArrivesAsksTheServerAgainAtTheSamePositionWithTheSameVersion() = runTest(dispatcher) {
+        val b = "fedcba9876543210fedcba9876543210"
+        val remote = app.shoalwatch.ui.FakeRemoteSubtitles().also { it.found = listOf(candidate); it.count = 2 }
+        val vm = vm(source = b, subtitles = remote); playing(vm); at(30_000)
+        vm.findSubtitles(); runCurrent()
+        assertEquals(PlayerSheet.SUBTITLE_SEARCH, vm.state.value.sheet)
+        assertEquals(listOf(candidate), vm.state.value.search.candidates)
+        assertEquals(1, engine.loads.size)
+        vm.searchActions!!.onDownload(candidate); runCurrent()
+        assertEquals("asked again", 2, engine.loads.size)
+        assertEquals("at the same position", 30_000L, engine.loadedAt)
+        assertEquals("the chosen version is kept", listOf(b, b), gateway.bodies.map { it.mediaSourceId })
+        assertEquals(app.shoalwatch.R.string.subsearch_arrived, vm.state.value.search.message)
+    }
+
+    @Test fun aDownloadThatHasNotArrivedDoesNotReload() = runTest(dispatcher) {
+        val remote = app.shoalwatch.ui.FakeRemoteSubtitles().also { it.found = listOf(candidate); it.arrival = app.shoalwatch.data.subtitles.Arrival.NotYet }
+        val vm = vm(subtitles = remote); playing(vm); at(30_000)
+        vm.findSubtitles(); runCurrent()
+        vm.searchActions!!.onDownload(candidate); runCurrent()
+        assertEquals(1, engine.loads.size)
+        assertEquals(app.shoalwatch.R.string.subsearch_later, vm.state.value.search.message)
+    }
+
+    @Test fun aRefusalKeepsThePlayerGoingAndTheSignIn() = runTest(dispatcher) {
+        val remote = app.shoalwatch.ui.FakeRemoteSubtitles().also { it.notAllowed = true }
+        val vm = vm(subtitles = remote); playing(vm)
+        vm.findSubtitles(); runCurrent()
+        assertEquals(app.shoalwatch.ui.subtitles.SubtitleSearchPhase.NOT_ALLOWED, vm.state.value.search.phase)
+        assertFalse(vm.state.value.leave)
+        assertEquals(Phase.PLAYING, vm.state.value.playback.phase)
+    }
+
+    @Test fun backReturnsToTheSubtitlesSheetAndClosingTheSheetEndsTheSearch() = runTest(dispatcher) {
+        val vm = vm(subtitles = app.shoalwatch.ui.FakeRemoteSubtitles()); playing(vm)
+        vm.findSubtitles(); runCurrent()
+        vm.backFromSearch(); runCurrent()
+        assertEquals(PlayerSheet.TRACKS, vm.state.value.sheet)
+        assertFalse(vm.state.value.search.open)
+        vm.findSubtitles(); runCurrent(); vm.closeSheet(); runCurrent()
+        assertFalse(vm.state.value.search.open)
+        assertNull(vm.state.value.sheet)
+    }
+
+    @Test fun withoutTheSeamThereIsNoSearch() = runTest(dispatcher) {
+        val vm = vm(); playing(vm)
+        assertNull(vm.searchActions)
+        vm.findSubtitles()
+        assertNull(vm.state.value.sheet)
     }
 
     @Test fun lockingKeepsTheControlsFromHidingNothingButTogglesIt() = runTest(dispatcher) {

@@ -199,7 +199,7 @@ internal fun SeriesRoute(graph: AppGraph, nav: NavHostController, seriesId: Stri
 
 @Composable
 internal fun DetailRoute(graph: AppGraph, nav: NavHostController, itemId: String) {
-    val vm = graphViewModel(key = itemId) { DetailViewModel(itemId, graph.serverCatalog, graph.addressSelector, graph.library, graph.playstate, graph.downloads) }
+    val vm = graphViewModel(key = itemId) { DetailViewModel(itemId, graph.serverCatalog, graph.addressSelector, graph.library, graph.playstate, graph.downloads, graph.remoteSubtitles) }
     val statuses by vm.downloadStatus.collectAsStateWithLifecycle()
     val state by vm.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
@@ -235,11 +235,15 @@ internal fun DetailRoute(graph: AppGraph, nav: NavHostController, itemId: String
             onAddToCollection = if (picker != null && shown != null) ({
                 picker.onOpen(listOf(app.shoalwatch.ui.browse.BulkItem(shown.id, shown.sheetTitle(strings), shown.kind, shown.seriesId)), app.shoalwatch.ui.lists.ListKind.COLLECTION)
             }) else null,
+            onFindSubtitles = vm.subtitleSearch?.actions?.onOpen,
         )
     }
     val film = state.item?.item?.kind == app.shoalwatch.data.library.ItemKind.MOVIE
     val download = DownloadControls(statuses, onDownload = { vm.download(film) }, onRetry = { vm.retryDownload() }, onOpenDownloads = { nav.switchTab(Tab.DOWNLOADS) })
-    DetailScreen(state, actions, vm.messages, snackbar, download, extras.controls)
+    val search = vm.subtitleSearch
+    val searchUi = search?.state?.collectAsStateWithLifecycle()?.value
+    val subtitles = if (search != null && searchUi != null) app.shoalwatch.ui.subtitles.SubtitleSearchControls(searchUi, search.actions) else null
+    DetailScreen(state, actions, vm.messages, snackbar, download, extras.controls, subtitles)
     DownloadSheetHost(vm.downloadActions, state.session, { graph.downloadPrefs.notificationAsked }, graph.downloadPrefs::markNotificationAsked)
 }
 
@@ -400,7 +404,7 @@ internal fun PlaylistRoute(graph: AppGraph, nav: NavHostController, playlistId: 
 internal fun PlayerRoute(graph: AppGraph, nav: NavHostController, itemId: String, from: StartFrom, queueToken: String? = null, sourceId: String? = null) {
     val vm = graphStateViewModel(key = "$itemId|$from|$queueToken|$sourceId") { saved ->
         PlayerViewModel(itemId, from, saved, graph.serverCatalog, { s, scope -> graph.playbackController(s, scope, graph.lockParts.profilePlayback.autoplayReader(s, scope)) }, graph.subtitleSettings, graph.qualityDefault, graph.addressSelector::refreshIfOffline, graph.housekeeping,
-            { s -> graph.playQueues.get(s, queueToken) }, sourceId?.takeIf(MediaPaths::isSourceId),
+            { s -> graph.playQueues.get(s, queueToken) }, sourceId?.takeIf(MediaPaths::isSourceId), graph.remoteSubtitles,
         )
     }
     val state by vm.state.collectAsStateWithLifecycle()
@@ -450,6 +454,7 @@ internal fun PlayerRoute(graph: AppGraph, nav: NavHostController, itemId: String
             onSubmitSharerPin = vm::submitSharerPin,
             onCancelSharerPin = vm::cancelSharerPin,
             onEnterPip = pip?.let { host -> { host.enterNow(); Unit } },
+            search = vm.searchActions,
         )
     }
     PlayerScreen(state, actions, rememberDolbyVisionScreen(), inPip, sharerPin = vm.sharerPin) { controlsUp ->

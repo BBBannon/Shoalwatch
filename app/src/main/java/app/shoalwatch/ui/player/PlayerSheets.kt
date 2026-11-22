@@ -17,6 +17,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -36,6 +37,8 @@ import app.shoalwatch.data.playback.SubtitleChoice
 import app.shoalwatch.ui.present.PlayerText
 import app.shoalwatch.ui.present.rememberStrings
 import app.shoalwatch.ui.components.LocalCovered
+import app.shoalwatch.ui.subtitles.SubtitleSearchBody
+import app.shoalwatch.ui.subtitles.SubtitleSearchControls
 
 /**
  * The player's sheets: one open at a time ([PlayerUiState.sheet]). Every sheet scrolls (large text, a phone held sideways), every
@@ -55,6 +58,7 @@ internal fun PlayerSheetHost(state: PlayerUiState, actions: PlayerActions, strea
                 PlayerSheet.SLEEP -> SleepSheet(state, actions)
                 PlayerSheet.SUBTITLE_STYLE -> SubtitleStyleSheet(state, actions)
                 PlayerSheet.STREAM_INFO -> StreamInfoSheet(state, streamLine, hdrLine)
+                PlayerSheet.SUBTITLE_SEARCH -> SubtitleSearchSheet(state, actions)
             }
         }
     }
@@ -72,12 +76,28 @@ private fun ColumnScope.TracksSheet(state: PlayerUiState, actions: PlayerActions
     val on = (p.subtitle as? SubtitleChoice.On)?.index
     ChoiceRow(stringResource(R.string.player_subtitles_off), on == null) { actions.onSelectSubtitle(null) }
     p.subtitleTracks.forEach { t -> ChoiceRow(t.label, t.index == on) { actions.onSelectSubtitle(t.index) } }
+    // Fetched by the server, then the stream is asked for again: not for a copy saved on this phone.
+    val search = actions.search
+    if (search != null && p.method != PlayMethod.LOCAL) {
+        OutlinedButton(onClick = search.onOpen, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp).heightIn(min = 48.dp)) {
+            Text(stringResource(R.string.subsearch_find))
+        }
+    }
     if (p.subtitleEffectsNotDrawn && on != null && p.method != PlayMethod.LOCAL) { // a saved copy is never redrawn by the server
         Text(stringResource(R.string.subtitle_let_server_draw_detail), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
         OutlinedButton(onClick = { actions.onBurnIn(on) }, modifier = Modifier.padding(horizontal = 24.dp).heightIn(min = 48.dp)) {
             Text(stringResource(R.string.subtitle_let_server_draw))
         }
     }
+}
+
+/** "Find subtitles online" (Milestone 11): the shared search body under its heading, with a Back button to the Subtitles sheet. */
+@Composable
+private fun ColumnScope.SubtitleSearchSheet(state: PlayerUiState, actions: PlayerActions) {
+    val search = actions.search ?: return
+    SheetHeading(R.string.subsearch_title)
+    SubtitleSearchBody(SubtitleSearchControls(state.search, search))
+    TextButton(onClick = search.onClose, modifier = Modifier.padding(horizontal = 16.dp).heightIn(min = 48.dp)) { Text(stringResource(R.string.cd_back)) }
 }
 
 @Composable

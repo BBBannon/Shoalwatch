@@ -79,6 +79,8 @@ import app.shoalwatch.ui.components.SignedOutNotice
 import app.shoalwatch.ui.components.SkeletonBlock
 import app.shoalwatch.ui.components.WatchedButton
 import app.shoalwatch.ui.discover.ExtrasBlock
+import app.shoalwatch.ui.subtitles.SubtitleSearchControls
+import app.shoalwatch.ui.subtitles.SubtitleSearchDialog
 import app.shoalwatch.ui.discover.ExtrasControls
 import app.shoalwatch.ui.discover.ExtrasVersions
 import app.shoalwatch.ui.present.Destination
@@ -110,6 +112,8 @@ class DetailActions(
     /** Milestone 11: Add to playlist and Add to collection open the add-to picker; null hides them. */
     val onAddToPlaylist: (() -> Unit)? = null,
     val onAddToCollection: (() -> Unit)? = null,
+    /** Milestone 11: "Find subtitles online"; null hides it. */
+    val onFindSubtitles: (() -> Unit)? = null,
 )
 
 /**
@@ -119,8 +123,9 @@ class DetailActions(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DetailScreen(state: DetailUiState, actions: DetailActions, messages: Flow<String>, snackbar: SnackbarHostState, download: DownloadControls? = null, extras: ExtrasControls? = null) {
+fun DetailScreen(state: DetailUiState, actions: DetailActions, messages: Flow<String>, snackbar: SnackbarHostState, download: DownloadControls? = null, extras: ExtrasControls? = null, subtitles: SubtitleSearchControls? = null) {
     CollectMessages(messages, snackbar, state.session)
+    if (subtitles != null) SubtitleSearchDialog(subtitles)
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbar) },
@@ -277,6 +282,9 @@ internal fun MarkAndFavourite(state: DetailUiState, entry: ItemWithUserData, act
     }
     actions.onAddToPlaylist?.let { app.shoalwatch.ui.components.SecondaryButton(stringResource(R.string.select_add_to_playlist), it, Modifier.fillMaxWidth()) }
     actions.onAddToCollection?.let { app.shoalwatch.ui.components.SecondaryButton(stringResource(R.string.select_add_to_collection), it, Modifier.fillMaxWidth()) }
+    if (item.kind == ItemKind.MOVIE || item.kind == ItemKind.EPISODE) {
+        actions.onFindSubtitles?.let { app.shoalwatch.ui.components.SecondaryButton(stringResource(R.string.subsearch_find), it, Modifier.fillMaxWidth()) }
+    }
 }
 
 /** An episode's "Go to series". */

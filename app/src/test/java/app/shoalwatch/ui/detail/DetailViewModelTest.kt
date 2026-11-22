@@ -43,6 +43,8 @@ class DetailViewModelTest {
     private val film = id(7)
 
     private fun vm() = DetailViewModel(film, catalog, connections, library, playstate)
+    private val subtitles = app.shoalwatch.ui.FakeRemoteSubtitles()
+    private fun vmWithSubtitles() = DetailViewModel(film, catalog, connections, library, playstate, subtitles = subtitles)
     private fun publish(d: ItemDetail, s: app.shoalwatch.data.servers.Session = BEN) { library.itemFlow(s, film).value = d }
 
     @Test fun nobodySignedInIsTheSignedOutState() {
@@ -260,4 +262,32 @@ class DetailViewModelTest {
         }
         assertEquals(DetailPhase.ERROR, v.state.value.phase)
     }
+
+    // ---- Find subtitles online (Milestone 11, Task 9)
+
+    @Test fun aDownloadThatArrivesReadsTheItemAgain() {
+        publish(ItemDetail(entry(7, name = "The Film"), Freshness.Fresh))
+        val vm = vmWithSubtitles()
+        val search = vm.subtitleSearch!!
+        search.open()
+        val one = app.shoalwatch.data.subtitles.SubtitleCandidate("srt-eng-1", "P", "N", "srt", null, null, hearingImpaired = false, forced = false)
+        val before = library.refreshes.size
+        search.download(one)
+        assertEquals(listOf("preferredLanguage", "search:$film:eng", "subtitleCount:$film", "download:$film:srt-eng-1", "awaitArrival:$film:0"), subtitles.calls)
+        assertEquals(before + 1, library.refreshes.size)
+        assertEquals(BEN to app.shoalwatch.data.library.RefreshTarget.Item(film), library.refreshes.last())
+    }
+
+    @Test fun aRefusedDownloadDoesNotRefresh() {
+        publish(ItemDetail(entry(7, name = "The Film"), Freshness.Fresh))
+        val search = vmWithSubtitles().subtitleSearch!!
+        search.open()
+        subtitles.notAllowed = true
+        val before = library.refreshes.size
+        search.download(app.shoalwatch.data.subtitles.SubtitleCandidate("srt-eng-1", "P", "N", "srt", null, null, hearingImpaired = false, forced = false))
+        assertEquals(before, library.refreshes.size)
+        assertEquals(app.shoalwatch.R.string.subsearch_refused, search.state.value.message)
+    }
+
+    @Test fun withoutTheSeamThereIsNoSearch() = org.junit.Assert.assertNull(vm().subtitleSearch)
 }

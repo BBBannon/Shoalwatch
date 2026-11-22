@@ -20,6 +20,9 @@ import app.shoalwatch.data.playback.engine.SubtitleFrame
 import app.shoalwatch.data.playback.engine.VideoOutput
 import app.shoalwatch.data.servers.ServerCatalog
 import app.shoalwatch.data.servers.Session
+import app.shoalwatch.data.subtitles.RemoteSubtitles
+import app.shoalwatch.ui.subtitles.SubtitleSearchActions
+import app.shoalwatch.ui.subtitles.SubtitleSearchLogic
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -58,6 +61,8 @@ class PlayerViewModel(
     private val queue: (Session) -> PlayQueue? = { null },
     /** The version chosen for this one play (the first item only; not remembered). */
     private val mediaSourceId: String? = null,
+    /** Subtitles from the internet (Milestone 11); null: "Find subtitles online" is not offered. */
+    subtitles: RemoteSubtitles? = null,
 ) : ViewModel() {
     private val _state = MutableStateFlow(PlayerUiState(appearance = subtitleSettings.appearance.value))
     val state: StateFlow<PlayerUiState> = _state.asStateFlow()
@@ -74,6 +79,21 @@ class PlayerViewModel(
     /** Restored after the process was ended: the episode that was playing (it may not be the route's), and so where to seek. */
     private var restoredItem: String? = null
 
+    /**
+     * "Find subtitles online": when a download has arrived the server is asked again at the same position, exactly as a quality change does
+     * (the version chosen for this play is kept by that path), and the new track can then be picked in the Subtitles list.
+     */
+    private val search: SubtitleSearchLogic? = subtitles?.let { remote ->
+        SubtitleSearchLogic(viewModelScope, remote, { _state.value.session }, { _state.value.playback.itemId ?: itemId }, { reloadTracks() })
+    }
+
+    /** What the Subtitles sheet's search calls; null when the search is not offered. Its Close goes back to the Subtitles sheet. */
+    val searchActions: SubtitleSearchActions? = search?.let { l ->
+        SubtitleSearchActions(::findSubtitles, ::backFromSearch, l::togglePicking, l::setLanguage, l::retry, l::download)
+    }
+
+    private fun reloadTracks() { controller?.let { c -> c.setQuality(c.state.value.quality) } }
+
     /** The engine's video output, for `VideoSurface` only; null before playback starts or once it has ended. */
     internal val video: VideoOutput? get() = controller?.takeUnless { _state.value.leave }?.video
 
@@ -82,6 +102,7 @@ class PlayerViewModel(
 
     init {
         subtitleSettings.refresh() // follows a change in the phone's caption settings made since the last time
+        search?.let { l -> viewModelScope.launch { l.state.collect { st -> _state.update { it.copy(search = st) } } } }
         viewModelScope.launch { subtitleSettings.appearance.collect { a -> _state.update { it.copy(appearance = a) } } }
         viewModelScope.launch { catalog.activeSession().collect(::onSession) }
         viewModelScope.launch { watched.prompt.collect { w -> _state.update { it.copy(watched = w) } } }
@@ -130,6 +151,7 @@ class PlayerViewModel(
 
     private fun leave() {
         hideJob?.cancel()
+        search?.close()
         watched.onState(PlaybackState.CLOSED)
         _state.update { it.copy(playback = PlaybackState.CLOSED, leave = true, sheet = null) }
     }
@@ -198,7 +220,13 @@ class PlayerViewModel(
     }
 
     fun openSheet(sheet: PlayerSheet) { _state.update { it.copy(sheet = sheet, controlsVisible = true) }; scheduleHide() }
-    fun closeSheet() { _state.update { it.copy(sheet = null) }; showControls() }
+    fun closeSheet() { if (_state.value.sheet == PlayerSheet.SUBTITLE_SEARCH) search?.close(); _state.update { it.copy(sheet = null) }; showControls() }
+
+    /** The Subtitles sheet's "Find subtitles online". */
+    fun findSubtitles() { search?.open() ?: return; openSheet(PlayerSheet.SUBTITLE_SEARCH) }
+
+    /** Back from the search to the Subtitles sheet. */
+    fun backFromSearch() { search?.close(); openSheet(PlayerSheet.TRACKS) }
     fun toggleLock() { _state.update { it.copy(locked = !it.locked, sheet = null) }; showControls() }
 
     fun playPause() = touched { it.playPause() }
