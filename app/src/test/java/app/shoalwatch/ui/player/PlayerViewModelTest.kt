@@ -333,6 +333,47 @@ internal class PlayerViewModelTest : PlaybackControllerTestBase() {
         assertEquals(app.shoalwatch.R.string.subsearch_arrived, vm.state.value.search.message)
     }
 
+    /** A remote whose arrival check waits until the test says (so the queue can move on first). */
+    private class GatedRemote : app.shoalwatch.data.subtitles.RemoteSubtitles {
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        override suspend fun search(s: Session, itemId: String, language: String) = app.shoalwatch.data.subtitles.SubtitleSearch.Found(emptyList())
+        override suspend fun download(s: Session, itemId: String, subtitleId: String) = app.shoalwatch.data.subtitles.SubtitleDownload.Requested
+        override suspend fun subtitleCount(s: Session, itemId: String) = 0
+        override suspend fun awaitArrival(s: Session, itemId: String, countBefore: Int): app.shoalwatch.data.subtitles.Arrival { gate.await(); return app.shoalwatch.data.subtitles.Arrival.Arrived }
+        override suspend fun preferredLanguage(s: Session) = "eng"
+    }
+
+    @Test fun subtitlesThatArriveAfterTheQueueMovedOnDoNotReloadTheNewItem() = runTest(dispatcher) {
+        val remote = GatedRemote()
+        val vm = vm(subtitles = remote); playing(vm); at(30_000)
+        vm.findSubtitles(); runCurrent()
+        vm.searchActions!!.onDownload(candidate); runCurrent()
+        vm.next(); runCurrent()
+        engine.startPlaying(); runCurrent()
+        assertEquals(ep2, vm.state.value.playback.itemId)
+        val loads = engine.loads.size
+        val infos = playbackInfos
+        remote.gate.complete(Unit); runCurrent()
+        assertEquals("the new episode is not stopped and asked for again", loads, engine.loads.size)
+        assertEquals(infos, playbackInfos)
+    }
+
+    @Test fun aPausedPlayerStaysPausedAtTheSamePositionWhenSubtitlesArrive() = runTest(dispatcher) {
+        val remote = app.shoalwatch.ui.FakeRemoteSubtitles().also { it.found = listOf(candidate); it.count = 2 }
+        val vm = vm(subtitles = remote); playing(vm); at(30_000)
+        vm.playPause(); runCurrent()
+        assertEquals(Phase.PAUSED, vm.state.value.playback.phase)
+        vm.findSubtitles(); runCurrent()
+        vm.searchActions!!.onDownload(candidate); runCurrent()
+        assertEquals(2, engine.loads.size)
+        assertEquals(30_000L, engine.loadedAt)
+        engine.startPlaying(); runCurrent() // the engine reports ready; a reload that asked to play would show PLAYING here
+        assertEquals(Phase.PAUSED, vm.state.value.playback.phase)
+        assertFalse(engine.playWhenReady)
+        vm.playPause(); runCurrent()
+        assertEquals("Play still works", Phase.PLAYING, vm.state.value.playback.phase)
+    }
+
     @Test fun aDownloadThatHasNotArrivedDoesNotReload() = runTest(dispatcher) {
         val remote = app.shoalwatch.ui.FakeRemoteSubtitles().also { it.found = listOf(candidate); it.arrival = app.shoalwatch.data.subtitles.Arrival.NotYet }
         val vm = vm(subtitles = remote); playing(vm); at(30_000)

@@ -32,7 +32,7 @@ class SubtitleSearchLogicTest {
     private val candidate = SubtitleCandidate("srt-eng-1", "OpenSubtitles", "The Film", "srt", 8.5f, 1200, hearingImpaired = true, forced = false)
 
     private fun TestScope.logic(r: RemoteSubtitles = remote) =
-        SubtitleSearchLogic(this, r, { session }, { item }, { arrived += it })
+        SubtitleSearchLogic(this, r, { session }, { item }, { s, _ -> arrived += s })
 
     @Test fun itOpensInTheProfilesLanguageAndSearchesIt() = runTest {
         remote.language = "fre"; remote.found = listOf(candidate)
@@ -171,5 +171,34 @@ class SubtitleSearchLogicTest {
         assertEquals("a code Android does not know is shown as itself", "ZZZ", SubtitleLanguages.name("zzz", java.util.Locale.ENGLISH))
         assertTrue(SubtitleLanguages.codes("eng").all { it.length == 3 })
         assertEquals("tgl", SubtitleLanguages.codes("tgl").first())
+    }
+
+    @Test fun aLanguageIsListedOnceWhicheverOfItsTwoCodesTheProfileHasAndKeepsTheProfilesCode() {
+        val pairs = listOf("fra" to "fre", "deu" to "ger", "zho" to "chi", "ces" to "cze", "nld" to "dut", "ell" to "gre", "ron" to "rum", "cym" to "wel")
+        pairs.forEach { (t, b) ->
+            val list = SubtitleLanguages.codes(t)
+            assertEquals("$t listed once", 1, list.count { it == t || it == b })
+            assertTrue("$t is the one sent", t in list && b !in list)
+            assertEquals("same name for both", SubtitleLanguages.name(b, java.util.Locale.ENGLISH), SubtitleLanguages.name(t, java.util.Locale.ENGLISH))
+        }
+        assertEquals("the list's own code stays when the profile has that one", 1, SubtitleLanguages.codes("fre").count { it == "fre" })
+        assertEquals(SubtitleLanguages.codes("eng").size, SubtitleLanguages.codes("fra").size)
+    }
+
+    @Test fun ifTheCountCannotBeReadNothingIsSentAndTheWordsDoNotSayADownloadFailed() = runTest {
+        val l = logic(); l.open(); advanceUntilIdle()
+        remote.failure = AppError(AppError.Kind.UNKNOWN, "x"); remote.calls.clear()
+        l.download(candidate); advanceUntilIdle()
+        assertEquals(R.string.subsearch_unreachable, l.state.value.message)
+        assertEquals(listOf("subtitleCount:$item"), remote.calls)
+        assertFalse(l.state.value.sending)
+    }
+
+    @Test fun theArrivalIsToldWhichItemItWasFor() = runTest {
+        val got = mutableListOf<String>()
+        val l = SubtitleSearchLogic(this, remote, { session }, { item }, { _, i -> got += i })
+        l.open(); advanceUntilIdle()
+        l.download(candidate); advanceUntilIdle()
+        assertEquals(listOf(item), got)
     }
 }

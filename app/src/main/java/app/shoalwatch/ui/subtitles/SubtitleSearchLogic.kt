@@ -65,7 +65,8 @@ class SubtitleSearchLogic(
     private val remote: RemoteSubtitles,
     private val session: () -> Session?,
     private val itemId: () -> String?,
-    private val onArrived: (Session) -> Unit,
+    /** Told with the session and the item the download was for (the screen may have moved on to another item since). */
+    private val onArrived: (Session, String) -> Unit,
     /** What is said when the track has arrived (the player points at its Subtitles list). */
     @StringRes private val arrivedText: Int = R.string.subsearch_arrived,
 ) {
@@ -148,12 +149,20 @@ class SubtitleSearchLogic(
         body.update { it.copy(sending = true, message = 0) }
         sendJob = scope.launch {
             var words = R.string.subsearch_send_failed
+            val before = try {
+                remote.subtitleCount(s, item) // read before the request, as the arrival check needs
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Nothing was sent: the words must not say a download failed.
+                if (session() == s) body.update { it.copy(sending = false, message = if (it.open) (if (isOffline(e)) R.string.subsearch_send_offline else R.string.subsearch_unreachable) else 0) }
+                return@launch
+            }
             try {
-                val before = remote.subtitleCount(s, item) // read before the request, as the arrival check needs
                 words = when (remote.download(s, item, candidate.id)) {
                     SubtitleDownload.NotAllowed -> R.string.subsearch_refused
                     SubtitleDownload.Requested -> when (remote.awaitArrival(s, item, before)) {
-                        Arrival.Arrived -> { if (session() == s) onArrived(s); arrivedText }
+                        Arrival.Arrived -> { if (session() == s) onArrived(s, item); arrivedText }
                         Arrival.NotYet -> R.string.subsearch_later
                     }
                 }
@@ -182,15 +191,31 @@ object SubtitleLanguages {
         "ukr" to "uk", "wel" to "cy",
     )
 
-    /** The codes in the list, plus [current] first when it is not among them. */
+    /** The terminology code of each language whose two ISO 639-2 codes differ, by the bibliographic one in [common]. */
+    private val terminology = mapOf(
+        "fre" to "fra", "ger" to "deu", "chi" to "zho", "cze" to "ces", "dut" to "nld", "gre" to "ell", "per" to "fas", "rum" to "ron",
+        "slo" to "slk", "alb" to "sqi", "arm" to "hye", "baq" to "eus", "geo" to "kat", "ice" to "isl", "mac" to "mkd", "may" to "msa",
+        "bur" to "mya", "wel" to "cym", "tib" to "bod",
+    )
+    private val bibliographic = terminology.entries.associate { it.value to it.key }
+
+    /** The bibliographic form of [code] (`fra` becomes `fre`), so the two forms of a language are one. */
+    private fun canonical(code: String) = bibliographic[code] ?: code
+
+    /**
+     * The codes in the list. A language is listed once whichever of its two codes [current] is, and then carries [current] (the profile's own,
+     * the one sent); a [current] not in the list at all comes first.
+     */
     fun codes(current: String): List<String> {
         val all = common.map { it.first }
-        return if (current in all || !isLanguageCode(current)) all else listOf(current) + all
+        if (!isLanguageCode(current)) return all
+        val here = canonical(current)
+        return if (all.any { it == here }) all.map { if (it == here) current else it } else listOf(current) + all
     }
 
     /** A readable name ("English"), or the code in capitals when Android has no name. */
     fun name(code: String, locale: Locale = Locale.getDefault()): String {
-        val known = common.firstOrNull { it.first == code }?.second ?: code
+        val known = common.firstOrNull { it.first == canonical(code) }?.second ?: code
         val shown = try {
             Locale(known).getDisplayLanguage(locale)
         } catch (_: Exception) {

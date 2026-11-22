@@ -20,6 +20,7 @@
     <string name="subsearch_later">Downloaded. It can take a minute to show.</string>
     <string name="subsearch_send_failed">Couldn\'t download that one. Try again.</string>
     <string name="subsearch_send_offline">You\'re offline. Try again when you\'re connected.</string>
+    <string name="subsearch_unreachable">Couldn\'t reach your server. Nothing was sent.</string>
     <string name="subsearch_close">Close</string>
     <string name="subsearch_rating">Rating %1$s</string>
     <plurals name="subsearch_downloads">

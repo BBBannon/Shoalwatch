@@ -84,7 +84,7 @@ class PlayerViewModel(
      * (the version chosen for this play is kept by that path), and the new track can then be picked in the Subtitles list.
      */
     private val search: SubtitleSearchLogic? = subtitles?.let { remote ->
-        SubtitleSearchLogic(viewModelScope, remote, { _state.value.session }, { _state.value.playback.itemId ?: itemId }, { reloadTracks() })
+        SubtitleSearchLogic(viewModelScope, remote, { _state.value.session }, { _state.value.playback.itemId ?: itemId }, { _, item -> reloadTracks(item) })
     }
 
     /** What the Subtitles sheet's search calls; null when the search is not offered. Its Close goes back to the Subtitles sheet. */
@@ -92,7 +92,19 @@ class PlayerViewModel(
         SubtitleSearchActions(::findSubtitles, ::backFromSearch, l::togglePicking, l::setLanguage, l::retry, l::download)
     }
 
-    private fun reloadTracks() { controller?.let { c -> c.setQuality(c.state.value.quality) } }
+    /** Set when the reload for arrived subtitles was made while paused: the first PLAYING it brings is paused again (the controller has no way to ask for a paused load). */
+    private var pauseAfterReload = false
+
+    /**
+     * Only the item the download was for is reloaded; if the queue moved on, the next play of that item picks the track up. A paused player stays paused.
+     */
+    private fun reloadTracks(item: String) {
+        val c = controller ?: return
+        val now = c.state.value
+        if (now.itemId != item) return
+        pauseAfterReload = now.phase == Phase.PAUSED
+        c.setQuality(now.quality)
+    }
 
     /** The engine's video output, for `VideoSurface` only; null before playback starts or once it has ended. */
     internal val video: VideoOutput? get() = controller?.takeUnless { _state.value.leave }?.video
@@ -160,6 +172,8 @@ class PlayerViewModel(
         if (_state.value.leave) return
         if (p.closed) return leave()
         val before = _state.value.playback
+        if (pauseAfterReload && p.phase == Phase.PLAYING) { pauseAfterReload = false; controller?.playPause() }
+        else if (pauseAfterReload && (p.phase == Phase.FAILED || p.itemId != before.itemId)) pauseAfterReload = false
         val fired = lastSleep != SleepState.Off && p.sleep == SleepState.Off
         lastSleep = p.sleep
         _state.update { it.copy(playback = p, sleepFired = it.sleepFired || fired) }

@@ -75,7 +75,17 @@ class DetailViewModel(
     val subtitleSearch: SubtitleSearchLogic? = subtitles?.let { remote ->
         SubtitleSearchLogic(
             viewModelScope, remote, { state.value.session }, { itemId },
-            { s -> viewModelScope.launch { runCatching { library.refresh(s, RefreshTarget.Item(itemId)) } } },
+            { s, _ ->
+                viewModelScope.launch {
+                    try {
+                        library.refresh(s, RefreshTarget.Item(itemId))
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        // the item is read again next time the page is shown
+                    }
+                }
+            },
             arrivedText = app.shoalwatch.R.string.subsearch_arrived_detail,
         )
     }
