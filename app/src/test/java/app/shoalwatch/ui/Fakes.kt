@@ -97,8 +97,12 @@ class FakeAuthenticator(private val catalog: FakeCatalog? = null) : Authenticato
         return onFind(input, draft)
     }
 
-    override suspend fun signInRoute(serverId: String): SignInRoute? {
+    /** The profile each [signInRoute] call said it was for (null: any account). */
+    val expectedUsers = mutableListOf<String?>()
+
+    override suspend fun signInRoute(serverId: String, expectedUserId: String?): SignInRoute? {
         routesAsked += serverId
+        expectedUsers += expectedUserId
         return routeAnswer(serverId)
     }
 

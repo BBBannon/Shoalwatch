@@ -15,6 +15,8 @@ class AppError(val kind: Kind, val userMessage: String, cause: Throwable? = null
         NETWORK, TIMEOUT, TLS_UNTRUSTED, TLS_PIN_CHANGED, CLEARTEXT_BLOCKED, CLIENT_CERT_REQUIRED,
         SERVER_NOT_FOUND, SERVER_UNSUPPORTED, UNAUTHORISED, QUICK_CONNECT_DISABLED, FORBIDDEN,
         SERVER_ERROR, SERVER_MISMATCH, NOT_SIGNED_IN,
+        /** "Sign in again" for one profile came back as a different account: it was not made active (Quick Connect: whoever approves decides). */
+        WRONG_ACCOUNT,
         /** The sign-in route turned unencrypted after the user last looked: nothing was sent (password sign-in / Quick Connect). */
         SECURE_CONNECTION_LOST, SECURE_CONNECTION_LOST_QUICK_CONNECT,
         /** The network changed while Quick Connect was waiting: it stopped before sending anything more. */
@@ -108,6 +110,8 @@ class AppError(val kind: Kind, val userMessage: String, cause: Throwable? = null
             Kind.SERVER_ERROR -> "The server reported a problem. Please try again later."
             Kind.SERVER_MISMATCH -> "That address belongs to a different server. Check the address and try again."
             Kind.NOT_SIGNED_IN -> "You're signed out. Sign in again to continue."
+            Kind.WRONG_ACCOUNT ->
+                "That signed in as a different account, so nothing changed. To sign in again as this profile, approve the code while signed in as it, or use its password."
             Kind.SECURE_CONNECTION_LOST ->
                 "The secure connection isn't available right now. Check the notice above, then press Sign in again to continue."
             Kind.SECURE_CONNECTION_LOST_QUICK_CONNECT ->

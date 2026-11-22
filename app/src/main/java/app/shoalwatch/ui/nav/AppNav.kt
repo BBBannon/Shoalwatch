@@ -73,7 +73,9 @@ internal object Routes {
     const val ARG_SERVER = "serverId"
     /** [ARG_USER]: a profile's name to fill in (signing in again after the server rejected its sign-in); optional. */
     const val ARG_USER = "user"
-    const val SIGN_IN = "sign_in/{$ARG_SERVER}?$ARG_USER={$ARG_USER}"
+    /** [ARG_USER_ID]: that profile's id; the sign-in must come back as it or nothing changes (`WRONG_ACCOUNT`). Optional. */
+    const val ARG_USER_ID = "userId"
+    const val SIGN_IN = "sign_in/{$ARG_SERVER}?$ARG_USER={$ARG_USER}&$ARG_USER_ID={$ARG_USER_ID}"
     const val SERVER_EDIT = "server/{$ARG_SERVER}"
     /** One downloaded series, offline (Milestone 4). A malformed id reads as "This is no longer available". */
     const val DOWNLOADED_SERIES = "downloads/series/{$ARG_SERIES}"
@@ -102,7 +104,11 @@ internal object Routes {
     fun player(itemId: String, from: StartFrom) = "play/${Uri.encode(itemId)}?$ARG_FROM=${if (from == StartFrom.RESUME) FROM_RESUME else FROM_START}"
     const val FROM_RESUME = "resume"
     const val FROM_START = "start"
-    fun signIn(serverId: String, userName: String? = null) = "sign_in/${Uri.encode(serverId)}" + (userName?.let { "?$ARG_USER=${Uri.encode(it)}" } ?: "")
+    fun signIn(serverId: String) = "sign_in/${Uri.encode(serverId)}"
+
+    /** "Sign in again" for one profile: its name is filled in and only that account is accepted. */
+    fun signInAgain(serverId: String, userId: String, userName: String) =
+        "sign_in/${Uri.encode(serverId)}?$ARG_USER=${Uri.encode(userName)}&$ARG_USER_ID=${Uri.encode(userId)}"
     fun serverEdit(serverId: String) = "server/${Uri.encode(serverId)}"
 }
 
@@ -179,8 +185,14 @@ private fun AppNavHost(graph: AppGraph, start: String, openTab: String?, onTabOp
         composable(Routes.LOCKED) {}
         composable(Routes.WELCOME) { AddServerRoute(graph, nav, firstRun = true) }
         composable(Routes.ADD_SERVER) { AddServerRoute(graph, nav, firstRun = false) }
-        composable(Routes.SIGN_IN, serverArg + navArgument(Routes.ARG_USER) { type = NavType.StringType; nullable = true; defaultValue = null }) {
-            SignInRoute(graph, nav, it.arguments?.getString(Routes.ARG_SERVER).orEmpty(), it.arguments?.getString(Routes.ARG_USER))
+        composable(
+            Routes.SIGN_IN,
+            serverArg + listOf(Routes.ARG_USER, Routes.ARG_USER_ID).map { name -> navArgument(name) { type = NavType.StringType; nullable = true; defaultValue = null } },
+        ) {
+            SignInRoute(
+                graph, nav, it.arguments?.getString(Routes.ARG_SERVER).orEmpty(),
+                it.arguments?.getString(Routes.ARG_USER), it.arguments?.getString(Routes.ARG_USER_ID),
+            )
         }
         composable(Routes.HOME, listOf(navArgument(Routes.ARG_FRESH) { type = NavType.BoolType; defaultValue = false })) {
             HomeRoute(graph, nav, fresh = it.arguments?.getBoolean(Routes.ARG_FRESH) == true)

@@ -74,6 +74,8 @@ class SignInViewModel(
     private val auth: Authenticator,
     private val catalog: ServerCatalog,
     private val connections: ServerConnections,
+    /** "Sign in again" for this profile: signing in as anyone else is refused and changes nothing (`WRONG_ACCOUNT`). */
+    private val expectedUserId: String? = null,
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(SignInUiState())
     val state: StateFlow<SignInUiState> = mutableState
@@ -103,7 +105,7 @@ class SignInViewModel(
 
     /** A fresh route for the next attempt; the notice always reflects the route about to be used. */
     private suspend fun route(): SignInRoute? =
-        auth.signInRoute(serverId).also { r ->
+        auth.signInRoute(serverId, expectedUserId).also { r ->
             if (r != null) mutableState.update { it.copy(unencrypted = !r.encrypted) }
         }
 

@@ -78,8 +78,10 @@ internal fun AddServerRoute(graph: AppGraph, nav: NavHostController, firstRun: B
 }
 
 @Composable
-internal fun SignInRoute(graph: AppGraph, nav: NavHostController, serverId: String, userName: String? = null) {
-    val vm = graphViewModel(key = serverId) { SignInViewModel(serverId, graph.authenticator, graph.serverCatalog, graph.addressSelector) }
+internal fun SignInRoute(graph: AppGraph, nav: NavHostController, serverId: String, userName: String? = null, userId: String? = null) {
+    val vm = graphViewModel(key = "$serverId/${userId.orEmpty()}") {
+        SignInViewModel(serverId, graph.authenticator, graph.serverCatalog, graph.addressSelector, expectedUserId = userId)
+    }
     val state by vm.state.collectAsStateWithLifecycle()
     // "Sign in again" for an expired sign-in fills in that profile's name once (not again after a rotation the user typed over).
     var prefilled by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
@@ -123,7 +125,7 @@ internal fun ServersRoute(graph: AppGraph, nav: NavHostController) {
             onAskSignOut = vm::askSignOut,
             onAskRemove = vm::askRemoveServer,
             onAddAccount = { nav.navigate(Routes.signIn(it)) },
-            onSignInAgain = { serverId, userName -> nav.navigate(Routes.signIn(serverId, userName)) },
+            onSignInAgain = { serverId, userId, userName -> nav.navigate(Routes.signInAgain(serverId, userId, userName)) },
             onSettings = vm::openSettings,
             onConfirm = vm::confirm,
             onDismissConfirm = vm::dismissConfirm,

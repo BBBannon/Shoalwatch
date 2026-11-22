@@ -64,8 +64,8 @@ class ServersActions(
     val onDismissConfirm: () -> Unit,
     val onDismissNotice: () -> Unit = {},
     val onAdmin: () -> Unit = {},
-    /** An expired sign-in: sign in again as that profile (its name filled in). */
-    val onSignInAgain: (serverId: String, userName: String) -> Unit = { _, _ -> },
+    /** An expired sign-in: sign in again as that profile (its name filled in; only that account is accepted). */
+    val onSignInAgain: (serverId: String, userId: String, userName: String) -> Unit = { _, _, _ -> },
     val onSubmitSwitch: () -> Unit = {},
     val onDismissSwitch: () -> Unit = {},
     val onChooseGrownUp: (AccountSummary) -> Unit = {},
@@ -202,7 +202,7 @@ private fun ExpiredAccountRow(serverId: String, account: AccountItem, actions: S
         }
     }
     Row(Modifier.fillMaxWidth().padding(start = 36.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        TextButton(onClick = { actions.onSignInAgain(serverId, account.userName) }, modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = againLabel }) {
+        TextButton(onClick = { actions.onSignInAgain(serverId, account.userId, account.userName) }, modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = againLabel }) {
             Text(stringResource(R.string.account_sign_in_again))
         }
         TextButton(onClick = { actions.onAskSignOut(serverId, account.userId) }, modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = signOutLabel }) {

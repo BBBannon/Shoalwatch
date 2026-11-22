@@ -46,7 +46,13 @@ class AuthRepository(
     private val removeTimeoutMs: Long = REMOVE_TIMEOUT_MS,
 ) {
     /** The only implementation of [SignInRoute]: a route the UI did not get from here is refused. */
-    private class IssuedRoute(override val serverId: String, val address: ServerAddress, val basis: Connection.Online) : SignInRoute {
+    private class IssuedRoute(
+        override val serverId: String,
+        val address: ServerAddress,
+        val basis: Connection.Online,
+        /** "Sign in again" for this profile: a sign-in as anyone else is refused (see [save]). */
+        val expectedUserId: String?,
+    ) : SignInRoute {
         override val encrypted: Boolean get() = address.isSecure
         override fun toString() = "SignInRoute(<redacted>)"
     }
@@ -79,9 +85,9 @@ class AuthRepository(
      *
      * @throws AppError `SERVER_NOT_FOUND` if the server is no longer saved.
      */
-    suspend fun signInRoute(serverId: String): SignInRoute? {
+    suspend fun signInRoute(serverId: String, expectedUserId: String? = null): SignInRoute? {
         val server = store.server(serverId) ?: throw AppError.of(AppError.Kind.SERVER_NOT_FOUND)
-        return credentialAddress(server)?.let { IssuedRoute(server.id, it.address, it.basis) }
+        return credentialAddress(server)?.let { IssuedRoute(server.id, it.address, it.basis, expectedUserId) }
     }
 
     /**
@@ -113,7 +119,7 @@ class AuthRepository(
             emit(QuickConnectState.Authenticating)
             val account = guard {
                 ensureConnectionUnchanged(issued) // nothing more is sent once the network is not the one that was verified
-                save(server, gateway.authenticateWithQuickConnect(issued.address, net, session.secret))
+                save(server, gateway.authenticateWithQuickConnect(issued.address, net, session.secret), issued.expectedUserId)
             }.getOrElse { emit(QuickConnectState.Failed(it)); return@flow }
             emit(QuickConnectState.Success(account))
         }
@@ -184,7 +190,7 @@ class AuthRepository(
             val net = anonymousNet(server)
             verifyServer(server, issued.address, net)
             val result = gateway.authenticateByName(issued.address, net, username.trim(), String(password))
-            return save(server, result)
+            return save(server, result, issued.expectedUserId)
         } finally {
             password.fill('\u0000')
         }
@@ -295,10 +301,25 @@ class AuthRepository(
         if (gateway.publicInfo(via, net).id != server.id) throw AppError.of(AppError.Kind.SERVER_MISMATCH)
     }
 
-    /** Saves the account as the active one, after checking the token was minted by [server] itself. */
-    private suspend fun save(server: Server, result: AuthResult): Account {
+    /**
+     * Saves the account as the active one, after checking the token was minted by [server] itself. With [expectedUserId]
+     * ("Sign in again" for one profile), a sign-in as anyone else is never made active and ends in `WRONG_ACCOUNT`: if that
+     * account is already on this phone its fresh sign-in is kept quietly (the server replaces this device's older one), and
+     * otherwise it is revoked rather than added as a new profile.
+     */
+    private suspend fun save(server: Server, result: AuthResult, expectedUserId: String? = null): Account {
         if (result.serverId != server.id) throw AppError.of(AppError.Kind.SERVER_MISMATCH)
         val account = Account(server.id, result.userId, result.userName, result.accessToken)
+        if (expectedUserId != null && result.userId != expectedUserId) {
+            withContext(NonCancellable) {
+                if (store.token(server.id, result.userId) !is StoredToken.Missing) {
+                    bestEffort { store.upsertAccount(account, makeActive = false) }
+                } else {
+                    withTimeoutOrNull(signOutTimeoutMs) { revoke(server, result.userId, result.accessToken) }
+                }
+            }
+            throw AppError.of(AppError.Kind.WRONG_ACCOUNT)
+        }
         try {
             store.upsertAccount(account, makeActive = true)
         } catch (e: SQLiteConstraintException) {
